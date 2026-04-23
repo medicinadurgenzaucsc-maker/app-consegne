@@ -1,0 +1,217 @@
+<style>
+  /* ===== VISUALIZZAZIONE ALTERNATIVA ===== */
+  #cardsContainerAlt { display: none; }
+  #cardsContainerAlt.attiva { display: block; }
+  #cardsContainer.nascosto { display: none; }
+
+  .alt-row {
+    display: flex;
+    border: 2px solid #333;
+    border-radius: 8px;
+    margin-bottom: 12px;
+    background-color: #fdfbf7;
+    position: relative;
+    min-height: 120px;
+  }
+
+  .alt-col {
+    border-right: 2px solid #333;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+  }
+  .alt-col:last-child { border-right: none; }
+
+  .alt-col-info    { width: 12%; background-color: #f2efe9; }
+  .alt-col-diag    { width: 18%; }
+  .alt-col-diaria  { width: 58%; }
+  .alt-col-terapia { width: 12%; }
+
+  .alt-col-header {
+    background-color: #e8e6e1;
+    padding: 5px 8px;
+    font-weight: bold;
+    font-size: 0.78rem;
+    text-align: center;
+    border-bottom: 1px solid #ccc;
+    user-select: none;
+    text-transform: uppercase;
+  }
+
+  .alt-col-header-split {
+    background-color: #e8e6e1;
+    padding: 5px 8px;
+    font-weight: bold;
+    font-size: 0.78rem;
+    text-align: center;
+    border-bottom: 1px solid #ccc;
+    border-top: 2px solid #333;
+    user-select: none;
+    text-transform: uppercase;
+  }
+
+  .alt-info-box {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    padding: 4px 4px;
+    gap: 1px;
+    flex-grow: 1;
+  }
+
+  .alt-bed-number {
+    font-size: 2rem;
+    font-weight: bold;
+    line-height: 1;
+  }
+
+  .alt-nome {
+    font-weight: bold;
+    font-size: 1.1rem;
+    text-align: center;
+    text-transform: uppercase;
+    outline: none;
+    width: 100%;
+    padding: 2px;
+    min-height: 0;
+    border-bottom: 1px solid #ccc;
+    word-break: break-word;
+  }
+
+  .alt-allergie-label {
+    font-size: 0.85rem;
+    font-weight: bold;
+    color: #c62828;
+    text-transform: uppercase;
+    margin-top: 3px;
+    text-align: center;
+  }
+
+  .alt-allergie-val {
+    font-size: 1.0rem;
+    outline: none;
+    width: 100%;
+    padding: 2px 3px;
+    min-height: 0;
+    text-align: center;
+    border-bottom: 1px solid #ccc;
+    word-break: break-word;
+  }
+
+  /* Tutte le righe info: etichetta sopra, valore sotto */
+  .alt-info-row,
+  .alt-info-row-eta {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    width: 100%;
+    padding: 2px 3px;
+    border-bottom: 1px solid #eee;
+    box-sizing: border-box;
+  }
+
+  /* La colonna info è 12% del container ≈ 12vw.
+     Le font-size scalano proporzionalmente con clamp():
+     - etichetta: più grande e bold
+     - valore: più piccolo e normale                        */
+  .alt-info-label {
+    font-size: clamp(0.6rem, 1.2vw, 0.9rem);
+    font-weight: bold;
+    color: #333;
+    line-height: 1.2;
+    white-space: normal;
+  }
+
+  .alt-info-val {
+    font-weight: normal;
+    font-size: clamp(0.48rem, 0.95vw, 0.72rem);
+    outline: none;
+    width: 100%;
+    max-width: 100%;
+    padding: 0 2px;
+    overflow: hidden;
+    overflow-wrap: break-word;
+    word-break: break-word;
+    box-sizing: border-box;
+  }
+
+  /* Input date: larghezza piena, no overflow orizzontale */
+  .alt-col-info input.alt-info-val {
+    font-size: clamp(0.48rem, 0.95vw, 0.72rem);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    border: none;
+    border-bottom: 1px solid #ccc;
+    background: transparent;
+  }
+
+  /* Giorni di ricovero: mantiene colore rosso ma non grassetto */
+  span.valore-giorni.alt-info-val { font-weight: normal; }
+
+  /* Colonne 2-5: crescono per riempire */
+  .alt-col-diag .alt-editable,
+  .alt-col-diaria .alt-editable,
+  .alt-col-terapia .alt-editable {
+    flex-grow: 1;
+    padding: 8px;
+    outline: none;
+    overflow-y: auto;
+    font-size: 0.85rem;
+  }
+
+  .alt-diag-top {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .alt-diag-top .alt-editable,
+  .alt-diag-bottom .alt-editable,
+  .alt-diag-third .alt-editable {
+    flex-grow: 0;
+    min-height: 40px;
+  }
+
+  .alt-diag-bottom {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .alt-diag-third {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Prima colonna: i campi NON devono crescere fix flex-grow globale */
+  .alt-col-info .editable-area {
+    flex-grow: 0 !important;
+    flex-shrink: 0 !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    height: auto !important;
+  }
+  /* CS e Ossigeno devono espandersi nella riga (alt-info-row è flex-row) */
+  .alt-col-info .editable-area.alt-info-val {
+    flex-grow: 1 !important;
+    flex-shrink: 1 !important;
+    padding: 0 2px !important;
+    min-height: 0 !important;
+  }
+
+  /* Nascondi matita quando focus mode attivo sulla alt-row */
+  .alt-row.focus-mode .focus-pencil-btn { display: none !important; }
+
+  /* Diagnosi in grassetto e più grande */
+  .alt-col-diag .alt-editable[data-field="Diagnosi"] {
+    font-weight: bold;
+    font-size: 1.0rem;
+  }
+
+  /* Bottone toggle attivo */
+  #btnToggleViewAlt.attiva {
+    background-color: rgba(255,255,255,0.18) !important;
+    border-radius: 6px;
+  }
+</style>

@@ -1,0 +1,229 @@
+<style>
+    body { padding-top: 70px; background-color: #d4e6f1 !important; }
+    .navbar-custom { background-color: #78909c; }
+    .patient-card { border: 2px solid #333; border-radius: 8px; margin-bottom: 30px; background-color: #fdfbf7; position: relative; }
+    .header-row { border-bottom: 2px solid #333; }
+    .bed-number-box { border-right: 2px solid #333; display: flex; flex-direction: column; align-items: center; justify-content: center; background-color: #f2efe9; position: relative; }
+    .bed-number { font-size: 4rem; font-weight: bold; line-height: 1; }
+    .sesso-symbol { display:inline-block; font-size:2.6rem; line-height:1; margin-left:6px; vertical-align:middle; cursor:default; user-select:none; -webkit-text-stroke:2.5px currentColor; }
+    .focus-mode .sesso-symbol { cursor:pointer; }
+    .bed-number-flex { display:flex; align-items:center; justify-content:center; }
+    .patient-info-box { padding: 15px; position: relative; }
+    
+    .content-row { display: flex; min-height: 250px; border-bottom: 2px solid #333; }
+    .column-box { border-right: 2px solid #333; display: flex; flex-direction: column; }
+    .column-box:last-child { border-right: none; }
+    
+    .col-terapia { width: 17.5%; }
+    .col-diaria { width: 65%; }
+    .col-da-fare { width: 17.5%; }
+    
+    .piano-terapeutico-row { display: flex; flex-direction: column; width: 100%; min-height: 80px; }
+    
+    .column-header { background-color: #e8e6e1; padding: 8px; font-weight: bold; text-align: center; border-bottom: 1px solid #ccc; user-select: none; }
+    .column-header-piano { background-color: #e8e6e1; padding: 8px 15px; font-weight: bold; text-align: left; border-bottom: 1px solid #ccc; user-select: none; color: #000; }
+
+    .editable-area { flex-grow: 1; padding: 10px; outline: none; min-height: 150px; overflow-y: auto; }
+    .editable-area:focus { background-color: #ffffff; box-shadow: inset 0 0 5px rgba(0,0,0,0.05); }
+    .editable-area-piano { min-height: 50px; }
+    /* Allergie e Ossigeno: si adattano al contenuto senza crescere */
+    .col-terapia .editable-area[data-field="Allergie"] { flex-grow: 0; min-height: 0; overflow-y: visible; }
+    .col-terapia .editable-area[data-field="Ossigeno"] { flex-grow: 0; min-height: 0; overflow-y: visible; }
+
+    .date-wrapper { position: relative; display: inline-flex; align-items: center; width: 120px; height: 30px;}
+    .date-input-hidden { position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; z-index: 10; }
+    .date-display { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: flex-end; gap: 5px; z-index: 1; pointer-events: none;}
+
+    /* ===== FOCUS MODE EDITING ===== */
+    .patient-card.focus-mode {
+      position: fixed !important;
+      z-index: 1070 !important;
+      box-shadow: 0 12px 48px rgba(0,0,0,0.28), 0 2px 8px rgba(0,0,0,0.10) !important;
+      overflow-y: auto !important;
+      max-height: calc(100vh - 80px) !important;
+      background: #fff;
+      scroll-behavior: smooth;
+    }
+
+    /* ===== STICKY TOOLBAR IN FOCUS-MODE ===== */
+    .focus-toolbar {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 2px;
+      padding: 6px 8px;
+      background: #dde3ea;
+      border-bottom: 1px solid #b0bec5;
+      border-top: 1px solid #b0bec5;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      user-select: none;
+    }
+    .focus-toolbar .tb-btn {
+      background: none;
+      border: 1px solid transparent;
+      border-radius: 5px;
+      cursor: pointer;
+      padding: 4px 8px;
+      font-size: 0.85rem;
+      color: #343a40;
+      line-height: 1;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .focus-toolbar .tb-btn:hover { background: #e9ecef; border-color: #ced4da; }
+    .focus-toolbar .tb-btn.active { background: #d0e4ff; border-color: #86b7fe; }
+    .focus-toolbar .tb-sep { width: 1px; height: 20px; background: #ced4da; margin: 0 4px; }
+    .tb-palette-wrap { position: relative; }
+    .tb-palette {
+      display: none;
+      position: absolute;
+      top: calc(100% + 4px);
+      left: 0;
+      background: #fff;
+      border: 1px solid #dee2e6;
+      border-radius: 8px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+      padding: 8px;
+      z-index: 100;
+      width: 196px;
+    }
+    .tb-palette.open { display: block; }
+    .tb-palette-grid { display: grid; grid-template-columns: repeat(8, 20px); gap: 3px; margin-bottom: 6px; }
+    .tb-color-swatch { width: 20px; height: 20px; border-radius: 4px; border: 1px solid rgba(0,0,0,0.15); cursor: pointer; transition: transform 0.1s; }
+    .tb-color-swatch:hover { transform: scale(1.25); border-color: #343a40; }
+    .tb-no-color { width: 100%; font-size: 0.72rem; padding: 3px 0; background: none; border: 1px solid #ced4da; border-radius: 4px; cursor: pointer; color: #6c757d; }
+    .tb-no-color:hover { background: #f8f9fa; }
+    .tb-fsize-btn { display: block; width: 100%; text-align: left; padding: 5px 8px; font-size: 0.82rem; background: none; border: none; border-radius: 4px; cursor: pointer; color: #343a40; }
+    .tb-fsize-btn:hover { background: #e9ecef; }
+
+    /* ===== VALIDAZIONE CAMPI DATA ===== */
+    .date-input-error { border-bottom: 2px solid #d32f2f !important; background-color: #fff5f5 !important; }
+    .date-error-msg { display: block; font-size: 0.65rem; color: #d32f2f; margin-top: 1px; line-height: 1.2; padding-left: 2px; }
+
+    /* Voce "Visualizzazione Alternativa" — hover/focus mantengono i colori attivi */
+    #btnToggleViewAlt.attiva:hover,
+    #btnToggleViewAlt.attiva:focus { background-color: #343a40 !important; color: #fff !important; }
+    #btnToggleViewAlt.attiva:hover i,
+    #btnToggleViewAlt.attiva:focus i { color: #fff !important; }
+
+    /* ===== LOCK COLLABORATIVO ===== */
+    .patient-card { position: relative; }
+    .card-locked {
+      border: 2px solid #dc3545 !important;
+      box-shadow: 0 0 0 4px rgba(220,53,69,0.18) !important;
+      transition: border 0.2s, box-shadow 0.2s;
+    }
+    .lock-overlay {
+      position: absolute;
+      inset: 0;
+      z-index: 50;
+      background: rgba(220, 53, 69, 0.07);
+      pointer-events: all;
+      cursor: not-allowed;
+      border-radius: inherit;
+    }
+    .lock-badge {
+      position: absolute;
+      top: -11px;
+      right: 14px;
+      background: #dc3545;
+      color: #fff;
+      font-size: 0.68rem;
+      padding: 3px 10px 3px 8px;
+      border-radius: 20px;
+      font-weight: 700;
+      white-space: nowrap;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+      z-index: 51;
+      pointer-events: none;
+      letter-spacing: 0.02em;
+    }
+
+    /* ===== BARRA OPERAZIONE IN CORSO ===== */
+    #opBar {
+      display: none;
+      position: fixed;
+      top: 56px;
+      left: 0; right: 0;
+      z-index: 9998;
+      background: linear-gradient(90deg, #37474f 0%, #78909c 50%, #37474f 100%);
+      background-size: 200% 100%;
+      animation: opBarPulse 1.6s linear infinite;
+      color: #fff;
+      font-size: 0.82rem;
+      font-weight: 600;
+      letter-spacing: 0.03em;
+      padding: 7px 16px;
+      text-align: center;
+      box-shadow: 0 3px 10px rgba(0,0,0,0.2);
+    }
+    @keyframes opBarPulse {
+      0%   { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+
+    /* ===== TIPOLOGIE PALETTE POPUP ===== */
+    .tipo-palette-popup {
+      position: absolute; top: calc(100% + 6px); left: 0;
+      z-index: 9999; background: #fff; border: 1px solid #dee2e6;
+      border-radius: 10px; padding: 10px;
+      box-shadow: 0 4px 24px rgba(0,0,0,.18); width: 188px;
+    }
+
+    /* Overlay blocco-interazione durante operazioni */
+    #opOverlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.25);
+      z-index: 1040;
+      cursor: wait;
+    }
+    #opOverlay.attivo { display: block; }
+
+    /* ===== LOCK CHECK SPINNER ===== */
+    @keyframes _lockSpin { to { transform: rotate(360deg); } }
+
+    /* ===== MATITA FOCUS MODE ===== */
+    .focus-pencil-btn {
+      display: none;
+      position: absolute;
+      top: 8px;
+      right: 10px;
+      width: 46px;
+      height: 46px;
+      background: linear-gradient(135deg, #fffde7 60%, #fff9c4 100%);
+      border: 2px solid #f9a825;
+      border-radius: 12px;
+      cursor: pointer;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.35rem;
+      color: #f9a825;
+      z-index: 10;
+      transition: background 0.15s, transform 0.12s, box-shadow 0.15s;
+      box-shadow: 0 2px 8px rgba(249,168,37,0.25);
+    }
+    .focus-pencil-btn::after {
+      content: '';
+      position: absolute;
+      bottom: 6px;
+      right: 7px;
+      width: 8px;
+      height: 8px;
+      background: #ef9a9a;
+      border-radius: 2px;
+    }
+    .focus-pencil-btn:hover {
+      background: linear-gradient(135deg, #fff176 60%, #ffee58 100%);
+      border-color: #f57f17;
+      color: #e65100;
+      transform: scale(1.12) rotate(-8deg);
+      box-shadow: 0 4px 14px rgba(249,168,37,0.45);
+    }
+    .patient-card:hover .focus-pencil-btn { display: flex; }
+    .patient-card.focus-mode .bed-number-box .focus-pencil-btn { display: none !important; }
+    .patient-card.card-locked:hover .focus-pencil-btn { display: none !important; }
+
+  </style>

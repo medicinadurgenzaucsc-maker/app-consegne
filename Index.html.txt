@@ -1,0 +1,1484 @@
+﻿<!DOCTYPE html>
+
+<html lang="it">
+<head>
+  <base target="_top">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+  <link href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css" rel="stylesheet">
+
+<!-- Includi il CSS -->
+
+  <?!= include('Styles.html'); ?>
+
+  <script>
+    function stringToColor(str) {
+      let hash = 0;
+      for (let i = 0; i < str.length; i++) { hash = str.charCodeAt(i) + ((hash << 5) - hash); }
+      let color = '#';
+      for (let i = 0; i < 3; i++) {
+        let value = (hash >> (i * 8)) & 0xFF;
+        value = Math.max(50, Math.min(180, value)); 
+        color += ('00' + value.toString(16)).substr(-2);
+      }
+      return color;
+    }
+    var _mioToken = (function() {
+      var id = localStorage.getItem('wardSessionId');
+      if (!id) {
+        id = 'usr_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        localStorage.setItem('wardSessionId', id);
+      }
+      return id;
+    })();
+
+    var _lettoLockAtt       = null;
+    var _timerRilascio      = null;
+    var _timerRinnovo       = null;
+    var _lockInAttesa       = false;
+    var _timerFocusInattivo = null;
+    var _focusHaInput       = false;
+    var _snapshotCard  = {};
+
+    document.addEventListener('focusin', function(e) {
+      var card = e.target.closest && e.target.closest('.patient-card');
+      if (!card) return;
+      var letto = card.getAttribute('data-bed');
+      if (!letto || _lettoLockAtt === letto) return;
+      google.script.run
+        .withSuccessHandler(function(locks) {
+          var info = locks && locks[String(letto)];
+          if (info && info.token !== _mioToken) {
+            if (document.activeElement) document.activeElement.blur();
+            _applicaLocks(locks);
+            _mostraAvvisoLock(letto);
+          }
+        })
+        .withFailureHandler(function() {})
+        .getLocks();
+    }, true);
+
+    document.addEventListener('input', function(e) {
+      var card = e.target.closest && e.target.closest('.patient-card');
+      if (!card) return;
+      var letto = card.getAttribute('data-bed');
+      if (!letto) return;
+
+      if (_lettoLockAtt === letto) {
+        if (_focusCard) _focusHaInput = true;
+        _rinnovaDebounce(letto);
+        return;
+      }
+
+      if (_lockInAttesa) return;
+
+      _snapshotCard[letto] = _scattaSnapshot(card);
+      _lockInAttesa = true;
+
+      google.script.run
+        .withSuccessHandler(function(res) {
+          _lockInAttesa = false;
+          if (res.success) {
+            if (_lettoLockAtt && _lettoLockAtt !== letto) {
+              google.script.run.rilasciaLock(_lettoLockAtt, _mioToken);
+            }
+            _lettoLockAtt = letto;
+            delete _snapshotCard[letto];
+            if (_timerRinnovo) clearInterval(_timerRinnovo);
+            _timerRinnovo = setInterval(function() {
+              if (_lettoLockAtt) {
+                google.script.run
+                  .withSuccessHandler(function(r) {
+                    if (!r.success && r.blocked) {
+                      clearInterval(_timerRinnovo); _timerRinnovo = null;
+                      _lettoLockAtt = null;
+                    }
+                  })
+                  .acquistaLock(_lettoLockAtt, _mioToken);
+              } else { clearInterval(_timerRinnovo); _timerRinnovo = null; }
+            }, 10000);
+            _rinnovaDebounce(letto);
+          } else if (res.blocked) {
+            var cardEl = document.querySelector('.patient-card[data-bed="' + letto + '"]');
+            if (cardEl && _snapshotCard[letto]) _ripristinaSnapshot(cardEl, _snapshotCard[letto]);
+            delete _snapshotCard[letto];
+            if (document.activeElement) document.activeElement.blur();
+            google.script.run
+              .withSuccessHandler(function(locks) { _applicaLocks(locks); })
+              .getLocks();
+            _mostraAvvisoLock(letto);
+          }
+        })
+        .withFailureHandler(function() {
+          _lockInAttesa = false;
+          _lettoLockAtt = letto;
+          delete _snapshotCard[letto];
+          _rinnovaDebounce(letto);
+        })
+        .acquistaLock(letto, _mioToken);
+
+    }, true);
+
+    function _scattaSnapshot(card) {
+      var snap = {};
+      ['Nome','Diagnosi','Eta','NoteTerapia','Diaria','DaFare','PianoTerapeutico','Allergie','CodiceSanitario','Ossigeno'].forEach(function(campo) {
+        var el = card.querySelector('[data-field="' + campo + '"]');
+        if (el) snap[campo] = el.innerHTML;
+      });
+      var dateEl = card.querySelector('.data-ricovero-text');
+      if (dateEl) snap['__date'] = dateEl.value;
+      var nascitaEl = card.querySelector('.data-nascita-text');
+      if (nascitaEl) snap['__dataNascita'] = nascitaEl.value;
+      return snap;
+    }
+
+    function _ripristinaSnapshot(card, snap) {
+      ['Nome','Diagnosi','Eta','NoteTerapia','Diaria','DaFare','PianoTerapeutico','Allergie','CodiceSanitario','Ossigeno'].forEach(function(campo) {
+        var el = card.querySelector('[data-field="' + campo + '"]');
+        if (el && snap[campo] !== undefined) el.innerHTML = snap[campo];
+      });
+      var dateEl = card.querySelector('.data-ricovero-text');
+      if (dateEl && snap['__date'] !== undefined) dateEl.value = snap['__date'];
+      var nascitaEl = card.querySelector('.data-nascita-text');
+      if (nascitaEl && snap['__dataNascita'] !== undefined) nascitaEl.value = snap['__dataNascita'];
+    }
+
+    function _avviaTimerFocusInattivo() {
+      if (_timerFocusInattivo) { clearTimeout(_timerFocusInattivo); _timerFocusInattivo = null; }
+      _timerFocusInattivo = setTimeout(function() {
+        _timerFocusInattivo = null;
+        if (_focusCard) {
+          if (document.activeElement && _focusCard.contains(document.activeElement)) {
+            document.activeElement.blur();
+          }
+          var letto = _focusCard.getAttribute('data-bed');
+          if (letto) _autoSalvaOra(letto);
+          _disattivaFocusMode(true);
+        }
+      }, _focusHaInput ? 120000 : 30000);
+    }
+
+    function _rinnovaDebounce(letto) {
+      if (_timerRilascio) { clearTimeout(_timerRilascio); _timerRilascio = null; }
+      if (_focusCard) _avviaTimerFocusInattivo();
+      _timerRilascio = setTimeout(function() {
+        if (_timerRinnovo) { clearInterval(_timerRinnovo); _timerRinnovo = null; }
+        if (_lettoLockAtt) {
+          var lettoRilasciato = _lettoLockAtt;
+          _lettoLockAtt = null;
+          if (_focusCard && _focusCard.getAttribute('data-bed') === lettoRilasciato) {
+            _disattivaFocusMode(true);
+          } else {
+            var active = document.activeElement;
+            if (active) {
+              var c = active.closest && active.closest('.patient-card');
+              if (c && c.getAttribute('data-bed') === lettoRilasciato) active.blur();
+            }
+          }
+          google.script.run.rilasciaLock(lettoRilasciato, _mioToken);
+        }
+        _timerRilascio = null;
+      }, _focusCard ? (_focusHaInput ? 120000 : 30000) : 20000);
+    }
+
+    function _mostraAvvisoLock(letto) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Scheda in aggiornamento',
+        html: 'Il letto <strong>' + letto + '</strong> è attualmente in aggiornamento da un altro utente.<br><span class="text-muted small">La scheda si sbloccherà  automaticamente.</span>',
+        showConfirmButton: false,
+        timer: 2200
+      });
+    }
+
+    window.addEventListener('beforeunload', function() {
+      if (_lettoLockAtt) google.script.run.rilasciaLock(_lettoLockAtt, _mioToken);
+    });
+
+    var _syncPaused = false;
+    var _letti_salvataggioAttivi = new Set();
+
+    function _nascondMatite() {
+      document.querySelectorAll('.focus-pencil-btn').forEach(function(b) {
+        b.style.visibility = 'hidden'; b.style.pointerEvents = 'none';
+      });
+    }
+    function _mostraMatite() {
+      if (_letti_salvataggioAttivi.size === 0) {
+        document.querySelectorAll('.focus-pencil-btn').forEach(function(b) {
+          b.style.visibility = ''; b.style.pointerEvents = '';
+        });
+      }
+    }
+    function _eseguiSyncDopoSalvataggio() {
+      google.script.run
+        .withSuccessHandler(function(html) {
+          google.script.run
+            .withSuccessHandler(function(locks) {
+              _applicaAggiornamentoCompleto(html); _applicaLocks(locks || {});
+              _syncPaused = false;
+            })
+            .withFailureHandler(function() { _applicaAggiornamentoCompleto(html); _syncPaused = false; })
+            .getLocks();
+        })
+        .withFailureHandler(function() { _syncPaused = false; })
+        .getNewHtml();
+    }
+
+    function _eseguiRefresh() {
+      var ind = document.getElementById('syncIndicator');
+      var st  = document.getElementById('syncStatus');
+      if (_syncPaused) {
+        setTimeout(function() { _eseguiRefresh(); }, 3000);
+        return;
+      }
+      if (document.querySelector('.modal.show')) {
+        setTimeout(function() { _eseguiRefresh(); }, 3000);
+        return;
+      }
+      if (ind) ind.className = 'badge bg-warning text-dark ms-2';
+      if (st)  st.innerText  = 'Sync...';
+      google.script.run
+        .withSuccessHandler(function(html) {
+          google.script.run
+            .withSuccessHandler(function(locks) {
+              _applicaAggiornamentoCompleto(html);
+              _applicaLocks(locks || {});
+              if (ind) ind.className = 'badge bg-success ms-2';
+              if (st)  st.innerText  = new Date().toLocaleTimeString('it-IT');
+              setTimeout(function() { _eseguiRefresh(); }, 3000);
+            })
+            .withFailureHandler(function() {
+              _applicaAggiornamentoCompleto(html);
+              if (ind) ind.className = 'badge bg-success ms-2';
+              if (st)  st.innerText  = new Date().toLocaleTimeString('it-IT');
+              setTimeout(function() { _eseguiRefresh(); }, 3000);
+            })
+            .getLocks();
+        })
+        .withFailureHandler(function() {
+          if (ind) ind.className = 'badge bg-danger ms-2';
+          if (st)  st.innerText  = 'Errore sync';
+          setTimeout(function() { _eseguiRefresh(); }, 3000);
+        })
+        .getNewHtml();
+    }
+
+    function _salvaCaretPos(el) {
+      var sel = window.getSelection();
+      if (!sel || sel.rangeCount === 0) return null;
+      var range = sel.getRangeAt(0);
+      if (!el.contains(range.commonAncestorContainer)) return null;
+      var preRange = document.createRange();
+      preRange.selectNodeContents(el);
+      preRange.setEnd(range.endContainer, range.endOffset);
+      return preRange.toString().length;
+    }
+
+    function _ripristinaCaretPos(el, charOffset) {
+      if (charOffset === null || charOffset === undefined) return;
+      var walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null, false);
+      var node, offset = charOffset;
+      while ((node = walker.nextNode())) {
+        if (offset <= node.textContent.length) {
+          var range = document.createRange();
+          var sel = window.getSelection();
+          range.setStart(node, offset);
+          range.collapse(true);
+          sel.removeAllRanges();
+          sel.addRange(range);
+          return;
+        }
+        offset -= node.textContent.length;
+      }
+      var range = document.createRange();
+      var sel = window.getSelection();
+      range.selectNodeContents(el);
+      range.collapse(false);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+
+    function _applicaAggiornamentoDaHtml(html) {
+      if (!html) return;
+      var activeEl = document.activeElement;
+      var nuovoDoc = new DOMParser().parseFromString(html, 'text/html');
+      nuovoDoc.querySelectorAll('.patient-card[data-bed]').forEach(function(nuova) {
+        var letto = nuova.getAttribute('data-bed');
+        if (_lettoLockAtt === letto) return;
+        // Aggiorna tutte le card con quel letto (main + alt)
+        document.querySelectorAll('.patient-card[data-bed="' + letto + '"]').forEach(function(attuale) {
+          ['Nome','Diagnosi','Eta','NoteTerapia','Diaria','DaFare','PianoTerapeutico','Allergie','CodiceSanitario','Ossigeno'].forEach(function(campo) {
+            var src = nuova.querySelector('[data-field="' + campo + '"]');
+            var dst = attuale.querySelector('[data-field="' + campo + '"]');
+            if (!src || !dst) return;
+            var hasFocus = (dst === activeEl || dst.contains(activeEl));
+            var caretPos = hasFocus ? _salvaCaretPos(dst) : null;
+            dst.innerHTML = src.innerHTML;
+            if (hasFocus && caretPos !== null) {
+              dst.focus();
+              _ripristinaCaretPos(dst, caretPos);
+            }
+          });
+          var srcDate=nuova.querySelector('.data-ricovero-text'); var dstDate=attuale.querySelector('.data-ricovero-text'); if(srcDate&&dstDate)dstDate.value=srcDate.value;
+          var srcGG=nuova.querySelector('.valore-giorni'); var dstGG=attuale.querySelector('.valore-giorni'); if(srcGG&&dstGG)dstGG.innerText=srcGG.innerText;
+          var srcNasc=nuova.querySelector('.data-nascita-text'); var dstNasc=attuale.querySelector('.data-nascita-text'); if(srcNasc&&dstNasc)dstNasc.value=srcNasc.value;
+          var srcSesso=nuova.querySelector('.sesso-symbol[data-field="Sesso"]'); var dstSesso=attuale.querySelector('.sesso-symbol[data-field="Sesso"]'); if(srcSesso&&dstSesso){dstSesso.setAttribute('data-sesso',srcSesso.getAttribute('data-sesso')||'');_aggiornaSimboloSesso(dstSesso);}
+          var nuovaTipo = (nuova.getAttribute('data-tipologia') || '').toUpperCase();
+          attuale.setAttribute('data-tipologia', nuovaTipo);
+          var srcWrap = nuova.querySelector('.tipo-badge-wrap');
+          var dstWrap = attuale.querySelector('.tipo-badge-wrap');
+          if (srcWrap && dstWrap) {
+            dstWrap.innerHTML = srcWrap.innerHTML;
+            var newBadge = dstWrap.querySelector('[id^="badge-tipo-"]');
+            if (newBadge) {
+              var v = (newBadge.innerText || '').trim();
+              if (v && v !== 'STANDARD') newBadge.style.backgroundColor = stringToColor(v);
+            }
+          }
+        });
+      });
+    }
+
+    function _applicaLocks(locks) {
+      document.querySelectorAll('.lock-overlay').forEach(function(el) { el.remove(); });
+      document.querySelectorAll('.patient-card.card-locked').forEach(function(c) { c.classList.remove('card-locked'); });
+      Object.keys(locks).forEach(function(letto) {
+        var info = locks[letto];
+        if (info.token === _mioToken) return;
+        var cards = document.querySelectorAll('.patient-card[data-bed="' + letto + '"]');
+        if (!cards.length) return;
+        cards.forEach(function(card) {
+          card.classList.add('card-locked');
+          var overlay = document.createElement('div'); overlay.className = 'lock-overlay';
+          var badge = document.createElement('span'); badge.className = 'lock-badge';
+          badge.innerHTML = '<i class="bi bi-lock-fill me-1"></i>In aggiornamento';
+          overlay.appendChild(badge); card.appendChild(overlay);
+          var active = document.activeElement;
+          if (active && card.contains(active)) active.blur();
+        });
+      });
+    }
+
+    var _TOOLBAR_ID = 'focusModeToolbar';
+
+    function _creaToolbarHTML() {
+      var colors = [
+        ['#ffff00','Giallo'],['#00ff00','Verde'],['#00ffff','Azzurro'],['#ff69b4','Rosa'],
+        ['#ff9900','Arancione'],['#ff0000','Rosso'],['#9900ff','Viola'],['#0000ff','Blu'],
+        ['#a4c2f4','Celeste ch.'],['#b6d7a8','Verde ch.'],['#f9cb9c','Arancio ch.'],['#f4cccc','Rosa ch.'],
+        ['#d9d2e9','Lilla'],['#ead1dc','Salmone'],['#d0e0e3','Acqua'],['#cccccc','Grigio']
+      ];
+      var sw = '';
+      for (var i = 0; i < colors.length; i++) {
+        sw += '<button class="tb-color-swatch" data-color="' + colors[i][0] + '" style="background:' + colors[i][0] + '" title="' + colors[i][1] + '"></button>';
+      }
+      return '<div class="focus-toolbar">'
+        + '<button class="tb-btn" data-cmd="bold" title="Grassetto"><i class="bi bi-type-bold"></i></button>'
+        + '<button class="tb-btn" data-cmd="italic" title="Corsivo"><i class="bi bi-type-italic"></i></button>'
+        + '<button class="tb-btn" data-cmd="underline" title="Sottolineato"><i class="bi bi-type-underline"></i></button>'
+        + '<span class="tb-sep"></span>'
+        + '<div class="tb-palette-wrap">'
+          + '<button class="tb-btn" data-cmd="fsmenu" title="Dimensione testo"><span style="font-size:0.7rem;font-weight:bold;line-height:1">A</span><span style="font-size:1.1rem;font-weight:bold;line-height:1">A</span></button>'
+          + '<div class="tb-palette" data-tb-submenu="fsmenu" style="width:120px;padding:6px;">'
+            + '<button class="tb-fsize-btn" data-fmult="1">\u00d71 &nbsp;Base</button>'
+            + '<button class="tb-fsize-btn" data-fmult="1.25">\u00d71.25</button>'
+            + '<button class="tb-fsize-btn" data-fmult="1.5">\u00d71.5</button>'
+            + '<button class="tb-fsize-btn" data-fmult="1.75">\u00d71.75</button>'
+            + '<button class="tb-fsize-btn" data-fmult="2">\u00d72</button>'
+            + '<button class="tb-fsize-btn" data-fmult="2.25">\u00d72.25</button>'
+            + '<button class="tb-fsize-btn" data-fmult="2.5">\u00d72.5</button>'
+          + '</div>'
+        + '</div>'
+        + '<span class="tb-sep"></span>'
+        + '<div class="tb-palette-wrap">'
+          + '<button class="tb-btn" data-cmd="palette" title="Evidenzia"><i class="bi bi-pencil-fill" style="color:#f4b400"></i></button>'
+          + '<div class="tb-palette" data-tb-submenu="palette">'
+            + '<div class="tb-palette-grid">' + sw + '</div>'
+            + '<button class="tb-btn tb-no-color" data-color="transparent">&#10005; Rimuovi evidenziazione</button>'
+          + '</div>'
+        + '</div>'
+      + '</div>';
+    }
+
+    var _tbSavedRange = null;
+    document.addEventListener('mousedown', function(e) {
+      var tb = e.target.closest ? e.target.closest('.focus-toolbar') : null;
+      if (tb) {
+        var sel = window.getSelection();
+        if (sel && sel.rangeCount > 0) _tbSavedRange = sel.getRangeAt(0).cloneRange();
+        e.preventDefault();
+      } else {
+        _tbSavedRange = null;
+      }
+    }, true);
+
+    function _tbRestoreSelection() {
+      if (_tbSavedRange) {
+        var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(_tbSavedRange);
+      }
+    }
+
+    function _tbFmt(cmd) {
+      _tbRestoreSelection();
+      document.execCommand(cmd, false, null);
+      _tbDispatch();
+    }
+
+    function _tbHighlight(color) {
+      _tbRestoreSelection();
+      if (color === 'transparent') {
+        document.execCommand('removeFormat', false, null);
+      } else {
+        if (!document.execCommand('hiliteColor', false, color)) document.execCommand('backColor', false, color);
+      }
+      document.querySelectorAll('.tb-palette[data-tb-submenu="palette"]').forEach(function(p) { p.classList.remove('open'); });
+      _tbDispatch();
+    }
+
+    function _tbApplyFontMultiplier(multiplier) {
+      _tbRestoreSelection();
+      var sel = window.getSelection();
+      if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
+      var range = sel.getRangeAt(0);
+      var node = range.commonAncestorContainer;
+      if (node.nodeType === 3) node = node.parentElement;
+      var editableEl = node.closest ? node.closest('.editable-area') : null;
+      var basePx = editableEl ? (parseFloat(window.getComputedStyle(editableEl).fontSize) || 16) : 16;
+      var newPx = Math.round(basePx * multiplier);
+      document.execCommand('fontSize', false, '7');
+      var created = [];
+      document.querySelectorAll('font[size="7"]').forEach(function(el) {
+        var span = document.createElement('span'); span.style.fontSize = newPx + 'px';
+        el.parentNode.insertBefore(span, el);
+        while (el.firstChild) span.appendChild(el.firstChild);
+        el.parentNode.removeChild(el);
+        created.push(span);
+      });
+      if (created.length > 0) {
+        var newRange = document.createRange();
+        newRange.setStartBefore(created[0]);
+        newRange.setEndAfter(created[created.length - 1]);
+        sel.removeAllRanges();
+        sel.addRange(newRange);
+        _tbSavedRange = newRange.cloneRange();
+      }
+      _tbDispatch();
+    }
+
+    function _tbTogglePalette(e) {
+      e.stopPropagation();
+      var tb = e.target.closest('.focus-toolbar');
+      if (tb) { var p = tb.querySelector('[data-tb-submenu="palette"]'); if (p) p.classList.toggle('open'); }
+    }
+
+    function _tbDispatch() {
+      var active = document.activeElement;
+      if (active && active.hasAttribute('contenteditable')) {
+        active.dispatchEvent(new Event('input', { bubbles: true }));
+      } else if (_focusCard) {
+        var fe = _focusCard.querySelector('[contenteditable]');
+        if (fe) fe.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    }
+
+    document.addEventListener('click', function(e) {
+      if (!e.target.closest('.tb-palette-wrap')) {
+        document.querySelectorAll('.tb-palette[data-tb-submenu]').forEach(function(el) { el.classList.remove('open'); });
+      }
+    });
+
+    var _focusCard          = null;
+    var _focusOrigStyle     = null;
+    var _focusOrigRect      = null;
+    var _lastMousedownInCard = false;
+
+    function _attivaFocusMode(card) {
+      if (_focusCard === card) return;
+      if (_focusCard) _disattivaFocusMode(false);
+
+      var letto = card.getAttribute('data-bed');
+      var rect = card.getBoundingClientRect();
+      var scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+
+      _focusOrigStyle = {
+        position:  card.style.position,
+        top:       card.style.top,
+        left:      card.style.left,
+        width:     card.style.width,
+        zIndex:    card.style.zIndex,
+        margin:    card.style.margin
+      };
+      _focusOrigRect = {
+        top:  rect.top + scrollTop,
+        left: rect.left
+      };
+
+      var newWidth = Math.round(rect.width);
+      var newLeft  = Math.round(rect.left);
+      var newTop = 60;
+
+      card.style.position = 'fixed';
+      card.style.top      = newTop + 'px';
+      card.style.left     = newLeft + 'px';
+      card.style.width    = newWidth + 'px';
+      card.style.margin   = '0';
+      card.classList.add('focus-mode');
+
+      // Disabilita tutti i campi durante il controllo lock
+      card.querySelectorAll('[contenteditable="true"]').forEach(function(el) {
+        el.setAttribute('data-origCe', 'true');
+        el.contentEditable = 'false';
+      });
+      card.querySelectorAll('.data-nascita-text, .data-ricovero-text').forEach(function(el) {
+        el.setAttribute('data-origDisabled', 'true');
+        el.disabled = true;
+      });
+
+      // Overlay scuro + sfocato sul fondo.
+      // Nessun click listener ora: viene aggiunto solo dopo che il lock è acquisito,
+      // così il click della matita non può chiudere subito il focus mode.
+      var ov = document.createElement('div');
+      ov.id = 'focusOverlay';
+      ov.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;z-index:1060;background:rgba(0,0,0,0.72);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);';
+      document.body.appendChild(ov);
+
+      // Overlay spinner "Controllo Lock..." sulla card
+      var lockOv = document.createElement('div');
+      lockOv.id = 'lockCheckOverlay';
+      lockOv.style.cssText = 'position:absolute;inset:0;z-index:20;background:rgba(255,255,255,0.88);display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:inherit;';
+      lockOv.innerHTML = '<div style="width:36px;height:36px;border:4px solid #ccc;border-top-color:#78909c;border-radius:50%;animation:_lockSpin 0.8s linear infinite;margin-bottom:10px;"></div><div style="font-size:0.9rem;font-weight:600;color:#444;letter-spacing:0.02em;text-align:center;max-width:180px;">Controllo se nessun altro sta aggiornando la scheda...</div>';
+      card.appendChild(lockOv);
+
+      _focusCard = card;
+      _focusHaInput = false;
+      _avviaTimerFocusInattivo();
+      _syncPaused = true;  // pausa sync durante il controllo lock
+
+      function _abilitaCampi() {
+        card.querySelectorAll('[data-origCe="true"]').forEach(function(el) {
+          el.contentEditable = 'true';
+          el.removeAttribute('data-origCe');
+        });
+        card.querySelectorAll('.data-nascita-text[data-origDisabled], .data-ricovero-text[data-origDisabled]').forEach(function(el) {
+          el.disabled = false;
+          el.removeAttribute('readonly');
+          el.removeAttribute('data-origDisabled');
+        });
+      }
+
+      function _completaApertura() {
+        if (!_focusCard) return;
+        _abilitaCampi();
+        // Inserisce una toolbar sopra ogni campo rich-text (sempre visibile)
+        card.querySelectorAll('[data-field]').forEach(function(el) {
+          if (_TOOLBAR_FIELDS[el.getAttribute('data-field')] && el.parentNode) {
+            var tbW = document.createElement('div'); tbW.innerHTML = _creaToolbarHTML();
+            el.parentNode.insertBefore(tbW.firstChild, el);
+          }
+        });
+        card._focusInputHandler = function() {
+          setTimeout(function() {
+            var sel = window.getSelection();
+            if (!sel || sel.rangeCount === 0) return;
+            var range = sel.getRangeAt(0);
+            var cursorRect = range.getBoundingClientRect();
+            if (!cursorRect || cursorRect.height === 0) return;
+            var cardRect = card.getBoundingClientRect();
+            var padding = 40;
+            if (cursorRect.bottom > cardRect.bottom - padding) {
+              card.scrollTop += (cursorRect.bottom - cardRect.bottom + padding);
+            } else if (cursorRect.top < cardRect.top + padding) {
+              card.scrollTop -= (cardRect.top + padding - cursorRect.top);
+            }
+          }, 10);
+        };
+        card.addEventListener('input', card._focusInputHandler);
+        card.addEventListener('keyup', card._focusInputHandler);
+        // Ora è sicuro abilitare il click sull'overlay: il click della matita è già finito
+        var ovEl = document.getElementById('focusOverlay');
+        if (ovEl) {
+          ovEl.style.cursor = 'pointer';
+          ovEl.addEventListener('click', function() {
+            if (document.activeElement) document.activeElement.blur();
+            _disattivaFocusMode(true);
+          });
+        }
+        var primo = card.querySelector('[contenteditable="true"]');
+        if (primo) primo.focus();
+      }
+
+      function _avviaRinnovo() {
+        if (_timerRinnovo) clearInterval(_timerRinnovo);
+        _timerRinnovo = setInterval(function() {
+          if (_lettoLockAtt) {
+            google.script.run
+              .withSuccessHandler(function(r) {
+                if (!r.success && r.blocked) {
+                  clearInterval(_timerRinnovo); _timerRinnovo = null;
+                  _lettoLockAtt = null;
+                }
+              })
+              .acquistaLock(_lettoLockAtt, _mioToken);
+          } else { clearInterval(_timerRinnovo); _timerRinnovo = null; }
+        }, 10000);
+      }
+
+      google.script.run
+        .withSuccessHandler(function(res) {
+          var lockOvEl = document.getElementById('lockCheckOverlay');
+          if (lockOvEl) lockOvEl.parentNode.removeChild(lockOvEl);
+          if (!_focusCard) return;
+          if (res.success) {
+            if (_lettoLockAtt && _lettoLockAtt !== letto) {
+              google.script.run.rilasciaLock(_lettoLockAtt, _mioToken);
+            }
+            _lettoLockAtt = letto;
+            delete _snapshotCard[letto];
+            _avviaRinnovo();
+            _rinnovaDebounce(letto);
+            // Mostra spinner "Controllo aggiornamenti..." prima di aprire il focus mode
+            var syncOv = document.createElement('div');
+            syncOv.id = 'syncCheckOverlay';
+            syncOv.style.cssText = 'position:absolute;inset:0;z-index:20;background:rgba(255,255,255,0.88);display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:inherit;';
+            syncOv.innerHTML = '<div style="width:36px;height:36px;border:4px solid #ccc;border-top-color:#78909c;border-radius:50%;animation:_lockSpin 0.8s linear infinite;margin-bottom:10px;"></div><div style="font-size:0.9rem;font-weight:600;color:#444;letter-spacing:0.02em;text-align:center;max-width:180px;">Controllo aggiornamenti...</div>';
+            if (_focusCard) _focusCard.appendChild(syncOv);
+            google.script.run
+              .withSuccessHandler(function(html) {
+                google.script.run
+                  .withSuccessHandler(function(locks) {
+                    _applicaAggiornamentoCompleto(html); _applicaLocks(locks || {});
+                    var el = document.getElementById('syncCheckOverlay'); if (el) el.parentNode.removeChild(el);
+                    _syncPaused = false; _completaApertura();
+                  })
+                  .withFailureHandler(function() {
+                    var el = document.getElementById('syncCheckOverlay'); if (el) el.parentNode.removeChild(el);
+                    _syncPaused = false; _completaApertura();
+                  })
+                  .getLocks();
+              })
+              .withFailureHandler(function() {
+                var el = document.getElementById('syncCheckOverlay'); if (el) el.parentNode.removeChild(el);
+                _syncPaused = false; _completaApertura();
+              })
+              .getNewHtml();
+          } else if (res.blocked) {
+            _syncPaused = false;  // riprendi sync prima di chiudere
+            _abilitaCampi();
+            _disattivaFocusMode(false);
+            google.script.run
+              .withSuccessHandler(function(locks) { _applicaLocks(locks); })
+              .getLocks();
+            _mostraAvvisoLock(letto);
+          }
+        })
+        .withFailureHandler(function() {
+          var lockOvEl = document.getElementById('lockCheckOverlay');
+          if (lockOvEl) lockOvEl.parentNode.removeChild(lockOvEl);
+          if (!_focusCard) return;
+          // Offline: procedi comunque
+          _lettoLockAtt = letto;
+          delete _snapshotCard[letto];
+          _avviaRinnovo();
+          _rinnovaDebounce(letto);
+          _syncPaused = false;  // riprendi sync anche in caso di errore GAS
+          _completaApertura();
+        })
+        .acquistaLock(letto, _mioToken);
+    }
+
+    function _disattivaFocusMode(scrollToCard) {
+      if (!_focusCard) return;
+      var card = _focusCard;
+      _focusCard = null;
+      _focusHaInput = false;
+      if (_timerFocusInattivo) { clearTimeout(_timerFocusInattivo); _timerFocusInattivo = null; }
+
+      card.querySelectorAll('.focus-toolbar').forEach(function(tb) { if (tb.parentNode) tb.parentNode.removeChild(tb); });
+
+      _syncPaused = false;  // riprendi sempre il sync all'uscita dal focus mode
+
+      // Ripristina campi disabilitati durante lock check (se usciti prima del completamento)
+      card.querySelectorAll('[data-origCe="true"]').forEach(function(el) {
+        el.contentEditable = 'true';
+        el.removeAttribute('data-origCe');
+      });
+      card.querySelectorAll('.data-nascita-text[data-origDisabled], .data-ricovero-text[data-origDisabled]').forEach(function(el) {
+        el.disabled = false;
+        el.removeAttribute('data-origDisabled');
+      });
+      card.querySelectorAll('.data-nascita-text, .data-ricovero-text').forEach(function(el) {
+        el.setAttribute('readonly', '');
+        el.classList.remove('date-input-error');
+        var container = el.closest('.alt-info-row') || el.closest('.d-flex') || el.parentNode;
+        var next = container ? container.nextElementSibling : null;
+        if (next && next.classList.contains('date-error-msg')) next.remove();
+      });
+      var lockOvEl = document.getElementById('lockCheckOverlay');
+      if (lockOvEl) lockOvEl.parentNode.removeChild(lockOvEl);
+      var syncOvEl = document.getElementById('syncCheckOverlay');
+      if (syncOvEl) syncOvEl.parentNode.removeChild(syncOvEl);
+
+      if (card._focusInputHandler) {
+        card.removeEventListener('input', card._focusInputHandler);
+        card.removeEventListener('keyup', card._focusInputHandler);
+        delete card._focusInputHandler;
+      }
+      card.scrollTop = 0;
+      card.style.position = _focusOrigStyle.position || '';
+      card.style.top      = _focusOrigStyle.top      || '';
+      card.style.left     = _focusOrigStyle.left     || '';
+      card.style.width    = _focusOrigStyle.width    || '';
+      card.style.zIndex   = _focusOrigStyle.zIndex   || '';
+      card.style.margin   = _focusOrigStyle.margin   || '';
+      card.classList.remove('focus-mode');
+
+      // Togli il cursore da qualsiasi campo attivo nella card
+      if (document.activeElement && card.contains(document.activeElement)) {
+        document.activeElement.blur();
+      }
+
+      var ov = document.getElementById('focusOverlay');
+      if (ov) ov.parentNode.removeChild(ov);
+
+      if (scrollToCard && _focusOrigRect) {
+        var vh = window.innerHeight;
+        var cardH = card.offsetHeight;
+        var targetScroll = _focusOrigRect.top - (vh - cardH) / 2;
+        window.scrollTo({ top: Math.max(0, targetScroll), behavior: 'smooth' });
+      }
+      _focusOrigStyle = null;
+      _focusOrigRect  = null;
+    }
+
+
+    var _TOOLBAR_FIELDS = { 'NoteTerapia': true, 'Diaria': true, 'DaFare': true, 'PianoTerapeutico': true };
+
+    function _aggiornaSimboloSesso(el) {
+      var val = el.getAttribute('data-sesso') || '';
+      if (val === 'M') { el.textContent = '♂'; el.style.color = '#7ec8e3'; }
+      else if (val === 'F') { el.textContent = '♀'; el.style.color = '#f4a7c3'; }
+      else { el.textContent = '⊘'; el.style.color = '#b8b0a0'; }
+    }
+
+    document.addEventListener('dblclick', function(e) {
+      var el = e.target.closest ? e.target.closest('.sesso-symbol') : null;
+      if (!el) return;
+      var card = el.closest('.patient-card');
+      if (!card || !card.classList.contains('focus-mode')) return;
+      e.preventDefault();
+      var letto = card.getAttribute('data-bed');
+      var cur = el.getAttribute('data-sesso') || '';
+      var next = cur === '' ? 'M' : cur === 'M' ? 'F' : '';
+      el.setAttribute('data-sesso', next);
+      _aggiornaSimboloSesso(el);
+      attivaSalvataggioRitardato(letto, card);
+    });
+
+    window.addEventListener('load', function() {
+      document.querySelectorAll('.sesso-symbol').forEach(function(el) { _aggiornaSimboloSesso(el); });
+    });
+
+    document.addEventListener('visibilitychange', function() {
+      if (document.hidden) {
+        if (!_focusCard) {
+          // Fuori dal focus mode: rilascia lock e azzera timer come prima
+          if (_timerFocusInattivo) { clearTimeout(_timerFocusInattivo); _timerFocusInattivo = null; }
+          if (_timerRilascio)      { clearTimeout(_timerRilascio);      _timerRilascio = null; }
+          if (_timerRinnovo)       { clearInterval(_timerRinnovo);      _timerRinnovo = null; }
+          if (_lettoLockAtt) {
+            var lettoRilasciato = _lettoLockAtt;
+            _lettoLockAtt = null;
+            google.script.run.rilasciaLock(lettoRilasciato, _mioToken);
+          }
+        }
+        // Focus mode attivo: i timer continuano a girare; la chiusura avviene solo per scadenza
+      }
+    });
+
+    // ── Riepilogo Letti ─────────────────────────────────────────────────────
+    function _aggiornaPannelloRiepilogoLetti() {
+      var body = document.getElementById('lettiRiepilogoBody');
+      body.innerHTML = '<span class="text-muted" style="font-size:0.78rem;"><span class="spinner-border spinner-border-sm me-1" style="width:10px;height:10px;border-width:1.5px;"></span>Caricamento...</span>';
+
+      google.script.run
+        .withSuccessHandler(function(r) {
+          var html = '';
+
+          // ── Sesso (solo letti occupati) ──
+          html += '<div class="d-flex align-items-center gap-2 flex-wrap mb-1">';
+          html += '<span style="color:#7ec8e3;-webkit-text-stroke:1.5px #7ec8e3;font-size:1.1rem;line-height:1;">♂</span>'
+                + '<span class="badge" style="background:#7ec8e3;color:#1a4f63;">' + r.uomini + '</span>';
+          html += '<span style="color:#f4a7c3;-webkit-text-stroke:1.5px #f4a7c3;font-size:1.1rem;line-height:1;">♀</span>'
+                + '<span class="badge" style="background:#f4a7c3;color:#7a2a4a;">' + r.donne + '</span>';
+          html += '<span style="color:#b8b0a0;-webkit-text-stroke:1.5px #b8b0a0;font-size:1.1rem;line-height:1;">⊘</span>'
+                + '<span class="badge bg-secondary">' + r.indefinito + '</span>';
+          html += '</div>';
+
+          // ── Tipologie (solo letti occupati) ──
+          html += '<div style="border-top:1px solid #e0e0e0;padding-top:5px;margin-top:2px;">';
+          var tipKeys = Object.keys(r.tipologie).sort();
+          tipKeys.forEach(function(tip) {
+            var colore = (tip === 'STANDARD') ? '#6c757d' : stringToColor(tip);
+            html += '<div class="d-flex align-items-center justify-content-between mb-1">'
+                  + '<span class="badge text-white text-uppercase" style="background:' + colore + ';max-width:145px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + tip + '">' + tip + '</span>'
+                  + '<span class="badge bg-light text-dark border ms-1">' + r.tipologie[tip] + '</span>'
+                  + '</div>';
+          });
+          html += '</div>';
+
+          // ── Letti vuoti ──
+          html += '<div class="d-flex align-items-center justify-content-between" style="border-top:1px solid #e0e0e0;padding-top:5px;margin-top:2px;">'
+                + '<span>🛏️ <span class="text-muted" style="font-size:0.8rem;">Letti vuoti</span></span>'
+                + '<span class="badge bg-light text-dark border">' + r.vuoti + '</span>'
+                + '</div>';
+
+          body.innerHTML = html;
+        })
+        .withFailureHandler(function() {
+          body.innerHTML = '<span class="text-danger" style="font-size:0.78rem;">Errore caricamento</span>';
+        })
+        .getRiepilogoLetti();
+    }
+
+    document.addEventListener('show.bs.dropdown', function(e) {
+      if (e.target && e.target.id === 'navLettiDropdownToggle') {
+        _aggiornaPannelloRiepilogoLetti();
+      }
+    });
+    // ────────────────────────────────────────────────────────────────────────
+
+    // Blocca scrittura fuori dal focus mode - zero modifiche al DOM
+    document.addEventListener('keydown', function(e) {
+      var area = e.target.closest && e.target.closest('.editable-area');
+      if (!area) return;
+      var card = area.closest('.patient-card');
+      if (card && !card.classList.contains('focus-mode')) {
+        // Lascia passare: Ctrl/Cmd (copia, seleziona tutto), tasti freccia, Tab
+        if (e.ctrlKey || e.metaKey || e.key === 'Tab' ||
+            e.key.startsWith('Arrow') || e.key === 'Home' || e.key === 'End') return;
+        e.preventDefault();
+      }
+    }, true);
+
+    document.addEventListener('paste', function(e) {
+      var area = e.target.closest && e.target.closest('.editable-area');
+      if (!area) return;
+      var card = area.closest('.patient-card');
+      if (card && !card.classList.contains('focus-mode')) {
+        e.preventDefault();
+      }
+    }, true);
+
+    // Traccia se il mousedown è dentro la card in focus mode.
+    // Serve a evitare che il focusout chiuda il focus mode quando si clicca
+    // su elementi non-editabili della stessa card (o sul date picker).
+    document.addEventListener('mousedown', function(e) {
+      _lastMousedownInCard = !!(e.target && _focusCard && _focusCard.contains(e.target));
+      // Blocca apertura calendario fuori dal focus mode
+      if (!e.target || e.target.type !== 'date') return;
+      var card = e.target.closest('.patient-card');
+      if (card && !card.classList.contains('focus-mode')) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    }, true);
+
+    document.addEventListener('focusout', function(e) {
+      setTimeout(function() {
+        if (document.hidden) return; // cambio scheda: non chiudere il focus mode
+        if (document.getElementById('lockCheckOverlay')) return;
+        if (_lastMousedownInCard) return; // click dentro la card: non chiudere
+        var active = document.activeElement;
+        if (_focusCard && !_focusCard.contains(active)) {
+          _disattivaFocusMode(true);
+        }
+      }, 100);
+    });
+
+  </script>
+
+</head>
+<body>
+
+<!-- ══════ Browser compatibility check ══════ -->
+<script>
+(function() {
+  var ok = true;
+  try {
+    if (typeof Promise === 'undefined')             ok = false;
+    if (ok && !('fetch' in window))                 ok = false;
+    if (ok && !('closest' in Element.prototype))    ok = false;
+    if (ok && !('at' in Array.prototype))           ok = false;
+    if (ok && !window.CSS)                          ok = false;
+    if (ok && !CSS.supports('display', 'flex'))     ok = false;
+  } catch(e) { ok = false; }
+  window._browserCompatibile = ok;
+})();
+</script>
+<!-- ════════════════════════════════════════════ -->
+
+<!-- Overlay visibile solo durante il controllo backup iniziale -->
+<div id="backupCheckOverlay" style="
+  position:fixed; inset:0; z-index:99999;
+  background:#d4e6f1;
+  display:flex; align-items:center; justify-content:center;
+  font-family:'Courier New',Courier,monospace;">
+  <div style="text-align:center; background:#fdfbf7; border:2px solid #333;
+              border-radius:8px; padding:28px 36px; min-width:280px;">
+    <div style="color:#37474f; font-size:1.1rem; font-weight:bold;
+                letter-spacing:0.08em; margin-bottom:18px;">
+      ⬡ SISTEMA CONSEGNE REPARTO
+    </div>
+    <div style="display:inline-block; width:38px; height:38px;
+                border:3px solid #b0c4d8; border-top-color:#37474f;
+                border-radius:50%; animation:bkSpin 0.85s linear infinite;
+                margin-bottom:16px;"></div>
+    <style>@keyframes bkSpin{to{transform:rotate(360deg);}}</style>
+    <div id="backupCheckMsg" style="font-size:0.82rem; color:#37474f;
+                                    font-weight:bold; line-height:1.7;">
+      Inizializzazione applicazione in corso...
+    </div>
+    <div id="backupCheckProgressWrap" style="display:none; margin-top:14px;">
+      <div style="background:#dce9f5; border-radius:4px; height:6px; width:100%; overflow:hidden;">
+        <div id="backupCheckBar" style="background:#37474f; height:6px; border-radius:4px; width:0%; transition:width 0.35s ease;"></div>
+      </div>
+      <div id="backupCheckPct" style="font-size:0.7rem; color:#78909c; margin-top:4px; text-align:right;">0%</div>
+    </div>
+  </div>
+</div>
+<!-- ══════════════════════════════════════════ -->
+
+<div id="opOverlay"></div>
+
+  <? var appUrl = ScriptApp.getService().getUrl(); ?>
+
+  <script>var APP_URL = "<?= appUrl ?>";</script>
+
+  <? if (toastType && toastMsg) { ?>
+
+  <script>
+    window.addEventListener('load', function() {
+      setTimeout(function() {
+        Swal.fire({ icon: '<?= toastType ?>', title: 'Operazione completata',
+          text: '<?= toastMsg ?>', timer: 2500, showConfirmButton: false, timerProgressBar: true });
+      }, 600);
+    });
+  </script>
+
+  <? } ?>
+
+
+  <div id="loadingOverlay"></div>
+  <div id="opBar" role="status"><span id="opBarMsg">Operazione in corso...</span></div>
+  <div class="toast-container position-fixed bottom-0 end-0 p-3" style="z-index: 1055;" id="toastContainer"></div>
+
+  <div id="appBodyContent">
+    <? var nomeApp = ottieniNomeReparto(); ?>
+    <? var _isInitialLoad = (typeof initialLoad !== 'undefined' && initialLoad); ?>
+    <? var pazienti = _isInitialLoad ? [] : getDatiPazienti(); ?>
+
+
+<?
+  var tipologieEsistenti = [];
+  for(var i=0; i<pazienti.length; i++) {
+    var t = pazienti[i].TipologiaLetto;
+    if(t && tipologieEsistenti.indexOf(t) === -1) tipologieEsistenti.push(t);
+  }
+?>
+
+<nav class="navbar navbar-expand-lg navbar-dark fixed-top shadow-sm navbar-custom">
+  <div class="container-fluid">
+    <a class="navbar-brand fw-bold" href="javascript:void(0)" onclick="ricaricaPagina();" title="Clicca per ricaricare i dati">
+      <i class="bi bi-hospital me-2"></i><span id="nav-app-name"><?= nomeApp ?></span>
+    </a>
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarMenu">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarMenu">
+      <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+        <li class="nav-item dropdown">
+          <a class="nav-link dropdown-toggle active" href="javascript:void(0)" role="button"
+             id="dropdownListaPazienti" data-bs-toggle="dropdown"
+             onclick="_popolaDropdownPazienti()">Lista Pazienti</a>
+          <ul class="dropdown-menu shadow py-1" id="menuListaPazienti"
+              style="min-width:300px; max-height:70vh; overflow-y:auto;">
+            <li><span class="dropdown-item text-muted small fst-italic">Caricamento...</span></li>
+          </ul>
+        </li>
+        <li class="nav-item dropdown">
+          <a class="nav-link dropdown-toggle active" href="javascript:void(0)" role="button" data-bs-toggle="dropdown" id="navLettiDropdownToggle">Letti</a>
+          <ul class="dropdown-menu shadow" style="min-width:230px;">
+            <li><a class="dropdown-item" href="javascript:void(0)" data-bs-toggle="modal" data-bs-target="#modalSposta"><i class="bi bi-arrow-left-right text-primary me-2"></i>Sposta / Scambia</a></li>
+            <li><a class="dropdown-item" href="javascript:void(0)" data-bs-toggle="modal" data-bs-target="#modalDimetti"><i class="bi bi-person-dash text-danger me-2"></i>Dimetti / Svuota Letto</a></li>
+            <li><a class="dropdown-item" href="javascript:void(0)" data-bs-toggle="modal" data-bs-target="#modalCambiaTipologiaLetto"><i class="bi bi-tags text-info me-2"></i>Cambia Tipologia ad un Letto</a></li>
+            <li><hr class="dropdown-divider"></li>
+            <li>
+              <div class="px-3 py-1" id="lettiRiepilogoPanel">
+                <div class="text-muted fw-bold mb-2" style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.06em;">Riepilogo Letti</div>
+                <div id="lettiRiepilogoBody" style="font-size:0.82rem;line-height:1.7;"></div>
+              </div>
+            </li>
+          </ul>
+        </li>
+        <li class="nav-item dropdown">
+          <a class="nav-link dropdown-toggle active" href="javascript:void(0)" role="button" data-bs-toggle="dropdown">Visualizza</a>
+          <ul class="dropdown-menu shadow">
+            <li><h6 class="dropdown-header text-primary fw-bold">Ordina pazienti per:</h6></li>
+            <li><a class="dropdown-item" href="javascript:void(0)" onclick="ordinaLetti('numero');"><i class="bi bi-sort-numeric-down me-2 text-secondary"></i>Numero Letto</a></li>
+            <li><a class="dropdown-item" href="javascript:void(0)" onclick="ordinaLetti('nome');"><i class="bi bi-sort-alpha-down me-2 text-secondary"></i>Ordine Alfabetico</a></li>
+            <li><a class="dropdown-item" href="javascript:void(0)" onclick="ordinaLetti('tipologia');"><i class="bi bi-tags-fill me-2 text-secondary"></i>Tipologia Letto</a></li>
+            <li><hr class="dropdown-divider"></li>
+            <li><a class="dropdown-item" id="btnToggleViewAlt" href="javascript:void(0)" onclick="toggleViewAlt()"><i class="bi bi-eye me-2"></i>Visualizzazione Alternativa</a></li>
+          </ul>
+        </li>
+        <li class="nav-item"><a class="nav-link active" href="javascript:void(0)" onclick="stampaConsegne();"><i class="bi bi-printer me-1"></i>Stampa Consegne</a></li>
+        <li class="nav-item"><a class="nav-link active" href="javascript:void(0)" onclick="apriArchivio();"><i class="bi bi-archive-fill me-1"></i>Archivio Consegne</a></li>
+        <li class="nav-item"><a class="nav-link active" href="javascript:void(0)" onclick="apriLinkUtili();"><i class="bi bi-link-45deg me-1"></i>Link Utili</a></li>
+      </ul>
+      <ul class="navbar-nav ms-auto align-items-center">
+        <li class="nav-item me-2">
+          <span id="syncIndicator" class="badge bg-secondary" style="font-size:0.65rem; font-weight:normal;" title="Aggiornamento automatico">
+            <i class="bi bi-arrow-repeat"></i> <span id="syncStatus">in attesa...</span>
+          </span>
+        </li>
+        <li class="nav-item dropdown">
+          <a class="nav-link dropdown-toggle active" href="javascript:void(0)" role="button" data-bs-toggle="dropdown" title="Impostazioni Reparto">
+            <i class="bi bi-gear-fill fs-5"></i>
+          </a>
+          <ul class="dropdown-menu dropdown-menu-end shadow">
+            <li><a class="dropdown-item" href="javascript:void(0)" data-bs-toggle="modal" data-bs-target="#modalAggiungiLetto"><i class="bi bi-plus-circle text-success me-2"></i>Aggiungi Posto Letto</a></li>
+            <li><a class="dropdown-item" href="javascript:void(0)" data-bs-toggle="modal" data-bs-target="#modalEliminaLetto"><i class="bi bi-trash3 text-danger me-2"></i>Elimina Posto Letto</a></li>
+            <li><hr class="dropdown-divider"></li>
+            <li><a class="dropdown-item" href="javascript:void(0)" data-bs-toggle="modal" data-bs-target="#modalGestisciTipologie"><i class="bi bi-tags text-info me-2"></i>Aggiungi/Modifica Tipologia Letto</a></li>
+            <li><hr class="dropdown-divider"></li>
+            <li><a class="dropdown-item" href="javascript:void(0)" data-bs-toggle="modal" data-bs-target="#modalRinomina"><i class="bi bi-pencil-square text-primary me-2"></i>Modifica Nome Consegne</a></li>
+            <li><hr class="dropdown-divider"></li>
+            <li><a class="dropdown-item" href="javascript:void(0)" onclick="apriImpostazioniArchivio()"><i class="bi bi-archive text-secondary me-2"></i>Impostazioni archivio consegne</a></li>
+            <li style="display:none"><a class="dropdown-item" href="javascript:void(0)" id="btnToggleSync" onclick="toggleSync()"><i class="bi bi-pause-circle text-warning me-2" id="iconToggleSync"></i><span id="labelToggleSync">Metti in pausa il sync</span></a></li>
+          </ul>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+<!-- ================= MODALS ================= -->
+<div class="modal fade" id="modalCalendario" tabindex="-1" data-bs-backdrop="static">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content shadow-lg">
+      <div class="modal-header text-white" style="background-color: #2e7d32;">
+        <h5 class="modal-title"><i class="bi bi-calendar-check me-2"></i>Archivio Storico Consegne</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-4 bg-light">
+        <div id="cal-header-controls" class="d-flex justify-content-between align-items-center mb-4">
+           <button type="button" class="btn btn-outline-success fw-bold px-3" onclick="cambiaMese(-1)">&laquo; Prec</button>
+           <h3 class="fw-bold m-0 text-success text-uppercase" id="cal-month-year"></h3>
+           <button type="button" class="btn btn-outline-success fw-bold px-3" onclick="cambiaMese(1)">Succ &raquo;</button>
+        </div>
+        <div id="cal-grid" class="bg-white p-3 rounded border shadow-sm" style="min-height: 250px;"></div>
+        <div id="cal-info-text" class="text-center mt-3 text-muted" style="font-size: 0.9rem;">
+           <i class="bi bi-info-circle-fill me-1 text-success"></i>I giorni evidenziati contengono un archivio. Clicca su un giorno verde per visualizzare le consegne.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="modalRinomina" tabindex="-1" data-bs-backdrop="static">
+  <div class="modal-dialog"><div class="modal-content">
+    <div class="modal-header bg-primary text-white"><h5 class="modal-title">Modifica Nome</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body"><label>Inserisci il nuovo nome:</label><input type="text" id="inputNuovoNome" class="form-control mt-2" value="<?= nomeApp ?>"></div>
+    <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annulla</button><button type="button" class="btn btn-primary" id="btnSalvaRinomina" onclick="salvaNuovoNome()">Salva</button></div>
+  </div></div>
+</div>
+
+<div class="modal fade" id="modalAggiungiLetto" tabindex="-1" data-bs-backdrop="static">
+  <div class="modal-dialog modal-dialog-centered"><div class="modal-content">
+    <div class="modal-header bg-success text-white"><h5 class="modal-title"><i class="bi bi-plus-circle me-2"></i>Aggiungi Posto Letto</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+      <label class="form-label">Numero o nome del letto:</label>
+      <input type="text" id="inputNuovoLetto" class="form-control mt-1 text-uppercase" placeholder="es. 101, A2, OBI-1..." oninput="this.value=this.value.toUpperCase()" onkeydown="if(event.key==='Enter') eseguiAggiungiLetto()">
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annulla</button>
+      <button type="button" class="btn btn-success" id="btnSalvaAggiungi" onclick="eseguiAggiungiLetto()"><i class="bi bi-plus-lg me-1"></i>Aggiungi</button>
+    </div>
+  </div></div>
+</div>
+
+<div class="modal fade" id="modalEliminaLetto" tabindex="-1" data-bs-backdrop="static">
+  <div class="modal-dialog"><div class="modal-content">
+    <div class="modal-header bg-danger text-white"><h5 class="modal-title">Elimina Letto</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body"><label>Seleziona Letto da eliminare:</label><select id="selectEliminaLetto" class="form-select mt-2"><option value="">--</option><? for (var i=0; i<pazienti.length; i++) { ?><option value="<?= pazienti[i].Letto ?>">Letto <?= pazienti[i].Letto ?></option><? } ?></select></div>
+    <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annulla</button><button type="button" class="btn btn-danger" id="btnSalvaElimina" onclick="eseguiEliminaLetto()">Elimina</button></div>
+  </div></div>
+</div>
+
+<div class="modal fade" id="modalDimetti" tabindex="-1" data-bs-backdrop="static">
+  <div class="modal-dialog"><div class="modal-content">
+    <div class="modal-header bg-warning text-dark"><h5 class="modal-title">Dimetti / Svuota Letto</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body"><label>Svuota dati letto:</label><select id="selectDimettiLetto" class="form-select mt-2"><option value="">--</option><? for (var i=0; i<pazienti.length; i++) { if(pazienti[i].Nome || pazienti[i].Diagnosi){ ?><option value="<?= pazienti[i].Letto ?>">Letto <?= pazienti[i].Letto ?> - <?= pazienti[i].Nome || "Senza Nome" ?></option><? }else{ ?><option value="<?= pazienti[i].Letto ?>">Letto <?= pazienti[i].Letto ?> (Vuoto)</option><? }} ?></select></div>
+    <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annulla</button><button type="button" class="btn btn-warning text-dark fw-bold" id="btnSalvaDimetti" onclick="eseguiDimettiLetto()">Dimetti</button></div>
+  </div></div>
+</div>
+
+<div class="modal fade" id="modalSposta" tabindex="-1" data-bs-backdrop="static">
+  <div class="modal-dialog"><div class="modal-content">
+    <div class="modal-header bg-primary text-white">
+      <h5 class="modal-title">Sposta / Scambia Paziente</h5>
+      <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+    </div>
+    <div class="modal-body">
+      <label class="fw-bold mb-1">Letto di Origine:</label>
+      <select id="selectSpostaOrigine" class="form-select mt-1 mb-3">
+        <option value="">-- Seleziona --</option>
+        <? for (var i=0; i<pazienti.length; i++) { if(pazienti[i].Nome || pazienti[i].Diagnosi) { ?>
+          <option value="<?= pazienti[i].Letto ?>" data-nome="<?= pazienti[i].Nome || '' ?>" data-tipo="<?= pazienti[i].TipologiaLetto || 'Standard' ?>">Letto <?= pazienti[i].Letto ?> <?= pazienti[i].Nome ? ' - ' + pazienti[i].Nome : '' ?> [<?= pazienti[i].TipologiaLetto || 'Standard' ?>]</option>
+        <? } } ?>
+      </select>
+      <label class="fw-bold mb-1">Letto di Destinazione:</label>
+      <select id="selectSpostaDestinazione" class="form-select mt-1">
+        <option value="">-- Seleziona --</option>
+        <? for (var i=0; i<pazienti.length; i++) { ?>
+          <option value="<?= pazienti[i].Letto ?>" data-nome="<?= pazienti[i].Nome || '' ?>" data-tipo="<?= pazienti[i].TipologiaLetto || 'Standard' ?>">Letto <?= pazienti[i].Letto ?> <?= pazienti[i].Nome ? ' - ' + pazienti[i].Nome : '' ?> [<?= pazienti[i].TipologiaLetto || 'Standard' ?>]</option>
+        <? } ?>
+      </select>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annulla</button>
+      <button type="button" class="btn btn-primary" id="btnSalvaSposta" onclick="eseguiSpostaPaziente()">Sposta</button>
+    </div>
+  </div></div>
+</div>
+
+<!-- ===== MODAL GESTISCI TIPOLOGIE ===== -->
+<div class="modal fade" id="modalGestisciTipologie" tabindex="-1" data-bs-backdrop="static">
+  <div class="modal-dialog modal-dialog-centered" style="max-width:520px">
+    <div class="modal-content border-0 shadow" style="overflow:visible">
+      <div class="modal-header text-white" style="background:linear-gradient(135deg,#0277bd,#01579b)">
+        <h5 class="modal-title"><i class="bi bi-tags-fill me-2"></i>Aggiungi / Modifica Tipologia Letto</h5>
+        <button type="button" class="btn-close btn-close-white" id="btnChiudiGestisciTipologie" onclick="_chiudiGestisciTipologie()"></button>
+      </div>
+      <div class="modal-body p-3" style="overflow:visible">
+        <div id="gtListContainer"></div>
+        <div class="border-top mt-2 pt-2">
+          <button type="button" class="btn btn-outline-success btn-sm w-100" onclick="_gtAggiungiRiga()">
+            <i class="bi bi-plus-circle-fill me-1"></i>Aggiungi nuova tipologia
+          </button>
+        </div>
+      </div>
+      <div class="modal-footer border-0 pt-0">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="_chiudiGestisciTipologie()">Annulla</button>
+        <button type="button" class="btn btn-primary btn-sm fw-bold" onclick="_gtSalva()">
+          <i class="bi bi-save me-1"></i>Salva modifiche
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== MODAL CAMBIA TIPOLOGIA AD UN LETTO ===== -->
+<div class="modal fade" id="modalCambiaTipologiaLetto" tabindex="-1" data-bs-backdrop="static">
+  <div class="modal-dialog modal-dialog-centered" style="max-width:460px">
+    <div class="modal-content border-0 shadow">
+      <div class="modal-header bg-info text-dark">
+        <h5 class="modal-title"><i class="bi bi-arrow-repeat me-2"></i>Cambia Tipologia ad un Letto</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-3">
+        <label class="form-label small fw-semibold text-uppercase text-muted mb-1">Letto</label>
+        <select id="ctlSelectLetto" class="form-select form-select-sm mb-3"><option value="">-- Seleziona letto --</option></select>
+        <label class="form-label small fw-semibold text-uppercase text-muted mb-1">Nuova Tipologia</label>
+        <select id="ctlSelectTipologia" class="form-select form-select-sm"><option value="">STANDARD (nessuna)</option></select>
+      </div>
+      <div class="modal-footer border-0 pt-0">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Annulla</button>
+        <button type="button" class="btn btn-info btn-sm fw-bold" onclick="_ctlSalva()"><i class="bi bi-check-lg me-1"></i>Applica</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ELENCO PAZIENTI EDITABILE -->
+<div class="container-fluid" id="cardsContainer">
+  <? for (var i = 0; i < pazienti.length; i++) { 
+       var p = pazienti[i]; var giorni = "-"; var dataVisualizzata = "";
+       if(p.DataRicovero) {
+          var msGiorno = 1000 * 60 * 60 * 24; var dataRic = new Date(p.DataRicovero); var oggi = new Date();
+          dataRic.setHours(0,0,0,0); oggi.setHours(0,0,0,0);
+          giorni = Math.floor((oggi - dataRic) / msGiorno);
+          dataVisualizzata = String(dataRic.getDate()).padStart(2, '0') + "/" + String(dataRic.getMonth() + 1).padStart(2, '0') + "/" + dataRic.getFullYear();
+       }
+       var dataNascitaVis = ""; var etaCalcolata = p.Eta || ""; var hasDataNascita = false;
+       if(p.DataNascita) {
+          var _dnRaw = p.DataNascita; var _dnDate = null;
+          if(_dnRaw instanceof Date) { _dnDate = _dnRaw; }
+          else { var partiN = String(_dnRaw).split('/'); if(partiN.length === 3 && partiN[2].length === 4) { _dnDate = new Date(parseInt(partiN[2],10), parseInt(partiN[1],10)-1, parseInt(partiN[0],10)); } }
+          if(_dnDate && !isNaN(_dnDate.getTime())) {
+            dataNascitaVis = String(_dnDate.getDate()).padStart(2,'0') + '/' + String(_dnDate.getMonth()+1).padStart(2,'0') + '/' + _dnDate.getFullYear();
+            var oggiN = new Date(); _dnDate.setHours(0,0,0,0); oggiN.setHours(0,0,0,0);
+            var anni = oggiN.getFullYear() - _dnDate.getFullYear();
+            if(oggiN.getMonth() < _dnDate.getMonth() || (oggiN.getMonth() === _dnDate.getMonth() && oggiN.getDate() < _dnDate.getDate())) anni--;
+            etaCalcolata = anni; hasDataNascita = true;
+          }
+       }
+  ?>
+  <div class="patient-card shadow-sm" data-bed="<?= p.Letto ?>" data-tipologia="<?= p.TipologiaLetto || '' ?>">
+    <div class="row m-0 header-row">
+      <div class="col-2 bed-number-box p-3">
+        <button class="focus-pencil-btn" title="Modifica scheda"
+                onclick="_attivaFocusMode(this.closest('.patient-card'))">
+          <i class="bi bi-pencil-fill"></i>
+        </button>
+        <span id="status-<?= p.Letto ?>" class="badge status-badge position-absolute top-0 start-0 m-1 bg-secondary"></span>
+        <div class="text-muted fw-bold mt-2">LETTO</div>
+        <div class="bed-number-flex">
+          <div class="bed-number"><?= p.Letto ?></div>
+          <span class="sesso-symbol" data-field="Sesso" data-sesso="<?= p.Sesso || '' ?>"></span>
+        </div>
+        <div class="mt-2 text-center tipo-badge-wrap" style="font-size: 0.8rem;">
+           <? if (p.TipologiaLetto) { ?>
+             <span class="badge text-white text-uppercase shadow-sm" style="background-color: transparent; cursor:pointer;" id="badge-tipo-<?= p.Letto ?>" ondblclick="_apriModalTipologia('<?= p.Letto ?>')" title="Doppio click per cambiare tipologia"><?= p.TipologiaLetto ?></span>
+             <script> document.getElementById('badge-tipo-<?= p.Letto ?>').style.backgroundColor = stringToColor("<?= p.TipologiaLetto ?>"); </script>
+           <? } else { ?>
+             <span class="badge bg-light text-secondary border text-uppercase shadow-sm" style="cursor:pointer;" ondblclick="_apriModalTipologia('<?= p.Letto ?>')" title="Doppio click per cambiare tipologia">STANDARD</span>
+           <? } ?>
+        </div>
+      </div>
+      <div class="col-10 patient-info-box">
+        <div class="d-flex justify-content-between mb-2 mt-1 align-items-start">
+          <div class="d-flex flex-column w-75 align-items-start pt-1">
+            <div class="d-flex w-100 mb-2 align-items-start"><span class="text-muted me-2 mt-1">Paziente:</span><div class="editable-area plain-text border-bottom w-100 fw-bold fs-4 text-uppercase" contenteditable="true" data-field="Nome" style="min-height: 40px; padding: 2px;"><?!= p.Nome || "" ?></div></div>
+            <div class="d-flex w-100 align-items-start"><span class="text-muted me-2 mt-1 fw-normal text-nowrap">Diagnosi / Motivo Ricovero:</span><div class="editable-area plain-text border-bottom w-100 me-5 fw-bold" contenteditable="true" data-field="Diagnosi" style="min-height: 30px; padding: 2px;"><?!= p.Diagnosi || "" ?></div></div>
+          </div>
+          <div class="d-flex flex-column align-items-end me-3" style="min-width: 220px;">
+            <div class="d-flex align-items-center mb-1 text-secondary w-100 justify-content-end" style="font-size: 0.95rem;"><span class="fw-bold me-2">Data di Nascita:</span><input type="text" class="data-nascita-text" placeholder="gg/mm/aaaa" oninput="formattaDataNascita(this)" onblur="formattaDataNascitaBlur(this)" readonly value="<?= dataNascitaVis ?>" style="border:none;border-bottom:1px solid #999;outline:none;background:transparent;padding:2px;width:110px;text-align:right;font-size:0.95rem;"></div>
+            <div class="d-flex align-items-center mb-1 w-100 justify-content-end"><span class="text-muted me-2">Et&agrave;:</span><div class="editable-area plain-text border-bottom text-end" contenteditable="<?= hasDataNascita ? 'false' : 'true' ?>" data-field="Eta" style="min-height: 25px; padding: 2px; width: 50px;<?= hasDataNascita ? ' opacity:0.6; cursor:not-allowed;' : '' ?>"><?!= etaCalcolata ?></div></div>
+            <div class="d-flex align-items-center mb-1 text-secondary w-100 justify-content-end" style="font-size: 0.95rem;">
+              <span class="fw-bold me-2">Data Ricovero:</span>
+              <input type="text" class="data-ricovero-text" placeholder="gg/mm/aaaa" oninput="formattaDataRicovero(this)" onblur="formattaDataRicoveroBlur(this)" readonly value="<?= dataVisualizzata ?>" style="border:none;border-bottom:1px solid #999;outline:none;background:transparent;padding:2px;width:110px;text-align:right;font-size:0.95rem;">
+            </div>
+            <div class="d-flex align-items-center text-secondary w-100 justify-content-end" style="font-size: 0.95rem;"><span class="fw-bold me-2">Giorni di Ricovero:</span><span class="valore-giorni text-danger fw-bold" style="width: 20px; text-align: right;"><?= giorni ?></span></div>
+            <div class="d-flex align-items-center text-secondary w-100 justify-content-end mt-1" style="font-size: 0.95rem;"><span class="fw-bold me-2">C.S.:</span><div class="editable-area plain-text border-bottom text-end" contenteditable="true" data-field="CodiceSanitario" style="min-height: 22px; padding: 2px; min-width: 100px;"><?!= p.CodiceSanitario || "" ?></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="row m-0 content-row">
+      <div class="column-box col-terapia p-0">
+        <div class="column-header"><i class="bi bi-exclamation-triangle-fill text-danger me-1" style="font-size:0.75rem;"></i>ALLERGIE</div>
+        <div class="editable-area rich-text" contenteditable="true" data-field="Allergie"><?!= p.Allergie || "" ?></div>
+        <div class="column-header" style="border-top: 1px solid #ccc;"><i class="bi bi-wind me-1 text-info" style="font-size:0.75rem;"></i>OSSIGENO</div>
+        <div class="editable-area plain-text" contenteditable="true" data-field="Ossigeno" style="padding:4px;"><?!= p.Ossigeno || "" ?></div>
+        <div class="column-header" style="border-top: 2px solid #333;">NOTE E TERAPIA</div>
+        <div class="editable-area rich-text" contenteditable="true" data-field="NoteTerapia"><?!= p.NoteTerapia || "" ?></div>
+      </div>
+      <div class="column-box col-diaria p-0"><div class="column-header">DIARIA ED EPICRISI</div><div class="editable-area rich-text" contenteditable="true" data-field="Diaria"><?!= p.Diaria || "" ?></div></div>
+      <div class="column-box col-da-fare p-0"><div class="column-header">DA FARE / RICHIESTE</div><div class="editable-area rich-text" contenteditable="true" data-field="DaFare"><?!= p.DaFare || "" ?></div></div>
+    </div>
+    <div class="row m-0 piano-terapeutico-row p-0">
+      <div class="column-header-piano">PIANO TERAPEUTICO</div>
+      <div class="editable-area editable-area-piano rich-text" contenteditable="true" data-field="PianoTerapeutico"><?!= p.PianoTerapeutico || "" ?></div>
+    </div>
+  </div>
+  <? } ?>
+  <div id="noLettiMsg" class="container text-center mt-5" style="display:none;"><i class="bi bi-inboxes text-muted" style="font-size: 4rem;"></i><h4 class="mt-3 text-secondary">Nessun Letto configurato.</h4></div>
+</div>
+
+<!-- ===== VISUALIZZAZIONE ALTERNATIVA ===== -->
+<div class="container-fluid" id="cardsContainerAlt">
+  <? for (var j = 0; j < pazienti.length; j++) {
+       var pa = pazienti[j]; var giorniA = "-"; var dataVisA = "";
+       if(pa.DataRicovero) {
+          var msG = 1000*60*60*24; var dRic = new Date(pa.DataRicovero); var oggiA = new Date();
+          dRic.setHours(0,0,0,0); oggiA.setHours(0,0,0,0);
+          giorniA = Math.floor((oggiA - dRic) / msG);
+          dataVisA = String(dRic.getDate()).padStart(2,'0') + "/" + String(dRic.getMonth()+1).padStart(2,'0') + "/" + dRic.getFullYear();
+       }
+       var dataNascitaVisA = ""; var etaCalcolataA = pa.Eta || ""; var hasDataNascitaA = false;
+       if(pa.DataNascita) {
+          var _dnRawA = pa.DataNascita; var _dnDateA = null;
+          if(_dnRawA instanceof Date) { _dnDateA = _dnRawA; }
+          else { var partiNA = String(_dnRawA).split('/'); if(partiNA.length === 3 && partiNA[2].length === 4) { _dnDateA = new Date(parseInt(partiNA[2],10), parseInt(partiNA[1],10)-1, parseInt(partiNA[0],10)); } }
+          if(_dnDateA && !isNaN(_dnDateA.getTime())) {
+            dataNascitaVisA = String(_dnDateA.getDate()).padStart(2,'0') + '/' + String(_dnDateA.getMonth()+1).padStart(2,'0') + '/' + _dnDateA.getFullYear();
+            var oggiNA = new Date(); _dnDateA.setHours(0,0,0,0); oggiNA.setHours(0,0,0,0);
+            var anniA = oggiNA.getFullYear() - _dnDateA.getFullYear();
+            if(oggiNA.getMonth() < _dnDateA.getMonth() || (oggiNA.getMonth() === _dnDateA.getMonth() && oggiNA.getDate() < _dnDateA.getDate())) anniA--;
+            etaCalcolataA = anniA; hasDataNascitaA = true;
+          }
+       }
+  ?>
+  <div class="alt-row patient-card" data-bed="<?= pa.Letto ?>" data-tipologia="<?= pa.TipologiaLetto || '' ?>">
+    <div class="alt-col alt-col-info">
+      <button class="focus-pencil-btn" title="Modifica scheda" onclick="_attivaFocusMode(this.closest('.patient-card'))"><i class="bi bi-pencil-fill"></i></button>
+      <span id="status-alt-<?= pa.Letto ?>" class="badge status-badge position-absolute top-0 start-0 m-1 bg-secondary"></span>
+      <div class="alt-info-box">
+        <div class="bed-number-flex">
+          <div class="alt-bed-number"><?= pa.Letto ?></div>
+          <span class="sesso-symbol" data-field="Sesso" data-sesso="<?= pa.Sesso || '' ?>"></span>
+        </div>
+        <div class="text-center tipo-badge-wrap" style="font-size:0.75rem;">
+          <? if (pa.TipologiaLetto) { ?>
+            <span class="badge text-white text-uppercase shadow-sm" style="background-color:transparent;cursor:pointer;" id="badge-tipo-alt-<?= pa.Letto ?>" ondblclick="_apriModalTipologia('<?= pa.Letto ?>')" title="Doppio click per cambiare tipologia"><?= pa.TipologiaLetto ?></span>
+            <script>document.getElementById('badge-tipo-alt-<?= pa.Letto ?>').style.backgroundColor = stringToColor("<?= pa.TipologiaLetto ?>");</script>
+          <? } else { ?>
+            <span class="badge bg-light text-secondary border text-uppercase shadow-sm" style="cursor:pointer;" ondblclick="_apriModalTipologia('<?= pa.Letto ?>')" title="Doppio click per cambiare tipologia">STANDARD</span>
+          <? } ?>
+        </div>
+        <div class="editable-area plain-text alt-nome" contenteditable="true" data-field="Nome"><?!= pa.Nome || "" ?></div>
+        <div class="alt-allergie-label"><i class="bi bi-exclamation-triangle-fill"></i> Allergie</div>
+        <div class="editable-area rich-text alt-allergie-val" contenteditable="true" data-field="Allergie"><?!= pa.Allergie || "" ?></div>
+        <div class="alt-info-row"><span class="alt-info-label">Data di Nascita</span><input type="text" class="data-nascita-text alt-info-val" placeholder="gg/mm/aaaa" oninput="formattaDataNascita(this)" onblur="formattaDataNascitaBlur(this)" readonly value="<?= dataNascitaVisA ?>" style="border:none;border-bottom:1px solid #ccc;outline:none;background:transparent;padding:0 2px;"></div>
+        <div class="alt-info-row"><span class="alt-info-label">Età </span><div class="editable-area plain-text alt-info-val" contenteditable="<?= hasDataNascitaA ? 'false' : 'true' ?>" data-field="Eta" style="<?= hasDataNascitaA ? 'opacity:0.6;cursor:not-allowed;' : '' ?>"><?!= etaCalcolataA ?></div></div>
+        <div class="alt-info-row">
+          <span class="alt-info-label">Ricovero</span>
+          <input type="text" class="data-ricovero-text alt-info-val" placeholder="gg/mm/aaaa" oninput="formattaDataRicovero(this)" onblur="formattaDataRicoveroBlur(this)" readonly value="<?= dataVisA || '' ?>" style="border:none;border-bottom:1px solid #ccc;outline:none;background:transparent;padding:0 2px;">
+        </div>
+        <div class="alt-info-row"><span class="alt-info-label">Giorni di Ricovero</span><span class="text-danger valore-giorni alt-info-val"><?= giorniA ?></span></div>
+        <div class="alt-info-row"><span class="alt-info-label">C.S.</span><div class="editable-area plain-text alt-info-val" contenteditable="true" data-field="CodiceSanitario"><?!= pa.CodiceSanitario || "" ?></div></div>
+        <div class="alt-info-row"><span class="alt-info-label">Ossigeno</span><div class="editable-area plain-text alt-info-val" contenteditable="true" data-field="Ossigeno"><?!= pa.Ossigeno || "" ?></div></div>
+      </div>
+    </div>
+    <div class="alt-col alt-col-diag">
+      <div class="alt-diag-top">
+        <div class="alt-col-header">Diagnosi / Motivo Ricovero</div>
+        <div class="editable-area plain-text alt-editable" contenteditable="true" data-field="Diagnosi"><?!= pa.Diagnosi || "" ?></div>
+      </div>
+      <div class="alt-diag-bottom">
+        <div class="alt-col-header-split">Piano Terapeutico</div>
+        <div class="editable-area rich-text alt-editable" contenteditable="true" data-field="PianoTerapeutico"><?!= pa.PianoTerapeutico || "" ?></div>
+      </div>
+      <div class="alt-diag-third">
+        <div class="alt-col-header-split">Da Fare / Richieste</div>
+        <div class="editable-area rich-text alt-editable" contenteditable="true" data-field="DaFare"><?!= pa.DaFare || "" ?></div>
+      </div>
+    </div>
+    <div class="alt-col alt-col-diaria">
+      <div class="alt-col-header">Diaria ed Epicrisi</div>
+      <div class="editable-area rich-text alt-editable" contenteditable="true" data-field="Diaria"><?!= pa.Diaria || "" ?></div>
+    </div>
+    <div class="alt-col alt-col-terapia">
+      <div class="alt-col-header">Note e Terapia</div>
+      <div class="editable-area rich-text alt-editable" contenteditable="true" data-field="NoteTerapia"><?!= pa.NoteTerapia || "" ?></div>
+    </div>
+  </div>
+  <? } ?>
+  <div id="noLettiMsgAlt" class="container text-center mt-5" style="display:none;"><i class="bi bi-inboxes text-muted" style="font-size:4rem;"></i><h4 class="mt-3 text-secondary">Nessun Letto configurato.</h4></div>
+</div>
+
+
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.all.min.js"></script>
+
+  <!-- ===== MODAL STAMPA ===== -->
+
+  <div class="modal fade" id="modalScalaStampa" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-dialog-centered" style="max-width:400px">
+      <div class="modal-content border-0 shadow-lg">
+        <div class="modal-header" style="background:linear-gradient(135deg,#37474f,#546e7a);color:#fff;">
+          <h5 class="modal-title"><i class="bi bi-printer me-2"></i>Stampa Consegne</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body p-4">
+          <div class="mb-2 border-top pt-3">
+            <label class="form-label fw-semibold mb-2"><i class="bi bi-tags me-1 text-info"></i>Tipologie di letto</label>
+            <div class="form-check mb-1">
+              <input class="form-check-input" type="checkbox" id="checkTuttiTipologie" checked
+                     style="accent-color:#37474f; width:1.2rem; height:1.2rem; cursor:pointer;">
+              <label class="form-check-label fw-semibold ms-2" for="checkTuttiTipologie">Stampa tutte le tipologie</label>
+            </div>
+            <div id="tipologieStampaLista" class="ms-1 mt-1">
+              <span class="text-muted small">Caricamento...</span>
+            </div>
+          </div>
+          <div class="form-check mt-2 pt-3 border-top">
+            <input class="form-check-input" type="checkbox" id="checkSaltaVuoti" checked style="accent-color:#198754; width:1.4rem; height:1.4rem; cursor:pointer;">
+            <label class="form-check-label text-success fw-semibold fs-5 ms-2" for="checkSaltaVuoti">
+              <i class="bi bi-eye-slash-fill me-1"></i>Non stampare letti vuoti
+            </label>
+          </div>
+        </div>
+        <div class="modal-footer border-0 pt-0">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annulla</button>
+          <button type="button" class="btn btn-primary" id="btnConfermaStampa"><i class="bi bi-printer me-1"></i>Stampa</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== MODAL LINK UTILI ===== -->
+  <div class="modal fade" id="modalLinkUtili" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered" style="max-width:520px">
+      <div class="modal-content border-0 shadow-lg">
+        <div class="modal-header" style="background:linear-gradient(135deg,#0277bd,#01579b);color:#fff;">
+          <h5 class="modal-title"><i class="bi bi-link-45deg me-2"></i>Link Utili</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body p-3" style="max-height:60vh;overflow-y:auto;">
+          <div id="linkUtiliList">
+            <div class="text-center text-muted py-3">
+              <span class="spinner-border spinner-border-sm me-1"></span> Caricamento...
+            </div>
+          </div>
+        </div>
+        <div class="border-top mx-3 pt-3 pb-2">
+          <div class="fw-semibold small text-uppercase text-muted mb-2">
+            <i class="bi bi-plus-circle me-1"></i>Aggiungi link
+          </div>
+          <input type="text" id="inputNuovoLinkNome" class="form-control form-control-sm mb-2"
+                 placeholder="Nome visualizzato (es. Farmaci urgenti)">
+          <input type="url" id="inputNuovoLinkUrl" class="form-control form-control-sm mb-2"
+                 placeholder="https://...">
+          <button type="button" class="btn btn-primary btn-sm w-100" onclick="_aggiungiLink()">
+            <i class="bi bi-plus-lg me-1"></i>Aggiungi
+          </button>
+        </div>
+        <div class="modal-footer border-0 pt-2">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Chiudi</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== MODAL IMPOSTAZIONI ARCHIVIO ===== -->
+
+  <div class="modal fade" id="modalImpostazioniArchivio" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-dialog-centered" style="max-width:420px">
+      <div class="modal-content border-0 shadow-lg">
+        <div class="modal-header" style="background:linear-gradient(135deg,#495057,#343a40);color:#fff;">
+          <h5 class="modal-title"><i class="bi bi-archive me-2"></i>Impostazioni archivio consegne</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body p-4">
+          <p class="text-muted small mb-3">Imposta per quanti giorni conservare le consegne archiviate.<br>I record più vecchi verranno eliminati automaticamente ogni giorno al caricamento della pagina.</p>
+          <label class="form-label fw-semibold" for="inputGiorniArchivio">Giorni di conservazione</label>
+          <div class="input-group">
+            <input type="number" id="inputGiorniArchivio" class="form-control form-control-lg text-center" min="1" step="1" placeholder="es. 30" style="font-size:1.6rem;font-weight:700;max-width:120px;">
+            <span class="input-group-text">giorni</span>
+          </div>
+          <div id="archivioFeedback" class="form-text text-danger mt-1" style="display:none;">Inserisci un numero intero maggiore o uguale a 1.</div>
+        </div>
+        <div class="modal-footer border-0 pt-0">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annulla</button>
+          <button type="button" class="btn btn-dark" onclick="salvaImpostazioniArchivio()"><i class="bi bi-save me-1"></i>Salva</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<!-- Includi il JS in fondo al body -->
+
+  <?!= include('Scripts.html'); ?>
+
+  <?!= include('Scripts2.html'); ?>
+
+  <?!= include('ViewAlt.html'); ?>
+
+</body>
+</html>

@@ -1,0 +1,10 @@
+# File Excel locale (dati sensibili)
+*.xlsx
+*.xls
+
+# Cartella Claude
+.claude/
+
+# File di sistema Windows
+Thumbs.db
+desktop.ini

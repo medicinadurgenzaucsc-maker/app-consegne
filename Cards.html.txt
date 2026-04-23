@@ -1,0 +1,173 @@
+<?
+  var pazienti = getDatiPazienti();
+  var tipologieEsistenti = [];
+  for (var i = 0; i < pazienti.length; i++) {
+    var t = pazienti[i].TipologiaLetto;
+    if (t && tipologieEsistenti.indexOf(t) === -1) tipologieEsistenti.push(t);
+  }
+?>
+<!-- ELENCO PAZIENTI EDITABILE -->
+<div class="container-fluid" id="cardsContainer">
+  <? for (var i = 0; i < pazienti.length; i++) {
+       var p = pazienti[i]; var giorni = "-"; var dataVisualizzata = "";
+       if(p.DataRicovero) {
+          var msGiorno = 1000 * 60 * 60 * 24; var dataRic = new Date(p.DataRicovero); var oggi = new Date();
+          dataRic.setHours(0,0,0,0); oggi.setHours(0,0,0,0);
+          giorni = Math.floor((oggi - dataRic) / msGiorno);
+          dataVisualizzata = String(dataRic.getDate()).padStart(2, '0') + "/" + String(dataRic.getMonth() + 1).padStart(2, '0') + "/" + dataRic.getFullYear();
+       }
+       var dataNascitaVis = ""; var etaCalcolata = p.Eta || ""; var hasDataNascita = false;
+       if(p.DataNascita) {
+          var _dnRaw = p.DataNascita; var _dnDate = null;
+          if(_dnRaw instanceof Date) { _dnDate = _dnRaw; }
+          else { var partiN = String(_dnRaw).split('/'); if(partiN.length === 3 && partiN[2].length === 4) { _dnDate = new Date(parseInt(partiN[2],10), parseInt(partiN[1],10)-1, parseInt(partiN[0],10)); } }
+          if(_dnDate && !isNaN(_dnDate.getTime())) {
+            dataNascitaVis = String(_dnDate.getDate()).padStart(2,'0') + '/' + String(_dnDate.getMonth()+1).padStart(2,'0') + '/' + _dnDate.getFullYear();
+            var oggiN = new Date(); _dnDate.setHours(0,0,0,0); oggiN.setHours(0,0,0,0);
+            var anni = oggiN.getFullYear() - _dnDate.getFullYear();
+            if(oggiN.getMonth() < _dnDate.getMonth() || (oggiN.getMonth() === _dnDate.getMonth() && oggiN.getDate() < _dnDate.getDate())) anni--;
+            etaCalcolata = anni; hasDataNascita = true;
+          }
+       }
+  ?>
+  <div class="patient-card shadow-sm" data-bed="<?= p.Letto ?>" data-tipologia="<?= p.TipologiaLetto || '' ?>">
+    <div class="row m-0 header-row">
+      <div class="col-2 bed-number-box p-3">
+        <button class="focus-pencil-btn" title="Modifica scheda"
+                onclick="_attivaFocusMode(this.closest('.patient-card'))">
+          <i class="bi bi-pencil-fill"></i>
+        </button>
+        <span id="status-<?= p.Letto ?>" class="badge status-badge position-absolute top-0 start-0 m-1 bg-secondary"></span>
+        <div class="text-muted fw-bold mt-2">LETTO</div>
+        <div class="bed-number-flex">
+          <div class="bed-number"><?= p.Letto ?></div>
+          <span class="sesso-symbol" data-field="Sesso" data-sesso="<?= p.Sesso || '' ?>"></span>
+        </div>
+        <div class="mt-2 text-center tipo-badge-wrap" style="font-size: 0.8rem;">
+           <? if (p.TipologiaLetto) { ?>
+             <span class="badge text-white text-uppercase shadow-sm" style="background-color: transparent; cursor:pointer;" id="badge-tipo-<?= p.Letto ?>" ondblclick="_apriModalTipologia('<?= p.Letto ?>')" title="Doppio click per cambiare tipologia"><?= p.TipologiaLetto ?></span>
+           <? } else { ?>
+             <span class="badge bg-light text-secondary border text-uppercase shadow-sm" style="cursor:pointer;" ondblclick="_apriModalTipologia('<?= p.Letto ?>')" title="Doppio click per cambiare tipologia">STANDARD</span>
+           <? } ?>
+        </div>
+      </div>
+      <div class="col-10 patient-info-box">
+        <div class="d-flex justify-content-between mb-2 mt-1 align-items-start">
+          <div class="d-flex flex-column w-75 align-items-start pt-1">
+            <div class="d-flex w-100 mb-2 align-items-start"><span class="text-muted me-2 mt-1">Paziente:</span><div class="editable-area plain-text border-bottom w-100 fw-bold fs-4 text-uppercase" contenteditable="true" data-field="Nome" style="min-height: 40px; padding: 2px;"><?!= p.Nome || "" ?></div></div>
+            <div class="d-flex w-100 align-items-start"><span class="text-muted me-2 mt-1 fw-normal text-nowrap">Diagnosi / Motivo Ricovero:</span><div class="editable-area plain-text border-bottom w-100 me-5 fw-bold" contenteditable="true" data-field="Diagnosi" style="min-height: 30px; padding: 2px;"><?!= p.Diagnosi || "" ?></div></div>
+          </div>
+          <div class="d-flex flex-column align-items-end me-3" style="min-width: 220px;">
+            <div class="d-flex align-items-center mb-1 text-secondary w-100 justify-content-end" style="font-size: 0.95rem;"><span class="fw-bold me-2">Data di Nascita:</span><input type="text" class="data-nascita-text" placeholder="gg/mm/aaaa" oninput="formattaDataNascita(this)" onblur="formattaDataNascitaBlur(this)" readonly value="<?= dataNascitaVis ?>" style="border:none;border-bottom:1px solid #999;outline:none;background:transparent;padding:2px;width:110px;text-align:right;font-size:0.95rem;"></div>
+            <div class="d-flex align-items-center mb-1 w-100 justify-content-end"><span class="text-muted me-2">Et&agrave;:</span><div class="editable-area plain-text border-bottom text-end" contenteditable="<?= hasDataNascita ? 'false' : 'true' ?>" data-field="Eta" style="min-height: 25px; padding: 2px; width: 50px;<?= hasDataNascita ? ' opacity:0.6; cursor:not-allowed;' : '' ?>"><?!= etaCalcolata ?></div></div>
+            <div class="d-flex align-items-center mb-1 text-secondary w-100 justify-content-end" style="font-size: 0.95rem;">
+              <span class="fw-bold me-2">Data Ricovero:</span>
+              <input type="text" class="data-ricovero-text" placeholder="gg/mm/aaaa" oninput="formattaDataRicovero(this)" onblur="formattaDataRicoveroBlur(this)" readonly value="<?= dataVisualizzata ?>" style="border:none;border-bottom:1px solid #999;outline:none;background:transparent;padding:2px;width:110px;text-align:right;font-size:0.95rem;">
+            </div>
+            <div class="d-flex align-items-center text-secondary w-100 justify-content-end" style="font-size: 0.95rem;"><span class="fw-bold me-2">Giorni di Ricovero:</span><span class="valore-giorni text-danger fw-bold" style="width: 20px; text-align: right;"><?= giorni ?></span></div>
+            <div class="d-flex align-items-center text-secondary w-100 justify-content-end mt-1" style="font-size: 0.95rem;"><span class="fw-bold me-2">C.S.:</span><div class="editable-area plain-text border-bottom text-end" contenteditable="true" data-field="CodiceSanitario" style="min-height: 22px; padding: 2px; min-width: 100px;"><?!= p.CodiceSanitario || "" ?></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="row m-0 content-row">
+      <div class="column-box col-terapia p-0">
+        <div class="column-header"><i class="bi bi-exclamation-triangle-fill text-danger me-1" style="font-size:0.75rem;"></i>ALLERGIE</div>
+        <div class="editable-area rich-text" contenteditable="true" data-field="Allergie"><?!= p.Allergie || "" ?></div>
+        <div class="column-header" style="border-top: 1px solid #ccc;"><i class="bi bi-wind me-1 text-info" style="font-size:0.75rem;"></i>OSSIGENO</div>
+        <div class="editable-area plain-text" contenteditable="true" data-field="Ossigeno" style="padding:4px;"><?!= p.Ossigeno || "" ?></div>
+        <div class="column-header" style="border-top: 2px solid #333;">NOTE E TERAPIA</div>
+        <div class="editable-area rich-text" contenteditable="true" data-field="NoteTerapia"><?!= p.NoteTerapia || "" ?></div>
+      </div>
+      <div class="column-box col-diaria p-0"><div class="column-header">DIARIA ED EPICRISI</div><div class="editable-area rich-text" contenteditable="true" data-field="Diaria"><?!= p.Diaria || "" ?></div></div>
+      <div class="column-box col-da-fare p-0"><div class="column-header">DA FARE / RICHIESTE</div><div class="editable-area rich-text" contenteditable="true" data-field="DaFare"><?!= p.DaFare || "" ?></div></div>
+    </div>
+    <div class="row m-0 piano-terapeutico-row p-0">
+      <div class="column-header-piano">PIANO TERAPEUTICO</div>
+      <div class="editable-area editable-area-piano rich-text" contenteditable="true" data-field="PianoTerapeutico"><?!= p.PianoTerapeutico || "" ?></div>
+    </div>
+  </div>
+  <? } ?>
+  <div id="noLettiMsg" class="container text-center mt-5" style="display:none;"><i class="bi bi-inboxes text-muted" style="font-size: 4rem;"></i><h4 class="mt-3 text-secondary">Nessun Letto configurato.</h4></div>
+</div>
+
+<!-- ===== VISUALIZZAZIONE ALTERNATIVA ===== -->
+<div class="container-fluid" id="cardsContainerAlt">
+  <? for (var j = 0; j < pazienti.length; j++) {
+       var pa = pazienti[j]; var giorniA = "-"; var dataVisA = "";
+       if(pa.DataRicovero) {
+          var msG = 1000*60*60*24; var dRic = new Date(pa.DataRicovero); var oggiA = new Date();
+          dRic.setHours(0,0,0,0); oggiA.setHours(0,0,0,0);
+          giorniA = Math.floor((oggiA - dRic) / msG);
+          dataVisA = String(dRic.getDate()).padStart(2,'0') + "/" + String(dRic.getMonth()+1).padStart(2,'0') + "/" + dRic.getFullYear();
+       }
+       var dataNascitaVisA = ""; var etaCalcolataA = pa.Eta || ""; var hasDataNascitaA = false;
+       if(pa.DataNascita) {
+          var _dnRawA = pa.DataNascita; var _dnDateA = null;
+          if(_dnRawA instanceof Date) { _dnDateA = _dnRawA; }
+          else { var partiNA = String(_dnRawA).split('/'); if(partiNA.length === 3 && partiNA[2].length === 4) { _dnDateA = new Date(parseInt(partiNA[2],10), parseInt(partiNA[1],10)-1, parseInt(partiNA[0],10)); } }
+          if(_dnDateA && !isNaN(_dnDateA.getTime())) {
+            dataNascitaVisA = String(_dnDateA.getDate()).padStart(2,'0') + '/' + String(_dnDateA.getMonth()+1).padStart(2,'0') + '/' + _dnDateA.getFullYear();
+            var oggiNA = new Date(); _dnDateA.setHours(0,0,0,0); oggiNA.setHours(0,0,0,0);
+            var anniA = oggiNA.getFullYear() - _dnDateA.getFullYear();
+            if(oggiNA.getMonth() < _dnDateA.getMonth() || (oggiNA.getMonth() === _dnDateA.getMonth() && oggiNA.getDate() < _dnDateA.getDate())) anniA--;
+            etaCalcolataA = anniA; hasDataNascitaA = true;
+          }
+       }
+  ?>
+  <div class="alt-row patient-card" data-bed="<?= pa.Letto ?>" data-tipologia="<?= pa.TipologiaLetto || '' ?>">
+    <div class="alt-col alt-col-info">
+      <button class="focus-pencil-btn" title="Modifica scheda" onclick="_attivaFocusMode(this.closest('.patient-card'))"><i class="bi bi-pencil-fill"></i></button>
+      <span id="status-alt-<?= pa.Letto ?>" class="badge status-badge position-absolute top-0 start-0 m-1 bg-secondary"></span>
+      <div class="alt-info-box">
+        <div class="bed-number-flex">
+          <div class="alt-bed-number"><?= pa.Letto ?></div>
+          <span class="sesso-symbol" data-field="Sesso" data-sesso="<?= pa.Sesso || '' ?>"></span>
+        </div>
+        <div class="text-center tipo-badge-wrap" style="font-size:0.75rem;">
+          <? if (pa.TipologiaLetto) { ?>
+            <span class="badge text-white text-uppercase shadow-sm" style="background-color:transparent;cursor:pointer;" id="badge-tipo-alt-<?= pa.Letto ?>" ondblclick="_apriModalTipologia('<?= pa.Letto ?>')" title="Doppio click per cambiare tipologia"><?= pa.TipologiaLetto ?></span>
+          <? } else { ?>
+            <span class="badge bg-light text-secondary border text-uppercase shadow-sm" style="cursor:pointer;" ondblclick="_apriModalTipologia('<?= pa.Letto ?>')" title="Doppio click per cambiare tipologia">STANDARD</span>
+          <? } ?>
+        </div>
+        <div class="editable-area plain-text alt-nome" contenteditable="true" data-field="Nome"><?!= pa.Nome || "" ?></div>
+        <div class="alt-allergie-label"><i class="bi bi-exclamation-triangle-fill"></i> Allergie</div>
+        <div class="editable-area rich-text alt-allergie-val" contenteditable="true" data-field="Allergie"><?!= pa.Allergie || "" ?></div>
+        <div class="alt-info-row"><span class="alt-info-label">Data di Nascita</span><input type="text" class="data-nascita-text alt-info-val" placeholder="gg/mm/aaaa" oninput="formattaDataNascita(this)" onblur="formattaDataNascitaBlur(this)" readonly value="<?= dataNascitaVisA ?>" style="border:none;border-bottom:1px solid #ccc;outline:none;background:transparent;padding:0 2px;"></div>
+        <div class="alt-info-row"><span class="alt-info-label">Età </span><div class="editable-area plain-text alt-info-val" contenteditable="<?= hasDataNascitaA ? 'false' : 'true' ?>" data-field="Eta" style="<?= hasDataNascitaA ? 'opacity:0.6;cursor:not-allowed;' : '' ?>"><?!= etaCalcolataA ?></div></div>
+        <div class="alt-info-row">
+          <span class="alt-info-label">Ricovero</span>
+          <input type="text" class="data-ricovero-text alt-info-val" placeholder="gg/mm/aaaa" oninput="formattaDataRicovero(this)" onblur="formattaDataRicoveroBlur(this)" readonly value="<?= dataVisA || '' ?>" style="border:none;border-bottom:1px solid #ccc;outline:none;background:transparent;padding:0 2px;">
+        </div>
+        <div class="alt-info-row"><span class="alt-info-label">Giorni di Ricovero</span><span class="text-danger valore-giorni alt-info-val"><?= giorniA ?></span></div>
+        <div class="alt-info-row"><span class="alt-info-label">C.S.</span><div class="editable-area plain-text alt-info-val" contenteditable="true" data-field="CodiceSanitario"><?!= pa.CodiceSanitario || "" ?></div></div>
+        <div class="alt-info-row"><span class="alt-info-label">Ossigeno</span><div class="editable-area plain-text alt-info-val" contenteditable="true" data-field="Ossigeno"><?!= pa.Ossigeno || "" ?></div></div>
+      </div>
+    </div>
+    <div class="alt-col alt-col-diag">
+      <div class="alt-diag-top">
+        <div class="alt-col-header">Diagnosi / Motivo Ricovero</div>
+        <div class="editable-area plain-text alt-editable" contenteditable="true" data-field="Diagnosi"><?!= pa.Diagnosi || "" ?></div>
+      </div>
+      <div class="alt-diag-bottom">
+        <div class="alt-col-header-split">Piano Terapeutico</div>
+        <div class="editable-area rich-text alt-editable" contenteditable="true" data-field="PianoTerapeutico"><?!= pa.PianoTerapeutico || "" ?></div>
+      </div>
+      <div class="alt-diag-third">
+        <div class="alt-col-header-split">Da Fare / Richieste</div>
+        <div class="editable-area rich-text alt-editable" contenteditable="true" data-field="DaFare"><?!= pa.DaFare || "" ?></div>
+      </div>
+    </div>
+    <div class="alt-col alt-col-diaria">
+      <div class="alt-col-header">Diaria ed Epicrisi</div>
+      <div class="editable-area rich-text alt-editable" contenteditable="true" data-field="Diaria"><?!= pa.Diaria || "" ?></div>
+    </div>
+    <div class="alt-col alt-col-terapia">
+      <div class="alt-col-header">Note e Terapia</div>
+      <div class="editable-area rich-text alt-editable" contenteditable="true" data-field="NoteTerapia"><?!= pa.NoteTerapia || "" ?></div>
+    </div>
+  </div>
+  <? } ?>
+  <div id="noLettiMsgAlt" class="container text-center mt-5" style="display:none;"><i class="bi bi-inboxes text-muted" style="font-size:4rem;"></i><h4 class="mt-3 text-secondary">Nessun Letto configurato.</h4></div>
+</div>
