@@ -17,7 +17,7 @@ var PRINT_URL = APP_URL + 'print.html';
 // API_TOKEN: token segreto da impostare anche in GAS Script Properties
 // (GAS: Impostazioni progetto → Proprietà script → chiave "API_TOKEN")
 // Se lasciato vuoto, il backend accetta tutte le richieste.
-var API_TOKEN = '';
+var API_TOKEN = 'Cecilia!!03';
 
 
 // ── HELPERS FETCH ─────────────────────────────────────────────
