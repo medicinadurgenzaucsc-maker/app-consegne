@@ -4,10 +4,6 @@ const NOME_ARCHIVIO = "Archivio_Dati";
 const NOME_TIPOLOGIE = "Tipologie"; // ← NUOVO: foglio dedicato alle tipologie
 const LOCK_DURATA_MS = 30000; // 30s: lock scade se non rinnovato
 
-function include(filename) {
-  return HtmlService.createHtmlOutputFromFile(filename).getContent();
-}
-
 // Rimuove tag non consentiti dall'HTML dei campi rich-text.
 // Tag consentiti: b, i, u, strong, em, span, font, div, br.
 // Per i tag non consentiti: se hanno contenuto testuale lo mantiene (es. <a>testo</a> → testo),
@@ -42,6 +38,9 @@ function _verificaToken(token) {
   return String(token || '') === atteso;
 }
 
+// URL del frontend GitHub Pages
+var FRONTEND_URL = 'https://medicinadurgenzaucsc-maker.github.io/app-consegne/';
+
 function doGet(e) {
   var params = (e && e.parameter) ? e.parameter : {};
 
@@ -56,34 +55,10 @@ function doGet(e) {
     return _apiResponse(result);
   }
 
-  if (params.page === 'print') {
-    try {
-      var tmpl = HtmlService.createTemplateFromFile('Print');
-      tmpl.layout       = params.layout       || 'main';
-      tmpl.orientamento = params.orientamento === 'portrait' ? 'portrait' : 'landscape';
-      tmpl.ordinamento  = params.ordinamento  || 'tipologia';
-      tmpl.saltaVuoti   = params.saltaVuoti   === '1';
-      tmpl.dataArchivio = params.dataArchivio || '';
-      tmpl.scala        = params.scala ? parseInt(params.scala, 10) : 0;
-      tmpl.tipologie  = params.tipologie  || 'all';
-      tmpl.appUrl       = ScriptApp.getService().getUrl();
-      return tmpl.evaluate()
-        .setTitle('Stampa Consegne')
-        .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
-        .addMetaTag('viewport', 'width=device-width, initial-scale=1');
-    } catch(ex) {
-      // Print.html non ancora creato: ricade sulla pagina principale
-    }
-  }
-
-  var indexTmpl = HtmlService.createTemplateFromFile('Index');
-  indexTmpl.toastType   = params.toast       || '';
-  indexTmpl.toastMsg    = params.msg         || '';
-  indexTmpl.initialLoad = true;
-  return indexTmpl.evaluate()
-    .setTitle('Gestione Consegne')
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+  // ── Accesso diretto all'URL GAS → redirect a GitHub Pages ────────
+  return HtmlService.createHtmlOutput(
+    '<script>window.top.location.href="' + FRONTEND_URL + '";</script>'
+  ).setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
 
