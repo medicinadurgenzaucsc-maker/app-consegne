@@ -6,7 +6,7 @@
 // ── CONFIGURAZIONE ────────────────────────────────────────────
 // GAS_URL: URL del tuo deployment Google Apps Script
 // (Trova in GAS: Deploy → Gestisci deployment → copia URL)
-var GAS_URL = 'INSERISCI_QUI_URL_DEPLOYMENT_GAS';
+var GAS_URL = 'https://script.google.com/macros/s/AKfycbz9c6PiBHwjGJcajbXsBMAt1Slrehp7GIuOEXqiC8perArb2QkxxBSBPox_f0P_owyl/exec';
 
 // APP_URL: URL di questa app su GitHub Pages (per i reload)
 var APP_URL = 'https://medicinadurgenzaucsc-maker.github.io/app-consegne/';
