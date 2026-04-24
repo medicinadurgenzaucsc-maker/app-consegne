@@ -33,11 +33,23 @@ function sanitizzaHtmlCampo(html) {
 const CAMPI_RICH_TEXT = ['NoteTerapia', 'Diaria', 'DaFare', 'PianoTerapeutico', 'Allergie'];
 
 
+// ── Validazione token API ───────────────────────────────────────────
+// Il token atteso è salvato in Script Properties con chiave "API_TOKEN".
+// Se la proprietà non è impostata, l'accesso è libero (retrocompatibilità).
+function _verificaToken(token) {
+  var atteso = PropertiesService.getScriptProperties().getProperty('API_TOKEN');
+  if (!atteso) return true; // nessun token configurato → accesso libero
+  return String(token || '') === atteso;
+}
+
 function doGet(e) {
   var params = (e && e.parameter) ? e.parameter : {};
 
   // ── API REST: chiamate dal frontend GitHub Pages ──────────────────
   if (params.action) {
+    if (!_verificaToken(params.token)) {
+      return _apiResponse({ error: 'Unauthorized', code: 401 });
+    }
     var result;
     try { result = _dispatchGet(params.action, params); }
     catch(ex) { result = { error: ex.toString() }; }
@@ -80,6 +92,10 @@ function doPost(e) {
   var body = {};
   try { body = JSON.parse(e && e.postData ? e.postData.contents : '{}'); } catch(ex) {}
   var action = (e && e.parameter && e.parameter.action) || body.action || '';
+  var token  = (e && e.parameter && e.parameter.token) || body.token || '';
+  if (!_verificaToken(token)) {
+    return _apiResponse({ error: 'Unauthorized', code: 401 });
+  }
   var result;
   try { result = _dispatchPost(action, body); }
   catch(ex) { result = { error: ex.toString() }; }

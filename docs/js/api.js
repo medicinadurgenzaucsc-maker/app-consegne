@@ -14,10 +14,16 @@ var APP_URL = 'https://medicinadurgenzaucsc-maker.github.io/app-consegne/';
 // PRINT_URL: URL della pagina di stampa GitHub Pages
 var PRINT_URL = APP_URL + 'print.html';
 
+// API_TOKEN: token segreto da impostare anche in GAS Script Properties
+// (GAS: Impostazioni progetto → Proprietà script → chiave "API_TOKEN")
+// Se lasciato vuoto, il backend accetta tutte le richieste.
+var API_TOKEN = '';
+
 
 // ── HELPERS FETCH ─────────────────────────────────────────────
 function _apiGet(action, params) {
   var url = GAS_URL + '?action=' + encodeURIComponent(action);
+  if (API_TOKEN) url += '&token=' + encodeURIComponent(API_TOKEN);
   if (params) {
     Object.keys(params).forEach(function(k) {
       if (params[k] !== undefined && params[k] !== null) {
@@ -32,10 +38,13 @@ function _apiGet(action, params) {
 }
 
 function _apiPost(action, body) {
-  return fetch(GAS_URL + '?action=' + encodeURIComponent(action), {
+  var url = GAS_URL + '?action=' + encodeURIComponent(action);
+  if (API_TOKEN) url += '&token=' + encodeURIComponent(API_TOKEN);
+  var payload = Object.assign({}, body || {});
+  return fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-    body: JSON.stringify(body || {})
+    body: JSON.stringify(payload)
   }).then(function(r) {
     if (!r.ok) throw new Error('HTTP ' + r.status);
     return r.json();
