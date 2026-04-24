@@ -314,7 +314,7 @@
       var mod = bootstrap.Modal.getInstance(document.getElementById('modalCalendario'));
       if (mod) mod.hide();
       _apriModalScala(function(saltaVuoti, orientamento, tipologie) {
-        var url = PRINT_URL + '?page=print&layout=' + (_viewAltAttiva ? 'alt' : 'main') +
+        var url = PRINT_URL + '?layout=' + (_viewAltAttiva ? 'alt' : 'main') +
                   '&saltaVuoti=' + (saltaVuoti ? '1' : '0') +
                   '&orientamento=' + orientamento +
                   '&ordinamento=' + encodeURIComponent(localStorage.getItem('ordinamentoPreferito') || 'tipologia') +
@@ -404,7 +404,7 @@
     function stampaConsegne() {
       _apriModalScala(function(saltaVuoti, orientamento, tipologie) {
         var layout = _viewAltAttiva ? 'alt' : 'main';
-        var url = PRINT_URL + '?page=print&layout=' + layout +
+        var url = PRINT_URL + '?layout=' + layout +
                   '&saltaVuoti=' + (saltaVuoti ? '1' : '0') +
                   '&orientamento=' + orientamento +
                   '&ordinamento=' + encodeURIComponent(localStorage.getItem('ordinamentoPreferito') || 'tipologia') +

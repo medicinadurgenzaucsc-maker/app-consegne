@@ -11,8 +11,8 @@ var GAS_URL = 'https://script.google.com/macros/s/AKfycbz9c6PiBHwjGJcajbXsBMAt1S
 // APP_URL: URL di questa app su GitHub Pages (per i reload)
 var APP_URL = 'https://medicinadurgenzaucsc-maker.github.io/app-consegne/';
 
-// PRINT_URL: URL base per la pagina di stampa (punta ancora a GAS)
-var PRINT_URL = GAS_URL;
+// PRINT_URL: URL della pagina di stampa GitHub Pages
+var PRINT_URL = APP_URL + 'print.html';
 
 
 // ── HELPERS FETCH ─────────────────────────────────────────────

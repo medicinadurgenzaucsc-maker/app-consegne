@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stampa Consegne</title>
+  <link rel="icon" type="image/png" href="favicon.png">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #fff;
+      font-family: Arial, sans-serif;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    /* ── Schermata di caricamento ── */
+    #loadingScreen {
+      position: fixed; inset: 0; z-index: 99999;
+      background: #37474f;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 18px; color: #fff;
+    }
+    #loadingScreen .spinner-border { width: 3rem; height: 3rem; }
+    #loadingScreen p { font-size: 1rem; opacity: 0.8; }
+
+    /* ── Barra superiore (nascosta in stampa) ── */
+    #printBar {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
+      background: #37474f; color: #fff;
+      display: flex; align-items: center; gap: 16px;
+      padding: 10px 20px; flex-wrap: wrap;
+    }
+    #printBar .bar-back {
+      color: #80cbc4; text-decoration: none; font-size: 0.9rem;
+      display: flex; align-items: center; gap: 4px; white-space: nowrap;
+    }
+    #printBar .bar-back:hover { text-decoration: underline; }
+    #printBar .bar-label { font-size: 0.92rem; font-weight: 600; opacity: 0.85; }
+    #printBar .bar-print-btn {
+      margin-left: auto; background: #80cbc4; color: #263238;
+      border: none; border-radius: 6px; padding: 7px 20px;
+      font-weight: 700; cursor: pointer; font-size: 0.92rem;
+    }
+    #printBar .bar-print-btn:hover { background: #4db6ac; }
+
+    /* ── Intestazione stampa ── */
+    .print-header {
+      display: flex; justify-content: space-between; align-items: flex-end;
+      border-bottom: 2px solid #000; margin-bottom: 8px; padding-bottom: 4px;
+    }
+    .print-header h2 { font-size: 1.1rem; }
+    .print-header h3 { font-size: 0.9rem; color: #333; }
+
+    /* ── Layout principale ── */
+    .patient-card {
+      border: 2px solid #000; border-radius: 6px; margin-bottom: 3px;
+      background: #fff;
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+    .header-row { border-bottom: 2px solid #000; display: flex; }
+    .bed-number-box {
+      border-right: 2px solid #000; width: 16.66667%; display: flex;
+      flex-direction: column; align-items: center; justify-content: center;
+      background: #f8f9fa !important; padding: 8px;
+    }
+    .bed-label  { font-size: 0.65rem; color: #666; font-weight: bold; text-transform: uppercase; }
+    .bed-number { font-size: 2.8rem; font-weight: bold; line-height: 1; }
+    .patient-info-box { padding: 8px; width: 83.33333%; }
+    .content-row  { display: flex; }
+    .column-box   { border-right: 2px solid #000; display: flex; flex-direction: column; }
+    .column-box:last-child { border-right: none; }
+    .col-terapia  { width: 17.5%; }
+    .col-diaria   { width: 65%; }
+    .col-da-fare  { width: 17.5%; }
+    .piano-row    { display: flex; flex-direction: column; width: 100%; }
+    .col-header {
+      background: #e9ecef !important; padding: 3px 8px; font-weight: bold;
+      text-align: center; border-bottom: 1px solid #000;
+      font-size: 0.72rem; text-transform: uppercase;
+    }
+    .col-header-piano {
+      background: #e9ecef !important; padding: 3px 12px; font-weight: bold;
+      text-align: left; border-top: 2px solid #000; border-bottom: 1px solid #000;
+      font-size: 0.72rem; text-transform: uppercase;
+    }
+    .field-content       { padding: 4px 8px; word-wrap: break-word; font-size: 0.80rem; }
+    .field-content-piano { padding: 4px 12px; word-wrap: break-word; font-size: 0.80rem; }
+
+    /* ── Layout alternativo ── */
+    .alt-row {
+      display: flex; border: 2px solid #000; border-radius: 6px; margin-bottom: 3px;
+      background: #fff;
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+    .alt-col            { border-right: 2px solid #000; display: flex; flex-direction: column; }
+    .alt-col:last-child { border-right: none; }
+    .alt-col-info    { width: 12%; background: #f2efe9; }
+    .alt-col-diag    { width: 18%; }
+    .alt-col-diaria  { width: 55%; }
+    .alt-col-terapia { width: 15%; }
+    .alt-col-header {
+      background: #e8e6e1 !important; padding: 3px 6px; font-weight: bold;
+      font-size: 0.68rem; text-align: center; border-bottom: 1px solid #000;
+      text-transform: uppercase;
+    }
+    .alt-col-header-split {
+      background: #e8e6e1 !important; padding: 3px 6px; font-weight: bold;
+      font-size: 0.68rem; text-align: center; border-top: 2px solid #000;
+      border-bottom: 1px solid #000; text-transform: uppercase;
+    }
+    .alt-info-box    { display: flex; flex-direction: column; align-items: center; padding: 4px 3px; gap: 1px; }
+    .alt-bed-number  { font-size: 1.6rem; font-weight: bold; line-height: 1; }
+    .alt-nome        { font-weight: bold; font-size: 0.80rem; text-align: center;
+                       text-transform: uppercase; width: 100%; padding: 2px;
+                       border-bottom: 1px solid #ccc; word-break: break-word; }
+    .alt-allergie-label { font-size: 0.58rem; font-weight: bold; color: #c62828;
+                          text-transform: uppercase; margin-top: 2px; }
+    .alt-allergie-val   { font-size: 0.65rem; width: 100%; padding: 2px; text-align: center;
+                          border-bottom: 1px solid #ccc; word-break: break-word; }
+    .alt-info-row  { display: flex; flex-direction: column; width: 100%;
+                     padding: 1px 2px; border-bottom: 1px solid #eee; }
+    .alt-info-label { font-size: 0.62rem; font-weight: bold; color: #333; }
+    .alt-info-val   { font-weight: normal; font-size: 0.52rem; width: 100%; }
+    .alt-editable   { padding: 4px 5px; font-size: 0.75rem; word-wrap: break-word; }
+    .alt-diagnosi   { font-weight: bold; font-size: 0.82rem; }
+    .alt-diag-top   { display: flex; flex-direction: column; }
+    .alt-diag-bottom, .alt-diag-third { display: flex; flex-direction: column; }
+
+    /* ── Regole di stampa ── */
+    @media print {
+      #printBar { display: none !important; }
+      #loadingScreen { display: none !important; }
+      body { margin: 0; background: #fff; }
+      #printWrapper {
+        transform: none !important;
+        width: 100% !important;
+        padding-top: 0 !important;
+      }
+      .patient-card, .alt-row {
+        break-inside: auto !important;
+        page-break-inside: auto !important;
+      }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Schermata di caricamento -->
+<div id="loadingScreen">
+  <div class="spinner-border text-light" role="status"></div>
+  <p>Caricamento dati in corso...</p>
+</div>
+
+<!-- Barra superiore (nascosta in stampa) -->
+<div id="printBar" style="display:none;">
+  <a class="bar-back" href="./"><i class="bi bi-arrow-left"></i> Torna all'app</a>
+  <span class="bar-label" id="barLabel"></span>
+  <button class="bar-print-btn" onclick="window.print()"><i class="bi bi-printer me-1"></i>Stampa / Salva PDF</button>
+</div>
+
+<div id="printWrapper" style="display:none;">
+  <div class="print-header">
+    <h2 id="printTitle"></h2>
+    <h3 id="printDate"></h3>
+  </div>
+  <div id="printCards"></div>
+</div>
+
+<script src="js/api.js"></script>
+<script>
+(function() {
+
+  // ── Lettura parametri URL ──────────────────────────────────────
+  var params     = new URLSearchParams(window.location.search);
+  var layout     = params.get('layout')      || 'main';
+  var saltaVuoti = params.get('saltaVuoti')  === '1';
+  var orientamento = params.get('orientamento') || 'portrait';
+  var ordinamento  = params.get('ordinamento')  || 'tipologia';
+  var dataArchivio = params.get('dataArchivio') || '';
+  var tipologieParam = params.get('tipologie')  || 'all';
+
+  var tipologieFiltro = null;
+  if (tipologieParam && tipologieParam !== 'all') {
+    tipologieFiltro = tipologieParam.toUpperCase().split(',')
+      .map(function(t) { return t.trim(); }).filter(function(t) { return t; });
+  }
+
+  // ── Stile @page dinamico ───────────────────────────────────────
+  var styleEl = document.createElement('style');
+  styleEl.textContent = '@page { size: A4 ' + orientamento + '; margin: 8mm; }';
+  document.head.appendChild(styleEl);
+
+  // ── Helper date ────────────────────────────────────────────────
+  function parseRicovero(raw) {
+    if (!raw) return { vis: '-', giorni: '-' };
+    var s = String(raw).trim(); var d;
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+      var p = s.substring(0,10).split('-');
+      d = new Date(parseInt(p[0],10), parseInt(p[1],10)-1, parseInt(p[2],10));
+    } else if (/^\d{2}\/\d{2}\/\d{4}/.test(s)) {
+      var p = s.split('/');
+      d = new Date(parseInt(p[2],10), parseInt(p[1],10)-1, parseInt(p[0],10));
+    } else { d = new Date(s); }
+    if (!d || isNaN(d.getTime())) return { vis: s, giorni: '-' };
+    d.setHours(0,0,0,0);
+    var oggi = new Date(); oggi.setHours(0,0,0,0);
+    var vis = String(d.getDate()).padStart(2,'0') + '/' +
+              String(d.getMonth()+1).padStart(2,'0') + '/' + d.getFullYear();
+    return { vis: vis, giorni: Math.max(0, Math.floor((oggi - d) / 86400000)) };
+  }
+
+  function parseNascita(raw) {
+    if (!raw) return { vis: '-', eta: '-' };
+    var s = String(raw).trim(); var d = null;
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) {
+      var p = s.split('/');
+      d = new Date(parseInt(p[2],10), parseInt(p[1],10)-1, parseInt(p[0],10));
+    } else if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+      var p = s.substring(0,10).split('-');
+      d = new Date(parseInt(p[0],10), parseInt(p[1],10)-1, parseInt(p[2],10));
+    }
+    if (!d || isNaN(d.getTime())) return { vis: s, eta: '-' };
+    d.setHours(0,0,0,0);
+    var vis = String(d.getDate()).padStart(2,'0') + '/' +
+              String(d.getMonth()+1).padStart(2,'0') + '/' + d.getFullYear();
+    var oggi = new Date(); oggi.setHours(0,0,0,0);
+    var anni = oggi.getFullYear() - d.getFullYear();
+    if (oggi.getMonth() < d.getMonth() ||
+        (oggi.getMonth() === d.getMonth() && oggi.getDate() < d.getDate())) anni--;
+    return { vis: vis, eta: anni };
+  }
+
+  function sessoHtml(sesso, size) {
+    var s = sesso || '';
+    var sz = size || '2.2rem';
+    if (s === 'M') return '<span style="font-size:' + sz + ';color:#7ec8e3;margin-left:4px;line-height:1;-webkit-text-stroke:2px #7ec8e3;">&#9794;</span>';
+    if (s === 'F') return '<span style="font-size:' + sz + ';color:#f4a7c3;margin-left:4px;line-height:1;-webkit-text-stroke:2px #f4a7c3;">&#9792;</span>';
+    return '<span style="font-size:' + sz + ';color:#b8b0a0;margin-left:4px;line-height:1;-webkit-text-stroke:2px #b8b0a0;">&#8856;</span>';
+  }
+
+  // ── Renderer layout principale ─────────────────────────────────
+  function renderMain(p) {
+    var ric  = parseRicovero(p.DataRicovero);
+    var nasc = parseNascita(p.DataNascita);
+    var eta  = nasc.eta !== '-' ? nasc.eta : (p.Eta || '-');
+    var tipo = String(p.TipologiaLetto || '').trim().toUpperCase();
+    var tipoBadge = tipo
+      ? '<span class="badge text-white text-uppercase mt-1" style="background:#546e7a;font-size:0.65rem;">' + tipo + '</span>'
+      : '<span style="font-size:0.65rem;color:#999;">STANDARD</span>';
+
+    return '<div class="patient-card">' +
+      '<div class="header-row">' +
+        '<div class="bed-number-box">' +
+          '<div class="bed-label">Letto</div>' +
+          '<div style="display:flex;align-items:center;justify-content:center;">' +
+            '<div class="bed-number">' + (p.Letto || '') + '</div>' +
+            sessoHtml(p.Sesso, '2.2rem') +
+          '</div>' +
+          tipoBadge +
+        '</div>' +
+        '<div class="patient-info-box">' +
+          '<div class="d-flex justify-content-between align-items-start">' +
+            '<div style="width:70%;">' +
+              '<div class="d-flex align-items-start mb-1">' +
+                '<span class="text-muted me-2" style="font-size:0.75rem;white-space:nowrap;">Paziente:</span>' +
+                '<div class="fw-bold fs-5 text-uppercase" style="border-bottom:1px solid #999;padding:1px;width:100%;">' + (p.Nome || '') + '</div>' +
+              '</div>' +
+              '<div class="d-flex align-items-start">' +
+                '<span class="text-muted me-2" style="font-size:0.72rem;white-space:nowrap;">Diagnosi / Motivo Ricovero:</span>' +
+                '<div class="fw-bold" style="border-bottom:1px solid #999;padding:1px;width:100%;">' + (p.Diagnosi || '') + '</div>' +
+              '</div>' +
+            '</div>' +
+            '<div style="text-align:right;min-width:190px;font-size:0.80rem;">' +
+              '<div class="mb-1"><span class="text-muted">Nasc.: </span><strong>' + nasc.vis + '</strong></div>' +
+              '<div class="mb-1"><span class="text-muted">Et&agrave;: </span><strong>' + eta + '</strong></div>' +
+              '<div class="mb-1"><span class="text-muted">Ricovero: </span><strong>' + ric.vis + '</strong></div>' +
+              '<div class="mb-1"><span class="text-muted">Giorni: </span><strong style="color:#c62828;">' + ric.giorni + '</strong></div>' +
+              '<div><span class="text-muted">C.S.: </span><strong>' + (p.CodiceSanitario || '') + '</strong></div>' +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="content-row">' +
+        '<div class="column-box col-terapia">' +
+          '<div class="col-header"><i class="bi bi-exclamation-triangle-fill text-danger me-1" style="font-size:0.65rem;"></i>Allergie</div>' +
+          '<div class="field-content">' + (p.Allergie || '') + '</div>' +
+          '<div class="col-header" style="border-top:1px solid #ccc;">Ossigeno</div>' +
+          '<div class="field-content">' + (p.Ossigeno || '') + '</div>' +
+          '<div class="col-header" style="border-top:2px solid #000;">Note e Terapia</div>' +
+          '<div class="field-content">' + (p.NoteTerapia || '') + '</div>' +
+        '</div>' +
+        '<div class="column-box col-diaria">' +
+          '<div class="col-header">Diaria ed Epicrisi</div>' +
+          '<div class="field-content">' + (p.Diaria || '') + '</div>' +
+        '</div>' +
+        '<div class="column-box col-da-fare">' +
+          '<div class="col-header">Da Fare / Richieste</div>' +
+          '<div class="field-content">' + (p.DaFare || '') + '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="piano-row">' +
+        '<div class="col-header-piano">Piano Terapeutico</div>' +
+        '<div class="field-content-piano">' + (p.PianoTerapeutico || '') + '</div>' +
+      '</div>' +
+    '</div>';
+  }
+
+  // ── Renderer layout alternativo ────────────────────────────────
+  function renderAlt(p) {
+    var ric  = parseRicovero(p.DataRicovero);
+    var nasc = parseNascita(p.DataNascita);
+    var eta  = nasc.eta !== '-' ? nasc.eta : (p.Eta || '-');
+    var tipo = String(p.TipologiaLetto || '').trim().toUpperCase();
+    var tipoBadge = tipo
+      ? '<span class="badge text-white text-uppercase" style="background:#546e7a;font-size:0.62rem;">' + tipo + '</span>'
+      : '<span style="font-size:0.62rem;color:#999;">STANDARD</span>';
+
+    return '<div class="alt-row">' +
+      '<div class="alt-col alt-col-info">' +
+        '<div class="alt-info-box">' +
+          '<div style="display:flex;align-items:center;justify-content:center;">' +
+            '<div class="alt-bed-number">' + (p.Letto || '') + '</div>' +
+            sessoHtml(p.Sesso, '1.6rem') +
+          '</div>' +
+          tipoBadge +
+          '<div class="alt-nome">' + (p.Nome || '') + '</div>' +
+          '<div class="alt-allergie-label"><i class="bi bi-exclamation-triangle-fill"></i> Allergie</div>' +
+          '<div class="alt-allergie-val">' + (p.Allergie || '') + '</div>' +
+          '<div class="alt-info-row"><div class="alt-info-label">Data di Nascita</div><div class="alt-info-val">' + nasc.vis + '</div></div>' +
+          '<div class="alt-info-row"><div class="alt-info-label">Et&agrave;</div><div class="alt-info-val">' + eta + '</div></div>' +
+          '<div class="alt-info-row"><div class="alt-info-label">Data di Ricovero</div><div class="alt-info-val">' + ric.vis + '</div></div>' +
+          '<div class="alt-info-row"><div class="alt-info-label">Giorni di Ricovero</div><div class="alt-info-val" style="color:#c62828;">' + ric.giorni + '</div></div>' +
+          '<div class="alt-info-row"><div class="alt-info-label">C.S.</div><div class="alt-info-val">' + (p.CodiceSanitario || '') + '</div></div>' +
+          '<div class="alt-info-row"><div class="alt-info-label">Ossigeno</div><div class="alt-info-val">' + (p.Ossigeno || '') + '</div></div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="alt-col alt-col-diag">' +
+        '<div class="alt-diag-top">' +
+          '<div class="alt-col-header">Diagnosi / Motivo Ricovero</div>' +
+          '<div class="alt-editable alt-diagnosi">' + (p.Diagnosi || '') + '</div>' +
+        '</div>' +
+        '<div class="alt-diag-bottom">' +
+          '<div class="alt-col-header-split">Piano Terapeutico</div>' +
+          '<div class="alt-editable">' + (p.PianoTerapeutico || '') + '</div>' +
+        '</div>' +
+        '<div class="alt-diag-third">' +
+          '<div class="alt-col-header-split">Da Fare / Richieste</div>' +
+          '<div class="alt-editable">' + (p.DaFare || '') + '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="alt-col alt-col-diaria">' +
+        '<div class="alt-col-header">Diaria ed Epicrisi</div>' +
+        '<div class="alt-editable">' + (p.Diaria || '') + '</div>' +
+      '</div>' +
+      '<div class="alt-col alt-col-terapia">' +
+        '<div class="alt-col-header">Note e Terapia</div>' +
+        '<div class="alt-editable">' + (p.NoteTerapia || '') + '</div>' +
+      '</div>' +
+    '</div>';
+  }
+
+  // ── Ordinamento ────────────────────────────────────────────────
+  function ordinaPazienti(pazienti) {
+    var cmpL = function(a, b) {
+      var nA = parseInt(a.Letto,10), nB = parseInt(b.Letto,10);
+      return (isNaN(nA)||isNaN(nB)) ? String(a.Letto).localeCompare(String(b.Letto)) : nA - nB;
+    };
+    pazienti.sort(function(a, b) {
+      if (ordinamento === 'numero') return cmpL(a, b);
+      if (ordinamento === 'nome') {
+        var nA = (a.Nome||'').toLowerCase().trim(), nB = (b.Nome||'').toLowerCase().trim();
+        if (!nA && !nB) return cmpL(a,b); if (!nA) return 1; if (!nB) return -1;
+        var r = nA.localeCompare(nB); return r !== 0 ? r : cmpL(a,b);
+      }
+      // tipologia (default)
+      var tA = (a.TipologiaLetto||'').toLowerCase(), tB = (b.TipologiaLetto||'').toLowerCase();
+      if (!tA && !tB) return cmpL(a,b); if (!tA) return 1; if (!tB) return -1;
+      var r = tA.localeCompare(tB); return r !== 0 ? r : cmpL(a,b);
+    });
+  }
+
+  // ── Pulizia coda celle (rimuove BR/spazi finali) ───────────────
+  function pulisciCoda(el) {
+    var rimosso = true;
+    while (rimosso) {
+      rimosso = false;
+      while (el.lastChild) {
+        var n = el.lastChild;
+        if (n.nodeType === 3 && n.nodeValue.replace(/[\s\u00a0]/g,'') === '') { el.removeChild(n); rimosso = true; continue; }
+        if (n.nodeName === 'BR') { el.removeChild(n); rimosso = true; continue; }
+        if (n.nodeType === 1 && (n.innerText||'').replace(/[\s\u00a0\n\r]/g,'') === '') { el.removeChild(n); rimosso = true; continue; }
+        break;
+      }
+    }
+  }
+
+  // ── Inserimento salti pagina ───────────────────────────────────
+  function inserisciBreaks() {
+    var old = document.querySelectorAll('.page-break');
+    for (var i = old.length - 1; i >= 0; i--) old[i].parentNode.removeChild(old[i]);
+
+    var cards = Array.prototype.slice.call(document.querySelectorAll('.patient-card, .alt-row'));
+    if (cards.length === 0) return;
+    cards.forEach(function(c) { c.style.marginTop = ''; });
+
+    var MM_PX   = 96 / 25.4;
+    var pageHmm = (orientamento === 'landscape' ? 210 : 297) - 16;
+    var pageH   = Math.round(pageHmm * MM_PX);
+    var MARGIN  = 3;
+
+    var header     = document.querySelector('.print-header');
+    var currentPos = header ? (header.offsetHeight + MARGIN) : 0;
+
+    cards.forEach(function(card) {
+      var cardH     = card.offsetHeight;
+      var posInPage = currentPos % pageH;
+      var remaining = pageH - posInPage;
+      if (remaining >= 300) {
+        currentPos += cardH + MARGIN;
+      } else {
+        var nextPageStart = Math.ceil((currentPos + 1) / pageH) * pageH;
+        card.style.marginTop = (nextPageStart - currentPos) + 'px';
+        currentPos = nextPageStart + cardH + MARGIN;
+      }
+    });
+  }
+
+  // ── Render completo pagina ─────────────────────────────────────
+  function renderPagina(pazienti, nomeReparto) {
+    var oggi = new Date();
+    var dataOggi = String(oggi.getDate()).padStart(2,'0') + '/' +
+                   String(oggi.getMonth()+1).padStart(2,'0') + '/' + oggi.getFullYear();
+
+    var titoloStampa;
+    if (dataArchivio) {
+      var tsParts = dataArchivio.split(' ');
+      var datePart = tsParts[0].split('-').reverse().join('/');
+      var timePart = tsParts.length > 1 ? ' alle ' + tsParts[1].substring(0,5) : '';
+      titoloStampa = nomeReparto + ' - Archivio del ' + datePart + timePart;
+    } else {
+      titoloStampa = nomeReparto + ' - Consegne del ' + dataOggi;
+    }
+
+    document.title = titoloStampa;
+    document.getElementById('barLabel').textContent  = titoloStampa;
+    document.getElementById('printTitle').textContent = titoloStampa;
+    if (!dataArchivio) {
+      document.getElementById('printDate').textContent = 'Stampato il: ' + dataOggi;
+    }
+
+    // Ordina
+    ordinaPazienti(pazienti);
+
+    // Filtra vuoti
+    if (saltaVuoti) {
+      pazienti = pazienti.filter(function(p) {
+        return String(p.Nome||'').trim() !== '' || String(p.Diagnosi||'').trim() !== '';
+      });
+    }
+
+    // Filtra tipologie
+    if (tipologieFiltro && tipologieFiltro.length > 0) {
+      pazienti = pazienti.filter(function(p) {
+        var t = String(p.TipologiaLetto||'').trim().toUpperCase() || 'STANDARD';
+        return tipologieFiltro.indexOf(t) !== -1;
+      });
+    }
+
+    // Genera HTML cards
+    var html = '';
+    pazienti.forEach(function(p) {
+      html += layout === 'alt' ? renderAlt(p) : renderMain(p);
+    });
+    document.getElementById('printCards').innerHTML = html;
+
+    // Pulizia celle
+    document.querySelectorAll('.field-content, .field-content-piano, .alt-editable')
+      .forEach(pulisciCoda);
+
+    // Mostra pagina, nascondi loading
+    document.getElementById('loadingScreen').style.display = 'none';
+    document.getElementById('printBar').style.display = 'flex';
+    document.getElementById('printWrapper').style.display = 'block';
+
+    // Calcola salti pagina e stampa
+    var printW = Math.round((orientamento === 'landscape' ? 281 : 194) * 96 / 25.4);
+    var wrapper = document.getElementById('printWrapper');
+    wrapper.style.width = printW + 'px';
+    wrapper.style.paddingTop = '52px';
+
+    requestAnimationFrame(function() {
+      requestAnimationFrame(function() {
+        inserisciBreaks();
+        wrapper.style.width = '';
+        window.print();
+      });
+    });
+  }
+
+  // ── Caricamento dati ───────────────────────────────────────────
+  var fetchPazienti = dataArchivio
+    ? _apiGet('getDatiArchivioGiorno', { dataStr: dataArchivio })
+    : _apiGet('getDatiPazienti', {});
+
+  Promise.all([
+    fetchPazienti,
+    _apiGet('ottieniNomeReparto', {})
+  ]).then(function(results) {
+    var pazienti    = results[0] || [];
+    var nomeReparto = (typeof results[1] === 'string' ? results[1] : (results[1] && results[1].nome)) || 'Reparto';
+    renderPagina(pazienti, nomeReparto);
+  }).catch(function(e) {
+    document.getElementById('loadingScreen').innerHTML =
+      '<i class="bi bi-exclamation-triangle-fill text-warning" style="font-size:3rem;"></i>' +
+      '<p style="color:#fff;margin-top:12px;">Errore nel caricamento dati.<br>' +
+      '<small style="opacity:0.7;">' + (e.message || '') + '</small></p>' +
+      '<a href="./" style="color:#80cbc4;margin-top:16px;font-size:0.9rem;">' +
+      '<i class="bi bi-arrow-left me-1"></i>Torna all\'app</a>';
+  });
+
+})();
+</script>
+
+</body>
+</html>
