@@ -313,13 +313,14 @@
     function apriFinestraStampaSalvata(dataStr) {
       var mod = bootstrap.Modal.getInstance(document.getElementById('modalCalendario'));
       if (mod) mod.hide();
-      _apriModalScala(function(saltaVuoti, orientamento, tipologie) {
+      _apriModalScala(function(saltaVuoti, orientamento, tipologie, scala) {
         var url = PRINT_URL + '?layout=' + (_viewAltAttiva ? 'alt' : 'main') +
                   '&saltaVuoti=' + (saltaVuoti ? '1' : '0') +
                   '&orientamento=' + orientamento +
                   '&ordinamento=' + encodeURIComponent(localStorage.getItem('ordinamentoPreferito') || 'tipologia') +
                   '&dataArchivio=' + encodeURIComponent(dataStr) +
-                  '&tipologie=' + encodeURIComponent(tipologie || 'all');
+                  '&tipologie=' + encodeURIComponent(tipologie || 'all') +
+                  '&scala=' + (scala || 100);
         window.open(url, '_blank');
       });
     }
@@ -385,6 +386,8 @@
             var saltaVuoti = document.getElementById('checkSaltaVuoti').checked;
             var orientamento = 'portrait';
             var tipologie = 'all';
+            var scalaEl = document.querySelector('input[name="scalaStampa"]:checked');
+            var scala = scalaEl ? parseInt(scalaEl.value, 10) : 100;
             var ttEl = document.getElementById('checkTuttiTipologie');
             if (ttEl && !ttEl.checked) {
               var lEl = document.getElementById('tipologieStampaLista');
@@ -394,7 +397,7 @@
               }
             }
             mi.hide();
-            if (typeof _scalaModalCallback === 'function') _scalaModalCallback(saltaVuoti, orientamento, tipologie);
+            if (typeof _scalaModalCallback === 'function') _scalaModalCallback(saltaVuoti, orientamento, tipologie, scala);
           });
         }
       }
@@ -402,13 +405,14 @@
     }
 
     function stampaConsegne() {
-      _apriModalScala(function(saltaVuoti, orientamento, tipologie) {
+      _apriModalScala(function(saltaVuoti, orientamento, tipologie, scala) {
         var layout = _viewAltAttiva ? 'alt' : 'main';
         var url = PRINT_URL + '?layout=' + layout +
                   '&saltaVuoti=' + (saltaVuoti ? '1' : '0') +
                   '&orientamento=' + orientamento +
                   '&ordinamento=' + encodeURIComponent(localStorage.getItem('ordinamentoPreferito') || 'tipologia') +
-                  '&tipologie=' + encodeURIComponent(tipologie || 'all');
+                  '&tipologie=' + encodeURIComponent(tipologie || 'all') +
+                  '&scala=' + (scala || 100);
         window.open(url, '_blank');
       });
     }

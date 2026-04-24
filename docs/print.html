@@ -186,6 +186,8 @@
   var ordinamento  = params.get('ordinamento')  || 'tipologia';
   var dataArchivio = params.get('dataArchivio') || '';
   var tipologieParam = params.get('tipologie')  || 'all';
+  var scala = Math.min(100, Math.max(10, parseInt(params.get('scala') || '100', 10)));
+  var z     = scala / 100;  // es. 80% → z = 0.8
 
   var tipologieFiltro = null;
   if (tipologieParam && tipologieParam !== 'all') {
@@ -413,7 +415,9 @@
 
     var MM_PX   = 96 / 25.4;
     var pageHmm = (orientamento === 'landscape' ? 210 : 297) - 16;
-    var pageH   = Math.round(pageHmm * MM_PX);
+    // Con zoom z, offsetHeight restituisce l'altezza pre-zoom (layout units).
+    // L'altezza fisica della pagina in layout units = pageH_fisica / z.
+    var pageH   = Math.round(pageHmm * MM_PX / z);
     var MARGIN  = 3;
 
     var header     = document.querySelector('.print-header');
@@ -491,10 +495,18 @@
     document.getElementById('printWrapper').style.display = 'block';
 
     // Calcola salti pagina e stampa
-    var printW = Math.round((orientamento === 'landscape' ? 281 : 194) * 96 / 25.4);
+    // printW = larghezza stampabile A4 in px CSS (senza zoom)
+    var printW  = Math.round((orientamento === 'landscape' ? 281 : 194) * 96 / 25.4);
     var wrapper = document.getElementById('printWrapper');
-    wrapper.style.width = printW + 'px';
     wrapper.style.paddingTop = '52px';
+
+    // Applica zoom al wrapper: il testo si adatta alla larghezza post-zoom
+    // wrapper.style.width = printW/z → dopo zoom visuale = printW (riempie il foglio)
+    if (z !== 1) {
+      wrapper.style.zoom = z;
+    }
+    // Larghezza di layout = printW/z, così dopo zoom occupa esattamente printW
+    wrapper.style.width = Math.round(printW / z) + 'px';
 
     requestAnimationFrame(function() {
       requestAnimationFrame(function() {
