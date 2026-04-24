@@ -36,6 +36,14 @@ const CAMPI_RICH_TEXT = ['NoteTerapia', 'Diaria', 'DaFare', 'PianoTerapeutico', 
 function doGet(e) {
   var params = (e && e.parameter) ? e.parameter : {};
 
+  // ── API REST: chiamate dal frontend GitHub Pages ──────────────────
+  if (params.action) {
+    var result;
+    try { result = _dispatchGet(params.action, params); }
+    catch(ex) { result = { error: ex.toString() }; }
+    return _apiResponse(result);
+  }
+
   if (params.page === 'print') {
     try {
       var tmpl = HtmlService.createTemplateFromFile('Print');
@@ -59,11 +67,109 @@ function doGet(e) {
   var indexTmpl = HtmlService.createTemplateFromFile('Index');
   indexTmpl.toastType   = params.toast       || '';
   indexTmpl.toastMsg    = params.msg         || '';
-  indexTmpl.initialLoad = true; // skip getDatiPazienti() server-side: le card vengono caricate client-side via google.script.run
+  indexTmpl.initialLoad = true;
   return indexTmpl.evaluate()
     .setTitle('Gestione Consegne')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+}
+
+
+// ── Gestione POST (chiamate mutative dal frontend GitHub Pages) ─────
+function doPost(e) {
+  var body = {};
+  try { body = JSON.parse(e && e.postData ? e.postData.contents : '{}'); } catch(ex) {}
+  var action = (e && e.parameter && e.parameter.action) || body.action || '';
+  var result;
+  try { result = _dispatchPost(action, body); }
+  catch(ex) { result = { error: ex.toString() }; }
+  return _apiResponse(result);
+}
+
+
+// ── Helper risposta JSON ────────────────────────────────────────────
+function _apiResponse(data) {
+  return ContentService
+    .createTextOutput(JSON.stringify(data))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+
+// ── Dispatcher GET ──────────────────────────────────────────────────
+function _dispatchGet(action, params) {
+  switch (action) {
+    case 'getDatiPazienti':          return getDatiPazienti();
+    case 'getLocks':                 return getLocks();
+    case 'getLettiFull':             return getLettiFull();
+    case 'getRiepilogoLetti':        return getRiepilogoLetti();
+    case 'getGiorniArchiviati':      return getGiorniArchiviati();
+    case 'getTimestampGiorno':       return getTimestampGiorno(params.dataStr || '');
+    case 'getDatiArchivioGiorno':    return getDatiArchivioGiorno(params.dataStr || '');
+    case 'getGiorniArchivio':        return { giorni: getGiorniArchivio() };
+    case 'checkBackupStatus':        return checkBackupStatus();
+    case 'getColoriTipologie':       return getColoriTipologie();
+    case 'getTipologieConfigurate':  return getTipologieConfigurate();
+    case 'getDatiLettiConTipologia': return getDatiLettiConTipologia();
+    case 'getTipologieLettiBed':     return getTipologieLettiBed();
+    case 'getLinkUtili':             return getLinkUtili();
+    case 'ottieniNomeReparto':       return { nome: ottieniNomeReparto() };
+    default: return { error: 'Azione GET non riconosciuta: ' + action };
+  }
+}
+
+
+// ── Dispatcher POST ─────────────────────────────────────────────────
+function _dispatchPost(action, body) {
+  switch (action) {
+    case 'autoSavePazienteCompleto':
+      return autoSavePazienteCompleto(body.letto, body.datiPaziente, body.token);
+    case 'acquistaLock':
+      return acquistaLock(body.letto, body.token);
+    case 'rilasciaLock':
+      return rilasciaLock(body.letto, body.token);
+    case 'acquistaLockMultiplo':
+      return acquistaLockMultiplo(body.letti, body.token);
+    case 'rilasciaLockMultiplo':
+      return rilasciaLockMultiplo(body.letti, body.token);
+    case 'aggiungiLetto':
+      return aggiungiLetto(body.numeroLetto);
+    case 'eliminaLetto':
+      return eliminaLetto(body.numeroLetto);
+    case 'dimettiLetto':
+      return dimettiLetto(body.numeroLetto);
+    case 'spostaPaziente':
+      return spostaPaziente(body.lettoOrigine, body.lettoDestinazione);
+    case 'modificaTipologiaLetto':
+      return modificaTipologiaLetto(body.letto, body.nuovaTipologia);
+    case 'rinnovaLockBackup':
+      rinnovaLockBackup(); return { ok: true };
+    case 'archiviaGiornoCorrente':
+      return archiviaGiornoCorrente();
+    case 'salvaGiorniArchivio':
+      return salvaGiorniArchivio(body.giorni);
+    case 'pulisciArchivioVecchio':
+      return { eliminati: pulisciArchivioVecchio() };
+    case 'pulisciBackupEmergenzaVecchi':
+      return { eliminati: pulisciBackupEmergenzaVecchi() };
+    case 'salvaColoriTipologie':
+      salvaColoriTipologie(body.mappa); return { ok: true };
+    case 'salvaTipologieBatch':
+      return salvaTipologieBatch(body.modifiche);
+    case 'eliminaTipologiaConfigurata':
+      return eliminaTipologiaConfigurata(body.nome, body.force);
+    case 'cambiaTipologiaALetto':
+      return cambiaTipologiaALetto(body.letto, body.nuovaTipologia);
+    case 'aggiungiLinkUtile':
+      return aggiungiLinkUtile(body.nome, body.url);
+    case 'modificaLinkUtile':
+      return modificaLinkUtile(body.indice, body.nome, body.url);
+    case 'eliminaLinkUtile':
+      return eliminaLinkUtile(body.indice);
+    case 'salvaNomeReparto':
+      return { nome: salvaNomeReparto(body.nuovoNome) };
+    default:
+      return { error: 'Azione POST non riconosciuta: ' + action };
+  }
 }
 
 
