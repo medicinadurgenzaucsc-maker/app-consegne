@@ -208,6 +208,8 @@
       if (_coloriTipologie[tipo]) return _coloriTipologie[tipo];
       return stringToColor(tipo);
     }
+    // Esposto globalmente: app.js lo chiama dopo ogni aggiornamento DOM
+    window._getColoreTipo = _getColoreTipo;
 
     function _aggiornaBadgePrincipali() {
       document.querySelectorAll('[id^="badge-tipo-"]').forEach(function(b) {
@@ -218,6 +220,8 @@
         if (tipo) { b.innerText = tipo; b.style.backgroundColor = _getColoreTipo(tipo); }
       });
     }
+    // Esposto globalmente: app.js lo chiama dopo ogni aggiornamento DOM
+    window._aggiornaBadgePrincipali = _aggiornaBadgePrincipali;
 
     function _caricaColoriTipologie(callback) {
       google.script.run

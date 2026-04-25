@@ -1046,7 +1046,11 @@
       nuovoDoc.querySelectorAll('.patient-card[data-bed]').forEach(function(c) {
         lettiNuovi.add(c.getAttribute('data-bed'));
       });
-      if (lettiNuovi.size === 0) { _applicaAggiornamentoDaHtml(html); return; }
+      if (lettiNuovi.size === 0) {
+        _applicaAggiornamentoDaHtml(html);
+        if (typeof window._aggiornaBadgePrincipali === 'function') window._aggiornaBadgePrincipali();
+        return;
+      }
 
       var lettiAttuali = new Set();
       document.querySelectorAll('.patient-card[data-bed]').forEach(function(c) {
@@ -1079,7 +1083,7 @@
         }
         ['badge-tipo-' + letto, 'badge-tipo-alt-' + letto].forEach(function(id) {
           var badge = document.getElementById(id);
-          if (badge) { var val = (badge.innerText || '').trim(); if (val && val !== 'STANDARD') badge.style.backgroundColor = stringToColor(val); }
+          if (badge) { var val = (badge.innerText || '').trim(); if (val && val !== 'STANDARD') badge.style.backgroundColor = (typeof window._getColoreTipo === 'function') ? window._getColoreTipo(val) : stringToColor(val); }
         });
       });
 
@@ -1087,6 +1091,9 @@
 
       // ── 3. AGGIORNAMENTO DATI ─────────────────────────────────────────────
       _applicaAggiornamentoDaHtml(html);
+
+      // ── 3b. RIAPPLICA COLORI CUSTOM BADGE (il renderer usa stringToColor) ──
+      if (typeof window._aggiornaBadgePrincipali === 'function') window._aggiornaBadgePrincipali();
 
       // ── 4. MESSAGGIO "NESSUN LETTO" ───────────────────────────────────────
       var _nessunLetto = document.querySelectorAll('.patient-card[data-bed]').length === 0;
