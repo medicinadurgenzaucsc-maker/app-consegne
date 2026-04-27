@@ -986,6 +986,13 @@
             <i class="bi bi-arrow-repeat"></i> <span id="syncStatus">in attesa...</span>
           </span>
         </li>
+        <!-- Pulsante installa PWA (visibile solo quando non ancora installata) -->
+        <li class="nav-item" id="pwaInstallItem" style="display:none;">
+          <a class="nav-link" href="javascript:void(0)" id="pwaInstallBtn" title="Aggiungi alla schermata Home">
+            <i class="bi bi-star-fill fs-5" style="color:#ffc107;"></i>
+          </a>
+        </li>
+
         <li class="nav-item dropdown">
           <a class="nav-link dropdown-toggle active" href="javascript:void(0)" role="button" data-bs-toggle="dropdown" title="Impostazioni Reparto">
             <i class="bi bi-gear-fill fs-5"></i>
@@ -1008,6 +1015,30 @@
 </nav>
 
 <!-- ================= MODALS ================= -->
+
+<!-- Modal istruzioni installazione iOS -->
+<div class="modal fade" id="modalInstallIos" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered" style="max-width:340px;">
+    <div class="modal-content border-0 shadow-lg text-center">
+      <div class="modal-header border-0 pb-0 justify-content-end">
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body pt-1 pb-4 px-4">
+        <img src="favicon.png" style="width:64px;height:64px;border-radius:14px;margin-bottom:14px;box-shadow:0 2px 8px rgba(0,0,0,.18);">
+        <h5 class="fw-bold mb-3">Aggiungi alla schermata Home</h5>
+        <p class="text-muted mb-3" style="font-size:0.9rem;line-height:1.6;">
+          Tocca
+          <img src="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/icons/box-arrow-up.svg"
+               style="width:20px;vertical-align:middle;margin:0 3px;">
+          <strong>Condividi</strong> in basso,<br>
+          poi scegli <strong>"Aggiungi a Home"</strong>.
+        </p>
+        <div style="font-size:2rem;">📲</div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="modal fade" id="modalCalendario" tabindex="-1" data-bs-backdrop="static">
   <div class="modal-dialog modal-lg modal-dialog-centered">
     <div class="modal-content shadow-lg">
@@ -1287,6 +1318,61 @@
           .catch(function(e) { console.warn('SW registration failed:', e); });
       });
     }
+  </script>
+
+  <!-- Logica installazione PWA -->
+  <script>
+  (function() {
+    // Se l'app è già in modalità standalone (installata) → non mostrare nulla
+    if (window.matchMedia('(display-mode: standalone)').matches ||
+        window.navigator.standalone === true) {
+      return;
+    }
+
+    var installItem = document.getElementById('pwaInstallItem');
+    var installBtn  = document.getElementById('pwaInstallBtn');
+    var deferredPrompt = null;
+
+    // ── Rilevamento iOS ───────────────────────────────────────────
+    var isIos = /iphone|ipad|ipod/i.test(navigator.userAgent) &&
+                !window.MSStream;
+
+    // Su iOS non c'è beforeinstallprompt → mostriamo sempre la stellina
+    if (isIos && installItem) {
+      installItem.style.display = '';
+      installBtn.addEventListener('click', function() {
+        var m = bootstrap.Modal.getOrCreateInstance(
+          document.getElementById('modalInstallIos')
+        );
+        m.show();
+      });
+      return;
+    }
+
+    // ── Android / Desktop: aspetta beforeinstallprompt ────────────
+    window.addEventListener('beforeinstallprompt', function(e) {
+      e.preventDefault();          // blocca il banner automatico
+      deferredPrompt = e;
+      if (installItem) installItem.style.display = '';
+    });
+
+    // Click stellina → mostra prompt nativo
+    if (installBtn) {
+      installBtn.addEventListener('click', function() {
+        if (!deferredPrompt) return;
+        deferredPrompt.prompt();
+        deferredPrompt.userChoice.then(function() {
+          deferredPrompt = null;
+        });
+      });
+    }
+
+    // App installata → nascondi la stellina
+    window.addEventListener('appinstalled', function() {
+      if (installItem) installItem.style.display = 'none';
+      deferredPrompt = null;
+    });
+  })();
   </script>
 
 </body>
