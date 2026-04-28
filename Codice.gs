@@ -1330,37 +1330,25 @@ function importaConsegneDocx(fileIdOrUrl) {
 
 
 /**
- * Converte un file .docx (o qualsiasi file Office) in Google Docs
- * creando una copia temporanea nella stessa cartella del file originale.
- * Restituisce l'ID del file Google Docs creato.
- * IMPORTANTE: dopo l'uso, eliminare la copia con DriveApp.getFileById(id).setTrashed(true)
+ * Converte un file .docx in Google Docs creando una copia temporanea.
+ * Usa il servizio avanzato Drive API (v2) — deve essere abilitato nel progetto GAS:
+ *   Editor GAS → "Servizi" (icona +) → Drive API → Aggiungi
+ * Restituisce l'ID del file Google Docs creato (da eliminare dopo l'uso).
  */
 function _imp_convertDocxToGoogleDoc(fileId) {
-  var token = ScriptApp.getOAuthToken();
-
-  // Drive API v3: copy del file con mimeType Google Docs → conversione automatica
-  var url = 'https://www.googleapis.com/drive/v3/files/' + fileId + '/copy';
-  var payload = JSON.stringify({
-    name: '_temp_import_' + fileId,
-    mimeType: 'application/vnd.google-apps.document'
-  });
-
-  var response = UrlFetchApp.fetch(url, {
-    method: 'post',
-    headers: {
-      'Authorization': 'Bearer ' + token,
-      'Content-Type': 'application/json'
+  // Drive.Files.copy con mimeType Google Docs converte automaticamente il .docx
+  var copiedFile = Drive.Files.copy(
+    {
+      title: '_temp_import_' + fileId,
+      mimeType: 'application/vnd.google-apps.document'
     },
-    payload: payload,
-    muteHttpExceptions: true
-  });
-
-  var result = JSON.parse(response.getContentText());
-  if (!result.id) {
-    throw new Error('Conversione .docx fallita: ' + JSON.stringify(result));
+    fileId
+  );
+  if (!copiedFile || !copiedFile.id) {
+    throw new Error('Conversione .docx fallita: risposta Drive API non valida.');
   }
-  Logger.log('File convertito: ' + result.id);
-  return result.id;
+  Logger.log('File .docx convertito in Google Docs: ' + copiedFile.id);
+  return copiedFile.id;
 }
 
 /** Funzione di test rapido — modifica l'URL e lancia da "Esegui" nell'editor GAS. */
