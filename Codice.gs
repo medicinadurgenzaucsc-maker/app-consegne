@@ -1202,6 +1202,7 @@ function eliminaLinkUtile(indice) {
 /**
  * Funzione principale di importazione.
  * @param {string} fileIdOrUrl  ID del file o URL completo del documento.
+ *                              Funziona sia con file .docx che con Google Docs nativi.
  */
 function importaConsegneDocx(fileIdOrUrl) {
   // 1. Estrai l'ID del file dall'URL se necessario
@@ -1210,13 +1211,26 @@ function importaConsegneDocx(fileIdOrUrl) {
   if (m) fileId = m[1];
   if (!fileId) return { errore: 'File ID non valido.' };
 
-  // 2. Apri il documento
+  // 2. Apri il documento.
+  //    Se è un .docx, DocumentApp non riesce ad aprirlo direttamente:
+  //    lo convertiamo in Google Docs tramite Drive API, lo processiamo,
+  //    poi eliminiamo la copia temporanea.
   var doc;
+  var tempDocId = null;
+
   try {
     doc = DocumentApp.openById(fileId);
-  } catch (e) {
-    return { errore: 'Impossibile aprire il documento: ' + e.toString() };
+  } catch (e1) {
+    // Fallback: converti il file .docx in Google Docs (copia temporanea)
+    try {
+      Logger.log('DocumentApp.openById fallito (' + e1.message + '), provo conversione .docx → Google Docs...');
+      tempDocId = _imp_convertDocxToGoogleDoc(fileId);
+      doc = DocumentApp.openById(tempDocId);
+    } catch (e2) {
+      return { errore: 'Impossibile aprire il documento: ' + e2.toString() };
+    }
   }
+
   var body = doc.getBody();
 
   // 3. Ottieni il foglio Consegne
@@ -1299,6 +1313,11 @@ function importaConsegneDocx(fileIdOrUrl) {
 
   SpreadsheetApp.flush();
 
+  // Elimina la copia temporanea Google Docs (se era un .docx)
+  if (tempDocId) {
+    try { DriveApp.getFileById(tempDocId).setTrashed(true); } catch (e) {}
+  }
+
   var riepilogo = {
     importati: importati.length,
     dettaglio: importati,
@@ -1307,6 +1326,41 @@ function importaConsegneDocx(fileIdOrUrl) {
   };
   Logger.log(JSON.stringify(riepilogo));
   return riepilogo;
+}
+
+
+/**
+ * Converte un file .docx (o qualsiasi file Office) in Google Docs
+ * creando una copia temporanea nella stessa cartella del file originale.
+ * Restituisce l'ID del file Google Docs creato.
+ * IMPORTANTE: dopo l'uso, eliminare la copia con DriveApp.getFileById(id).setTrashed(true)
+ */
+function _imp_convertDocxToGoogleDoc(fileId) {
+  var token = ScriptApp.getOAuthToken();
+
+  // Drive API v3: copy del file con mimeType Google Docs → conversione automatica
+  var url = 'https://www.googleapis.com/drive/v3/files/' + fileId + '/copy';
+  var payload = JSON.stringify({
+    name: '_temp_import_' + fileId,
+    mimeType: 'application/vnd.google-apps.document'
+  });
+
+  var response = UrlFetchApp.fetch(url, {
+    method: 'post',
+    headers: {
+      'Authorization': 'Bearer ' + token,
+      'Content-Type': 'application/json'
+    },
+    payload: payload,
+    muteHttpExceptions: true
+  });
+
+  var result = JSON.parse(response.getContentText());
+  if (!result.id) {
+    throw new Error('Conversione .docx fallita: ' + JSON.stringify(result));
+  }
+  Logger.log('File convertito: ' + result.id);
+  return result.id;
 }
 
 /** Funzione di test rapido — modifica l'URL e lancia da "Esegui" nell'editor GAS. */
