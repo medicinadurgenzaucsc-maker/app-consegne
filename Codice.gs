@@ -1171,3 +1171,477 @@ function eliminaLinkUtile(indice) {
   SpreadsheetApp.flush();
   return { success: true };
 }
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+// IMPORTAZIONE CONSEGNE DA DOCUMENTO GOOGLE DOCS / WORD
+// ══════════════════════════════════════════════════════════════════════════════
+//
+// Struttura attesa del documento:
+//   Ogni scheda paziente = una tabella con almeno 2 righe:
+//
+//   Riga 0  │ Colonna SX          │ Colonna CENTRALE        │ Colonna DX  │
+//           │ n° letto            │ Nome Cognome, età sesso  │             │
+//           │ sesso (skip)        │ [Diagnosi in grassetto]  │  DaFare     │
+//           │ Ingresso gg/mm/aaaa │ [riga vuota]             │             │
+//           │ CS xxxxxxxx         │ Diaria ed epicrisi...    │             │
+//           │ Allergie: ...       │                          │             │
+//           │ Ossigeno: ...       │                          │             │
+//           │ [resto → NoteTer.]  │                          │             │
+//   ─────────────────────────────────────────────────────────────────────────
+//   Riga 1  │ PIANO DI CURA       │ Contenuto piano...      │             │
+//
+// Utilizzo dall'editor GAS:
+//   importaConsegneDocx('https://docs.google.com/document/d/ID_FILE/edit')
+//   oppure:
+//   importaConsegneDocx('ID_FILE')
+//
+// Per testare velocemente, esegui testImportaConsegne() dall'editor.
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Funzione principale di importazione.
+ * @param {string} fileIdOrUrl  ID del file o URL completo del documento.
+ */
+function importaConsegneDocx(fileIdOrUrl) {
+  // 1. Estrai l'ID del file dall'URL se necessario
+  var fileId = String(fileIdOrUrl || '').trim();
+  var m = fileId.match(/\/d\/([a-zA-Z0-9_\-]+)/);
+  if (m) fileId = m[1];
+  if (!fileId) return { errore: 'File ID non valido.' };
+
+  // 2. Apri il documento
+  var doc;
+  try {
+    doc = DocumentApp.openById(fileId);
+  } catch (e) {
+    return { errore: 'Impossibile aprire il documento: ' + e.toString() };
+  }
+  var body = doc.getBody();
+
+  // 3. Ottieni il foglio Consegne
+  var ss    = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(NOME_FOGLIO);
+  if (!sheet) return { errore: 'Foglio "' + NOME_FOGLIO + '" non trovato.' };
+
+  var importati = [];
+  var saltati   = [];
+  var errori    = [];
+
+  // 4. Scorri tutti gli elementi del body cercando le tabelle
+  var numChildren = body.getNumChildren();
+  for (var ci = 0; ci < numChildren; ci++) {
+    var element = body.getChild(ci);
+    if (element.getType() !== DocumentApp.ElementType.TABLE) continue;
+
+    var table = element.asTable();
+    // Tabella valida: almeno 1 riga con almeno 2 colonne
+    if (table.getNumRows() < 1 || table.getRow(0).getNumCells() < 2) continue;
+
+    try {
+      var dati = _imp_parseSchedaLetto(table);
+      if (!dati || !dati.Letto) { saltati.push('tabella senza n° letto'); continue; }
+
+      var lettoNum = String(dati.Letto).trim();
+      if (!lettoNum) { saltati.push('letto vuoto'); continue; }
+
+      // Trova (o crea) la riga nel foglio
+      var data    = sheet.getDataRange().getValues();
+      var headers = data[0];
+      var rowIndex = -1;
+      for (var ri = 1; ri < data.length; ri++) {
+        if (String(data[ri][0]).trim() === lettoNum) { rowIndex = ri + 1; break; }
+      }
+      if (rowIndex === -1) {
+        // Il letto non esiste → crea una nuova riga
+        var newRow = new Array(headers.length).fill('');
+        newRow[headers.indexOf('Letto') !== -1 ? headers.indexOf('Letto') : 0] = lettoNum;
+        sheet.appendRow(newRow);
+        SpreadsheetApp.flush();
+        data     = sheet.getDataRange().getValues();
+        headers  = data[0];
+        rowIndex = data.length;
+      }
+
+      // Scrivi i campi
+      var campiScritti = [];
+      for (var campo in dati) {
+        if (campo === 'Letto') continue;
+        var val = dati[campo];
+        if (val === null || val === undefined || val === '') continue;
+        var colIndex = headers.indexOf(campo);
+        if (colIndex === -1) continue;
+        var cella = sheet.getRange(rowIndex, colIndex + 1);
+        // Forza formato testo per campi che non devono essere interpretati da Sheets
+        if (['Nome','CodiceSanitario','Ossigeno','DataRicovero','Allergie',
+             'NoteTerapia','Diagnosi','Diaria','DaFare','PianoTerapeutico'].indexOf(campo) !== -1) {
+          cella.setNumberFormat('@');
+        }
+        cella.setValue(val);
+        campiScritti.push(campo);
+      }
+
+      // Timestamp
+      var tsCol = headers.indexOf('UltimoAggiornamento');
+      if (tsCol !== -1) {
+        var now = new Date();
+        var ora = ('0'+now.getHours()).slice(-2)+':'+('0'+now.getMinutes()).slice(-2)+':'+('0'+now.getSeconds()).slice(-2);
+        sheet.getRange(rowIndex, tsCol + 1).setValue(ora);
+      }
+
+      importati.push({ letto: lettoNum, campi: campiScritti });
+
+    } catch (e) {
+      errori.push({ info: e.toString() });
+      Logger.log('Errore tabella: ' + e.toString());
+    }
+  }
+
+  SpreadsheetApp.flush();
+
+  var riepilogo = {
+    importati: importati.length,
+    dettaglio: importati,
+    saltati:   saltati,
+    errori:    errori
+  };
+  Logger.log(JSON.stringify(riepilogo));
+  return riepilogo;
+}
+
+/** Funzione di test rapido — modifica l'URL e lancia da "Esegui" nell'editor GAS. */
+function testImportaConsegne() {
+  var url = 'https://docs.google.com/document/d/13WCOPT1fi58XyhgoQFDG5ErWcjX3KuUb/edit';
+  var risultato = importaConsegneDocx(url);
+  Logger.log(JSON.stringify(risultato, null, 2));
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PARSING SCHEDA LETTO (una tabella del documento)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function _imp_parseSchedaLetto(table) {
+  var row0    = table.getRow(0);
+  var numCols = row0.getNumCells();
+  var dati    = {};
+
+  // ── Colonna sinistra ──────────────────────────────────────────────────────
+  if (numCols >= 1) {
+    var sinistra = _imp_parseColonnaSinistra(row0.getCell(0));
+    for (var k in sinistra) dati[k] = sinistra[k];
+  }
+
+  // ── Colonna centrale ─────────────────────────────────────────────────────
+  if (numCols >= 2) {
+    var centrale = _imp_parseColonnaCentrale(row0.getCell(1));
+    for (var k in centrale) dati[k] = centrale[k];
+  }
+
+  // ── Colonna destra ────────────────────────────────────────────────────────
+  if (numCols >= 3) {
+    dati.DaFare = _imp_cellToHtml(row0.getCell(2));
+  }
+
+  // ── Riga PIANO DI CURA ────────────────────────────────────────────────────
+  if (table.getNumRows() >= 2) {
+    var row1 = table.getRow(1);
+    // Trova la cella che NON contiene "PIANO DI CURA" (quella con il contenuto)
+    var pianoCell = null;
+    for (var c = 0; c < row1.getNumCells(); c++) {
+      var ct = row1.getCell(c).getText().trim().toUpperCase();
+      if (ct.indexOf('PIANO DI CURA') === -1 && ct !== '') {
+        pianoCell = row1.getCell(c);
+        break;
+      }
+    }
+    // Fallback: seconda cella
+    if (!pianoCell && row1.getNumCells() >= 2) pianoCell = row1.getCell(1);
+    if (pianoCell) dati.PianoTerapeutico = _imp_cellToHtml(pianoCell);
+  }
+
+  return dati;
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PARSING COLONNA SINISTRA
+// ─────────────────────────────────────────────────────────────────────────────
+
+function _imp_parseColonnaSinistra(cell) {
+  var result = {
+    Letto: '', DataRicovero: '', CodiceSanitario: '',
+    Allergie: '', Ossigeno: '', NoteTerapia: ''
+  };
+  var paras     = _imp_getCellParagraphs(cell);
+  var noteParts = [];
+  var bedFound  = false;
+  var i = 0;
+
+  while (i < paras.length) {
+    var para = paras[i];
+    var text = para.getText().trim();
+
+    if (!text) {
+      // Riga vuota nelle note: la preserviamo come separatore
+      if (bedFound && noteParts.length > 0) noteParts.push('');
+      i++; continue;
+    }
+
+    // ── Prima riga non vuota = numero letto ─────────────────────────────────
+    if (!bedFound) {
+      // Rimuovi eventuale prefisso "letto" o "L."
+      result.Letto = text.replace(/^l(?:etto)?\.?\s*/i, '').trim();
+      bedFound = true;
+      i++; continue;
+    }
+
+    var lower = text.toLowerCase();
+
+    // ── Sesso: riga da saltare (M, F, M., F., maschio, femmina) ─────────────
+    if (/^[mf]\.?$/i.test(text) || /^(maschio|femmina|uomo|donna)$/i.test(lower)) {
+      i++; continue;
+    }
+
+    // ── Ingresso / data di ricovero ──────────────────────────────────────────
+    if (lower.indexOf('ingresso') !== -1) {
+      var dateMatch = text.match(/\d{1,2}[\-\/\.]\d{1,2}[\-\/\.]\d{2,4}/);
+      if (dateMatch) {
+        result.DataRicovero = dateMatch[0];
+      } else {
+        // Il valore dopo la keyword (es. "Ingresso 15/04/25")
+        var afterKw = text.replace(/ingresso\s*/i, '').trim();
+        if (afterKw) {
+          result.DataRicovero = afterKw;
+        } else if (i + 1 < paras.length) {
+          // Data sulla riga successiva
+          var nextT = paras[i+1].getText().trim();
+          if (nextT && /\d/.test(nextT)) { result.DataRicovero = nextT; i++; }
+        }
+      }
+      i++; continue;
+    }
+
+    // ── CS / Codice Sanitario ────────────────────────────────────────────────
+    if (/^c\.?\s*s\.?\s*[:=]?\s*\S/i.test(text) || /^codice\s+sanitario/i.test(text)) {
+      var csVal = text.replace(/^(c\.?\s*s\.?\s*[:=]?\s*|codice\s+sanitario\s*[:=]?\s*)/i, '').trim();
+      if (csVal) {
+        result.CodiceSanitario = csVal;
+      } else if (i + 1 < paras.length) {
+        result.CodiceSanitario = paras[i+1].getText().trim(); i++;
+      }
+      i++; continue;
+    }
+    // CS da solo su una riga (senza valore inline)
+    if (/^c\.?\s*s\.?$/i.test(text) || /^codice\s+sanitario$/i.test(text)) {
+      if (i + 1 < paras.length) {
+        result.CodiceSanitario = paras[i+1].getText().trim(); i++;
+      }
+      i++; continue;
+    }
+
+    // ── Allergie ─────────────────────────────────────────────────────────────
+    if (/^allergi[ae]/i.test(text)) {
+      var allVal = text.replace(/^allergi[ae]\s*[:=]?\s*/i, '').trim();
+      if (allVal) {
+        // Preserva l'HTML (potrebbe avere evidenziazioni)
+        var allHtml = _imp_paraToHtml(para).replace(/^allergi[ae]\s*[:=]?\s*/i, '').trim();
+        result.Allergie = allHtml;
+      } else if (i + 1 < paras.length && paras[i+1].getText().trim()) {
+        result.Allergie = _imp_paraToHtml(paras[i+1]); i++;
+      }
+      i++; continue;
+    }
+
+    // ── Ossigeno ──────────────────────────────────────────────────────────────
+    if (/^ossigeno/i.test(text)) {
+      var o2Val = text.replace(/^ossigeno\s*[:=]?\s*/i, '').trim();
+      if (o2Val) {
+        result.Ossigeno = o2Val;
+      } else if (i + 1 < paras.length && paras[i+1].getText().trim()) {
+        result.Ossigeno = paras[i+1].getText().trim(); i++;
+      }
+      i++; continue;
+    }
+
+    // ── Tutto il resto → Note e Terapia ──────────────────────────────────────
+    noteParts.push(_imp_paraToHtml(para));
+    i++;
+  }
+
+  // Rimuovi righe vuote iniziali e finali dalle note
+  while (noteParts.length > 0 && noteParts[0] === '') noteParts.shift();
+  while (noteParts.length > 0 && noteParts[noteParts.length - 1] === '') noteParts.pop();
+  result.NoteTerapia = noteParts.join('<br>');
+
+  return result;
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PARSING COLONNA CENTRALE
+// ─────────────────────────────────────────────────────────────────────────────
+
+function _imp_parseColonnaCentrale(cell) {
+  var result = { Nome: '', Diagnosi: '', Diaria: '' };
+  var paras  = _imp_getCellParagraphs(cell);
+
+  var phase     = 'name';   // 'name' | 'diagnosi' | 'diaria'
+  var diagParts = [];
+  var diarParts = [];
+
+  for (var i = 0; i < paras.length; i++) {
+    var para = paras[i];
+    var text = para.getText().trim();
+
+    // ── Nome ─────────────────────────────────────────────────────────────────
+    if (phase === 'name') {
+      if (!text) continue;
+      // Prendi solo la parte prima della prima virgola (dopo c'è "età, sesso")
+      var commaIdx = text.indexOf(',');
+      result.Nome = (commaIdx !== -1 ? text.substring(0, commaIdx) : text).trim();
+      phase = 'diagnosi';
+      continue;
+    }
+
+    // ── Diagnosi (paragrafi in grassetto, separati dalla diaria da riga vuota) ─
+    if (phase === 'diagnosi') {
+      if (!text) {
+        // Riga vuota: se abbiamo già raccolta diagnosi → passa alla diaria
+        if (diagParts.length > 0) phase = 'diaria';
+        continue;
+      }
+      var isBold = _imp_isParaBold(para);
+      if (isBold) {
+        diagParts.push(_imp_paraToHtml(para));
+      } else {
+        if (diagParts.length === 0) {
+          // Prima riga dopo il nome e non è bold → trattala comunque come diagnosi
+          // (caso in cui il grassetto non sia stato applicato correttamente)
+          diagParts.push(_imp_paraToHtml(para));
+        } else {
+          // Avevamo già della diagnosi e ora non è bold → siamo in diaria
+          phase = 'diaria';
+          diarParts.push(_imp_paraToHtml(para));
+        }
+      }
+      continue;
+    }
+
+    // ── Diaria ───────────────────────────────────────────────────────────────
+    if (phase === 'diaria') {
+      diarParts.push(text ? _imp_paraToHtml(para) : '');
+    }
+  }
+
+  // Pulisci righe vuote iniziali/finali
+  while (diarParts.length > 0 && diarParts[0] === '') diarParts.shift();
+  while (diarParts.length > 0 && diarParts[diarParts.length - 1] === '') diarParts.pop();
+
+  result.Diagnosi = diagParts.join('<br>');
+  result.Diaria   = diarParts.join('<br>');
+  return result;
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UTILITY: HTML da una cella intera
+// ─────────────────────────────────────────────────────────────────────────────
+
+function _imp_cellToHtml(cell) {
+  var parts = [];
+  var paras = _imp_getCellParagraphs(cell);
+  for (var i = 0; i < paras.length; i++) {
+    parts.push(_imp_paraToHtml(paras[i]));
+  }
+  while (parts.length > 0 && parts[0] === '') parts.shift();
+  while (parts.length > 0 && parts[parts.length - 1] === '') parts.pop();
+  return parts.join('<br>');
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UTILITY: paragrafi di una TableCell
+// ─────────────────────────────────────────────────────────────────────────────
+
+function _imp_getCellParagraphs(cell) {
+  var paras = [];
+  var n = cell.getNumChildren();
+  for (var i = 0; i < n; i++) {
+    var child = cell.getChild(i);
+    var type  = child.getType();
+    if      (type === DocumentApp.ElementType.PARAGRAPH)  paras.push(child.asParagraph());
+    else if (type === DocumentApp.ElementType.LIST_ITEM)  paras.push(child.asListItem());
+  }
+  return paras;
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UTILITY: controlla se il primo carattere non-spazio di un paragrafo è bold
+// ─────────────────────────────────────────────────────────────────────────────
+
+function _imp_isParaBold(para) {
+  var textEl = para.editAsText();
+  var raw    = textEl.getText();
+  if (!raw || raw.trim() === '') return false;
+  for (var i = 0; i < raw.length; i++) {
+    if (raw[i].trim() !== '') return textEl.isBold(i) === true;
+  }
+  return false;
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UTILITY: converti un Paragraph/ListItem in HTML
+//          Preserva: grassetto, corsivo, sottolineato, evidenziazione
+// ─────────────────────────────────────────────────────────────────────────────
+
+function _imp_paraToHtml(para) {
+  var textEl = para.editAsText();
+  var raw    = textEl.getText();
+  if (!raw) return '';
+
+  var indices = textEl.getTextAttributeIndices();
+  if (!indices || indices.length === 0) return _imp_escHtml(raw);
+
+  var html = '';
+  for (var i = 0; i < indices.length; i++) {
+    var start   = indices[i];
+    var end     = (i + 1 < indices.length) ? indices[i + 1] : raw.length;
+    var chunk   = raw.substring(start, end);
+    if (!chunk) continue;
+
+    var isBold      = textEl.isBold(start) === true;
+    var isItalic    = textEl.isItalic(start) === true;
+    var isUnderline = textEl.isUnderline(start) === true;
+    var bgColor     = null;
+    try { bgColor = textEl.getBackgroundColor(start); } catch (e) {}
+
+    var escaped = _imp_escHtml(chunk);
+
+    // Applica formattazione (dall'esterno verso l'interno)
+    if (bgColor && bgColor !== '#ffffff' && bgColor !== '#FFFFFF') {
+      escaped = '<span style="background-color:' + bgColor + '">' + escaped + '</span>';
+    }
+    if (isUnderline) escaped = '<u>' + escaped + '</u>';
+    if (isItalic)    escaped = '<i>' + escaped + '</i>';
+    if (isBold)      escaped = '<b>' + escaped + '</b>';
+
+    html += escaped;
+  }
+  return html;
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UTILITY: escape caratteri HTML speciali
+// ─────────────────────────────────────────────────────────────────────────────
+
+function _imp_escHtml(str) {
+  return String(str)
+    .replace(/&/g,  '&amp;')
+    .replace(/</g,  '&lt;')
+    .replace(/>/g,  '&gt;')
+    .replace(/"/g,  '&quot;');
+}
