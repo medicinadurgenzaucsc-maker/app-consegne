@@ -1423,7 +1423,7 @@ function _imp_parseSchedaLetto(table) {
 
 function _imp_parseColonnaSinistra(cell) {
   var result = {
-    Letto: '', DataRicovero: '', CodiceSanitario: '',
+    Letto: '', DataRicovero: '', DataNascita: '', CodiceSanitario: '',
     Allergie: '', Ossigeno: '', NoteTerapia: ''
   };
   var paras     = _imp_getCellParagraphs(cell);
@@ -1502,6 +1502,17 @@ function _imp_parseColonnaSinistra(cell) {
         result.Allergie = allHtml;
       } else if (i + 1 < paras.length && paras[i+1].getText().trim()) {
         result.Allergie = _imp_paraToHtml(paras[i+1]); i++;
+      }
+      i++; continue;
+    }
+
+    // ── DDN / Data di Nascita ─────────────────────────────────────────────────
+    if (/^ddn\s*[:=]?\s*/i.test(text)) {
+      var ddnVal = text.replace(/^ddn\s*[:=]?\s*/i, '').trim();
+      if (ddnVal) {
+        result.DataNascita = ddnVal;
+      } else if (i + 1 < paras.length && paras[i+1].getText().trim()) {
+        result.DataNascita = paras[i+1].getText().trim(); i++;
       }
       i++; continue;
     }
