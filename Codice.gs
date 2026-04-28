@@ -1336,19 +1336,30 @@ function importaConsegneDocx(fileIdOrUrl) {
  * Restituisce l'ID del file Google Docs creato (da eliminare dopo l'uso).
  */
 function _imp_convertDocxToGoogleDoc(fileId) {
-  // Drive.Files.copy con mimeType Google Docs converte automaticamente il .docx
-  var copiedFile = Drive.Files.copy(
-    {
-      title: '_temp_import_' + fileId,
-      mimeType: 'application/vnd.google-apps.document'
-    },
-    fileId
-  );
-  if (!copiedFile || !copiedFile.id) {
-    throw new Error('Conversione .docx fallita: risposta Drive API non valida.');
+  // Drive.Files.copy con mimeType Google Docs converte automaticamente il .docx.
+  // Riprova fino a 3 volte con backoff crescente in caso di rate-limit.
+  var maxTentativi = 3;
+  var ultimoErrore;
+  for (var t = 0; t < maxTentativi; t++) {
+    if (t > 0) Utilities.sleep(3000 * t); // 3s, poi 6s
+    try {
+      var copiedFile = Drive.Files.copy(
+        {
+          title: '_temp_import_' + fileId,
+          mimeType: 'application/vnd.google-apps.document'
+        },
+        fileId
+      );
+      if (copiedFile && copiedFile.id) {
+        Logger.log('File .docx convertito in Google Docs: ' + copiedFile.id);
+        return copiedFile.id;
+      }
+    } catch (e) {
+      ultimoErrore = e;
+      Logger.log('Tentativo ' + (t + 1) + ' fallito: ' + e.toString());
+    }
   }
-  Logger.log('File .docx convertito in Google Docs: ' + copiedFile.id);
-  return copiedFile.id;
+  throw ultimoErrore || new Error('Conversione .docx fallita dopo ' + maxTentativi + ' tentativi.');
 }
 
 /** Funzione di test rapido — modifica l'URL e lancia da "Esegui" nell'editor GAS. */
