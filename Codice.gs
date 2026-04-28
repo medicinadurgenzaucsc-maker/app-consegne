@@ -1364,7 +1364,7 @@ function _imp_convertDocxToGoogleDoc(fileId) {
 
 /** Funzione di test rapido — modifica l'URL e lancia da "Esegui" nell'editor GAS. */
 function testImportaConsegne() {
-  var url = 'https://docs.google.com/document/d/13WCOPT1fi58XyhgoQFDG5ErWcjX3KuUb/edit?usp=sharing&ouid=100925972760136519997&rtpof=true&sd=true';
+  var url = 'https://docs.google.com/document/d/1Jy9Zd4FlD6Nf5SGCXOknGSCVX5_TG6twZCdeNmd-0G4/edit?usp=drive_link';
   var risultato = importaConsegneDocx(url);
   Logger.log(JSON.stringify(risultato, null, 2));
 }
