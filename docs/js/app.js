@@ -1236,7 +1236,10 @@
           callback(true);
         }
       });
-      _docsTokenClient.requestAccessToken({ prompt: '' });
+      // prompt:'consent' forza sempre la schermata di autorizzazione Google,
+      // così l'utente vede esplicitamente che sta concedendo l'accesso ai Docs.
+      // Necessario la prima volta; le volte successive sarà già in cache.
+      _docsTokenClient.requestAccessToken({ prompt: 'consent' });
     }
 
     function _resetModalImporta() {
@@ -1249,11 +1252,28 @@
     function _eseguiParsingEImport(docId) {
       document.getElementById('importaStepMsg').textContent = 'Lettura documento in corso...';
 
+      // Diagnostica: verifica che il token sia presente
+      if (!_googleDocsToken) {
+        _resetModalImporta();
+        Swal.fire({ icon: 'error', title: 'Token mancante', text: 'Non è stato ottenuto il token per leggere il documento. Riprova: al prossimo tentativo potrebbe comparire la schermata di autorizzazione Google.', confirmButtonColor: '#d33' });
+        return;
+      }
+
       fetch('https://docs.googleapis.com/v1/documents/' + docId, {
         headers: { 'Authorization': 'Bearer ' + _googleDocsToken }
       })
       .then(function(r) {
-        if (!r.ok) throw new Error('HTTP ' + r.status + ' — verifica che il documento sia accessibile con questo account.');
+        if (!r.ok) {
+          // Legge il body dell'errore per mostrare un messaggio preciso
+          return r.json().catch(function() { return {}; }).then(function(body) {
+            var errMsg = (body.error && body.error.message) ? body.error.message : '';
+            if (r.status === 401) throw new Error('Token non valido o scaduto (401). Ricarica la pagina e riprova.');
+            if (r.status === 403) throw new Error('Accesso negato al documento (403). ' +
+              (errMsg || 'Verifica che il documento sia condiviso con medicinadurgenza.ucsc@gmail.com o accessibile con questo account.'));
+            if (r.status === 404) throw new Error('Documento non trovato (404). Controlla che l\'URL sia corretto e che il documento esista.');
+            throw new Error('Errore HTTP ' + r.status + (errMsg ? ': ' + errMsg : '') + '. Verifica che il documento sia accessibile con questo account.');
+          });
+        }
         return r.json();
       })
       .then(function(doc) {
