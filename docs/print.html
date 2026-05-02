@@ -197,7 +197,8 @@
 
   // ── Stile @page dinamico ───────────────────────────────────────
   var styleEl = document.createElement('style');
-  styleEl.textContent = '@page { size: A4 ' + orientamento + '; margin: 8mm; }';
+  // Margine superiore 20mm (2cm), laterali e inferiore 8mm
+  styleEl.textContent = '@page { size: A4 ' + orientamento + '; margin: 20mm 8mm 8mm 8mm; }';
   document.head.appendChild(styleEl);
 
   // ── Helper date ────────────────────────────────────────────────
@@ -414,7 +415,9 @@
     cards.forEach(function(c) { c.style.marginTop = ''; });
 
     var MM_PX   = 96 / 25.4;
-    var pageHmm = (orientamento === 'landscape' ? 210 : 297) - 16;
+    // Margine superiore 20mm + inferiore 8mm = 28mm totali sottratti all'altezza pagina
+    // (laterali 8mm non influenzano l'altezza utile)
+    var pageHmm = (orientamento === 'landscape' ? 210 : 297) - 28;
     // Con zoom z, offsetHeight restituisce l'altezza pre-zoom (layout units).
     // L'altezza fisica della pagina in layout units = pageH_fisica / z.
     var pageH   = Math.round(pageHmm * MM_PX / z);

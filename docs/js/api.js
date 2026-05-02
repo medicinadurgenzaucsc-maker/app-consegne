@@ -747,12 +747,14 @@ function _sbGetDatiLettiConTipologia() {
 }
 
 function _sbGetTipologieLettiBed() {
-  return _q(_sb.from('consegne').select('letto,tipologia_letto')).then(function(rows) {
-    var mappa = {};
+  // Ritorna un array ordinato di tipologie UNICHE presenti in almeno 1 letto
+  return _q(_sb.from('consegne').select('tipologia_letto')).then(function(rows) {
+    var set = {};
     (rows || []).forEach(function(r) {
-      mappa[r.letto] = (r.tipologia_letto || 'STANDARD').toUpperCase();
+      var t = (r.tipologia_letto || 'STANDARD').trim().toUpperCase();
+      if (t) set[t] = true;
     });
-    return mappa;
+    return Object.keys(set).sort();
   });
 }
 
