@@ -259,7 +259,9 @@
         bgColor = '#78909c';
       }
       input.value = bgColor.length === 7 && bgColor.startsWith('#') ? bgColor : '#78909c';
-      input.style.cssText = 'position:fixed;opacity:0;width:0;height:0;pointer-events:none;top:0;left:0;';
+      var rect = swatchEl.getBoundingClientRect();
+      input.style.cssText = 'position:fixed;opacity:0;width:1px;height:1px;pointer-events:none;' +
+        'top:' + (rect.bottom + 2) + 'px;left:' + rect.left + 'px;';
       document.body.appendChild(input);
 
       // Aggiorna in tempo reale mentre si sceglie
