@@ -210,18 +210,19 @@
             document.getElementById('cal-grid').innerHTML = `<div class="text-center py-5"><i class="bi bi-exclamation-triangle-fill text-warning" style="font-size: 4rem;"></i><h4 class="mt-3">Nessun backup trovato</h4><button class="btn btn-outline-secondary mt-3" onclick="ripristinaCalendarioView()"><i class="bi bi-arrow-left me-1"></i> Torna al calendario</button></div>`;
             return;
           }
-          if (timestamps.length === 1) { caricaDatiArchivio(timestamps[0], dataStr); return; }
+          // Singolo backup → apre direttamente il modal stampa
+          if (timestamps.length === 1) { apriFinestraStampaSalvata(timestamps[0]); return; }
+          // Più backup → lista con orario cliccabile
           let listaHtml = timestamps.map(function(ts) {
-            // ts è epoch ms (string) — formatta come HH:MM
             let ora = /^\d{10,13}$/.test(ts)
               ? new Date(Number(ts)).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
               : (ts.indexOf(' ') !== -1 ? ts.split(' ')[1].substring(0, 5) : ts);
-            return `<button class="btn btn-outline-success btn-lg w-100 mb-2 text-start px-4" onclick="caricaDatiArchivio('${ts}','${dataStr}')"><i class="bi bi-clock me-2"></i>${ora}</button>`;
+            return `<button class="btn btn-outline-success btn-lg w-100 mb-2 text-start px-4" onclick="apriFinestraStampaSalvata('${ts}')"><i class="bi bi-clock me-2"></i>${ora}</button>`;
           }).join('');
           document.getElementById('cal-grid').innerHTML = `
             <div class="py-4">
-              <h5 class="fw-bold mb-1">Backup del ${dataIta}</h5>
-              <p class="text-muted mb-3" style="font-size:0.9rem;">Seleziona il backup da aprire:</p>
+              <h5 class="fw-bold mb-1"><i class="bi bi-archive-fill text-success me-2"></i>Backup del ${dataIta}</h5>
+              <p class="text-muted mb-3" style="font-size:0.9rem;">Seleziona il backup da stampare:</p>
               ${listaHtml}
               <button class="btn btn-outline-secondary mt-3" onclick="ripristinaCalendarioView()"><i class="bi bi-arrow-left me-1"></i> Torna al calendario</button>
             </div>`;
@@ -232,103 +233,23 @@
         .getTimestampGiorno(dataStr);
     }
 
-    function caricaDatiArchivio(tsStr, dataStr) {
-      document.getElementById('cal-header-controls').style.display = 'none';
-      document.getElementById('cal-info-text').style.display = 'none';
-      document.getElementById('cal-grid').innerHTML = `
-        <div class="text-center py-5">
-            <div class="spinner-border text-success mb-3" style="width: 3rem; height: 3rem;" role="status"></div>
-            <h4 class="text-success fw-bold">Recupero Archivio in corso...</h4>
-            <p class="text-muted">Estrazione dati dal database protetto.</p>
-        </div>`;
-      google.script.run
-        .withSuccessHandler(function(pazienti) {
-          pazienti.sort((a, b) => {
-            let tipoA = (a.TipologiaLetto || '').trim().toLowerCase(); let tipoB = (b.TipologiaLetto || '').trim().toLowerCase();
-            const cmp = (x, y) => { let nx=parseInt(x,10), ny=parseInt(y,10); if(!isNaN(nx)&&!isNaN(ny))return nx-ny; return String(x).localeCompare(String(y)); };
-            if (!tipoA && !tipoB) return cmp(a.Letto, b.Letto); if (!tipoA) return 1; if (!tipoB) return -1;
-            let res = tipoA.localeCompare(tipoB); return res !== 0 ? res : cmp(a.Letto, b.Letto);
-          });
-          let d = dataStr.split('-'); let dataIta = `${d[2]}/${d[1]}/${d[0]}`;
-          // tsStr è epoch ms (string) oppure legacy "YYYY-MM-DD HH:MM"
-          let oraIta = /^\d{10,13}$/.test(tsStr)
-            ? ' alle ' + new Date(Number(tsStr)).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
-            : (tsStr.indexOf(' ') !== -1 ? ' alle ' + tsStr.split(' ')[1].substring(0, 5) : '');
-          let nomeReparto = document.getElementById("nav-app-name").innerText;
-          let htmlCards = '';
-          pazienti.forEach(p => {
-            let tagHtml = p.TipologiaLetto ? `<span class="badge text-uppercase" style="border: 1px solid #000; color: #000;">${p.TipologiaLetto}</span>` : `<span class="badge text-uppercase" style="border: 1px solid #000; color: #000;">STANDARD</span>`;
-            let dataVisualizzata = p.DataRicovero ? p.DataRicovero : "";
-            htmlCards += `
-            <div class="patient-card">
-              <div class="row m-0 header-row">
-                <div class="col-2 bed-number-box">
-                  <div class="text-muted fw-bold mt-2" style="font-size: 0.8rem; color: #000;">LETTO</div>
-                  <div class="bed-number">${p.Letto}</div>
-                  <div class="mt-2 text-center" style="font-size: 0.8rem;">${tagHtml}</div>
-                </div>
-                <div class="col-10 patient-info-box">
-                  <div class="d-flex justify-content-between mb-2 mt-1 align-items-start">
-                    <div class="d-flex flex-column w-75 align-items-start pt-1">
-                      <div class="d-flex w-100 mb-2 align-items-start"><span class="text-muted me-2 mt-1">Paziente:</span><div class="w-100 fw-bold fs-4 text-uppercase" style="border-bottom: 1px solid #999; padding: 2px;">${p.Nome || ""}</div></div>
-                      <div class="d-flex w-100 align-items-start"><span class="text-muted me-2 mt-1 fw-normal text-nowrap">Diagnosi / Motivo Ricovero:</span><div class="w-100 me-5 fw-bold" style="border-bottom: 1px solid #999; padding: 2px;">${p.Diagnosi || ""}</div></div>
-                    </div>
-                    <div class="d-flex flex-column align-items-end me-3" style="min-width: 220px;">
-                      <div class="d-flex align-items-center mb-1 w-100 justify-content-end"><span class="text-muted me-2">Et&agrave;:</span><div class="text-end" style="border-bottom: 1px solid #999; padding: 2px; width: 50px;">${p.Eta || ""}</div></div>
-                      <div class="d-flex align-items-center mb-1 text-secondary w-100 justify-content-end" style="font-size: 0.95rem;"><span class="fw-bold me-2">Data Ricovero:</span><span class="text-dark" style="border-bottom: 1px solid #999; padding: 2px; width: 120px; text-align: right;">${dataVisualizzata}</span></div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div class="row m-0 content-row">
-                <div class="column-box col-terapia p-0">
-                   <div class="column-header">ALLERGIE</div>
-                   <div class="editable-area rich-text">${p.Allergie || ""}</div>
-                   <div class="column-header" style="border-top:2px solid #000;">NOTE E TERAPIA</div>
-                   <div class="editable-area rich-text">${p.NoteTerapia || ""}</div>
-                </div>
-                <div class="column-box col-diaria p-0"><div class="column-header">DIARIA ED EPICRISI</div><div class="editable-area rich-text">${p.Diaria || ""}</div></div>
-                <div class="column-box col-da-fare p-0"><div class="column-header">DA FARE / RICHIESTE</div><div class="editable-area rich-text">${p.DaFare || ""}</div></div>
-              </div>
-              <div class="row m-0 piano-terapeutico-row p-0">
-                <div class="column-header-piano" style="border-top: 2px solid #000;">PIANO TERAPEUTICO</div>
-                <div class="editable-area rich-text">${p.PianoTerapeutico || ""}</div>
-              </div>
-            </div>`;
-          });
-          archivioHtmlPronto = `
-            <div style="display: flex; justify-content: space-between; border-bottom: 2px solid #000; margin-bottom: 15px; padding-bottom: 5px; color: #000; font-family: Arial;">
-              <h2>${nomeReparto} - Archivio Storico</h2><h3 style="color: #000; margin: 0; align-self: flex-end;">Consegne del: ${dataIta}${oraIta}</h3>
-            </div>
-            <div>${htmlCards}</div>`;
-          document.getElementById('cal-grid').innerHTML = `
-              <div class="text-center py-5">
-                  <i class="bi bi-check-circle-fill text-success" style="font-size: 5rem;"></i>
-                  <h3 class="mt-4 mb-4 fw-bold text-success">Dati estratti con successo</h3>
-                  <p>Backup del <strong>${dataIta}${oraIta}</strong> pronto per la consultazione e la stampa.</p>
-                  <button class="btn btn-success btn-lg px-5 shadow-lg mt-2" onclick="apriFinestraStampaSalvata('${tsStr}')" style="font-size: 1.3rem;"><i class="bi bi-printer-fill me-2"></i> Apri e Stampa</button><br>
-                  <button class="btn btn-outline-secondary mt-5" onclick="ripristinaCalendarioView()"><i class="bi bi-arrow-left me-1"></i> Torna al calendario</button>
-              </div>`;
-        })
-        .withFailureHandler(function(err) {
-          document.getElementById('cal-grid').innerHTML = `<div class="text-center py-5"><i class="bi bi-exclamation-triangle-fill text-danger" style="font-size: 4rem;"></i><h4 class="mt-3 text-danger">Errore</h4><p>${err.message}</p><button class="btn btn-outline-secondary mt-3" onclick="ripristinaCalendarioView()">Torna al Calendario</button></div>`;
-        })
-        .getDatiArchivioGiorno(tsStr);
-    }
-
-    function apriFinestraStampaSalvata(dataStr) {
+    function apriFinestraStampaSalvata(tsStr) {
+      // Chiude il modal calendario e apre il modal impostazioni stampa
       var mod = bootstrap.Modal.getInstance(document.getElementById('modalCalendario'));
       if (mod) mod.hide();
-      _apriModalScala(function(saltaVuoti, orientamento, tipologie, scala) {
-        var url = PRINT_URL + '?layout=' + (_viewAltAttiva ? 'alt' : 'main') +
-                  '&saltaVuoti=' + (saltaVuoti ? '1' : '0') +
-                  '&orientamento=' + orientamento +
-                  '&ordinamento=' + encodeURIComponent(localStorage.getItem('ordinamentoPreferito') || 'tipologia') +
-                  '&dataArchivio=' + encodeURIComponent(dataStr) +
-                  '&tipologie=' + encodeURIComponent(tipologie || 'all') +
-                  '&scala=' + (scala || 100);
-        window.open(url, '_blank');
-      });
+      // Piccolo delay per lasciar completare l'animazione di chiusura Bootstrap
+      setTimeout(function() {
+        _apriModalScala(function(saltaVuoti, orientamento, tipologie, scala) {
+          var url = PRINT_URL + '?layout=' + (_viewAltAttiva ? 'alt' : 'main') +
+                    '&saltaVuoti=' + (saltaVuoti ? '1' : '0') +
+                    '&orientamento=' + orientamento +
+                    '&ordinamento=' + encodeURIComponent(localStorage.getItem('ordinamentoPreferito') || 'tipologia') +
+                    '&dataArchivio=' + encodeURIComponent(tsStr) +
+                    '&tipologie=' + encodeURIComponent(tipologie || 'all') +
+                    '&scala=' + (scala || 100);
+          window.open(url, '_blank');
+        });
+      }, 350);
     }
 
 
