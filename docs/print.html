@@ -174,6 +174,7 @@
   <div id="printCards"></div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="js/api.js"></script>
 <script>
 (function() {
@@ -448,10 +449,20 @@
 
     var titoloStampa;
     if (dataArchivio) {
-      var tsParts = dataArchivio.split(' ');
-      var datePart = tsParts[0].split('-').reverse().join('/');
-      var timePart = tsParts.length > 1 ? ' alle ' + tsParts[1].substring(0,5) : '';
-      titoloStampa = nomeReparto + ' - Archivio del ' + datePart + timePart;
+      // Supporta sia epoch ms (nuovo) sia "YYYY-MM-DD HH:MM" (legacy)
+      if (/^\d{10,13}$/.test(String(dataArchivio))) {
+        var dA = new Date(Number(dataArchivio));
+        var datePart = String(dA.getDate()).padStart(2,'0') + '/' +
+                       String(dA.getMonth()+1).padStart(2,'0') + '/' + dA.getFullYear();
+        var timePart = ' alle ' + String(dA.getHours()).padStart(2,'0') + ':' +
+                       String(dA.getMinutes()).padStart(2,'0');
+        titoloStampa = nomeReparto + ' - Archivio del ' + datePart + timePart;
+      } else {
+        var tsParts = dataArchivio.split(' ');
+        var datePart = tsParts[0].split('-').reverse().join('/');
+        var timePart = tsParts.length > 1 ? ' alle ' + tsParts[1].substring(0,5) : '';
+        titoloStampa = nomeReparto + ' - Archivio del ' + datePart + timePart;
+      }
     } else {
       titoloStampa = nomeReparto + ' - Consegne del ' + dataOggi;
     }

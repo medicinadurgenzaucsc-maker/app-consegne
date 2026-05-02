@@ -624,40 +624,79 @@ function _sbSalvaGiorniConservazione(giorni) {
   )).then(function() { return { success: true, giorni: giorni }; });
 }
 
+var BACKUP_INTERVALLO_MS = 6 * 60 * 60 * 1000; // 6 ore
+
 function _sbArchiviaGiornoCorrente() {
   var dataStr = _oggiStr();
-  return _q(_sb.from('archivio').select('id').eq('data_str', dataStr).maybeSingle())
-    .then(function(existing) {
-      if (existing) return { inCorso: false }; // già archiviato oggi
+  var now = Date.now();
+
+  // Legge quando è stato fatto l'ultimo backup da impostazioni
+  return _q(_sb.from('impostazioni').select('valore').eq('chiave', 'ULTIMO_BACKUP').maybeSingle())
+    .then(function(row) {
+      var ultimoBackup = row ? Number(row.valore) : 0;
+      if (now - ultimoBackup < BACKUP_INTERVALLO_MS) {
+        return { inCorso: false }; // Backup recente → skip
+      }
+      // Esegui backup: leggi pazienti e inserisci in archivio
       return _sbGetPazienti().then(function(pazienti) {
         return _q(_sb.from('archivio').insert({
           data_str: dataStr,
-          ts: Date.now(),
+          ts: now,
           dati: pazienti
         }));
-      });
-    })
-    .then(function() {
-      // Pulizia archivio dinamica — legge GIORNI_ARCHIVIO da impostazioni
-      return _sbGetGiorniConservazione().then(function(giorni) {
-        var limit = Date.now() - (giorni * 86400000);
-        _q(_sb.from('archivio').delete().lt('ts', limit)).catch(function() {});
-        return { inCorso: false };
+      }).then(function() {
+        // Aggiorna timestamp ultimo backup
+        return _q(_sb.from('impostazioni').upsert(
+          { chiave: 'ULTIMO_BACKUP', valore: String(now) },
+          { onConflict: 'chiave' }
+        ));
+      }).then(function() {
+        // Pulizia archivio vecchio in base a GIORNI_ARCHIVIO
+        return _sbGetGiorniConservazione().then(function(giorni) {
+          var limit = now - (giorni * 86400000);
+          _q(_sb.from('archivio').delete().lt('ts', limit)).catch(function() {});
+          return { inCorso: false };
+        });
       });
     })
     .catch(function() { return { inCorso: false }; });
 }
 
 function _sbGetGiorniArchivio() {
-  return _q(_sb.from('archivio').select('data_str,ts').order('ts', { ascending: false }))
-    .then(function(rows) { return (rows || []).map(function(r) { return r.data_str; }); });
+  // Ritorna array di date uniche (YYYY-MM-DD) con almeno un backup
+  return _q(_sb.from('archivio').select('data_str').order('data_str', { ascending: false }))
+    .then(function(rows) {
+      var seen = {};
+      return (rows || []).filter(function(r) {
+        if (seen[r.data_str]) return false;
+        seen[r.data_str] = true;
+        return true;
+      }).map(function(r) { return r.data_str; });
+    });
 }
 
-function _sbGetDatiArchivioGiorno(dataStr) {
-  return _q(_sb.from('archivio').select('dati,ts').eq('data_str', dataStr).maybeSingle())
-    .then(function(row) {
-      if (!row) return null;
-      return { pazienti: row.dati || [], timestamp: row.ts };
+function _sbGetTimestampsGiorno(dataStr) {
+  // Ritorna array di epoch-ms (come string) ordinati dal più recente
+  return _q(_sb.from('archivio').select('ts').eq('data_str', dataStr).order('ts', { ascending: false }))
+    .then(function(rows) {
+      return (rows || []).map(function(r) { return String(r.ts); });
+    });
+}
+
+function _sbGetDatiArchivioGiorno(key) {
+  var sKey = String(key || '');
+  // Supporta sia epoch ms numerico (nuovo) sia data stringa YYYY-MM-DD (legacy)
+  if (/^\d{10,13}$/.test(sKey)) {
+    return _q(_sb.from('archivio').select('dati,ts').eq('ts', Number(sKey)).maybeSingle())
+      .then(function(row) {
+        return row ? { pazienti: row.dati || [], timestamp: row.ts } : null;
+      });
+  }
+  // Legacy: prende il backup più recente per quella data
+  return _q(_sb.from('archivio').select('dati,ts').eq('data_str', sKey.substring(0, 10)).order('ts', { ascending: false }))
+    .then(function(rows) {
+      var row = rows && rows[0];
+      return row ? { pazienti: row.dati || [], timestamp: row.ts } : null;
     });
 }
 
@@ -940,9 +979,8 @@ function _scheduleRealtimeSync() {
   };
   Runner.prototype.getTimestampGiorno = function(dataStr) {
     var ok = this._ok, err = this._err;
-    wrap(_sbGetDatiArchivioGiorno(dataStr).then(function(r) {
-      return r ? { ts: r.timestamp } : { ts: null };
-    }), ok, err);
+    // Ritorna array di epoch-ms (string) per tutti i backup di quel giorno
+    wrap(_sbGetTimestampsGiorno(dataStr), ok, err);
   };
   Runner.prototype.salvaGiorniArchivio = function(val) {
     var ok = this._ok, err = this._err;

@@ -212,7 +212,10 @@
           }
           if (timestamps.length === 1) { caricaDatiArchivio(timestamps[0], dataStr); return; }
           let listaHtml = timestamps.map(function(ts) {
-            let ora = ts.indexOf(' ') !== -1 ? ts.split(' ')[1].substring(0, 5) : ts;
+            // ts è epoch ms (string) — formatta come HH:MM
+            let ora = /^\d{10,13}$/.test(ts)
+              ? new Date(Number(ts)).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
+              : (ts.indexOf(' ') !== -1 ? ts.split(' ')[1].substring(0, 5) : ts);
             return `<button class="btn btn-outline-success btn-lg w-100 mb-2 text-start px-4" onclick="caricaDatiArchivio('${ts}','${dataStr}')"><i class="bi bi-clock me-2"></i>${ora}</button>`;
           }).join('');
           document.getElementById('cal-grid').innerHTML = `
@@ -247,7 +250,10 @@
             let res = tipoA.localeCompare(tipoB); return res !== 0 ? res : cmp(a.Letto, b.Letto);
           });
           let d = dataStr.split('-'); let dataIta = `${d[2]}/${d[1]}/${d[0]}`;
-          let oraIta = tsStr.indexOf(' ') !== -1 ? ' alle ' + tsStr.split(' ')[1].substring(0, 5) : '';
+          // tsStr è epoch ms (string) oppure legacy "YYYY-MM-DD HH:MM"
+          let oraIta = /^\d{10,13}$/.test(tsStr)
+            ? ' alle ' + new Date(Number(tsStr)).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
+            : (tsStr.indexOf(' ') !== -1 ? ' alle ' + tsStr.split(' ')[1].substring(0, 5) : '');
           let nomeReparto = document.getElementById("nav-app-name").innerText;
           let htmlCards = '';
           pazienti.forEach(p => {
