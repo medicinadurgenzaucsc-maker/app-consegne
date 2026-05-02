@@ -210,9 +210,7 @@
             document.getElementById('cal-grid').innerHTML = `<div class="text-center py-5"><i class="bi bi-exclamation-triangle-fill text-warning" style="font-size: 4rem;"></i><h4 class="mt-3">Nessun backup trovato</h4><button class="btn btn-outline-secondary mt-3" onclick="ripristinaCalendarioView()"><i class="bi bi-arrow-left me-1"></i> Torna al calendario</button></div>`;
             return;
           }
-          // Singolo backup → apre direttamente il modal stampa
-          if (timestamps.length === 1) { apriFinestraStampaSalvata(timestamps[0]); return; }
-          // Più backup → lista con orario cliccabile
+          // Mostra sempre la lista, anche con un solo backup
           let listaHtml = timestamps.map(function(ts) {
             let ora = /^\d{10,13}$/.test(ts)
               ? new Date(Number(ts)).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
