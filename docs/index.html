@@ -794,6 +794,36 @@
 })();
 </script>
 
+<!-- ── Login overlay — mostrato prima di qualsiasi operazione ── -->
+<div id="loginOverlay" style="position:fixed;inset:0;z-index:100000;background:linear-gradient(135deg,#263238 0%,#37474f 100%);display:flex;align-items:center;justify-content:center;font-family:Arial,sans-serif;">
+  <div style="background:#fff;border-radius:18px;padding:44px 48px;max-width:400px;width:92%;box-shadow:0 24px 64px rgba(0,0,0,0.45);text-align:center;">
+    <div style="font-size:3rem;margin-bottom:10px;">🏥</div>
+    <h2 style="font-size:1.35rem;font-weight:700;color:#263238;margin:0 0 6px;">Consegne Reparto</h2>
+    <p style="color:#607d8b;font-size:0.88rem;margin:0 0 28px;line-height:1.5;">Accedi con l'account Google autorizzato<br>per visualizzare le consegne.</p>
+    <button id="btnGoogleLogin" onclick="_avviaLoginGoogle()"
+      style="display:flex;align-items:center;justify-content:center;gap:12px;width:100%;
+             padding:13px 20px;border:2px solid #e0e0e0;border-radius:10px;
+             background:#fff;color:#3c4043;font-size:0.97rem;font-weight:600;
+             cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.12);transition:box-shadow 0.2s;"
+      onmouseover="this.style.boxShadow='0 4px 16px rgba(0,0,0,0.18)'"
+      onmouseout="this.style.boxShadow='0 2px 8px rgba(0,0,0,0.12)'">
+      <svg width="22" height="22" viewBox="0 0 48 48" style="flex-shrink:0;">
+        <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+        <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+        <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+        <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+      </svg>
+      Accedi con Google
+    </button>
+    <div id="loginSpinner" style="display:none;align-items:center;justify-content:center;gap:10px;margin-top:16px;">
+      <div style="width:20px;height:20px;border:3px solid #ccc;border-top-color:#546e7a;border-radius:50%;animation:_lockSpin 0.8s linear infinite;"></div>
+      <span style="color:#607d8b;font-size:0.85rem;">Verifica in corso...</span>
+    </div>
+    <div id="loginError" style="display:none;margin-top:16px;padding:12px 14px;background:#ffebee;border-radius:8px;color:#c62828;font-size:0.83rem;text-align:left;white-space:pre-line;"></div>
+    <p style="margin-top:24px;font-size:0.75rem;color:#b0bec5;">Accesso riservato al personale autorizzato</p>
+  </div>
+</div>
+
 <!-- Overlay visibile solo durante il controllo backup iniziale -->
 <div id="backupCheckOverlay" style="
   position:fixed; inset:0; z-index:99999;
@@ -1207,6 +1237,8 @@
 
   <!-- SDK Supabase (deve precedere api.js) -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <!-- Google Identity Services (OAuth2 login + Drive) -->
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
   <!-- Pickr: color picker posizionato vicino al trigger -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@simonwep/pickr@1.9.1/dist/themes/nano.min.css">
   <script src="https://cdn.jsdelivr.net/npm/@simonwep/pickr@1.9.1/dist/pickr.min.js"></script>
@@ -1215,6 +1247,142 @@
   <script src="js/api.js"></script>
   <script src="js/app.js"></script>
   <script src="js/app2.js"></script>
+
+  <!-- ── Login Google + avvio app ────────────────────────────────── -->
+  <script>
+  (function() {
+
+    var _tokenClient = null;
+
+    // Inizializza il client OAuth2 quando la libreria GIS è pronta
+    function _inizializzaGoogleClient() {
+      if (typeof google === 'undefined' || !google.accounts || !google.accounts.oauth2) return false;
+      if (typeof GOOGLE_CLIENT_ID === 'undefined' || GOOGLE_CLIENT_ID.startsWith('INSERISCI')) {
+        console.error('[Login] GOOGLE_CLIENT_ID non configurato in api.js');
+        return false;
+      }
+      _tokenClient = google.accounts.oauth2.initTokenClient({
+        client_id: GOOGLE_CLIENT_ID,
+        // email+profile per verificare l'utente; drive per il backup su Drive
+        scope: 'email profile https://www.googleapis.com/auth/drive',
+        callback: _onGoogleToken
+      });
+      return true;
+    }
+
+    // Callback chiamata da GIS dopo che l'utente autorizza
+    function _onGoogleToken(resp) {
+      var spinner = document.getElementById('loginSpinner');
+      var btn     = document.getElementById('btnGoogleLogin');
+      if (resp.error) {
+        _mostraErroreLogin(resp.error === 'access_denied'
+          ? 'Accesso rifiutato. Riprova e autorizza le permissioni richieste.'
+          : 'Errore Google: ' + resp.error);
+        if (btn) btn.disabled = false;
+        if (spinner) spinner.style.display = 'none';
+        return;
+      }
+      window._googleAccessToken = resp.access_token;
+      // Recupera info utente per verificare l'email
+      fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+        headers: { 'Authorization': 'Bearer ' + resp.access_token }
+      })
+      .then(function(r) { return r.json(); })
+      .then(function(info) {
+        // Legge l'email autorizzata da Supabase
+        return _sbOttieniAccountLogin().then(function(emailAutorizzata) {
+          var emailUtente = (info.email || '').toLowerCase().trim();
+          var emailOk     = (emailAutorizzata || '').toLowerCase().trim();
+          if (!emailOk || emailUtente === emailOk) {
+            // Salva sessione (token valido ~58 min)
+            sessionStorage.setItem('appSession', JSON.stringify({
+              email: info.email,
+              token: resp.access_token,
+              expiry: Date.now() + 3500000
+            }));
+            _completaLogin();
+          } else {
+            window._googleAccessToken = null;
+            _mostraErroreLogin(
+              'Account non autorizzato (' + info.email + ').\n' +
+              'Accedi con: ' + emailAutorizzata
+            );
+            if (btn) btn.disabled = false;
+            if (spinner) spinner.style.display = 'none';
+          }
+        });
+      })
+      .catch(function() {
+        _mostraErroreLogin('Errore di verifica. Controlla la connessione e riprova.');
+        if (btn) btn.disabled = false;
+        if (spinner) spinner.style.display = 'none';
+      });
+    }
+
+    // Avvia il flusso OAuth2 al click del pulsante
+    window._avviaLoginGoogle = function() {
+      var btn     = document.getElementById('btnGoogleLogin');
+      var spinner = document.getElementById('loginSpinner');
+      var err     = document.getElementById('loginError');
+      if (btn) btn.disabled = true;
+      if (spinner) spinner.style.display = 'flex';
+      if (err) err.style.display = 'none';
+      if (!_tokenClient) {
+        if (!_inizializzaGoogleClient()) {
+          _mostraErroreLogin('Client Google non disponibile. Ricarica la pagina.');
+          if (btn) btn.disabled = false;
+          if (spinner) spinner.style.display = 'none';
+          return;
+        }
+      }
+      _tokenClient.requestAccessToken({ prompt: '' });
+    };
+
+    function _mostraErroreLogin(msg) {
+      var err = document.getElementById('loginError');
+      if (err) { err.textContent = msg; err.style.display = 'block'; }
+    }
+
+    function _completaLogin() {
+      var ov = document.getElementById('loginOverlay');
+      if (ov) {
+        ov.style.transition = 'opacity 0.4s';
+        ov.style.opacity = '0';
+        setTimeout(function() { ov.style.display = 'none'; }, 420);
+      }
+      if (typeof window._avviaFlussoApp === 'function') window._avviaFlussoApp();
+    }
+
+    function _verificaSessioneEsistente() {
+      try {
+        var sess = JSON.parse(sessionStorage.getItem('appSession') || 'null');
+        if (sess && sess.expiry > Date.now() && sess.token) {
+          window._googleAccessToken = sess.token;
+          return true;
+        }
+      } catch(e) {}
+      return false;
+    }
+
+    window.addEventListener('load', function() {
+      // Tenta di inizializzare subito; se GIS non è ancora pronto riprova
+      if (!_inizializzaGoogleClient()) {
+        var retry = setInterval(function() {
+          if (_inizializzaGoogleClient()) clearInterval(retry);
+        }, 200);
+      }
+
+      if (_verificaSessioneEsistente()) {
+        // Sessione ancora valida: salta login
+        var ov = document.getElementById('loginOverlay');
+        if (ov) ov.style.display = 'none';
+        if (typeof window._avviaFlussoApp === 'function') window._avviaFlussoApp();
+      }
+      // else: loginOverlay resta visibile, l'utente clicca il pulsante
+    });
+
+  })();
+  </script>
 
   <!-- Registrazione Service Worker (PWA) -->
   <script>

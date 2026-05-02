@@ -11,7 +11,9 @@
 
     // APP_URL e PRINT_URL sono definiti in api.js
 
-    window.addEventListener('load', function() {
+    // Avvia il flusso dell'app dopo il login Google completato con successo.
+    // Chiamata da _completaLogin() in index.html.
+    window._avviaFlussoApp = function() {
 
       // ── Browser compatibility check ─────────────────────────────────
       if (!window._browserCompatibile) {

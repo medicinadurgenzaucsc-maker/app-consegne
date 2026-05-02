@@ -11,6 +11,16 @@ var APP_URL          = 'https://medicinadurgenzaucsc-maker.github.io/app-consegn
 var PRINT_URL        = APP_URL + 'print.html';
 var LOCK_TTL_MS      = 300000; // 5 minuti — safety net per crash browser (nessun rinnovo attivo)
 
+// ── GOOGLE OAUTH2 ─────────────────────────────────────────────
+// Client ID OAuth2 da Google Cloud Console (Web application).
+// Istruzioni: console.cloud.google.com → API e servizi → Credenziali →
+// Crea credenziali → ID client OAuth2 → Web application
+// Origini JS autorizzate: https://medicinadurgenzaucsc-maker.github.io
+var GOOGLE_CLIENT_ID = 'INSERISCI_QUI_IL_CLIENT_ID.apps.googleusercontent.com';
+
+// Token di accesso Google — impostato dopo il login, usato per Drive API
+window._googleAccessToken = null;
+
 // ── CLIENT SUPABASE ───────────────────────────────────────────
 var _sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -638,7 +648,9 @@ function _sbArchiviaGiornoCorrente() {
         return { inCorso: false }; // Backup recente → skip
       }
       // Esegui backup: leggi pazienti e inserisci in archivio
+      var _pazientiBackup;
       return _sbGetPazienti().then(function(pazienti) {
+        _pazientiBackup = pazienti;
         return _q(_sb.from('archivio').insert({
           data_str: dataStr,
           ts: now,
@@ -651,6 +663,8 @@ function _sbArchiviaGiornoCorrente() {
           { onConflict: 'chiave' }
         ));
       }).then(function() {
+        // Backup su Google Drive (fire-and-forget, non bloccante)
+        _driveBackupConsegne(_pazientiBackup, now);
         // Pulizia archivio vecchio in base a GIORNI_ARCHIVIO
         return _sbGetGiorniConservazione().then(function(giorni) {
           var limit = now - (giorni * 86400000);
@@ -845,6 +859,102 @@ function _sbOttieniNomeReparto() {
 function _sbSalvaNomeReparto(nuovoNome) {
   return _q(_sb.from('impostazioni').upsert({ chiave: 'NOME_REPARTO', valore: nuovoNome }, { onConflict: 'chiave' }))
     .then(function() { return { nome: nuovoNome }; });
+}
+
+function _sbOttieniAccountLogin() {
+  return _q(_sb.from('impostazioni').select('valore').eq('chiave', 'ACCOUNT_LOGIN').maybeSingle())
+    .then(function(row) { return row ? row.valore : ''; });
+}
+
+
+// ══════════════════════════════════════════════════════════════
+// GOOGLE DRIVE BACKUP
+// ══════════════════════════════════════════════════════════════
+
+// Cerca una cartella Google Drive per nome (opzionalmente dentro un parent)
+function _driveTrovaOCreaCartella(nome, parentId) {
+  var token = window._googleAccessToken;
+  if (!token) return Promise.reject(new Error('No Drive token'));
+  var q = 'name=\'' + nome.replace(/'/g, "\\'") + '\'' +
+          ' and mimeType=\'application/vnd.google-apps.folder\'' +
+          ' and trashed=false';
+  if (parentId) q += ' and \'' + parentId + '\' in parents';
+  return fetch('https://www.googleapis.com/drive/v3/files?q=' + encodeURIComponent(q) + '&fields=files(id,name)', {
+    headers: { 'Authorization': 'Bearer ' + token }
+  }).then(function(r) { return r.json(); }).then(function(data) {
+    if (data.files && data.files.length > 0) return data.files[0].id;
+    // Cartella non trovata → crea
+    var meta = { name: nome, mimeType: 'application/vnd.google-apps.folder' };
+    if (parentId) meta.parents = [parentId];
+    return fetch('https://www.googleapis.com/drive/v3/files', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify(meta)
+    }).then(function(r) { return r.json(); }).then(function(f) {
+      if (f.error) throw new Error(f.error.message);
+      return f.id;
+    });
+  });
+}
+
+// Crea un file di testo plain in una cartella Drive (multipart upload)
+function _driveCreaFileTesto(nome, contenuto, folderId) {
+  var token = window._googleAccessToken;
+  if (!token) return Promise.reject(new Error('No Drive token'));
+  var boundary = 'app_consegne_backup_boundary';
+  var meta = JSON.stringify({ name: nome, parents: [folderId] });
+  var body = '--' + boundary + '\r\n' +
+    'Content-Type: application/json; charset=UTF-8\r\n\r\n' + meta + '\r\n' +
+    '--' + boundary + '\r\n' +
+    'Content-Type: text/plain; charset=UTF-8\r\n\r\n' + contenuto + '\r\n' +
+    '--' + boundary + '--';
+  return fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+    method: 'POST',
+    headers: {
+      'Authorization': 'Bearer ' + token,
+      'Content-Type': 'multipart/related; boundary="' + boundary + '"'
+    },
+    body: body
+  }).then(function(r) { return r.json(); });
+}
+
+// Esegue backup su Google Drive dopo il salvataggio su Supabase.
+// Crea o riusa la cartella "CONSEGNE APP" → "BACKUP EMERGENZA" e inserisce
+// un file .txt con i dati dei pazienti al momento del backup.
+function _driveBackupConsegne(pazienti, ts) {
+  if (!window._googleAccessToken) return Promise.resolve();
+  var data = new Date(Number(ts));
+  var pad = function(n) { return String(n).padStart(2, '0'); };
+  var dataLabel = pad(data.getDate()) + '/' + pad(data.getMonth() + 1) + '/' + data.getFullYear() +
+                  ' ' + pad(data.getHours()) + ':' + pad(data.getMinutes());
+  var nomeSafe  = pad(data.getDate()) + '-' + pad(data.getMonth() + 1) + '-' + data.getFullYear() +
+                  '_' + pad(data.getHours()) + '-' + pad(data.getMinutes());
+  var nomeFile  = 'Backup_' + nomeSafe + '.txt';
+
+  // Costruisce il contenuto testuale del backup
+  var linee = [
+    'BACKUP CONSEGNE — ' + dataLabel,
+    '='.repeat(50), ''
+  ];
+  (pazienti || []).forEach(function(p) {
+    linee.push('LETTO: ' + (p.Letto || '') + '  [' + (p.TipologiaLetto || 'STANDARD') + ']');
+    linee.push('PAZIENTE: ' + (p.Nome || '(vuoto)'));
+    if (p.Eta)           linee.push('ETÀ: ' + p.Eta);
+    if (p.Diagnosi)      linee.push('DIAGNOSI: ' + p.Diagnosi);
+    if (p.Allergie)      linee.push('ALLERGIE: ' + p.Allergie);
+    if (p.NoteTerapia)   linee.push('TERAPIA: ' + p.NoteTerapia);
+    if (p.Diaria)        linee.push('DIARIA: ' + p.Diaria);
+    if (p.DaFare)        linee.push('DA FARE: ' + p.DaFare);
+    if (p.PianoTerapeutico) linee.push('PIANO: ' + p.PianoTerapeutico);
+    linee.push('-'.repeat(40));
+  });
+  var contenuto = linee.join('\n');
+
+  return _driveTrovaOCreaCartella('CONSEGNE APP', null)
+    .then(function(rootId) { return _driveTrovaOCreaCartella('BACKUP EMERGENZA', rootId); })
+    .then(function(folderId) { return _driveCreaFileTesto(nomeFile, contenuto, folderId); })
+    .then(function(file) { console.log('[Drive backup] File creato:', file.name, file.id); })
+    .catch(function(e) { console.warn('[Drive backup] Errore (non bloccante):', e.message || e); });
 }
 
 
