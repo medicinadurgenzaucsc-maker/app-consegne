@@ -1579,27 +1579,15 @@
 
     function _imp_salvaLetti(schedeLetto) {
       var importati = [], saltati = [], errori = [];
-      var promesse = schedeLetto.map(function(dati) {
-        return google.script.run
-          .withSuccessHandler(function(res) {
-            if (res && res.success) importati.push(dati.Letto);
-            else saltati.push(dati.Letto + ' (letto non presente)');
-          })
-          .withFailureHandler(function(e) {
-            errori.push(dati.Letto + ': ' + (e.message || 'errore'));
-          })
-          ._promiseAutoSave(dati.Letto, dati);
-      });
-      // Usa Promise.all con piccola astrazione sul sistema google.script.run
       return new Promise(function(resolve) {
         var pending = schedeLetto.length;
         if (pending === 0) { resolve({ importati: 0, saltati: [], errori: [] }); return; }
         schedeLetto.forEach(function(dati) {
           var letto = String(dati.Letto).trim();
-          // Usa direttamente Supabase per aggiornare
           _sbImportaLetto(letto, dati)
             .then(function(ok) {
-              if (ok) importati.push(letto); else saltati.push(letto + ' (letto non trovato)');
+              if (ok) importati.push(letto);
+              else saltati.push(letto + ' (letto non trovato nel DB)');
             })
             .catch(function(e) { errori.push(letto + ': ' + (e.message || 'errore')); })
             .finally(function() {
