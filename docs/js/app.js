@@ -1113,27 +1113,27 @@
               if (typeof onProgress === 'function') onProgress(90);
               _applicaAggiornamentoCompleto(html); _applicaLocks(locks || {});
               if (ind) ind.className = 'badge bg-success ms-2'; if (st) st.innerText = new Date().toLocaleTimeString('it-IT');
-              _syncPaused = false; _aggiornaVoceSync(); setTimeout(function() { _eseguiRefresh(); }, 3000);
+              _syncPaused = false; _aggiornaVoceSync(); _inizializzaRealtime();
               if (typeof callback === 'function') callback();
             })
             .withFailureHandler(function() {
               if (typeof onProgress === 'function') onProgress(90);
               _applicaAggiornamentoCompleto(html);
               if (ind) ind.className = 'badge bg-success ms-2'; if (st) st.innerText = new Date().toLocaleTimeString('it-IT');
-              _syncPaused = false; _aggiornaVoceSync(); setTimeout(function() { _eseguiRefresh(); }, 3000);
+              _syncPaused = false; _aggiornaVoceSync(); _inizializzaRealtime();
               if (typeof callback === 'function') callback();
             })
             .getLocks();
         })
         .withFailureHandler(function() {
           if (ind) ind.className = 'badge bg-danger ms-2'; if (st) st.innerText = 'Errore sync';
-          _syncPaused = false; _aggiornaVoceSync(); setTimeout(function() { _eseguiRefresh(); }, 3000);
+          _syncPaused = false; _aggiornaVoceSync(); _inizializzaRealtime();
           if (typeof callback === 'function') callback();
         })
         .getNewHtml();
     }
 
-    function _riprendiSync() { _syncPaused = false; _aggiornaVoceSync(); _eseguiRefresh(); }
+    function _riprendiSync() { _syncPaused = false; _aggiornaVoceSync(); _inizializzaRealtime(); }
 
     function _opServer(cfg) {
       _opStart(cfg.barMsg || 'Operazione in corso...');
