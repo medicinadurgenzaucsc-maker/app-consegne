@@ -1291,7 +1291,10 @@
       var schedeLetto = [];
       if (!doc || !doc.body || !doc.body.content) return schedeLetto;
 
-      doc.body.content.forEach(function(elem) {
+      var content = doc.body.content;
+
+      // ── 1. Parsing tabelle (schede letto) ────────────────────────────────────
+      content.forEach(function(elem) {
         if (!elem.table) return;
         var table = elem.table;
         var rows  = table.tableRows || [];
@@ -1306,6 +1309,43 @@
           console.warn('[Import] Tabella saltata:', e.message);
         }
       });
+
+      // ── 2. Sezione "PENDENTI POST-DIMISIONE NON CANCELLARE" ──────────────────
+      // Cerca il paragrafo con questa intestazione e raccoglie tutto il contenuto
+      // successivo (fino a fine documento) nel letto NOTE → campo Diaria.
+      var pendentiLines = [];
+      var inPendenti    = false;
+
+      content.forEach(function(elem) {
+        if (!elem.paragraph) return; // salta tabelle e altri elementi
+
+        var para = elem.paragraph;
+        var testo = _imp_paraGetText(para).trim();
+
+        if (!inPendenti) {
+          // Cerca l'intestazione (anche parziale / con variazioni di capitalizzazione)
+          if (/PENDENTI\s+POST.{0,6}DIMISS?ION/i.test(testo)) {
+            inPendenti = true;
+            // L'intestazione stessa NON va inserita nel contenuto
+          }
+          return;
+        }
+
+        // Siamo dentro la sezione: aggiungi riga preservando HTML
+        pendentiLines.push(_imp_paraToHtml(para));
+      });
+
+      if (pendentiLines.length > 0) {
+        // Rimuovi righe vuote iniziali e finali
+        while (pendentiLines.length > 0 && pendentiLines[0] === '') pendentiLines.shift();
+        while (pendentiLines.length > 0 && pendentiLines[pendentiLines.length - 1] === '') pendentiLines.pop();
+
+        schedeLetto.push({
+          Letto:  'NOTE',
+          Diaria: pendentiLines.join('<br>')
+        });
+      }
+
       return schedeLetto;
     }
 
