@@ -851,7 +851,7 @@
           html += '<div style="border-top:1px solid #e0e0e0;padding-top:5px;margin-top:2px;">';
           var tipKeys = Object.keys(r.tipologie).sort();
           tipKeys.forEach(function(tip) {
-            var colore = (tip === 'STANDARD') ? '#6c757d' : stringToColor(tip);
+            var colore = (tip === 'STANDARD') ? '#6c757d' : ((typeof window._getColoreTipo === 'function') ? window._getColoreTipo(tip) : stringToColor(tip));
             html += '<div class="d-flex align-items-center justify-content-between mb-1">'
                   + '<span class="badge text-white text-uppercase" style="background:' + colore + ';max-width:145px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + tip + '">' + tip + '</span>'
                   + '<span class="badge bg-light text-dark border ms-1">' + r.tipologie[tip] + '</span>'

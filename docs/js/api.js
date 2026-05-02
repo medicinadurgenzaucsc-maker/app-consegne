@@ -561,6 +561,18 @@ function _sbRilasciaLockMultiplo(letti, token) {
 // ARCHIVIO GIORNALIERO
 // ══════════════════════════════════════════════════════════════
 
+function _sbGetGiorniConservazione() {
+  return _q(_sb.from('impostazioni').select('valore').eq('chiave', 'GIORNI_ARCHIVIO').maybeSingle())
+    .then(function(row) { return row ? (parseInt(row.valore, 10) || 90) : 90; });
+}
+
+function _sbSalvaGiorniConservazione(giorni) {
+  return _q(_sb.from('impostazioni').upsert(
+    { chiave: 'GIORNI_ARCHIVIO', valore: String(giorni) },
+    { onConflict: 'chiave' }
+  )).then(function() { return { success: true, giorni: giorni }; });
+}
+
 function _sbArchiviaGiornoCorrente() {
   var dataStr = _oggiStr();
   return _q(_sb.from('archivio').select('id').eq('data_str', dataStr).maybeSingle())
@@ -571,14 +583,16 @@ function _sbArchiviaGiornoCorrente() {
           data_str: dataStr,
           ts: Date.now(),
           dati: pazienti
-        })).then(function() { return { inCorso: false }; });
+        }));
       });
     })
     .then(function() {
-      // Pulizia archivio oltre 90 giorni
-      var limit = Date.now() - (90 * 86400000);
-      _q(_sb.from('archivio').delete().lt('ts', limit)).catch(function() {});
-      return { inCorso: false };
+      // Pulizia archivio dinamica — legge GIORNI_ARCHIVIO da impostazioni
+      return _sbGetGiorniConservazione().then(function(giorni) {
+        var limit = Date.now() - (giorni * 86400000);
+        _q(_sb.from('archivio').delete().lt('ts', limit)).catch(function() {});
+        return { inCorso: false };
+      });
     })
     .catch(function() { return { inCorso: false }; });
 }
@@ -843,10 +857,12 @@ function _scheduleRealtimeSync(tipo) {
   };
   Runner.prototype.getGiorniArchivio = function() {
     var ok = this._ok, err = this._err;
-    wrap(_sbGetGiorniArchivio().then(function(g) { return { giorni: g }; }), ok, err);
+    // Ritorna il numero di giorni di conservazione (impostazione)
+    wrap(_sbGetGiorniConservazione(), ok, err);
   };
   Runner.prototype.getGiorniArchiviati = function() {
     var ok = this._ok, err = this._err;
+    // Ritorna l'elenco delle date archiviate
     wrap(_sbGetGiorniArchivio(), ok, err);
   };
   Runner.prototype.getDatiArchivioGiorno = function(dataStr) {
@@ -859,9 +875,9 @@ function _scheduleRealtimeSync(tipo) {
       return r ? { ts: r.timestamp } : { ts: null };
     }), ok, err);
   };
-  Runner.prototype.salvaGiorniArchivio = function() {
-    // no-op: l'archivio ora è su Supabase
-    if (this._ok) this._ok({ ok: true });
+  Runner.prototype.salvaGiorniArchivio = function(val) {
+    var ok = this._ok, err = this._err;
+    wrap(_sbSalvaGiorniConservazione(val), ok, err);
   };
   Runner.prototype.pulisciArchivioVecchio = function() { /* gestito in archiviaGiornoCorrente */ };
   Runner.prototype.pulisciBackupEmergenzaVecchi = function() { /* no-op */ };
@@ -919,7 +935,12 @@ function _scheduleRealtimeSync(tipo) {
   };
   Runner.prototype.getTipologieConfigurate = function() {
     var ok = this._ok, err = this._err;
-    wrap(_sbGetTipologieConfigurate(), ok, err);
+    // Ritorna array [{nome, colore}] come si aspetta app2.js
+    wrap(_sbGetColoriTipologie().then(function(mappa) {
+      return Object.keys(mappa).filter(Boolean).map(function(nome) {
+        return { nome: nome, colore: mappa[nome] || stringToColor(nome) };
+      });
+    }), ok, err);
   };
   Runner.prototype.getDatiLettiConTipologia = function() {
     var ok = this._ok, err = this._err;

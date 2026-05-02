@@ -1051,7 +1051,8 @@
         var letto = card.getAttribute('data-bed') || ''; var tipo = (card.getAttribute('data-tipologia') || '').trim();
         var nomeEl = card.querySelector('[data-field="Nome"]'); var nome = nomeEl ? (nomeEl.innerText || nomeEl.textContent || '').trim() : '';
         var nomeTxt = nome ? nome : '<em class="text-muted">Vuoto</em>';
-        var tipoBadge = tipo ? ' <span class="badge bg-secondary" style="font-size:0.6rem;">' + tipo + '</span>' : '';
+        var tipoColore = tipo ? ((typeof window._getColoreTipo === 'function') ? window._getColoreTipo(tipo) : stringToColor(tipo)) : '';
+        var tipoBadge = tipo ? ' <span class="badge text-white" style="font-size:0.6rem;background:' + tipoColore + ';">' + tipo + '</span>' : '';
         html += '<li><a class="dropdown-item d-flex align-items-center gap-2 py-1" href="javascript:void(0)" data-scroll-letto="' + letto + '"><span class="badge bg-dark" style="min-width:36px;font-size:0.8rem;">L.' + letto + '</span><span>' + nomeTxt + tipoBadge + '</span></a></li>';
       });
       menu.innerHTML = html;
