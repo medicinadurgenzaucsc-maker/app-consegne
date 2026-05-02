@@ -16,7 +16,7 @@ var LOCK_TTL_MS      = 300000; // 5 minuti — safety net per crash browser (nes
 // Istruzioni: console.cloud.google.com → API e servizi → Credenziali →
 // Crea credenziali → ID client OAuth2 → Web application
 // Origini JS autorizzate: https://medicinadurgenzaucsc-maker.github.io
-var GOOGLE_CLIENT_ID = 'INSERISCI_QUI_IL_CLIENT_ID.apps.googleusercontent.com';
+var GOOGLE_CLIENT_ID = '170256871056-gchf386c3oic77ek2j5m3b1e5pbv6cre.apps.googleusercontent.com';
 
 // Token di accesso Google — impostato dopo il login, usato per Drive API
 window._googleAccessToken = null;
