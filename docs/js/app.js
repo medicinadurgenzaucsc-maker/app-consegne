@@ -864,27 +864,21 @@
         .aggiungiLetto(numLetto);
     }
 
-    // Controlla i lock sui letti indicati, poi esegue callback se liberi, altrimenti mostra errore.
+    // Controlla i lock sui letti indicati usando lo stato in-memory (0 query).
+    // _lockState è mantenuto aggiornato da Realtime in api.js.
     function _verificaLockEProcedi(letti, callback) {
-      google.script.run
-        .withSuccessHandler(function(locks) {
-          var bloccati = letti.filter(function(l) {
-            var info = locks && locks[String(l)];
-            return info && info.token !== _mioToken;
-          });
-          if (bloccati.length > 0) {
-            var msg = bloccati.length === 1
-              ? 'Il letto <strong>' + bloccati[0] + '</strong> è attualmente in modifica da un altro utente. Attendi il rilascio prima di procedere.'
-              : 'I letti <strong>' + bloccati.join('</strong> e <strong>') + '</strong> sono attualmente in modifica da altri utenti. Attendi il rilascio prima di procedere.';
-            Swal.fire({ icon: 'error', title: 'Letto in uso', html: msg, confirmButtonColor: '#d33' });
-            return;
-          }
-          callback();
-        })
-        .withFailureHandler(function() {
-          Swal.fire({ icon: 'error', title: 'Errore', text: 'Impossibile verificare lo stato dei letti. Riprova.' });
-        })
-        .getLocks();
+      var bloccati = letti.filter(function(l) {
+        var info = (typeof _lockState !== 'undefined') && _lockState[String(l)];
+        return info && info.token !== _mioToken;
+      });
+      if (bloccati.length > 0) {
+        var msg = bloccati.length === 1
+          ? 'Il letto <strong>' + bloccati[0] + '</strong> è attualmente in modifica da un altro utente. Attendi il rilascio prima di procedere.'
+          : 'I letti <strong>' + bloccati.join('</strong> e <strong>') + '</strong> sono attualmente in modifica da altri utenti. Attendi il rilascio prima di procedere.';
+        Swal.fire({ icon: 'error', title: 'Letto in uso', html: msg, confirmButtonColor: '#d33' });
+        return;
+      }
+      callback();
     }
 
     function eseguiEliminaLetto() {

@@ -9,10 +9,15 @@ var SUPABASE_URL     = 'https://ifmmcvxzhwdkmzhsxcvb.supabase.co';
 var SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlmbW1jdnh6aHdka216aHN4Y3ZiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc2Nzk1ODAsImV4cCI6MjA5MzI1NTU4MH0.LH8h4Fivtl3-TuiA050oF8iS4b80xrd2Dn6z8JjCoeA';
 var APP_URL          = 'https://medicinadurgenzaucsc-maker.github.io/app-consegne/';
 var PRINT_URL        = APP_URL + 'print.html';
-var LOCK_TTL_MS      = 30000; // 30 secondi
+var LOCK_TTL_MS      = 300000; // 5 minuti — safety net per crash browser (nessun rinnovo attivo)
 
 // ── CLIENT SUPABASE ───────────────────────────────────────────
 var _sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// ── STATO LOCK IN MEMORIA ─────────────────────────────────────
+// Aggiornato da Realtime: nessuna query aggiuntiva al DB per leggere i lock.
+// Struttura: { [letto]: { token } }
+var _lockState = {};
 
 
 // ── MAPPING CAMPI JS ↔ COLONNE SQL ───────────────────────────
@@ -506,9 +511,11 @@ function _sbGetLocks() {
   var now = Date.now();
   return _q(_sb.from('locks').select('*')).then(function(rows) {
     var locks = {};
+    _lockState = {}; // aggiorna anche lo stato in-memory
     (rows || []).forEach(function(r) {
       if (now - Number(r.ts) <= LOCK_TTL_MS) {
         locks[r.letto] = { token: r.token, ts: Number(r.ts) };
+        _lockState[r.letto] = { token: r.token };
       }
     });
     return locks;
@@ -518,14 +525,14 @@ function _sbGetLocks() {
 function _sbAcquistaLock(letto, token) {
   var k = String(letto);
   var now = Date.now();
-  return _sbGetLocks().then(function(locks) {
-    var existing = locks[k];
-    if (existing && existing.token !== token) {
-      return { success: false, blocked: true, message: 'Scheda in aggiornamento da altro utente.' };
-    }
-    return _q(_sb.from('locks').upsert({ letto: k, token: token, ts: now }, { onConflict: 'letto' }))
-      .then(function() { return { success: true, blocked: false }; });
-  }).catch(function() { return { success: false, blocked: false, message: 'Errore server, riprova.' }; });
+  // Controlla lo stato in-memory (0 query aggiuntive)
+  var existing = _lockState[k];
+  if (existing && existing.token !== token) {
+    return Promise.resolve({ success: false, blocked: true, message: 'Scheda in aggiornamento da altro utente.' });
+  }
+  return _q(_sb.from('locks').upsert({ letto: k, token: token, ts: now }, { onConflict: 'letto' }))
+    .then(function() { return { success: true, blocked: false }; })
+    .catch(function() { return { success: false, blocked: false, message: 'Errore server, riprova.' }; });
 }
 
 function _sbRilasciaLock(letto, token) {
@@ -535,19 +542,19 @@ function _sbRilasciaLock(letto, token) {
 }
 
 function _sbAcquistaLockMultiplo(letti, token) {
-  return _sbGetLocks().then(function(locks) {
-    var bloccati = letti.filter(function(l) {
-      var ex = locks[String(l)];
-      return ex && ex.token !== token;
-    });
-    if (bloccati.length > 0) {
-      return { success: false, bloccati: bloccati, message: 'Letti bloccati da altro utente.' };
-    }
-    var now = Date.now();
-    var upserts = letti.map(function(l) { return { letto: String(l), token: token, ts: now }; });
-    return _q(_sb.from('locks').upsert(upserts, { onConflict: 'letto' }))
-      .then(function() { return { success: true }; });
-  }).catch(function() { return { success: false, bloccati: [], message: 'Errore server.' }; });
+  // Controlla lo stato in-memory (0 query aggiuntive)
+  var bloccati = letti.filter(function(l) {
+    var ex = _lockState[String(l)];
+    return ex && ex.token !== token;
+  });
+  if (bloccati.length > 0) {
+    return Promise.resolve({ success: false, bloccati: bloccati, message: 'Letti bloccati da altro utente.' });
+  }
+  var now = Date.now();
+  var upserts = letti.map(function(l) { return { letto: String(l), token: token, ts: now }; });
+  return _q(_sb.from('locks').upsert(upserts, { onConflict: 'letto' }))
+    .then(function() { return { success: true }; })
+    .catch(function() { return { success: false, bloccati: [], message: 'Errore server.' }; });
 }
 
 function _sbRilasciaLockMultiplo(letti, token) {
@@ -768,52 +775,62 @@ function _inizializzaRealtime() {
 
   _realtimeChannel = _sb.channel('consegne-live')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'consegne' },
-      function() { _scheduleRealtimeSync('consegne'); })
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'locks' },
-      function() { _scheduleRealtimeSync('locks'); })
+      function() { _scheduleRealtimeSync(); })
+    // Lock: gestiti direttamente in-memory, nessuna query aggiuntiva al DB
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'locks' },
+      function(payload) { _onLockChange('INSERT', payload); })
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'locks' },
+      function(payload) { _onLockChange('UPDATE', payload); })
+    .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'locks' },
+      function(payload) { _onLockChange('DELETE', payload); })
     .subscribe(function(status) {
       console.log('[Realtime]', status);
     });
 }
 
-var _pendingSync = { consegne: false, locks: false };
+// Aggiorna _lockState e UI senza toccare il DB
+function _onLockChange(event, payload) {
+  if (event === 'DELETE') {
+    var letto = payload.old && payload.old.letto;
+    if (letto) delete _lockState[letto];
+  } else {
+    var row = payload.new;
+    if (row && row.letto) {
+      _lockState[row.letto] = { token: row.token };
+    }
+  }
+  if (typeof _applicaLocks === 'function') { _applicaLocks(_lockState); }
+  var ind = document.getElementById('syncIndicator');
+  var st  = document.getElementById('syncStatus');
+  if (ind) ind.className = 'badge bg-success ms-2';
+  if (st)  st.innerText  = new Date().toLocaleTimeString('it-IT');
+}
 
-function _scheduleRealtimeSync(tipo) {
-  _pendingSync[tipo] = true;
+var _pendingSync = false;
+
+function _scheduleRealtimeSync() {
+  if (_pendingSync) return; // già schedulato
+  _pendingSync = true;
   clearTimeout(_realtimeTimer);
   _realtimeTimer = setTimeout(function() {
-    var syncConsegne = _pendingSync.consegne;
-    var syncLocks    = _pendingSync.locks;
-    _pendingSync = { consegne: false, locks: false };
+    _pendingSync = false;
 
     var ind = document.getElementById('syncIndicator');
     var st  = document.getElementById('syncStatus');
     if (ind) ind.className = 'badge bg-warning text-dark ms-2';
     if (st)  st.innerText  = 'Sync...';
 
-    var promesse = [];
-    if (syncConsegne) {
-      promesse.push(_sbGetPazienti().then(function(pazienti) {
-        if (typeof _applicaAggiornamentoCompleto === 'function') {
-          _applicaAggiornamentoCompleto(_renderCardsHtml(pazienti));
-        }
-      }));
-    }
-    if (syncLocks) {
-      promesse.push(_sbGetLocks().then(function(locks) {
-        if (typeof _applicaLocks === 'function') { _applicaLocks(locks); }
-      }));
-    }
-    Promise.all(promesse)
-      .then(function() {
-        if (ind) ind.className = 'badge bg-success ms-2';
-        if (st)  st.innerText  = new Date().toLocaleTimeString('it-IT');
-      })
-      .catch(function(e) {
-        console.warn('[Realtime sync error]', e);
-        if (ind) ind.className = 'badge bg-danger ms-2';
-        if (st)  st.innerText  = 'Errore sync';
-      });
+    _sbGetPazienti().then(function(pazienti) {
+      if (typeof _applicaAggiornamentoCompleto === 'function') {
+        _applicaAggiornamentoCompleto(_renderCardsHtml(pazienti));
+      }
+      if (ind) ind.className = 'badge bg-success ms-2';
+      if (st)  st.innerText  = new Date().toLocaleTimeString('it-IT');
+    }).catch(function(e) {
+      console.warn('[Realtime sync error]', e);
+      if (ind) ind.className = 'badge bg-danger ms-2';
+      if (st)  st.innerText  = 'Errore sync';
+    });
   }, 300); // debounce 300ms
 }
 
