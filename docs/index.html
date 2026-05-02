@@ -708,8 +708,35 @@
       if (!area) return;
       var card = area.closest('.patient-card');
       if (card && !card.classList.contains('focus-mode')) {
-        if (e.ctrlKey || e.metaKey || e.key === 'Tab' ||
-            e.key.startsWith('Arrow') || e.key === 'Home' || e.key === 'End') return;
+        // Ctrl/Meta: permetti solo copia (C) e selezione (A); blocca tutto il resto (X, Z, V, ecc.)
+        if (e.ctrlKey || e.metaKey) {
+          var k = e.key.toLowerCase();
+          if (k === 'c' || k === 'a') return; // copia e seleziona-tutto: ok
+          e.preventDefault(); // taglia (x), incolla (v), undo (z), ecc.: bloccati
+          return;
+        }
+        if (e.key === 'Tab' || e.key.startsWith('Arrow') || e.key === 'Home' || e.key === 'End') return;
+        e.preventDefault();
+      }
+    }, true);
+
+    // Blocca taglia fuori focus mode (cattura l'evento nativo cut)
+    document.addEventListener('cut', function(e) {
+      var area = e.target.closest && e.target.closest('.editable-area');
+      if (!area) return;
+      var card = area.closest('.patient-card');
+      if (card && !card.classList.contains('focus-mode')) {
+        e.preventDefault();
+      }
+    }, true);
+
+    // Blocca qualsiasi modifica via beforeinput fuori focus mode
+    // (copre: digitazione, cancella, taglia, incolla, undo/redo, formattazione)
+    document.addEventListener('beforeinput', function(e) {
+      var area = e.target.closest && e.target.closest('.editable-area');
+      if (!area) return;
+      var card = area.closest('.patient-card');
+      if (card && !card.classList.contains('focus-mode')) {
         e.preventDefault();
       }
     }, true);
