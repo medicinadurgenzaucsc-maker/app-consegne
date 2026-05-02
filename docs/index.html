@@ -504,7 +504,11 @@
         .withSuccessHandler(function(res) {
           var lockOvEl = document.getElementById('lockCheckOverlay');
           if (lockOvEl) lockOvEl.parentNode.removeChild(lockOvEl);
-          if (!_focusCard) return;
+          if (!_focusCard) {
+            // Focus mode chiuso mentre il callback era in attesa — rilascia subito il lock
+            if (res && res.success) google.script.run.rilasciaLock(letto, _mioToken);
+            return;
+          }
           if (res.success) {
             if (_lettoLockAtt && _lettoLockAtt !== letto) {
               google.script.run.rilasciaLock(_lettoLockAtt, _mioToken);
@@ -536,12 +540,22 @@
 
     function _disattivaFocusMode(scrollToCard) {
       if (!_focusCard) return;
-      // Salva subito se ci sono modifiche non ancora salvate
       var _lettoUscita = _focusCard.getAttribute('data-bed');
+
+      // Salva subito se ci sono modifiche non ancora salvate
       if (_lettoUscita && typeof _dirtyLetti !== 'undefined' && _dirtyLetti.has(_lettoUscita)) {
         clearTimeout(timerSalvataggioLetto[_lettoUscita]);
         _autoSalvaOra(_lettoUscita);
       }
+
+      // Rilascia il lock immediatamente — Realtime propagherà la rimozione a tutti i client
+      if (_lettoLockAtt && _lettoLockAtt === _lettoUscita) {
+        if (_timerRilascio) { clearTimeout(_timerRilascio); _timerRilascio = null; }
+        var lettoRilasciato = _lettoLockAtt;
+        _lettoLockAtt = null;
+        google.script.run.rilasciaLock(lettoRilasciato, _mioToken);
+      }
+
       var card = _focusCard;
       _focusCard = null;
       _focusHaInput = false;
