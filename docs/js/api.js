@@ -635,16 +635,22 @@ function _sbSalvaColoriTipologie(mappa) {
 function _sbSalvaTipologieBatch(modifiche) {
   if (!modifiche || !modifiche.length) return Promise.resolve({ ok: true });
   var promesse = modifiche.map(function(m) {
-    if (m.azione === 'rinomina') {
-      return Promise.all([
-        _q(_sb.from('tipologie').update({ nome: m.nuovoNome, colore: m.colore || '' }).eq('nome', m.vecchioNome)),
-        _q(_sb.from('consegne').update({ tipologia_letto: m.nuovoNome })
-          .eq('tipologia_letto', m.vecchioNome))
-      ]);
-    } else if (m.azione === 'colore') {
-      return _q(_sb.from('tipologie').upsert({ nome: m.nome, colore: m.colore }, { onConflict: 'nome' }));
+    var nomeOld = (m.nomeOld || '').trim();
+    var nomeNew = (m.nomeNew || '').trim().toUpperCase();
+    var colore  = m.colore || '';
+    if (!nomeNew) return Promise.resolve();
+    if (nomeOld && nomeOld !== nomeNew) {
+      // Rinomina: inserisce con nuovo nome, cancella vecchio, aggiorna consegne
+      return _q(_sb.from('tipologie').upsert({ nome: nomeNew, colore: colore }, { onConflict: 'nome' }))
+        .then(function() {
+          return Promise.all([
+            _q(_sb.from('tipologie').delete().eq('nome', nomeOld)),
+            _q(_sb.from('consegne').update({ tipologia_letto: nomeNew }).eq('tipologia_letto', nomeOld))
+          ]);
+        });
     }
-    return Promise.resolve();
+    // Nuova tipologia o aggiornamento colore
+    return _q(_sb.from('tipologie').upsert({ nome: nomeNew, colore: colore }, { onConflict: 'nome' }));
   });
   return Promise.all(promesse).then(function() { return { ok: true }; });
 }

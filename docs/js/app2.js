@@ -243,45 +243,38 @@
     // ============================================================
     // PALETTE COLORI (condivisa)
     // ============================================================
-    var _PALETTE = [
-      '#e53935','#c62828','#d81b60','#ad1457','#8e24aa','#6a1b9a',
-      '#5e35b1','#283593','#1e88e5','#0277bd','#039be5','#006064',
-      '#00897b','#2e7d32','#43a047','#558b2f','#f57f17','#e65100',
-      '#bf360c','#4e342e','#546e7a','#37474f','#455a64','#78909c'
-    ];
-
+    // Color picker nativo: apre lo spettro completo del browser/OS
     function _apriPaletteSuSwatch(swatchEl, onSelect) {
-      document.querySelectorAll('.tipo-palette-popup').forEach(function(p) { p.remove(); });
-      var popup = document.createElement('div');
-      popup.className = 'tipo-palette-popup';
-      var rect = swatchEl.getBoundingClientRect();
-      var left = rect.left + window.scrollX;
-      var popupW = 196;
-      if (left + popupW > window.innerWidth - 10) left = window.innerWidth - popupW - 10;
-      popup.style.cssText = 'position:fixed;top:' + (rect.bottom + 6) + 'px;left:' + left + 'px;z-index:9999;';
-      var grid = document.createElement('div');
-      grid.style.cssText = 'display:grid;grid-template-columns:repeat(6,1fr);gap:5px;';
-      _PALETTE.forEach(function(color) {
-        var dot = document.createElement('button');
-        dot.type = 'button';
-        dot.style.cssText = 'width:28px;height:28px;border-radius:50%;background:' + color +
-          ';border:2px solid transparent;cursor:pointer;transition:transform .1s,border-color .1s;';
-        dot.title = color;
-        dot.addEventListener('mouseenter', function() { dot.style.transform='scale(1.25)'; dot.style.borderColor='#333'; });
-        dot.addEventListener('mouseleave', function() { dot.style.transform=''; dot.style.borderColor='transparent'; });
-        dot.addEventListener('click', function(e) { e.stopPropagation(); onSelect(color); popup.remove(); });
-        grid.appendChild(dot);
+      // Rimuovi eventuali picker rimasti
+      document.querySelectorAll('._tipo-color-input').forEach(function(el) { el.remove(); });
+
+      var input = document.createElement('input');
+      input.type = 'color';
+      input.className = '_tipo-color-input';
+      // Valore iniziale: colore attuale del swatch
+      var bgColor = swatchEl.style.background || swatchEl.style.backgroundColor || '#78909c';
+      // Normalizza a hex se possibile
+      if (bgColor && bgColor.startsWith('hsl')) {
+        // Fallback per colori hsl: usa il colore di default
+        bgColor = '#78909c';
+      }
+      input.value = bgColor.length === 7 && bgColor.startsWith('#') ? bgColor : '#78909c';
+      input.style.cssText = 'position:fixed;opacity:0;width:0;height:0;pointer-events:none;top:0;left:0;';
+      document.body.appendChild(input);
+
+      // Aggiorna in tempo reale mentre si sceglie
+      input.addEventListener('input', function() {
+        onSelect(input.value);
+        swatchEl.style.background = input.value;
       });
-      popup.appendChild(grid);
-      document.body.appendChild(popup);
-      setTimeout(function() {
-        document.addEventListener('click', function _cp(ev) {
-          if (!popup.contains(ev.target) && ev.target !== swatchEl) {
-            popup.remove();
-            document.removeEventListener('click', _cp);
-          }
-        });
-      }, 10);
+      input.addEventListener('change', function() {
+        onSelect(input.value);
+        input.remove();
+      });
+      input.addEventListener('blur', function() {
+        setTimeout(function() { input.remove(); }, 200);
+      });
+      input.click();
     }
 
     // ============================================================
