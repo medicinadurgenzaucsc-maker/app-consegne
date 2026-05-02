@@ -871,35 +871,45 @@ function _sbOttieniAccountLogin() {
 // GOOGLE DRIVE BACKUP
 // ══════════════════════════════════════════════════════════════
 
-// Cerca una cartella Google Drive per nome (opzionalmente dentro un parent)
-function _driveTrovaOCreaCartella(nome, parentId) {
-  var token = window._googleAccessToken;
+// Legge/salva ID cartella Drive da Supabase (per non doverla cercare ogni volta)
+function _sbGetDriveFolderId(chiave) {
+  return _q(_sb.from('impostazioni').select('valore').eq('chiave', chiave).maybeSingle())
+    .then(function(row) { return row ? row.valore : null; });
+}
+function _sbSalvaDriveFolderId(chiave, id) {
+  return _q(_sb.from('impostazioni').upsert({ chiave: chiave, valore: id }, { onConflict: 'chiave' }));
+}
+
+// Crea una cartella Drive (scope drive.file) e ne salva l'ID in Supabase
+function _driveCreaCartella(nome, parentId) {
+  var token = window._googleDriveToken;
   if (!token) return Promise.reject(new Error('No Drive token'));
-  var q = 'name=\'' + nome.replace(/'/g, "\\'") + '\'' +
-          ' and mimeType=\'application/vnd.google-apps.folder\'' +
-          ' and trashed=false';
-  if (parentId) q += ' and \'' + parentId + '\' in parents';
-  return fetch('https://www.googleapis.com/drive/v3/files?q=' + encodeURIComponent(q) + '&fields=files(id,name)', {
-    headers: { 'Authorization': 'Bearer ' + token }
-  }).then(function(r) { return r.json(); }).then(function(data) {
-    if (data.files && data.files.length > 0) return data.files[0].id;
-    // Cartella non trovata → crea
-    var meta = { name: nome, mimeType: 'application/vnd.google-apps.folder' };
-    if (parentId) meta.parents = [parentId];
-    return fetch('https://www.googleapis.com/drive/v3/files', {
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-      body: JSON.stringify(meta)
-    }).then(function(r) { return r.json(); }).then(function(f) {
-      if (f.error) throw new Error(f.error.message);
-      return f.id;
+  var meta = { name: nome, mimeType: 'application/vnd.google-apps.folder' };
+  if (parentId) meta.parents = [parentId];
+  return fetch('https://www.googleapis.com/drive/v3/files', {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+    body: JSON.stringify(meta)
+  }).then(function(r) { return r.json(); }).then(function(f) {
+    if (f.error) throw new Error(f.error.message);
+    return f.id;
+  });
+}
+
+// Restituisce l'ID della cartella (legge da Supabase, crea se non esiste)
+function _driveOttieniCartellaId(chiaveSupabase, nome, parentId) {
+  return _sbGetDriveFolderId(chiaveSupabase).then(function(id) {
+    if (id) return id; // già salvato
+    return _driveCreaCartella(nome, parentId).then(function(newId) {
+      _sbSalvaDriveFolderId(chiaveSupabase, newId); // salva per le prossime volte
+      return newId;
     });
   });
 }
 
 // Crea un file di testo plain in una cartella Drive (multipart upload)
 function _driveCreaFileTesto(nome, contenuto, folderId) {
-  var token = window._googleAccessToken;
+  var token = window._googleDriveToken;
   if (!token) return Promise.reject(new Error('No Drive token'));
   var boundary = 'app_consegne_backup_boundary';
   var meta = JSON.stringify({ name: nome, parents: [folderId] });
@@ -918,11 +928,14 @@ function _driveCreaFileTesto(nome, contenuto, folderId) {
   }).then(function(r) { return r.json(); });
 }
 
-// Esegue backup su Google Drive dopo il salvataggio su Supabase.
-// Crea o riusa la cartella "CONSEGNE APP" → "BACKUP EMERGENZA" e inserisce
-// un file .txt con i dati dei pazienti al momento del backup.
+// Esegue backup su Google Drive (drive.file scope).
+// Le cartelle vengono create la prima volta e l'ID salvato in Supabase.
+// Fire-and-forget: non blocca il flusso principale.
 function _driveBackupConsegne(pazienti, ts) {
-  if (!window._googleAccessToken) return Promise.resolve();
+  if (!window._googleDriveToken) {
+    console.log('[Drive backup] Nessun token Drive disponibile — solo Supabase.');
+    return Promise.resolve();
+  }
   var data = new Date(Number(ts));
   var pad = function(n) { return String(n).padStart(2, '0'); };
   var dataLabel = pad(data.getDate()) + '/' + pad(data.getMonth() + 1) + '/' + data.getFullYear() +
@@ -931,27 +944,26 @@ function _driveBackupConsegne(pazienti, ts) {
                   '_' + pad(data.getHours()) + '-' + pad(data.getMinutes());
   var nomeFile  = 'Backup_' + nomeSafe + '.txt';
 
-  // Costruisce il contenuto testuale del backup
-  var linee = [
-    'BACKUP CONSEGNE — ' + dataLabel,
-    '='.repeat(50), ''
-  ];
+  var linee = ['BACKUP CONSEGNE — ' + dataLabel, '='.repeat(50), ''];
   (pazienti || []).forEach(function(p) {
     linee.push('LETTO: ' + (p.Letto || '') + '  [' + (p.TipologiaLetto || 'STANDARD') + ']');
     linee.push('PAZIENTE: ' + (p.Nome || '(vuoto)'));
-    if (p.Eta)           linee.push('ETÀ: ' + p.Eta);
-    if (p.Diagnosi)      linee.push('DIAGNOSI: ' + p.Diagnosi);
-    if (p.Allergie)      linee.push('ALLERGIE: ' + p.Allergie);
-    if (p.NoteTerapia)   linee.push('TERAPIA: ' + p.NoteTerapia);
-    if (p.Diaria)        linee.push('DIARIA: ' + p.Diaria);
-    if (p.DaFare)        linee.push('DA FARE: ' + p.DaFare);
+    if (p.Eta)              linee.push('ETA\': ' + p.Eta);
+    if (p.Diagnosi)         linee.push('DIAGNOSI: ' + p.Diagnosi);
+    if (p.Allergie)         linee.push('ALLERGIE: ' + p.Allergie);
+    if (p.NoteTerapia)      linee.push('TERAPIA: ' + p.NoteTerapia);
+    if (p.Diaria)           linee.push('DIARIA: ' + p.Diaria);
+    if (p.DaFare)           linee.push('DA FARE: ' + p.DaFare);
     if (p.PianoTerapeutico) linee.push('PIANO: ' + p.PianoTerapeutico);
     linee.push('-'.repeat(40));
   });
   var contenuto = linee.join('\n');
 
-  return _driveTrovaOCreaCartella('CONSEGNE APP', null)
-    .then(function(rootId) { return _driveTrovaOCreaCartella('BACKUP EMERGENZA', rootId); })
+  // Legge/crea cartella root, poi sottocartella, poi crea file
+  return _driveOttieniCartellaId('DRIVE_FOLDER_ROOT', 'CONSEGNE APP', null)
+    .then(function(rootId) {
+      return _driveOttieniCartellaId('DRIVE_FOLDER_BACKUP', 'BACKUP EMERGENZA', rootId);
+    })
     .then(function(folderId) { return _driveCreaFileTesto(nomeFile, contenuto, folderId); })
     .then(function(file) { console.log('[Drive backup] File creato:', file.name, file.id); })
     .catch(function(e) { console.warn('[Drive backup] Errore (non bloccante):', e.message || e); });

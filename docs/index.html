@@ -1345,7 +1345,35 @@
       if (err) { err.textContent = msg; err.style.display = 'block'; }
     }
 
-    function _completaLogin() {
+    // ── Drive token (scope drive.file, richiesto dopo il login) ──
+    window._googleDriveToken = null;
+    var _driveTokenClient = null;
+
+    function _inizializzaDriveClient() {
+      if (typeof google === 'undefined' || !google.accounts || !google.accounts.oauth2) return false;
+      if (typeof GOOGLE_CLIENT_ID === 'undefined') return false;
+      _driveTokenClient = google.accounts.oauth2.initTokenClient({
+        client_id: GOOGLE_CLIENT_ID,
+        scope: 'https://www.googleapis.com/auth/drive.file',
+        callback: function(resp) {
+          if (!resp.error && resp.access_token) {
+            window._googleDriveToken = resp.access_token;
+            // Salva drive token in sessione
+            try {
+              var sess = JSON.parse(sessionStorage.getItem('appSession') || '{}');
+              sess.driveToken  = resp.access_token;
+              sess.driveExpiry = Date.now() + 3500000;
+              sessionStorage.setItem('appSession', JSON.stringify(sess));
+            } catch(e) {}
+          }
+          // Che sia riuscito o no, avvia l'app
+          _avviaAppDopoLogin();
+        }
+      });
+      return true;
+    }
+
+    function _avviaAppDopoLogin() {
       var ov = document.getElementById('loginOverlay');
       if (ov) {
         ov.style.transition = 'opacity 0.4s';
@@ -1355,11 +1383,39 @@
       if (typeof window._avviaFlussoApp === 'function') window._avviaFlussoApp();
     }
 
+    function _completaLogin() {
+      // Ripristina token Drive dalla sessione se ancora valido
+      try {
+        var sess = JSON.parse(sessionStorage.getItem('appSession') || '{}');
+        if (sess.driveToken && sess.driveExpiry > Date.now()) {
+          window._googleDriveToken = sess.driveToken;
+          _avviaAppDopoLogin();
+          return;
+        }
+      } catch(e) {}
+
+      // Richiedi drive.file silenziosamente (se già autorizzato → nessun popup)
+      // Se non ancora autorizzato → mostrerà il consent screen di Drive
+      if (_inizializzaDriveClient()) {
+        try {
+          _driveTokenClient.requestAccessToken({ prompt: '' });
+        } catch(e) {
+          _avviaAppDopoLogin(); // fallback: avvia senza Drive
+        }
+      } else {
+        _avviaAppDopoLogin();
+      }
+    }
+
     function _verificaSessioneEsistente() {
       try {
         var sess = JSON.parse(sessionStorage.getItem('appSession') || 'null');
         if (sess && sess.expiry > Date.now() && sess.token) {
           window._googleAccessToken = sess.token;
+          // Ripristina anche il Drive token se disponibile
+          if (sess.driveToken && sess.driveExpiry > Date.now()) {
+            window._googleDriveToken = sess.driveToken;
+          }
           return true;
         }
       } catch(e) {}
