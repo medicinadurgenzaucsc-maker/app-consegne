@@ -243,40 +243,61 @@
     // ============================================================
     // PALETTE COLORI (condivisa)
     // ============================================================
-    // Color picker nativo: apre lo spettro completo del browser/OS
+    // Color picker Pickr: si posiziona vicino al swatch, spettro completo
+    var _pickrInstance = null;
+
     function _apriPaletteSuSwatch(swatchEl, onSelect) {
-      // Rimuovi eventuali picker rimasti
-      document.querySelectorAll('._tipo-color-input').forEach(function(el) { el.remove(); });
-
-      var input = document.createElement('input');
-      input.type = 'color';
-      input.className = '_tipo-color-input';
-      // Valore iniziale: colore attuale del swatch
-      var bgColor = swatchEl.style.background || swatchEl.style.backgroundColor || '#78909c';
-      // Normalizza a hex se possibile
-      if (bgColor && bgColor.startsWith('hsl')) {
-        // Fallback per colori hsl: usa il colore di default
-        bgColor = '#78909c';
+      // Distruggi eventuale istanza precedente
+      if (_pickrInstance) {
+        try { _pickrInstance.destroyAndRemove(); } catch(e) {}
+        _pickrInstance = null;
       }
-      input.value = bgColor.length === 7 && bgColor.startsWith('#') ? bgColor : '#78909c';
-      var rect = swatchEl.getBoundingClientRect();
-      input.style.cssText = 'position:fixed;opacity:0;width:1px;height:1px;pointer-events:none;' +
-        'top:' + (rect.bottom + 2) + 'px;left:' + rect.left + 'px;';
-      document.body.appendChild(input);
 
-      // Aggiorna in tempo reale mentre si sceglie
-      input.addEventListener('input', function() {
-        onSelect(input.value);
-        swatchEl.style.background = input.value;
+      // Normalizza il colore iniziale in hex
+      var bgColor = swatchEl.style.background || swatchEl.style.backgroundColor || '#78909c';
+      if (!bgColor.match(/^#[0-9a-fA-F]{6}$/)) bgColor = '#78909c';
+
+      _pickrInstance = Pickr.create({
+        el: swatchEl,
+        useAsButton: true,
+        theme: 'nano',
+        default: bgColor,
+        position: 'bottom-start',
+        components: {
+          preview: true,
+          opacity: false,
+          hue: true,
+          interaction: {
+            hex: true,
+            input: true,
+            save: true
+          }
+        },
+        i18n: {
+          'btn:save': 'Conferma',
+          'btn:cancel': 'Annulla'
+        }
       });
-      input.addEventListener('change', function() {
-        onSelect(input.value);
-        input.remove();
+
+      _pickrInstance.on('change', function(color) {
+        var hex = color.toHEXA().toString().slice(0, 7);
+        onSelect(hex);
+        swatchEl.style.background = hex;
       });
-      input.addEventListener('blur', function() {
-        setTimeout(function() { input.remove(); }, 200);
+
+      _pickrInstance.on('save', function(color) {
+        var hex = color.toHEXA().toString().slice(0, 7);
+        onSelect(hex);
+        try { _pickrInstance.destroyAndRemove(); } catch(e) {}
+        _pickrInstance = null;
       });
-      input.click();
+
+      _pickrInstance.on('cancel', function() {
+        try { _pickrInstance.destroyAndRemove(); } catch(e) {}
+        _pickrInstance = null;
+      });
+
+      _pickrInstance.show();
     }
 
     // ============================================================
