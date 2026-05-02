@@ -554,7 +554,8 @@
       return document.getElementById('status-' + letto);
     }
 
-    let timerSalvataggioLetto = {}; const RITARDO_SALVATAGGIO = 2000; let timerDissolvenza = {};
+    let timerSalvataggioLetto = {}; const RITARDO_SALVATAGGIO = 60000; let timerDissolvenza = {};
+    var _dirtyLetti = new Set(); // letti con modifiche non ancora salvate
     document.body.addEventListener('input', function(e) { if (e.target && e.target.classList && e.target.classList.contains('editable-area')) { const card = e.target.closest('.patient-card'); if(!card) return; const letto = card.getAttribute('data-bed'); attivaSalvataggioRitardato(letto, card); } });
 
     // ── Blocco drag-and-drop fuori focus mode ─────────────────────────────
@@ -742,7 +743,22 @@
       var text = (e.clipboardData || window.clipboardData).getData('text/plain') || '';
       document.execCommand('insertText', false, text);
     });
-    function attivaSalvataggioRitardato(letto, card) { clearTimeout(timerSalvataggioLetto[letto]); _letti_salvataggioAttivi.add(letto); _nascondMatite(); _getBadges(letto).forEach(function(b) { clearTimeout(timerDissolvenza[letto]); b.className = "badge status-badge position-absolute top-0 start-0 m-1 bg-warning text-dark visible"; b.style.opacity='1'; b.innerText = "Salvataggio in corso..."; }); timerSalvataggioLetto[letto] = setTimeout(() => { eseguiSalvataggioLettoCompleto(letto, card); }, RITARDO_SALVATAGGIO); }
+    function attivaSalvataggioRitardato(letto, card) {
+      _dirtyLetti.add(letto);
+      clearTimeout(timerSalvataggioLetto[letto]);
+      _letti_salvataggioAttivi.add(letto);
+      _nascondMatite();
+      _getBadges(letto).forEach(function(b) {
+        clearTimeout(timerDissolvenza[letto]);
+        b.className = "badge status-badge position-absolute top-0 start-0 m-1 bg-warning text-dark visible";
+        b.style.opacity = '1';
+        b.innerText = "Modifiche non salvate";
+      });
+      // Timer 60s: parte al primo tasto, si resetta ad ogni tasto
+      timerSalvataggioLetto[letto] = setTimeout(function() {
+        eseguiSalvataggioLettoCompleto(letto, card);
+      }, RITARDO_SALVATAGGIO);
+    }
     function eseguiSalvataggioLettoCompleto(letto, card) {
       _syncPaused = true;
       const datiPaziente = {};
@@ -755,9 +771,10 @@
       const nascitaInput = card.querySelector('.data-nascita-text');
       if(nascitaInput) datiPaziente['DataNascita'] = nascitaInput.value;
       function _dopoSalvataggio() {
-        _letti_salvataggioAttivi.delete(letto); _mostraMatite();
-        if (_focusCard) { _syncPaused = false; }
-        else { _eseguiSyncDopoSalvataggio(); }
+        _dirtyLetti.delete(letto);
+        _letti_salvataggioAttivi.delete(letto);
+        _mostraMatite();
+        _syncPaused = false; // Realtime si occupa di aggiornare gli altri client
       }
       google.script.run
         .withSuccessHandler((res) => {

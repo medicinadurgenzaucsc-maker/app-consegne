@@ -196,8 +196,49 @@
       });
     }
 
-    window.addEventListener('beforeunload', function() {
+    window.addEventListener('beforeunload', function(e) {
+      // Rilascia il lock
       if (_lettoLockAtt) google.script.run.rilasciaLock(_lettoLockAtt, _mioToken);
+
+      // Se ci sono modifiche non salvate → salva con fetch keepalive e mostra dialogo nativo
+      if (typeof _dirtyLetti !== 'undefined' && _dirtyLetti.size > 0) {
+        _dirtyLetti.forEach(function(letto) {
+          var card = document.querySelector('.patient-card[data-bed="' + letto + '"]');
+          if (!card) return;
+
+          // Raccoglie i dati dalla card
+          var datiPaziente = {};
+          card.querySelectorAll('.editable-area').forEach(function(area) {
+            var campo = area.getAttribute('data-field');
+            if (campo) datiPaziente[campo] = area.classList.contains('plain-text') ? area.innerText : area.innerHTML;
+          });
+          var sessoEl = card.querySelector('.sesso-symbol[data-field="Sesso"]');
+          if (sessoEl) datiPaziente['Sesso'] = sessoEl.getAttribute('data-sesso') || '';
+          var drIn = card.querySelector('.data-ricovero-text');
+          if (drIn) { var drP = drIn.value.split('/'); datiPaziente['DataRicovero'] = (drP.length===3&&drP[2].length===4) ? drP[2]+'-'+drP[1].padStart(2,'0')+'-'+drP[0].padStart(2,'0') : ''; }
+          var dnIn = card.querySelector('.data-nascita-text');
+          if (dnIn) datiPaziente['DataNascita'] = dnIn.value;
+
+          // Salvataggio keepalive: il browser lo porta a termine anche durante la chiusura
+          var dbRow = _toDb(datiPaziente);
+          dbRow.ultimo_aggiornamento = new Date().toLocaleTimeString('it-IT');
+          fetch(SUPABASE_URL + '/rest/v1/consegne?letto=eq.' + encodeURIComponent(letto), {
+            method: 'PATCH',
+            keepalive: true,
+            headers: {
+              'apikey': SUPABASE_ANON_KEY,
+              'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+              'Content-Type': 'application/json',
+              'Prefer': 'return=minimal'
+            },
+            body: JSON.stringify(dbRow)
+          });
+        });
+
+        // Mostra dialogo nativo del browser (il testo personalizzato è ignorato dai browser moderni)
+        e.preventDefault();
+        e.returnValue = '';
+      }
     });
 
     var _syncPaused = false;
@@ -684,6 +725,12 @@
 
     function _disattivaFocusMode(scrollToCard) {
       if (!_focusCard) return;
+      // Salva subito se ci sono modifiche non ancora salvate
+      var _lettoUscita = _focusCard.getAttribute('data-bed');
+      if (_lettoUscita && typeof _dirtyLetti !== 'undefined' && _dirtyLetti.has(_lettoUscita)) {
+        clearTimeout(timerSalvataggioLetto[_lettoUscita]);
+        _autoSalvaOra(_lettoUscita);
+      }
       var card = _focusCard;
       _focusCard = null;
       _focusHaInput = false;
