@@ -1254,6 +1254,9 @@
             <label class="form-label fw-semibold">Link al Google Doc da importare</label>
             <input type="url" id="inputImportaUrl" class="form-control" placeholder="https://docs.google.com/document/d/..." style="font-size:0.88rem;">
             <div class="form-text text-muted mt-1">Incolla l'URL completo del documento Google. Il file deve essere accessibile con l'account con cui sei loggato.</div>
+            <label class="form-label fw-semibold mt-3">Password di autorizzazione</label>
+            <input type="password" id="inputImportaPwd" class="form-control" placeholder="Password richiesta per importare" style="font-size:0.88rem;" onkeydown="if(event.key==='Enter') eseguiImportaConsegne()">
+            <div class="form-text text-muted mt-1">Inserisci la password di sicurezza per procedere con l'importazione.</div>
           </div>
           <div id="importaStep2" style="display:none;text-align:center;padding:20px 0;">
             <div class="spinner-border text-warning mb-3" style="width:2.5rem;height:2.5rem;" role="status"></div>

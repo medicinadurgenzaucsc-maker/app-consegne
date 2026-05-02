@@ -1176,13 +1176,17 @@
       document.getElementById('importaStep3').style.display = 'none';
       document.getElementById('importaFooter').style.display = '';
       document.getElementById('inputImportaUrl').value = '';
+      document.getElementById('inputImportaPwd').value = '';
       var mi = bootstrap.Modal.getOrCreateInstance(document.getElementById('modalImportaConsegne'));
       mi.show();
     }
 
     function eseguiImportaConsegne() {
       var url = (document.getElementById('inputImportaUrl').value || '').trim();
+      var pwd = (document.getElementById('inputImportaPwd').value || '').trim();
+
       if (!url) { Swal.fire({ icon: 'warning', title: 'URL mancante', text: 'Inserisci il link al Google Doc.', confirmButtonColor: '#e65100' }); return; }
+      if (!pwd) { Swal.fire({ icon: 'warning', title: 'Password mancante', text: 'Inserisci la password di autorizzazione.', confirmButtonColor: '#e65100' }); return; }
 
       // Estrai document ID dall'URL
       var m = url.match(/\/d\/([a-zA-Z0-9_\-]+)/);
@@ -1193,21 +1197,37 @@
       document.getElementById('importaStep1').style.display = 'none';
       document.getElementById('importaFooter').style.display = 'none';
       document.getElementById('importaStep2').style.display = '';
-      document.getElementById('importaStepMsg').textContent = 'Richiesta accesso documento...';
+      document.getElementById('importaStepMsg').textContent = 'Verifica password...';
 
-      // Richiedi scope documents.readonly se non disponibile
-      if (_googleDocsToken) {
-        _eseguiParsingEImport(docId);
-      } else {
-        _richiediDocsToken(function(ok) {
-          if (!ok) {
+      // ── Verifica password su Supabase prima di procedere ─────────────────────
+      _q(_sb.from('impostazioni').select('valore').eq('chiave', 'IMPORT_PWD').maybeSingle())
+        .then(function(row) {
+          var pwdCorretta = row ? row.valore : null;
+          if (!pwdCorretta || pwd !== pwdCorretta) {
             _resetModalImporta();
-            Swal.fire({ icon: 'error', title: 'Accesso negato', text: 'Non è stato possibile ottenere l\'accesso al documento Google. Riprova.', confirmButtonColor: '#d33' });
+            Swal.fire({ icon: 'error', title: 'Password errata', text: 'La password inserita non è corretta. Impossibile procedere con l\'importazione.', confirmButtonColor: '#d33' });
             return;
           }
-          _eseguiParsingEImport(docId);
+          // Password corretta → richiedi token Docs e procedi
+          document.getElementById('importaStep2').style.display = '';
+          document.getElementById('importaStepMsg').textContent = 'Richiesta accesso documento...';
+          if (_googleDocsToken) {
+            _eseguiParsingEImport(docId);
+          } else {
+            _richiediDocsToken(function(ok) {
+              if (!ok) {
+                _resetModalImporta();
+                Swal.fire({ icon: 'error', title: 'Accesso negato', text: 'Non è stato possibile ottenere l\'accesso al documento Google. Riprova.', confirmButtonColor: '#d33' });
+                return;
+              }
+              _eseguiParsingEImport(docId);
+            });
+          }
+        })
+        .catch(function() {
+          _resetModalImporta();
+          Swal.fire({ icon: 'error', title: 'Errore verifica', text: 'Impossibile verificare la password. Controlla la connessione e riprova.', confirmButtonColor: '#d33' });
         });
-      }
     }
 
     function _richiediDocsToken(callback) {
