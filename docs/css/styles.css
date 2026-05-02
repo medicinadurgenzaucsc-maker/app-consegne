@@ -8,8 +8,8 @@ body { padding-top: 70px; background-color: #d4e6f1 !important; }
 .patient-card { border: 2px solid #333; border-radius: 8px; margin-bottom: 30px; background-color: #fdfbf7; position: relative; }
 .header-row { border-bottom: 2px solid #333; }
 .bed-number-box { border-right: 2px solid #333; display: flex; flex-direction: column; align-items: center; justify-content: center; background-color: #f2efe9; position: relative; }
-.bed-number { font-size: 4rem; font-weight: bold; line-height: 1; }
-.sesso-symbol { display:inline-block; font-size:2.6rem; line-height:1; margin-left:6px; vertical-align:middle; cursor:default; user-select:none; -webkit-text-stroke:2.5px currentColor; }
+.bed-number { font-size: 2.5rem; font-weight: bold; line-height: 1; }
+.sesso-symbol { display:inline-block; font-size:1.8rem; line-height:1; margin-left:6px; vertical-align:middle; cursor:default; user-select:none; -webkit-text-stroke:2px currentColor; }
 .focus-mode .sesso-symbol { cursor:pointer; }
 .bed-number-flex { display:flex; align-items:center; justify-content:center; }
 .patient-info-box { padding: 15px; position: relative; }
