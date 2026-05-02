@@ -148,7 +148,7 @@
         })
         .archiviaGiornoCorrente();
 
-    });
+    }; // fine _avviaFlussoApp
 
     let calDate = new Date();
     let listaGiorniArchiviati = [];
