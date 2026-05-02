@@ -520,17 +520,18 @@
     });
   }
 
-  // ── Caricamento dati ───────────────────────────────────────────
+  // ── Caricamento dati — 2 query parallele, nessuna dipendenza tra loro ──
+  // Usa direttamente le funzioni Supabase definite in api.js
   var fetchPazienti = dataArchivio
-    ? _apiGet('getDatiArchivioGiorno', { dataStr: dataArchivio })
-    : _apiGet('getDatiPazienti', {});
+    ? _sbGetDatiArchivioGiorno(dataArchivio).then(function(r) { return r ? (r.pazienti || []) : []; })
+    : _sbGetPazienti();
 
   Promise.all([
     fetchPazienti,
-    _apiGet('ottieniNomeReparto', {})
+    _sbOttieniNomeReparto()
   ]).then(function(results) {
     var pazienti    = results[0] || [];
-    var nomeReparto = (typeof results[1] === 'string' ? results[1] : (results[1] && results[1].nome)) || 'Reparto';
+    var nomeReparto = (results[1] && results[1].nome) || 'Reparto';
     renderPagina(pazienti, nomeReparto);
   }).catch(function(e) {
     document.getElementById('loadingScreen').innerHTML =
