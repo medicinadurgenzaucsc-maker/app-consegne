@@ -86,7 +86,7 @@
       Swal.fire({
         icon: 'warning',
         title: 'Scheda in aggiornamento',
-        html: 'Il letto <strong>' + letto + '</strong> è attualmente in aggiornamento da un altro utente.<br><span class="text-muted small">La scheda si sbloccherà automaticamente.</span>',
+        html: 'Il letto <strong>' + letto + '</strong> è attualmente in modifica.<br><span class="text-muted small">La scheda si sbloccherà automaticamente al termine.</span>',
         showConfirmButton: false,
         timer: 2200
       });
@@ -388,8 +388,9 @@
 
       // ── FASE 1: controllo in-memory (0 query) ────────────────────────────
       // _lockState è aggiornato da Realtime in api.js
+      // Blocca se c'è un lock attivo sul letto, a prescindere da chi lo detiene
       var lockInfo = (typeof _lockState !== 'undefined') ? _lockState[letto] : null;
-      if (lockInfo && lockInfo.token !== _mioToken) {
+      if (lockInfo) {
         _mostraAvvisoLock(letto);
         return; // bloccato — non aprire
       }

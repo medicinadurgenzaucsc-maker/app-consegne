@@ -867,14 +867,14 @@
     // Controlla i lock sui letti indicati usando lo stato in-memory (0 query).
     // _lockState è mantenuto aggiornato da Realtime in api.js.
     function _verificaLockEProcedi(letti, callback) {
+      // Blocca se c'è un lock attivo su uno qualsiasi dei letti, a prescindere da chi lo detiene
       var bloccati = letti.filter(function(l) {
-        var info = (typeof _lockState !== 'undefined') && _lockState[String(l)];
-        return info && info.token !== _mioToken;
+        return (typeof _lockState !== 'undefined') && !!_lockState[String(l)];
       });
       if (bloccati.length > 0) {
         var msg = bloccati.length === 1
-          ? 'Il letto <strong>' + bloccati[0] + '</strong> è attualmente in modifica da un altro utente. Attendi il rilascio prima di procedere.'
-          : 'I letti <strong>' + bloccati.join('</strong> e <strong>') + '</strong> sono attualmente in modifica da altri utenti. Attendi il rilascio prima di procedere.';
+          ? 'Il letto <strong>' + bloccati[0] + '</strong> è attualmente in modifica. Attendi il rilascio prima di procedere.'
+          : 'I letti <strong>' + bloccati.join('</strong> e <strong>') + '</strong> sono attualmente in modifica. Attendi il rilascio prima di procedere.';
         Swal.fire({ icon: 'error', title: 'Letto in uso', html: msg, confirmButtonColor: '#d33' });
         return;
       }
