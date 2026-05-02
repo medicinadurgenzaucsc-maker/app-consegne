@@ -757,8 +757,8 @@
         _getBadges(letto).forEach(function(b) {
           clearTimeout(timerDissolvenza[letto]);
           b.className = 'badge status-badge position-absolute top-0 start-0 m-1 bg-warning text-dark visible';
-          b.style.cssText += ';opacity:1;font-size:0.6rem;white-space:normal;max-width:160px;line-height:1.3;';
-          b.innerText = 'Salvataggio automatico in ' + s + 's oppure cliccando all\'esterno della scheda';
+          b.style.cssText += ';opacity:1;';
+          b.innerText = 'Salvataggio automatico in ' + s + 's';
         });
       }
       _aggiornaBadge(_sec);
