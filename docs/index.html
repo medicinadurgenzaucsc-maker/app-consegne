@@ -156,8 +156,7 @@
           if (document.activeElement && _focusCard.contains(document.activeElement)) {
             document.activeElement.blur();
           }
-          var letto = _focusCard.getAttribute('data-bed');
-          if (letto) _autoSalvaOra(letto);
+          // _disattivaFocusMode controlla _dirtyLetti e salva solo se necessario
           _disattivaFocusMode(true);
         }
       }, 120000);
