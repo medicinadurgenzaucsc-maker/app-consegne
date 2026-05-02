@@ -160,7 +160,7 @@
           if (letto) _autoSalvaOra(letto);
           _disattivaFocusMode(true);
         }
-      }, _focusHaInput ? 120000 : 30000);
+      }, 120000);
     }
 
     function _rinnovaDebounce(letto) {
@@ -183,7 +183,7 @@
           google.script.run.rilasciaLock(lettoRilasciato, _mioToken);
         }
         _timerRilascio = null;
-      }, _focusCard ? (_focusHaInput ? 120000 : 30000) : 20000);
+      }, _focusCard ? 120000 : 20000);
     }
 
     function _mostraAvvisoLock(letto) {

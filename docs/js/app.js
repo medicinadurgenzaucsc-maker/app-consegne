@@ -555,7 +555,8 @@
     }
 
     let timerSalvataggioLetto = {}; const RITARDO_SALVATAGGIO = 60000; let timerDissolvenza = {};
-    var _dirtyLetti = new Set(); // letti con modifiche non ancora salvate
+    var _dirtyLetti = new Set();        // letti con modifiche non ancora salvate
+    var _countdownIntervallo = {};      // intervalli per il countdown badge
     document.body.addEventListener('input', function(e) { if (e.target && e.target.classList && e.target.classList.contains('editable-area')) { const card = e.target.closest('.patient-card'); if(!card) return; const letto = card.getAttribute('data-bed'); attivaSalvataggioRitardato(letto, card); } });
 
     // ── Blocco drag-and-drop fuori focus mode ─────────────────────────────
@@ -746,16 +747,32 @@
     function attivaSalvataggioRitardato(letto, card) {
       _dirtyLetti.add(letto);
       clearTimeout(timerSalvataggioLetto[letto]);
+      clearInterval(_countdownIntervallo[letto]);
       _letti_salvataggioAttivi.add(letto);
       _nascondMatite();
-      _getBadges(letto).forEach(function(b) {
-        clearTimeout(timerDissolvenza[letto]);
-        b.className = "badge status-badge position-absolute top-0 start-0 m-1 bg-warning text-dark visible";
-        b.style.opacity = '1';
-        b.innerText = "Modifiche non salvate";
-      });
+
+      // Aggiorna il badge con il conto alla rovescia
+      var _sec = Math.round(RITARDO_SALVATAGGIO / 1000);
+      function _aggiornaBadge(s) {
+        _getBadges(letto).forEach(function(b) {
+          clearTimeout(timerDissolvenza[letto]);
+          b.className = 'badge status-badge position-absolute top-0 start-0 m-1 bg-warning text-dark visible';
+          b.style.cssText += ';opacity:1;font-size:0.6rem;white-space:normal;max-width:160px;line-height:1.3;';
+          b.innerText = 'Salvataggio automatico in ' + s + 's oppure cliccando all\'esterno della scheda';
+        });
+      }
+      _aggiornaBadge(_sec);
+
+      // Conto alla rovescia: aggiorna ogni secondo
+      _countdownIntervallo[letto] = setInterval(function() {
+        _sec--;
+        if (_sec <= 0) { clearInterval(_countdownIntervallo[letto]); return; }
+        _aggiornaBadge(_sec);
+      }, 1000);
+
       // Timer 60s: parte al primo tasto, si resetta ad ogni tasto
       timerSalvataggioLetto[letto] = setTimeout(function() {
+        clearInterval(_countdownIntervallo[letto]);
         eseguiSalvataggioLettoCompleto(letto, card);
       }, RITARDO_SALVATAGGIO);
     }
@@ -771,6 +788,7 @@
       const nascitaInput = card.querySelector('.data-nascita-text');
       if(nascitaInput) datiPaziente['DataNascita'] = nascitaInput.value;
       function _dopoSalvataggio() {
+        clearInterval(_countdownIntervallo[letto]);
         _dirtyLetti.delete(letto);
         _letti_salvataggioAttivi.delete(letto);
         _mostraMatite();
