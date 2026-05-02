@@ -1264,7 +1264,9 @@
       _tokenClient = google.accounts.oauth2.initTokenClient({
         client_id: GOOGLE_CLIENT_ID,
         // email+profile per verificare l'utente; drive per il backup su Drive
-        scope: 'email profile https://www.googleapis.com/auth/drive',
+        // Solo email+profile: nessuna verifica Google richiesta.
+        // Drive viene richiesto separatamente al momento del backup.
+        scope: 'email profile',
         callback: _onGoogleToken
       });
       return true;
