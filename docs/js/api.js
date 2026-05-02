@@ -436,6 +436,20 @@ function _sbSalvaPaziente(letto, datiPaziente) {
     .then(function() { return { success: true, ora: row.ultimo_aggiornamento }; });
 }
 
+// Importa una scheda letto dal parsing Google Doc.
+// Aggiorna il letto se esiste, restituisce false se il letto non è presente.
+function _sbImportaLetto(letto, dati) {
+  return _q(_sb.from('consegne').select('letto').eq('letto', String(letto)).maybeSingle())
+    .then(function(existing) {
+      if (!existing) return false; // letto non esiste nel DB
+      var row = _toDb(dati);
+      row.ultimo_aggiornamento = _oraStr();
+      row.updated_at = new Date().toISOString();
+      return _q(_sb.from('consegne').update(row).eq('letto', String(letto)))
+        .then(function() { return true; });
+    });
+}
+
 function _sbAggiungiLetto(numeroLetto) {
   return _q(_sb.from('consegne').select('letto').eq('letto', String(numeroLetto)).maybeSingle())
     .then(function(existing) {

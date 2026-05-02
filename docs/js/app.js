@@ -1160,3 +1160,392 @@
       var eraSyncPaused = _syncPaused; _syncPaused = true; ricaricaPagina();
       setTimeout(function() { if (!eraSyncPaused) { _syncPaused = false; _aggiornaVoceSync(); } }, 3000);
     }
+
+
+    // ══════════════════════════════════════════════════════════════
+    // IMPORTA DA FILE CONSEGNE (Google Docs API v1)
+    // ══════════════════════════════════════════════════════════════
+
+    var _docsTokenClient = null;
+    var _googleDocsToken = null;
+
+    function apriModalImportaConsegne() {
+      // Reset UI
+      document.getElementById('importaStep1').style.display = '';
+      document.getElementById('importaStep2').style.display = 'none';
+      document.getElementById('importaStep3').style.display = 'none';
+      document.getElementById('importaFooter').style.display = '';
+      document.getElementById('inputImportaUrl').value = '';
+      var mi = bootstrap.Modal.getOrCreateInstance(document.getElementById('modalImportaConsegne'));
+      mi.show();
+    }
+
+    function eseguiImportaConsegne() {
+      var url = (document.getElementById('inputImportaUrl').value || '').trim();
+      if (!url) { Swal.fire({ icon: 'warning', title: 'URL mancante', text: 'Inserisci il link al Google Doc.', confirmButtonColor: '#e65100' }); return; }
+
+      // Estrai document ID dall'URL
+      var m = url.match(/\/d\/([a-zA-Z0-9_\-]+)/);
+      var docId = m ? m[1] : url;
+      if (!docId || docId.length < 10) { Swal.fire({ icon: 'warning', title: 'URL non valido', text: 'Non riesco a estrarre l\'ID documento dall\'URL fornito.', confirmButtonColor: '#e65100' }); return; }
+
+      // Nascondi footer, mostra spinner
+      document.getElementById('importaStep1').style.display = 'none';
+      document.getElementById('importaFooter').style.display = 'none';
+      document.getElementById('importaStep2').style.display = '';
+      document.getElementById('importaStepMsg').textContent = 'Richiesta accesso documento...';
+
+      // Richiedi scope documents.readonly se non disponibile
+      if (_googleDocsToken) {
+        _eseguiParsingEImport(docId);
+      } else {
+        _richiediDocsToken(function(ok) {
+          if (!ok) {
+            _resetModalImporta();
+            Swal.fire({ icon: 'error', title: 'Accesso negato', text: 'Non è stato possibile ottenere l\'accesso al documento Google. Riprova.', confirmButtonColor: '#d33' });
+            return;
+          }
+          _eseguiParsingEImport(docId);
+        });
+      }
+    }
+
+    function _richiediDocsToken(callback) {
+      if (typeof google === 'undefined' || !google.accounts || !google.accounts.oauth2) { callback(false); return; }
+      // Controlla sessionStorage
+      try {
+        var sess = JSON.parse(sessionStorage.getItem('appSession') || '{}');
+        if (sess.docsToken && sess.docsExpiry > Date.now()) {
+          _googleDocsToken = sess.docsToken;
+          callback(true); return;
+        }
+      } catch(e) {}
+
+      _docsTokenClient = google.accounts.oauth2.initTokenClient({
+        client_id: GOOGLE_CLIENT_ID,
+        scope: 'https://www.googleapis.com/auth/documents.readonly',
+        callback: function(resp) {
+          if (resp.error || !resp.access_token) { callback(false); return; }
+          _googleDocsToken = resp.access_token;
+          try {
+            var sess = JSON.parse(sessionStorage.getItem('appSession') || '{}');
+            sess.docsToken  = resp.access_token;
+            sess.docsExpiry = Date.now() + 3500000;
+            sessionStorage.setItem('appSession', JSON.stringify(sess));
+          } catch(e) {}
+          callback(true);
+        }
+      });
+      _docsTokenClient.requestAccessToken({ prompt: '' });
+    }
+
+    function _resetModalImporta() {
+      document.getElementById('importaStep1').style.display = '';
+      document.getElementById('importaStep2').style.display = 'none';
+      document.getElementById('importaStep3').style.display = 'none';
+      document.getElementById('importaFooter').style.display = '';
+    }
+
+    function _eseguiParsingEImport(docId) {
+      document.getElementById('importaStepMsg').textContent = 'Lettura documento in corso...';
+
+      fetch('https://docs.googleapis.com/v1/documents/' + docId, {
+        headers: { 'Authorization': 'Bearer ' + _googleDocsToken }
+      })
+      .then(function(r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status + ' — verifica che il documento sia accessibile con questo account.');
+        return r.json();
+      })
+      .then(function(doc) {
+        document.getElementById('importaStepMsg').textContent = 'Parsing tabelle...';
+        var schedeLetto = _imp_parseDocumento(doc);
+        if (schedeLetto.length === 0) throw new Error('Nessuna scheda letto trovata nel documento. Controlla che il formato sia corretto.');
+
+        document.getElementById('importaStepMsg').textContent = 'Salvataggio su database (' + schedeLetto.length + ' letti)...';
+        return _imp_salvaLetti(schedeLetto);
+      })
+      .then(function(riepilogo) {
+        document.getElementById('importaStep2').style.display = 'none';
+        document.getElementById('importaStep3').style.display = '';
+        var html = '<div class="alert alert-success mb-2"><i class="bi bi-check-circle-fill me-2"></i><strong>' + riepilogo.importati + ' letti importati</strong> con successo.</div>';
+        if (riepilogo.saltati.length > 0) {
+          html += '<div class="alert alert-warning mb-2" style="font-size:0.82rem;"><strong>Saltati (' + riepilogo.saltati.length + '):</strong> ' + riepilogo.saltati.join(', ') + '</div>';
+        }
+        if (riepilogo.errori.length > 0) {
+          html += '<div class="alert alert-danger mb-2" style="font-size:0.82rem;"><strong>Errori (' + riepilogo.errori.length + '):</strong> ' + riepilogo.errori.join('; ') + '</div>';
+        }
+        document.getElementById('importaRisultato').innerHTML = html;
+        document.getElementById('importaFooter').innerHTML =
+          '<button type="button" class="btn btn-secondary" data-bs-dismiss="modal" onclick="_sincronizzaEPoiFai(function(){})">Chiudi e aggiorna</button>';
+        document.getElementById('importaFooter').style.display = '';
+      })
+      .catch(function(e) {
+        _resetModalImporta();
+        Swal.fire({ icon: 'error', title: 'Errore importazione', text: e.message || String(e), confirmButtonColor: '#d33' });
+      });
+    }
+
+    // ── Parsing del documento Google Docs API v1 ──────────────────────────────
+
+    function _imp_parseDocumento(doc) {
+      var schedeLetto = [];
+      if (!doc || !doc.body || !doc.body.content) return schedeLetto;
+
+      doc.body.content.forEach(function(elem) {
+        if (!elem.table) return;
+        var table = elem.table;
+        var rows  = table.tableRows || [];
+        if (rows.length < 1) return;
+
+        try {
+          var dati = _imp_parseSchedaLetto(rows);
+          if (dati && dati.Letto && String(dati.Letto).trim()) {
+            schedeLetto.push(dati);
+          }
+        } catch(e) {
+          console.warn('[Import] Tabella saltata:', e.message);
+        }
+      });
+      return schedeLetto;
+    }
+
+    function _imp_parseSchedaLetto(rows) {
+      var row0   = rows[0];
+      var cells0 = row0.tableCells || [];
+      var dati   = {};
+
+      if (cells0.length >= 1) {
+        var sin = _imp_parseColonnaSinistra(cells0[0]);
+        for (var k in sin) dati[k] = sin[k];
+      }
+      if (cells0.length >= 2) {
+        var cen = _imp_parseColonnaCentrale(cells0[1]);
+        for (var k in cen) dati[k] = cen[k];
+      }
+      if (cells0.length >= 3) {
+        dati.DaFare = _imp_cellToHtml(cells0[2]);
+      }
+
+      // Riga PIANO DI CURA (seconda riga della tabella)
+      if (rows.length >= 2) {
+        var cells1 = rows[1].tableCells || [];
+        var pianoCell = null;
+        for (var c = 0; c < cells1.length; c++) {
+          var ct = _imp_cellGetText(cells1[c]).trim().toUpperCase();
+          if (ct.indexOf('PIANO') === -1 && ct !== '') { pianoCell = cells1[c]; break; }
+        }
+        if (!pianoCell && cells1.length >= 2) pianoCell = cells1[1];
+        if (pianoCell) dati.PianoTerapeutico = _imp_cellToHtml(pianoCell);
+      }
+      return dati;
+    }
+
+    function _imp_parseColonnaSinistra(cell) {
+      var result = { Letto:'', DataRicovero:'', DataNascita:'', CodiceSanitario:'', Allergie:'', Ossigeno:'', NoteTerapia:'' };
+      var paras = _imp_getCellParas(cell);
+      var noteParts = [];
+      var bedFound  = false;
+
+      for (var i = 0; i < paras.length; i++) {
+        var text = _imp_paraGetText(paras[i]).trim();
+        if (!text) { if (bedFound && noteParts.length > 0) noteParts.push(''); continue; }
+
+        if (!bedFound) {
+          result.Letto = text.replace(/^l(?:etto)?\.?\s*/i, '').trim();
+          bedFound = true; continue;
+        }
+
+        var lower = text.toLowerCase();
+
+        // Sesso → salta
+        if (/^[mf]\.?$/i.test(text) || /^(maschio|femmina|uomo|donna)$/i.test(lower)) continue;
+
+        // Ingresso / data ricovero
+        if (lower.indexOf('ingresso') !== -1) {
+          var dm = text.match(/\d{1,2}[\-\/\.]\d{1,2}[\-\/\.]\d{2,4}/);
+          if (dm) { result.DataRicovero = dm[0]; }
+          else {
+            var after = text.replace(/ingresso\s*/i,'').trim();
+            if (after) result.DataRicovero = after;
+            else if (i+1 < paras.length) {
+              var nt = _imp_paraGetText(paras[i+1]).trim();
+              if (nt && /\d/.test(nt)) { result.DataRicovero = nt; i++; }
+            }
+          }
+          continue;
+        }
+
+        // Codice Sanitario
+        if (/^c\.?\s*s\.?\s*[:=]?\s*\S/i.test(text) || /^codice\s+sanitario\s*[:=]?\s*\S/i.test(text)) {
+          result.CodiceSanitario = text.replace(/^(c\.?\s*s\.?\s*[:=]?\s*|codice\s+sanitario\s*[:=]?\s*)/i,'').trim(); continue;
+        }
+        if (/^c\.?\s*s\.?$/i.test(text) || /^codice\s+sanitario$/i.test(text)) {
+          if (i+1 < paras.length) { result.CodiceSanitario = _imp_paraGetText(paras[i+1]).trim(); i++; } continue;
+        }
+
+        // Allergie
+        if (/^allergi[ae]/i.test(text)) {
+          var av = text.replace(/^allergi[ae]\s*[:=]?\s*/i,'').trim();
+          if (av) result.Allergie = _imp_paraToHtml(paras[i]).replace(/^allergi[ae]\s*[:=]?\s*/i,'').trim();
+          else if (i+1 < paras.length && _imp_paraGetText(paras[i+1]).trim()) { result.Allergie = _imp_paraToHtml(paras[i+1]); i++; }
+          continue;
+        }
+
+        // DDN / Data nascita
+        if (/^ddn\s*[:=]?\s*/i.test(text)) {
+          var ddv = text.replace(/^ddn\s*[:=]?\s*/i,'').trim();
+          if (ddv) result.DataNascita = ddv;
+          else if (i+1 < paras.length) { result.DataNascita = _imp_paraGetText(paras[i+1]).trim(); i++; }
+          continue;
+        }
+
+        // Ossigeno
+        if (/^ossigeno/i.test(text)) {
+          var ov = text.replace(/^ossigeno\s*[:=]?\s*/i,'').trim();
+          if (ov) result.Ossigeno = ov;
+          else if (i+1 < paras.length) { result.Ossigeno = _imp_paraGetText(paras[i+1]).trim(); i++; }
+          continue;
+        }
+
+        // Tutto il resto → Note e Terapia
+        noteParts.push(_imp_paraToHtml(paras[i]));
+      }
+
+      while (noteParts.length > 0 && noteParts[0] === '') noteParts.shift();
+      while (noteParts.length > 0 && noteParts[noteParts.length-1] === '') noteParts.pop();
+      result.NoteTerapia = noteParts.join('<br>');
+      return result;
+    }
+
+    function _imp_parseColonnaCentrale(cell) {
+      var result = { Nome:'', Diagnosi:'', Diaria:'' };
+      var paras  = _imp_getCellParas(cell);
+      var phase  = 'name';
+      var diagP  = [], diarP = [];
+
+      for (var i = 0; i < paras.length; i++) {
+        var text = _imp_paraGetText(paras[i]).trim();
+
+        if (phase === 'name') {
+          if (!text) continue;
+          var ci = text.indexOf(',');
+          result.Nome = (ci !== -1 ? text.substring(0, ci) : text).trim();
+          phase = 'diagnosi'; continue;
+        }
+        if (phase === 'diagnosi') {
+          if (!text) { if (diagP.length > 0) phase = 'diaria'; continue; }
+          var bold = _imp_isParaBold(paras[i]);
+          if (bold) { diagP.push(_imp_paraToHtml(paras[i])); }
+          else {
+            if (diagP.length === 0) diagP.push(_imp_paraToHtml(paras[i]));
+            else { phase = 'diaria'; diarP.push(_imp_paraToHtml(paras[i])); }
+          }
+          continue;
+        }
+        if (phase === 'diaria') {
+          diarP.push(text ? _imp_paraToHtml(paras[i]) : '');
+        }
+      }
+      while (diarP.length > 0 && diarP[0] === '') diarP.shift();
+      while (diarP.length > 0 && diarP[diarP.length-1] === '') diarP.pop();
+      result.Diagnosi = diagP.join('<br>');
+      result.Diaria   = diarP.join('<br>');
+      return result;
+    }
+
+    // ── Utility Docs API v1 ───────────────────────────────────────────────────
+
+    function _imp_getCellParas(cell) {
+      var paras = [];
+      (cell.content || []).forEach(function(elem) {
+        if (elem.paragraph) paras.push(elem.paragraph);
+      });
+      return paras;
+    }
+
+    function _imp_paraGetText(para) {
+      return (para.elements || []).map(function(el) {
+        return (el.textRun && el.textRun.content) ? el.textRun.content : '';
+      }).join('').replace(/\n$/, '');
+    }
+
+    function _imp_cellGetText(cell) {
+      return _imp_getCellParas(cell).map(_imp_paraGetText).join('\n');
+    }
+
+    function _imp_cellToHtml(cell) {
+      var parts = _imp_getCellParas(cell).map(_imp_paraToHtml);
+      while (parts.length > 0 && parts[0] === '') parts.shift();
+      while (parts.length > 0 && parts[parts.length-1] === '') parts.pop();
+      return parts.join('<br>');
+    }
+
+    function _imp_isParaBold(para) {
+      var els = para.elements || [];
+      for (var i = 0; i < els.length; i++) {
+        var tr = els[i].textRun;
+        if (tr && tr.content && tr.content.trim()) {
+          return !!(tr.textStyle && tr.textStyle.bold);
+        }
+      }
+      return false;
+    }
+
+    function _imp_paraToHtml(para) {
+      var html = '';
+      (para.elements || []).forEach(function(el) {
+        if (!el.textRun) return;
+        var content = (el.textRun.content || '').replace(/\n$/, '');
+        if (!content) return;
+        var ts  = el.textRun.textStyle || {};
+        var esc = content.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+        // Background color (evidenziazione)
+        var bg = ts.backgroundColor && ts.backgroundColor.color && ts.backgroundColor.color.rgbColor;
+        if (bg) {
+          var r = Math.round((bg.red   || 0) * 255);
+          var g = Math.round((bg.green || 0) * 255);
+          var b = Math.round((bg.blue  || 0) * 255);
+          esc = '<span style="background-color:rgb(' + r + ',' + g + ',' + b + ')">' + esc + '</span>';
+        }
+        if (ts.underline) esc = '<u>' + esc + '</u>';
+        if (ts.italic)    esc = '<i>' + esc + '</i>';
+        if (ts.bold)      esc = '<b>' + esc + '</b>';
+        html += esc;
+      });
+      return html;
+    }
+
+    // ── Salvataggio su Supabase ───────────────────────────────────────────────
+
+    function _imp_salvaLetti(schedeLetto) {
+      var importati = [], saltati = [], errori = [];
+      var promesse = schedeLetto.map(function(dati) {
+        return google.script.run
+          .withSuccessHandler(function(res) {
+            if (res && res.success) importati.push(dati.Letto);
+            else saltati.push(dati.Letto + ' (letto non presente)');
+          })
+          .withFailureHandler(function(e) {
+            errori.push(dati.Letto + ': ' + (e.message || 'errore'));
+          })
+          ._promiseAutoSave(dati.Letto, dati);
+      });
+      // Usa Promise.all con piccola astrazione sul sistema google.script.run
+      return new Promise(function(resolve) {
+        var pending = schedeLetto.length;
+        if (pending === 0) { resolve({ importati: 0, saltati: [], errori: [] }); return; }
+        schedeLetto.forEach(function(dati) {
+          var letto = String(dati.Letto).trim();
+          // Usa direttamente Supabase per aggiornare
+          _sbImportaLetto(letto, dati)
+            .then(function(ok) {
+              if (ok) importati.push(letto); else saltati.push(letto + ' (letto non trovato)');
+            })
+            .catch(function(e) { errori.push(letto + ': ' + (e.message || 'errore')); })
+            .finally(function() {
+              pending--;
+              if (pending === 0) resolve({ importati: importati.length, saltati: saltati, errori: errori });
+            });
+        });
+      });
+    }

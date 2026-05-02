@@ -936,6 +936,8 @@
             <li><a class="dropdown-item" href="javascript:void(0)" data-bs-toggle="modal" data-bs-target="#modalRinomina"><i class="bi bi-pencil-square text-primary me-2"></i>Modifica Nome Consegne</a></li>
             <li><hr class="dropdown-divider"></li>
             <li><a class="dropdown-item" href="javascript:void(0)" onclick="apriImpostazioniArchivio()"><i class="bi bi-archive text-secondary me-2"></i>Impostazioni archivio consegne</a></li>
+            <li><hr class="dropdown-divider"></li>
+            <li><a class="dropdown-item" href="javascript:void(0)" onclick="apriModalImportaConsegne()"><i class="bi bi-file-earmark-arrow-down text-warning me-2"></i>Importa da file consegne</a></li>
             <li style="display:none"><a class="dropdown-item" href="javascript:void(0)" id="btnToggleSync" onclick="toggleSync()"><i class="bi bi-pause-circle text-warning me-2" id="iconToggleSync"></i><span id="labelToggleSync">Metti in pausa il sync</span></a></li>
           </ul>
         </li>
@@ -1230,6 +1232,40 @@
         <div class="modal-footer border-0 pt-0">
           <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annulla</button>
           <button type="button" class="btn btn-dark" onclick="salvaImpostazioniArchivio()"><i class="bi bi-save me-1"></i>Salva</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== MODAL IMPORTA DA FILE CONSEGNE ===== -->
+  <div class="modal fade" id="modalImportaConsegne" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-dialog-centered" style="max-width:480px">
+      <div class="modal-content border-0 shadow-lg">
+        <div class="modal-header" style="background:linear-gradient(135deg,#e65100,#bf360c);color:#fff;">
+          <h5 class="modal-title"><i class="bi bi-file-earmark-arrow-down me-2"></i>Importa da file consegne</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body p-4">
+          <div class="alert alert-warning d-flex align-items-start gap-2 mb-3" style="font-size:0.88rem;">
+            <i class="bi bi-exclamation-triangle-fill text-warning mt-1" style="flex-shrink:0;"></i>
+            <div><strong>Attenzione:</strong> i dati importati sovrascriveranno le consegne attualmente presenti per i letti trovati nel documento. L'operazione non è reversibile.</div>
+          </div>
+          <div id="importaStep1">
+            <label class="form-label fw-semibold">Link al Google Doc da importare</label>
+            <input type="url" id="inputImportaUrl" class="form-control" placeholder="https://docs.google.com/document/d/..." style="font-size:0.88rem;">
+            <div class="form-text text-muted mt-1">Incolla l'URL completo del documento Google. Il file deve essere accessibile con l'account con cui sei loggato.</div>
+          </div>
+          <div id="importaStep2" style="display:none;text-align:center;padding:20px 0;">
+            <div class="spinner-border text-warning mb-3" style="width:2.5rem;height:2.5rem;" role="status"></div>
+            <div id="importaStepMsg" class="fw-semibold text-secondary" style="font-size:0.92rem;">Richiesta accesso documento...</div>
+          </div>
+          <div id="importaStep3" style="display:none;">
+            <div id="importaRisultato"></div>
+          </div>
+        </div>
+        <div class="modal-footer border-0 pt-0" id="importaFooter">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annulla</button>
+          <button type="button" class="btn btn-warning text-white" id="btnConfermaImporta" onclick="eseguiImportaConsegne()"><i class="bi bi-file-earmark-arrow-down me-1"></i>Importa</button>
         </div>
       </div>
     </div>
