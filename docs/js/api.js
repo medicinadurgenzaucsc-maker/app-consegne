@@ -525,13 +525,40 @@ function _sbGetLocks() {
 function _sbAcquistaLock(letto, token) {
   var k = String(letto);
   var now = Date.now();
-  // Controlla lo stato in-memory (0 query aggiuntive)
+
+  // Fast-fail in-memory: se c'è già un lock altrui noto → blocca subito senza query
   var existing = _lockState[k];
   if (existing && existing.token !== token) {
     return Promise.resolve({ success: false, blocked: true, message: 'Scheda in aggiornamento da altro utente.' });
   }
-  return _q(_sb.from('locks').upsert({ letto: k, token: token, ts: now }, { onConflict: 'letto' }))
-    .then(function() { return { success: true, blocked: false }; })
+
+  // INSERT che non sovrascrive un lock altrui già presente nel DB
+  // (ON CONFLICT DO NOTHING): il primo dei due utenti concorrenti inserisce,
+  // il secondo viene ignorato silenziosamente.
+  return _q(_sb.from('locks').upsert({ letto: k, token: token, ts: now }, { onConflict: 'letto', ignoreDuplicates: true }))
+    .then(function() {
+      // Verifica chi possiede effettivamente il lock nel DB
+      // (risolve la race condition: entrambi gli utenti passavano il check
+      //  in-memory, ma solo uno ha inserito per primo)
+      return _q(_sb.from('locks').select('token, ts').eq('letto', k).maybeSingle());
+    })
+    .then(function(row) {
+      if (!row) {
+        // Riga sparita nel frattempo (rarissimo): upsert normale come fallback
+        return _q(_sb.from('locks').upsert({ letto: k, token: token, ts: now }, { onConflict: 'letto' }))
+          .then(function() { return { success: true, blocked: false }; });
+      }
+      if (row.token === token) {
+        return { success: true, blocked: false };
+      }
+      // Lock altrui: è scaduto? → subentro
+      if (now - Number(row.ts) > LOCK_TTL_MS) {
+        return _q(_sb.from('locks').update({ token: token, ts: now }).eq('letto', k))
+          .then(function() { return { success: true, blocked: false }; });
+      }
+      // Lock altrui attivo → bloccato
+      return { success: false, blocked: true, message: 'Scheda in aggiornamento da altro utente.' };
+    })
     .catch(function() { return { success: false, blocked: false, message: 'Errore server, riprova.' }; });
 }
 
@@ -542,18 +569,35 @@ function _sbRilasciaLock(letto, token) {
 }
 
 function _sbAcquistaLockMultiplo(letti, token) {
-  // Controlla lo stato in-memory (0 query aggiuntive)
-  var bloccati = letti.filter(function(l) {
-    var ex = _lockState[String(l)];
-    return ex && ex.token !== token;
+  // Fast-fail in-memory: blocca se c'è qualsiasi lock attivo su uno dei letti
+  var bloccatiMem = letti.filter(function(l) {
+    return (typeof _lockState !== 'undefined') && !!_lockState[String(l)];
   });
-  if (bloccati.length > 0) {
-    return Promise.resolve({ success: false, bloccati: bloccati, message: 'Letti bloccati da altro utente.' });
+  if (bloccatiMem.length > 0) {
+    return Promise.resolve({ success: false, bloccati: bloccatiMem, message: 'Letti in uso.' });
   }
   var now = Date.now();
-  var upserts = letti.map(function(l) { return { letto: String(l), token: token, ts: now }; });
-  return _q(_sb.from('locks').upsert(upserts, { onConflict: 'letto' }))
-    .then(function() { return { success: true }; })
+  var ks = letti.map(String);
+  var upserts = ks.map(function(l) { return { letto: l, token: token, ts: now }; });
+
+  // INSERT ignoreDuplicates: non sovrascrive lock altrui già presenti
+  return _q(_sb.from('locks').upsert(upserts, { onConflict: 'letto', ignoreDuplicates: true }))
+    .then(function() {
+      // Verifica chi possiede i lock nel DB
+      return _q(_sb.from('locks').select('letto, token').in('letto', ks));
+    })
+    .then(function(rows) {
+      var rowMap = {};
+      (rows || []).forEach(function(r) { rowMap[r.letto] = r.token; });
+      var vinti  = ks.filter(function(l) { return rowMap[l] === token; });
+      var persi  = ks.filter(function(l) { return rowMap[l] !== token; });
+      if (persi.length > 0) {
+        // Rilascia i lock acquisiti parzialmente, poi segnala fallimento
+        if (vinti.length > 0) _sbRilasciaLockMultiplo(vinti, token);
+        return { success: false, bloccati: persi, message: 'Letti in uso.' };
+      }
+      return { success: true };
+    })
     .catch(function() { return { success: false, bloccati: [], message: 'Errore server.' }; });
 }
 
