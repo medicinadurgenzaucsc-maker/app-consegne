@@ -543,9 +543,10 @@
       var _lettoUscita = _focusCard.getAttribute('data-bed');
 
       // Salva subito se ci sono modifiche non ancora salvate
+      // Usa _focusCard direttamente (non querySelector che restituisce sempre la card main view)
       if (_lettoUscita && typeof _dirtyLetti !== 'undefined' && _dirtyLetti.has(_lettoUscita)) {
         clearTimeout(timerSalvataggioLetto[_lettoUscita]);
-        _autoSalvaOra(_lettoUscita);
+        eseguiSalvataggioLettoCompleto(_lettoUscita, _focusCard);
       }
 
       // Rilascia il lock immediatamente — Realtime propagherà la rimozione a tutti i client
