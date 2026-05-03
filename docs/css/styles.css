@@ -43,11 +43,59 @@ body { padding-top: 70px; background-color: #d4e6f1 !important; }
   position: fixed !important;
   z-index: 1070 !important;
   box-shadow: 0 12px 48px rgba(0,0,0,0.28), 0 2px 8px rgba(0,0,0,0.10) !important;
-  overflow-y: auto !important;
   background: #fff;
-  scroll-behavior: smooth;
   border-radius: 10px !important;
-  /* max-height calcolata dinamicamente in JS (_attivaFocusMode) */
+  /* La card è ferma: overflow hidden, height fissa calcolata in JS */
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+/* Content row si espande per riempire lo spazio disponibile */
+.patient-card.focus-mode .content-row {
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+}
+
+/* Ogni colonna scorre internamente */
+.patient-card.focus-mode .column-box {
+  overflow-y: auto !important;
+  min-height: 0 !important;
+}
+
+/* Piano terapeutico: altezza fissa al 25% della card, scorre internamente */
+.patient-card.focus-mode .piano-terapeutico-row {
+  flex-shrink: 0 !important;
+  max-height: 25% !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+.patient-card.focus-mode .piano-terapeutico-row .editable-area {
+  overflow-y: auto !important;
+  flex: 1 !important;
+  min-height: 0 !important;
+}
+
+/* Header: non cresce */
+.patient-card.focus-mode .header-row {
+  flex-shrink: 0 !important;
+}
+
+/* ─ Layout alternativo in focus mode ─ */
+.alt-row.focus-mode {
+  position: fixed !important;
+  z-index: 1070 !important;
+  box-shadow: 0 12px 48px rgba(0,0,0,0.28), 0 2px 8px rgba(0,0,0,0.10) !important;
+  background: #fff;
+  border-radius: 10px !important;
+  overflow: hidden !important;
+  display: flex !important;
+}
+.alt-row.focus-mode .alt-col {
+  overflow-y: auto !important;
+  min-height: 0 !important;
 }
 
 /* ===== STICKY TOOLBAR IN FOCUS-MODE ===== */

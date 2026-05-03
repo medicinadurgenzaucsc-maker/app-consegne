@@ -417,16 +417,17 @@
       // Focus mode: centrata con 3% margine laterale e 5% margine verticale
       var vw       = window.innerWidth;
       var vh       = window.innerHeight;
-      var newWidth = Math.round(vw * 0.94);          // 3% margine per lato
+      var newWidth = Math.round(vw * 0.94);                 // 3% margine per lato
       var newLeft  = Math.round(vw * 0.03);
-      var newTop   = Math.max(60, Math.round(vh * 0.05));  // almeno sotto la navbar
-      var newMaxH  = Math.round(vh - newTop - vh * 0.05);  // 5% spazio sotto
+      var newTop   = Math.max(60, Math.round(vh * 0.05));   // almeno sotto la navbar
+      var newH     = Math.round(vh - newTop - vh * 0.05);   // 5% spazio sotto
 
       card.style.position  = 'fixed';
       card.style.top       = newTop + 'px';
       card.style.left      = newLeft + 'px';
       card.style.width     = newWidth + 'px';
-      card.style.maxHeight = newMaxH + 'px';
+      card.style.height    = newH + 'px';    // altezza fissa → il flex interno scorre
+      card.style.maxHeight = '';             // resetta eventuale max-height residua
       card.style.margin    = '0';
       card.classList.add('focus-mode');
 
@@ -607,7 +608,8 @@
       card.style.width     = _focusOrigStyle.width    || '';
       card.style.zIndex    = _focusOrigStyle.zIndex   || '';
       card.style.margin    = _focusOrigStyle.margin   || '';
-      card.style.maxHeight = '';   // reset max-height impostato in focus mode
+      card.style.height    = '';   // reset height fissa impostata in focus mode
+      card.style.maxHeight = '';
       card.classList.remove('focus-mode');
 
       if (document.activeElement && card.contains(document.activeElement)) {
@@ -824,12 +826,16 @@
       </svg>
       Accedi con Google
     </button>
+    <div style="margin-top:14px;padding:9px 12px;background:#fff8e1;border-radius:8px;border:1px solid #ffe082;font-size:0.78rem;color:#5d4037;text-align:left;line-height:1.5;">
+      <i>⚠️ <strong>Importante:</strong> al click apparirà una finestra popup di Google.<br>
+      Se non compare, <strong>autorizza i popup</strong> per questo sito nelle impostazioni del browser.</i>
+    </div>
     <div id="loginSpinner" style="display:none;align-items:center;justify-content:center;gap:10px;margin-top:16px;">
       <div style="width:20px;height:20px;border:3px solid #ccc;border-top-color:#546e7a;border-radius:50%;animation:_lockSpin 0.8s linear infinite;"></div>
-      <span style="color:#607d8b;font-size:0.85rem;">Verifica in corso...</span>
+      <span style="color:#607d8b;font-size:0.85rem;">Verifica in corso... (completa il popup Google)</span>
     </div>
     <div id="loginError" style="display:none;margin-top:16px;padding:12px 14px;background:#ffebee;border-radius:8px;color:#c62828;font-size:0.83rem;text-align:left;white-space:pre-line;"></div>
-    <p style="margin-top:24px;font-size:0.75rem;color:#b0bec5;">Accesso riservato al personale autorizzato</p>
+    <p style="margin-top:20px;font-size:0.75rem;color:#b0bec5;">Accesso riservato al personale autorizzato</p>
   </div>
 </div>
 
