@@ -411,9 +411,12 @@
         left: rect.left
       };
 
-      var newWidth = Math.round(rect.width);
-      var newLeft  = Math.round(rect.left);
-      var newTop = 60;
+      // Larghezza 90% del viewport (5% margine per lato), centrata
+      var vw      = window.innerWidth;
+      var vh      = window.innerHeight;
+      var newWidth = Math.round(vw * 0.90);
+      var newLeft  = Math.round(vw * 0.05);
+      var newTop   = Math.max(60, Math.round(vh * 0.05));
 
       card.style.position = 'fixed';
       card.style.top      = newTop + 'px';

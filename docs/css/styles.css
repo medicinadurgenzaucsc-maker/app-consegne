@@ -44,9 +44,10 @@ body { padding-top: 70px; background-color: #d4e6f1 !important; }
   z-index: 1070 !important;
   box-shadow: 0 12px 48px rgba(0,0,0,0.28), 0 2px 8px rgba(0,0,0,0.10) !important;
   overflow-y: auto !important;
-  max-height: calc(100vh - 80px) !important;
+  max-height: calc(90vh - 60px) !important;  /* 5% margine verticale sopra e sotto */
   background: #fff;
   scroll-behavior: smooth;
+  border-radius: 10px !important;
 }
 
 /* ===== STICKY TOOLBAR IN FOCUS-MODE ===== */
