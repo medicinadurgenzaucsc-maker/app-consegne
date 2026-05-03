@@ -1017,14 +1017,11 @@ function _driveCreaGoogleDoc(nome, htmlContent, folderId) {
   });
 }
 
-// Costruisce HTML per una singola scheda letto — layout a 3 colonne, orientamento landscape.
-// Struttura tabella compatibile Google Docs (no nested tables, colspan solo dove necessario):
-//   Riga 1 (header): C1=Letto+Tipologia | C2+C3=Nome/Diagnosi/Meta (colspan=2)
-//   Riga 2 (corpo):  C1=Allergie/Ossigeno/Terapia | C2=Diaria | C3=DaFare
-//   Riga 3 (piano):  C1+C2+C3=Piano Terapeutico (colspan=3)
-//
-// Larghezze calibrate su A4 landscape 297×210mm, margini 15mm lat. → 757pt utili:
-//   C1 = 130pt | C2 = 470pt | C3 = 157pt = 757pt
+// Costruisce HTML per una singola scheda letto — 3 colonne, larghezza 100%.
+// Struttura compatibile Google Docs: no nested tables, colspan minimo.
+//   Riga 1 (header): C1=Letto (17%) | C2+C3=Nome/Diagnosi/Meta (colspan=2, 83%)
+//   Riga 2 (corpo):  C1=Allergie/Ossigeno/Terapia (17%) | C2=Diaria (63%) | C3=DaFare (20%)
+//   Riga 3 (piano):  C1+C2+C3=Piano Terapeutico (colspan=3, 100%)
 function _driveRenderCard(p) {
   var tipo = (p.TipologiaLetto || '').trim().toUpperCase() || 'STANDARD';
 
@@ -1034,23 +1031,21 @@ function _driveRenderCard(p) {
   if (p.DataRicovero)    meta += 'Ricovero: <b>' + p.DataRicovero + '</b> &nbsp; ';
   if (p.CodiceSanitario) meta += 'C.S.: <b>' + p.CodiceSanitario + '</b>';
 
-  var B  = '1.5pt solid #333333'; // bordo esterno
-  var Bi = '1pt solid #888888';   // bordo interno
+  var B  = '1.5pt solid #333333';
+  var Bi = '1pt solid #888888';
   var HB = 'background-color:#e8e6e1;font-weight:bold;font-size:8pt;text-transform:uppercase;padding:3pt 5pt;border-bottom:' + Bi + ';';
   var CB = 'padding:4pt 6pt;font-size:9pt;';
 
   return (
-    '<table style="width:757pt;border-collapse:collapse;margin-bottom:10pt;font-family:Arial,sans-serif;font-size:9pt;">' +
+    '<table width="100%" style="border-collapse:collapse;margin-bottom:10pt;font-family:Arial,sans-serif;font-size:9pt;">' +
 
     // ── Riga 1: header ──────────────────────────────────────────────────────
     '<tr>' +
-      // C1: numero letto + tipologia
-      '<td style="width:130pt;border:' + B + ';text-align:center;vertical-align:middle;background-color:#f2efe9;padding:6pt;">' +
+      '<td width="17%" style="border:' + B + ';text-align:center;vertical-align:middle;background-color:#f2efe9;padding:6pt;">' +
         '<p style="font-size:22pt;font-weight:bold;margin:0;line-height:1;">' + (p.Letto || '') + '</p>' +
         '<p style="font-size:7pt;font-weight:bold;color:#546e7a;text-transform:uppercase;margin:2pt 0 0;">' + tipo + '</p>' +
       '</td>' +
-      // C2+C3: nome paziente, diagnosi, meta (colspan=2)
-      '<td colspan="2" style="border:' + B + ';vertical-align:top;padding:5pt 8pt;">' +
+      '<td colspan="2" width="83%" style="border:' + B + ';vertical-align:top;padding:5pt 8pt;">' +
         '<p style="font-size:12pt;font-weight:bold;text-transform:uppercase;border-bottom:1pt solid #999;padding-bottom:2pt;margin:0 0 4pt;">' + (p.Nome || '') + '</p>' +
         '<p style="font-weight:bold;margin:0 0 3pt;">' + (p.Diagnosi || '') + '</p>' +
         (meta ? '<p style="font-size:8pt;color:#444;margin:3pt 0 0;">' + meta + '</p>' : '') +
@@ -1059,8 +1054,7 @@ function _driveRenderCard(p) {
 
     // ── Riga 2: corpo ───────────────────────────────────────────────────────
     '<tr>' +
-      // C1: Allergie + Ossigeno + Note e Terapia
-      '<td style="width:130pt;border:' + B + ';vertical-align:top;padding:0;">' +
+      '<td width="17%" style="border:' + B + ';vertical-align:top;padding:0;">' +
         '<p style="' + HB + '">&#x26A0; Allergie</p>' +
         '<p style="' + CB + '">' + (p.Allergie || '') + '</p>' +
         '<p style="' + HB + 'border-top:' + Bi + ';">Ossigeno</p>' +
@@ -1068,13 +1062,11 @@ function _driveRenderCard(p) {
         '<p style="' + HB + 'border-top:' + B + ';">Note e Terapia</p>' +
         '<p style="' + CB + '">' + (p.NoteTerapia || '') + '</p>' +
       '</td>' +
-      // C2: Diaria ed Epicrisi
-      '<td style="width:470pt;border:' + B + ';vertical-align:top;padding:0;">' +
+      '<td width="63%" style="border:' + B + ';vertical-align:top;padding:0;">' +
         '<p style="' + HB + '">Diaria ed Epicrisi</p>' +
         '<p style="' + CB + '">' + (p.Diaria || '') + '</p>' +
       '</td>' +
-      // C3: Da Fare / Richieste
-      '<td style="width:157pt;border:' + B + ';vertical-align:top;padding:0;">' +
+      '<td width="20%" style="border:' + B + ';vertical-align:top;padding:0;">' +
         '<p style="' + HB + '">Da Fare / Richieste</p>' +
         '<p style="' + CB + '">' + (p.DaFare || '') + '</p>' +
       '</td>' +
@@ -1082,7 +1074,7 @@ function _driveRenderCard(p) {
 
     // ── Riga 3: piano terapeutico ────────────────────────────────────────────
     '<tr>' +
-      '<td colspan="3" style="border:' + B + ';border-top:' + B + ';vertical-align:top;padding:0;">' +
+      '<td colspan="3" width="100%" style="border:' + B + ';vertical-align:top;padding:0;">' +
         '<p style="' + HB + 'text-align:left;">Piano Terapeutico</p>' +
         '<p style="' + CB + '">' + (p.PianoTerapeutico || '') + '</p>' +
       '</td>' +
@@ -1124,7 +1116,7 @@ function _driveBackupConsegne(pazienti, ts) {
     'p{margin:0;padding:0;}' +
     '</style>' +
     '</head><body>' +
-    '<table style="width:757pt;margin-bottom:12pt;border-bottom:2pt solid #333;">' +
+    '<table width="100%" style="margin-bottom:12pt;border-bottom:2pt solid #333;">' +
     '<tr>' +
     '<td style="font-size:14pt;font-weight:bold;padding-bottom:4pt;">Consegne Reparto</td>' +
     '<td style="text-align:right;font-size:9pt;color:#555;padding-bottom:4pt;">Backup del ' + dataLabel + '</td>' +
