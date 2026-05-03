@@ -69,6 +69,15 @@ body { padding-top: 70px; background-color: #d4e6f1 !important; }
   background-color: #f2efe9 !important;
 }
 
+/* Le celle .alt-editable ereditano overflow-y:auto da .editable-area (base CSS).
+   In focus mode la scrollbar deve essere sul card intero, non sulle singole celle. */
+.alt-row.focus-mode .alt-editable,
+.alt-row.focus-mode .editable-area {
+  overflow-y: visible !important;
+  overflow-x: visible !important;
+  min-height: 0 !important;
+}
+
 /* ===== STICKY TOOLBAR IN FOCUS-MODE ===== */
 .focus-toolbar {
   display: flex;

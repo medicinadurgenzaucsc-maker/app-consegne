@@ -672,10 +672,12 @@ function _sbArchiviaGiornoCorrente() {
           .update({ valore: String(now) })
           .eq('chiave', 'ULTIMO_BACKUP')
           .eq('valore', oldValore)    // CAS: aggiorna solo se è ancora il vecchio valore
+          .select()                   // NECESSARIO: senza .select() Supabase ritorna null
+                                      // anche se la riga è stata aggiornata → falso negativo
       ).then(function(updated) {
-        // Supabase restituisce array vuoto se 0 righe aggiornate
+        // updated = array con la riga aggiornata se CAS ha avuto successo, [] altrimenti
         if (!updated || updated.length === 0) {
-          // Un altro client ha già riservato il backup
+          // Un altro client ha già riservato il backup (valore era già cambiato)
           return { inCorso: false };
         }
 
