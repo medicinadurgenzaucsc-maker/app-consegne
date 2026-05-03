@@ -650,50 +650,57 @@ function _sbSalvaGiorniConservazione(giorni) {
 
 var BACKUP_INTERVALLO_MS = 6 * 60 * 60 * 1000; // 6 ore
 
-// Cache in memoria dell'ultimo backup — evita query DB nel setInterval
-// Viene aggiornata al caricamento pagina e dopo ogni backup eseguito.
-var _cachedUltimoBackup = 0;
-
 function _sbArchiviaGiornoCorrente() {
   var dataStr = _oggiStr();
   var now = Date.now();
 
-  // Controllo rapido in memoria prima di fare qualsiasi query DB
-  if (_cachedUltimoBackup > 0 && now - _cachedUltimoBackup < BACKUP_INTERVALLO_MS) {
-    return Promise.resolve({ inCorso: false }); // 0 query DB
-  }
-
-  // Legge ULTIMO_BACKUP da Supabase (solo quando la cache dice che potrebbe essere ora)
+  // ── Step 1: leggi ULTIMO_BACKUP ────────────────────────────────────────────
   return _q(_sb.from('impostazioni').select('valore').eq('chiave', 'ULTIMO_BACKUP').maybeSingle())
     .then(function(row) {
       var ultimoBackup = row ? Number(row.valore) : 0;
-      _cachedUltimoBackup = ultimoBackup; // Aggiorna cache con il valore reale dal DB
       if (now - ultimoBackup < BACKUP_INTERVALLO_MS) {
-        return { inCorso: false }; // Backup recente → skip
+        return { inCorso: false }; // Meno di 6h → skip, nessuna query extra
       }
-      // Esegui backup: leggi pazienti e inserisci in archivio
-      var _pazientiBackup;
-      return _sbGetPazienti().then(function(pazienti) {
-        _pazientiBackup = pazienti;
-        return _q(_sb.from('archivio').insert({
-          data_str: dataStr,
-          ts: now,
-          dati: pazienti
-        }));
-      }).then(function() {
-        _cachedUltimoBackup = now; // Aggiorna cache dopo backup riuscito
-        // Aggiorna timestamp ultimo backup
-        return _q(_sb.from('impostazioni').upsert(
-          { chiave: 'ULTIMO_BACKUP', valore: String(now) },
-          { onConflict: 'chiave' }
-        ));
-      }).then(function() {
-        // Backup su Google Drive (fire-and-forget, non bloccante)
-        _driveBackupConsegne(_pazientiBackup, now);
-        // Pulizia archivio vecchio in base a GIORNI_ARCHIVIO
-        return _sbGetGiorniConservazione().then(function(giorni) {
-          var limit = now - (giorni * 86400000);
-          _q(_sb.from('archivio').delete().lt('ts', limit)).catch(function() {});
+
+      // ── Step 2: CAS — prenota il backup in modo atomico ──────────────────
+      // Aggiorna ULTIMO_BACKUP a `now` SOLO SE ha ancora il valore letto prima.
+      // Se due utenti si collegano insieme, solo uno avrà la riga con
+      // valore = ultimoBackup: il secondo troverà 0 righe aggiornate e si ferma.
+      var oldValore = row ? String(row.valore) : '0';
+      return _q(
+        _sb.from('impostazioni')
+          .update({ valore: String(now) })
+          .eq('chiave', 'ULTIMO_BACKUP')
+          .eq('valore', oldValore)    // CAS: aggiorna solo se è ancora il vecchio valore
+      ).then(function(updated) {
+        // Supabase restituisce array vuoto se 0 righe aggiornate
+        if (!updated || updated.length === 0) {
+          // Un altro client ha già riservato il backup
+          return { inCorso: false };
+        }
+
+        // ── Step 3: esegui il backup (siamo gli unici autorizzati) ──────────
+        var _pazientiBackup;
+        return _sbGetPazienti().then(function(pazienti) {
+          _pazientiBackup = pazienti;
+          return _q(_sb.from('archivio').insert({
+            data_str: dataStr,
+            ts: now,
+            dati: pazienti
+          }));
+        }).then(function() {
+          // ── Step 4: backup Drive (fire-and-forget) + pulizia archivio ──────
+          _driveBackupConsegne(_pazientiBackup, now);
+          return _sbGetGiorniConservazione().then(function(giorni) {
+            var limit = now - (giorni * 86400000);
+            _q(_sb.from('archivio').delete().lt('ts', limit)).catch(function() {});
+            return { inCorso: false };
+          });
+        }).catch(function() {
+          // Se il backup fallisce, ripristina ULTIMO_BACKUP al vecchio valore
+          // così il prossimo caricamento ci riprova
+          _q(_sb.from('impostazioni').update({ valore: oldValore })
+            .eq('chiave', 'ULTIMO_BACKUP')).catch(function() {});
           return { inCorso: false };
         });
       });

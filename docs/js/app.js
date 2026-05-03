@@ -101,12 +101,9 @@
         google.script.run.rinnovaLockBackup();
       }, 5000);
 
-      // Backup periodico mentre la pagina rimane aperta:
-      // ogni 30 min controlla se sono passate 6h dall'ultimo backup.
-      // Il gate 6h in _sbArchiviaGiornoCorrente impedisce backup troppo frequenti.
-      setInterval(function() {
-        google.script.run.archiviaGiornoCorrente();
-      }, 30 * 60 * 1000); // 30 minuti
+      // Il backup viene eseguito solo al caricamento pagina (vedi sotto).
+      // Non servono setInterval: il CAS in _sbArchiviaGiornoCorrente
+      // impedisce che due utenti eseguano il backup contemporaneamente.
 
       // Dopo 3s senza risposta → questo client sta eseguendo il backup
       var _msgBackupTimer = setTimeout(function() {
