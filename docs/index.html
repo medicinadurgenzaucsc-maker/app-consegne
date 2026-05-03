@@ -388,11 +388,14 @@
 
       // ── FASE 1: controllo in-memory (0 query) ────────────────────────────
       // _lockState è aggiornato da Realtime in api.js
-      // Blocca se c'è un lock attivo sul letto, a prescindere da chi lo detiene
+      // Blocca solo i lock altrui: se il lock appartiene a questo browser
+      // (stesso _mioToken persistito in localStorage) significa che l'utente
+      // ha ricaricato la pagina (F5) mentre aveva la scheda aperta — deve
+      // poter rientrare per sbloccarla/salvarla.
       var lockInfo = (typeof _lockState !== 'undefined') ? _lockState[letto] : null;
-      if (lockInfo) {
+      if (lockInfo && lockInfo.token !== _mioToken) {
         _mostraAvvisoLock(letto);
-        return; // bloccato — non aprire
+        return; // bloccato — lock di un altro utente
       }
 
       var rect = card.getBoundingClientRect();
@@ -411,18 +414,20 @@
         left: rect.left
       };
 
-      // Larghezza 90% del viewport (5% margine per lato), centrata
-      var vw      = window.innerWidth;
-      var vh      = window.innerHeight;
-      var newWidth = Math.round(vw * 0.90);
-      var newLeft  = Math.round(vw * 0.05);
-      var newTop   = Math.max(60, Math.round(vh * 0.05));
+      // Focus mode: centrata con 3% margine laterale e 5% margine verticale
+      var vw       = window.innerWidth;
+      var vh       = window.innerHeight;
+      var newWidth = Math.round(vw * 0.94);          // 3% margine per lato
+      var newLeft  = Math.round(vw * 0.03);
+      var newTop   = Math.max(60, Math.round(vh * 0.05));  // almeno sotto la navbar
+      var newMaxH  = Math.round(vh - newTop - vh * 0.05);  // 5% spazio sotto
 
-      card.style.position = 'fixed';
-      card.style.top      = newTop + 'px';
-      card.style.left     = newLeft + 'px';
-      card.style.width    = newWidth + 'px';
-      card.style.margin   = '0';
+      card.style.position  = 'fixed';
+      card.style.top       = newTop + 'px';
+      card.style.left      = newLeft + 'px';
+      card.style.width     = newWidth + 'px';
+      card.style.maxHeight = newMaxH + 'px';
+      card.style.margin    = '0';
       card.classList.add('focus-mode');
 
       card.querySelectorAll('[contenteditable="true"]').forEach(function(el) {
@@ -596,12 +601,13 @@
         delete card._focusInputHandler;
       }
       card.scrollTop = 0;
-      card.style.position = _focusOrigStyle.position || '';
-      card.style.top      = _focusOrigStyle.top      || '';
-      card.style.left     = _focusOrigStyle.left     || '';
-      card.style.width    = _focusOrigStyle.width    || '';
-      card.style.zIndex   = _focusOrigStyle.zIndex   || '';
-      card.style.margin   = _focusOrigStyle.margin   || '';
+      card.style.position  = _focusOrigStyle.position || '';
+      card.style.top       = _focusOrigStyle.top      || '';
+      card.style.left      = _focusOrigStyle.left     || '';
+      card.style.width     = _focusOrigStyle.width    || '';
+      card.style.zIndex    = _focusOrigStyle.zIndex   || '';
+      card.style.margin    = _focusOrigStyle.margin   || '';
+      card.style.maxHeight = '';   // reset max-height impostato in focus mode
       card.classList.remove('focus-mode');
 
       if (document.activeElement && card.contains(document.activeElement)) {
