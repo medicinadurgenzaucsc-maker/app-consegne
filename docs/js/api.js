@@ -955,63 +955,94 @@ function _driveEliminaVecchi(folderId, cutoffMs) {
 }
 
 // Crea un file di testo plain in una cartella Drive (multipart upload)
-// Crea un Google Doc nativo su Drive partendo da HTML, poi imposta orientamento landscape.
+// Crea un Google Doc nativo su Drive, imposta A4 landscape e adatta le colonne
+// alla larghezza reale del foglio via Docs API batchUpdate.
+//
+// Flusso:
+// 1. Upload HTML → Google Doc (il converter usa portrait per le larghezze)
+// 2. GET struttura doc (solo posizioni tabelle)
+// 3. batchUpdate: imposta A4 landscape + larghezze colonne corrette
+//
+// A4 landscape con margini 20mm: larghezza utile = 841.89 - 2×56.69 = 728.51pt
+// Colonne card (3 col): C1=17% (124pt) | C2=63% (459pt) | C3=20% (146pt)
 function _driveCreaGoogleDoc(nome, htmlContent, folderId) {
   var token = window._googleDriveToken;
   if (!token) return Promise.reject(new Error('No Drive token'));
+
+  // Step 1: carica HTML come Google Doc
   var boundary = 'app_consegne_gdoc_boundary';
-  var meta = JSON.stringify({
-    name: nome,
-    mimeType: 'application/vnd.google-apps.document',
-    parents: [folderId]
-  });
-  var body = '--' + boundary + '\r\n' +
-    'Content-Type: application/json; charset=UTF-8\r\n\r\n' + meta + '\r\n' +
-    '--' + boundary + '\r\n' +
-    'Content-Type: text/html; charset=UTF-8\r\n\r\n' + htmlContent + '\r\n' +
-    '--' + boundary + '--';
+  var meta = JSON.stringify({ name: nome, mimeType: 'application/vnd.google-apps.document', parents: [folderId] });
+  var uploadBody = '--' + boundary + '\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n' + meta + '\r\n' +
+                   '--' + boundary + '\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n' + htmlContent + '\r\n' +
+                   '--' + boundary + '--';
 
   return fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
     method: 'POST',
-    headers: {
-      'Authorization': 'Bearer ' + token,
-      'Content-Type': 'multipart/related; boundary="' + boundary + '"'
-    },
-    body: body
+    headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'multipart/related; boundary="' + boundary + '"' },
+    body: uploadBody
   })
   .then(function(r) { return r.json(); })
   .then(function(file) {
     if (!file || !file.id) return file;
-    // Imposta orientamento A4 landscape tramite Docs API batchUpdate
-    // (scope 'documents' richiesto nel token Drive)
-    // A4 landscape: 297mm × 210mm → in pt (1mm = 2.8346pt)
-    return fetch('https://docs.googleapis.com/v1/documents/' + file.id + ':batchUpdate', {
-      method: 'POST',
-      headers: {
-        'Authorization': 'Bearer ' + token,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        requests: [{
-          updateDocumentStyle: {
-            documentStyle: {
-              pageSize: {
-                width:  { magnitude: 841.89, unit: 'PT' }, // 297mm
-                height: { magnitude: 595.28, unit: 'PT' }  // 210mm
-              },
-              marginTop:    { magnitude: 42.52, unit: 'PT' }, // 15mm
-              marginBottom: { magnitude: 42.52, unit: 'PT' },
-              marginLeft:   { magnitude: 56.69, unit: 'PT' }, // 20mm
-              marginRight:  { magnitude: 56.69, unit: 'PT' }
-            },
-            fields: 'pageSize,marginTop,marginBottom,marginLeft,marginRight'
-          }
-        }]
-      })
+    var docId = file.id;
+
+    // Step 2: legge la struttura del doc (solo startIndex delle tabelle)
+    return fetch('https://docs.googleapis.com/v1/documents/' + docId +
+                 '?fields=body.content(startIndex%2Ctable%2Fcolumns)', {
+      headers: { 'Authorization': 'Bearer ' + token }
     })
-    .then(function() { return file; }) // restituisce il file originale
+    .then(function(r) { return r.json(); })
+    .then(function(doc) {
+      // Step 3: costruisce un unico batchUpdate con:
+      //   a) orientamento A4 landscape + margini
+      //   b) larghezze colonne per ogni tabella
+      var TOTAL = 728; // pt utili in landscape (841.89 - 2×56.69)
+      var COL3  = [Math.round(TOTAL * 0.17), Math.round(TOTAL * 0.63),
+                   TOTAL - Math.round(TOTAL * 0.17) - Math.round(TOTAL * 0.63)];  // 124 + 459 + 145 = 728
+      var COL2  = [Math.round(TOTAL * 0.40), TOTAL - Math.round(TOTAL * 0.40)];   // 291 + 437 = 728
+
+      var requests = [{
+        updateDocumentStyle: {
+          documentStyle: {
+            pageSize: { width: { magnitude: 841.89, unit: 'PT' }, height: { magnitude: 595.28, unit: 'PT' } },
+            marginTop:    { magnitude: 42.52, unit: 'PT' },
+            marginBottom: { magnitude: 42.52, unit: 'PT' },
+            marginLeft:   { magnitude: 56.69, unit: 'PT' },
+            marginRight:  { magnitude: 56.69, unit: 'PT' }
+          },
+          fields: 'pageSize,marginTop,marginBottom,marginLeft,marginRight'
+        }
+      }];
+
+      // Aggiunge updateTableColumnProperties per ogni tabella trovata
+      ((doc.body && doc.body.content) || []).forEach(function(elem) {
+        if (!elem.table || elem.startIndex === undefined) return;
+        var numCols = elem.table.columns || 3;
+        var widths  = numCols === 3 ? COL3 : COL2;
+        for (var ci = 0; ci < numCols; ci++) {
+          requests.push({
+            updateTableColumnProperties: {
+              tableStartLocation: { index: elem.startIndex },
+              columnIndices: [ci],
+              tableColumnProperties: {
+                widthType: 'FIXED_WIDTH',
+                width: { magnitude: widths[ci] || Math.round(TOTAL / numCols), unit: 'PT' }
+              },
+              fields: 'widthType,width'
+            }
+          });
+        }
+      });
+
+      return fetch('https://docs.googleapis.com/v1/documents/' + docId + ':batchUpdate', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requests: requests })
+      });
+    })
+    .then(function() { return file; })
     .catch(function(e) {
-      console.warn('[Drive] Landscape batchUpdate fallito (non bloccante):', e.message || e);
+      console.warn('[Drive] Post-processing fallito (non bloccante):', e.message || e);
       return file;
     });
   });
