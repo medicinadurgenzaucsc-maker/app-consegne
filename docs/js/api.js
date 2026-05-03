@@ -1069,11 +1069,13 @@ function _driveBackupConsegne(pazienti, ts) {
     cardsHtml +
     '</body></html>';
 
-  return _driveOttieniCartellaId('DRIVE_FOLDER_ROOT', 'CONSEGNE APP', null)
-    .then(function(rootId) {
-      return _driveOttieniCartellaId('DRIVE_FOLDER_BACKUP', 'BACKUP EMERGENZA', rootId);
+  // L'ID della cartella "CONSEGNE APP/BACKUP EMERGENZA" è salvato direttamente
+  // in Supabase (chiave DRIVE_FOLDER_BACKUP) — nessuna ricerca né creazione.
+  return _sbGetDriveFolderId('DRIVE_FOLDER_BACKUP')
+    .then(function(folderId) {
+      if (!folderId) throw new Error('ID cartella DRIVE_FOLDER_BACKUP non trovato in Supabase.');
+      return _driveCreaGoogleDoc(nomeFile, html, folderId);
     })
-    .then(function(folderId) { return _driveCreaGoogleDoc(nomeFile, html, folderId); })
     .then(function(file) { console.log('[Drive backup] Google Doc creato:', (file && file.name), (file && file.id)); })
     .catch(function(e) { console.warn('[Drive backup] Errore (non bloccante):', e.message || e); });
 }
