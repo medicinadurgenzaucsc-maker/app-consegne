@@ -430,9 +430,7 @@
     var pageHmm = (orientamento === 'landscape' ? 210 : 297) - 28;
     // Con zoom z, offsetHeight restituisce l'altezza pre-zoom (layout units).
     // L'altezza fisica della pagina in layout units = pageH_fisica / z.
-    // Fattore 0.97: margine di sicurezza del 3% per compensare piccole differenze
-    // tra rendering screen e print (evita che card inizino a fondo pagina).
-    var pageH   = Math.round(pageHmm * MM_PX / z * 0.97);
+    var pageH   = Math.round(pageHmm * MM_PX / z);
     var MARGIN  = 3;
 
     var header     = document.querySelector('.print-header');
