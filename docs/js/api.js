@@ -955,15 +955,14 @@ function _driveEliminaVecchi(folderId, cutoffMs) {
 }
 
 // Crea un file di testo plain in una cartella Drive (multipart upload)
-// Crea un Google Doc nativo su Drive partendo da HTML.
-// Drive converte automaticamente il contenuto HTML nel formato Google Docs.
+// Crea un Google Doc nativo su Drive partendo da HTML, poi imposta orientamento landscape.
 function _driveCreaGoogleDoc(nome, htmlContent, folderId) {
   var token = window._googleDriveToken;
   if (!token) return Promise.reject(new Error('No Drive token'));
   var boundary = 'app_consegne_gdoc_boundary';
   var meta = JSON.stringify({
     name: nome,
-    mimeType: 'application/vnd.google-apps.document', // Drive converte HTML → Google Doc
+    mimeType: 'application/vnd.google-apps.document',
     parents: [folderId]
   });
   var body = '--' + boundary + '\r\n' +
@@ -971,6 +970,7 @@ function _driveCreaGoogleDoc(nome, htmlContent, folderId) {
     '--' + boundary + '\r\n' +
     'Content-Type: text/html; charset=UTF-8\r\n\r\n' + htmlContent + '\r\n' +
     '--' + boundary + '--';
+
   return fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
     method: 'POST',
     headers: {
@@ -978,7 +978,43 @@ function _driveCreaGoogleDoc(nome, htmlContent, folderId) {
       'Content-Type': 'multipart/related; boundary="' + boundary + '"'
     },
     body: body
-  }).then(function(r) { return r.json(); });
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(file) {
+    if (!file || !file.id) return file;
+    // Imposta orientamento A4 landscape tramite Docs API batchUpdate
+    // (scope 'documents' richiesto nel token Drive)
+    // A4 landscape: 297mm × 210mm → in pt (1mm = 2.8346pt)
+    return fetch('https://docs.googleapis.com/v1/documents/' + file.id + ':batchUpdate', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + token,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        requests: [{
+          updateDocumentStyle: {
+            documentStyle: {
+              pageSize: {
+                width:  { magnitude: 841.89, unit: 'PT' }, // 297mm
+                height: { magnitude: 595.28, unit: 'PT' }  // 210mm
+              },
+              marginTop:    { magnitude: 42.52, unit: 'PT' }, // 15mm
+              marginBottom: { magnitude: 42.52, unit: 'PT' },
+              marginLeft:   { magnitude: 56.69, unit: 'PT' }, // 20mm
+              marginRight:  { magnitude: 56.69, unit: 'PT' }
+            },
+            fields: 'pageSize,marginTop,marginBottom,marginLeft,marginRight'
+          }
+        }]
+      })
+    })
+    .then(function() { return file; }) // restituisce il file originale
+    .catch(function(e) {
+      console.warn('[Drive] Landscape batchUpdate fallito (non bloccante):', e.message || e);
+      return file;
+    });
+  });
 }
 
 // Costruisce HTML per una singola scheda letto — layout a 3 colonne, orientamento landscape.

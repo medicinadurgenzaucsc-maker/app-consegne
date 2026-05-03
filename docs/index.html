@@ -1439,7 +1439,9 @@
       if (typeof GOOGLE_CLIENT_ID === 'undefined') return false;
       _driveTokenClient = google.accounts.oauth2.initTokenClient({
         client_id: GOOGLE_CLIENT_ID,
-        scope: 'https://www.googleapis.com/auth/drive.file',
+        // drive.file: crea/gestisce file propri su Drive
+        // documents: necessario per batchUpdate (imposta orientamento landscape)
+        scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/documents',
         callback: function(resp) {
           if (!resp.error && resp.access_token) {
             window._googleDriveToken = resp.access_token;
