@@ -1128,7 +1128,8 @@
 
     function _inizializzaView() {
       var saved = localStorage.getItem('viewAlt');
-      _viewAltAttiva = (saved === '1');
+      // Default: visualizzazione alternativa (null = prima volta, non ancora salvata)
+      _viewAltAttiva = saved === null ? true : (saved === '1');
       var main = document.getElementById('cardsContainer');
       var alt  = document.getElementById('cardsContainerAlt');
       var btn  = document.querySelector('#btnToggleViewAlt');
