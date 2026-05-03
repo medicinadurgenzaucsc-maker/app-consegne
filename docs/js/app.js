@@ -262,6 +262,10 @@
       var modalEl = document.getElementById('modalScalaStampa');
       var mi = bootstrap.Modal.getOrCreateInstance(modalEl);
 
+      // ── Ripristina sempre scala default 80% ad ogni apertura ──────
+      var scala80El = document.getElementById('scala80');
+      if (scala80El) scala80El.checked = true;
+
       // ── Caricamento dinamico tipologie (ad ogni apertura) ──────────
       var tipoLista = document.getElementById('tipologieStampaLista');
       var tipoTutte = document.getElementById('checkTuttiTipologie');
