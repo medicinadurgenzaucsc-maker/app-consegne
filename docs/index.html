@@ -474,9 +474,28 @@
         });
       }
 
+      // Per il layout alt: equalizza l'altezza di tutte le colonne alla più alta.
+      // Senza questo, le colonne più corte non riempiono lo sfondo quando si scrolla.
+      function _equalizzaColonneAlt() {
+        if (!card.classList.contains('alt-row')) return;
+        requestAnimationFrame(function() {
+          requestAnimationFrame(function() {
+            var maxH = 0;
+            card.querySelectorAll('.alt-col').forEach(function(col) {
+              col.style.minHeight = ''; // reset prima di misurare
+              maxH = Math.max(maxH, col.scrollHeight);
+            });
+            card.querySelectorAll('.alt-col').forEach(function(col) {
+              col.style.minHeight = maxH + 'px';
+            });
+          });
+        });
+      }
+
       function _completaApertura() {
         if (!_focusCard) return;
         _abilitaCampi();
+        _equalizzaColonneAlt(); // equalizza subito dopo che i campi sono abilitati
         card.querySelectorAll('[data-field]').forEach(function(el) {
           if (_TOOLBAR_FIELDS[el.getAttribute('data-field')] && el.parentNode) {
             var tbW = document.createElement('div'); tbW.innerHTML = _creaToolbarHTML();
@@ -607,6 +626,8 @@
         delete card._focusInputHandler;
       }
       card.scrollTop = 0;
+      // Reset minHeight equalizzato sulle colonne alt
+      card.querySelectorAll('.alt-col').forEach(function(col) { col.style.minHeight = ''; });
       card.style.position  = _focusOrigStyle.position || '';
       card.style.top       = _focusOrigStyle.top      || '';
       card.style.left      = _focusOrigStyle.left     || '';
