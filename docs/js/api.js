@@ -942,15 +942,21 @@ function _driveOttieniCartellaId(chiaveSupabase, nome, parentId) {
 }
 
 // Crea un file di testo plain in una cartella Drive (multipart upload)
-function _driveCreaFileTesto(nome, contenuto, folderId) {
+// Crea un Google Doc nativo su Drive partendo da HTML.
+// Drive converte automaticamente il contenuto HTML nel formato Google Docs.
+function _driveCreaGoogleDoc(nome, htmlContent, folderId) {
   var token = window._googleDriveToken;
   if (!token) return Promise.reject(new Error('No Drive token'));
-  var boundary = 'app_consegne_backup_boundary';
-  var meta = JSON.stringify({ name: nome, parents: [folderId] });
+  var boundary = 'app_consegne_gdoc_boundary';
+  var meta = JSON.stringify({
+    name: nome,
+    mimeType: 'application/vnd.google-apps.document', // Drive converte HTML → Google Doc
+    parents: [folderId]
+  });
   var body = '--' + boundary + '\r\n' +
     'Content-Type: application/json; charset=UTF-8\r\n\r\n' + meta + '\r\n' +
     '--' + boundary + '\r\n' +
-    'Content-Type: text/plain; charset=UTF-8\r\n\r\n' + contenuto + '\r\n' +
+    'Content-Type: text/html; charset=UTF-8\r\n\r\n' + htmlContent + '\r\n' +
     '--' + boundary + '--';
   return fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
     method: 'POST',
@@ -962,7 +968,72 @@ function _driveCreaFileTesto(nome, contenuto, folderId) {
   }).then(function(r) { return r.json(); });
 }
 
-// Esegue backup su Google Drive (drive.file scope).
+// Costruisce HTML per una singola scheda letto (layout standard).
+function _driveRenderCard(p) {
+  var tipo = (p.TipologiaLetto || '').trim().toUpperCase() || 'STANDARD';
+  var pad2 = function(n) { return String(n).padStart(2, '0'); };
+
+  // Riga nascita/ricovero/etc
+  var meta = '';
+  if (p.DataNascita)      meta += 'Nasc.: <b>' + p.DataNascita + '</b>&nbsp;&nbsp;';
+  if (p.Eta)              meta += 'Et&agrave;: <b>' + p.Eta + '</b>&nbsp;&nbsp;';
+  if (p.DataRicovero)     meta += 'Ricovero: <b>' + p.DataRicovero + '</b>&nbsp;&nbsp;';
+  if (p.CodiceSanitario)  meta += 'C.S.: <b>' + p.CodiceSanitario + '</b>';
+
+  // Stili inline per compatibilità Google Docs
+  var S = {
+    card:    'width:100%;border-collapse:collapse;margin-bottom:14pt;font-family:Arial,sans-serif;font-size:10pt;',
+    bed:     'border:2px solid #333;width:13%;text-align:center;vertical-align:middle;background-color:#f2efe9;padding:6pt;',
+    info:    'border:2px solid #333;width:87%;vertical-align:top;padding:6pt 10pt;',
+    hdr:     'background-color:#e8e6e1;font-weight:bold;font-size:8pt;text-align:center;text-transform:uppercase;padding:3pt 4pt;border-bottom:1px solid #ccc;',
+    col:     'border:1px solid #333;vertical-align:top;padding:0;',
+    content: 'padding:4pt 6pt;font-size:9pt;',
+    piano:   'border:1px solid #333;border-top:2px solid #333;vertical-align:top;padding:0;'
+  };
+
+  return '<table style="' + S.card + '">' +
+    // Header: numero letto + info paziente
+    '<tr>' +
+      '<td style="' + S.bed + '">' +
+        '<div style="font-size:20pt;font-weight:bold;line-height:1;">' + (p.Letto || '') + '</div>' +
+        '<div style="font-size:8pt;color:#546e7a;font-weight:bold;text-transform:uppercase;margin-top:3pt;">' + tipo + '</div>' +
+      '</td>' +
+      '<td style="' + S.info + '">' +
+        '<div style="font-size:13pt;font-weight:bold;text-transform:uppercase;border-bottom:1px solid #999;padding-bottom:2pt;">' + (p.Nome || '') + '</div>' +
+        '<div style="font-weight:bold;margin-top:4pt;border-bottom:1px solid #999;padding-bottom:2pt;">' + (p.Diagnosi || '') + '</div>' +
+        (meta ? '<div style="font-size:8pt;color:#333;text-align:right;margin-top:3pt;">' + meta + '</div>' : '') +
+      '</td>' +
+    '</tr>' +
+    // Corpo: Allergie/Ossigeno/Terapia | Diaria | Da Fare
+    '<tr>' +
+      '<td style="' + S.col + 'width:17%;" colspan="1">' +
+        '<div style="' + S.hdr + '">&nbsp;&Delta; Allergie</div>' +
+        '<div style="' + S.content + '">' + (p.Allergie || '') + '</div>' +
+        '<div style="' + S.hdr + 'border-top:1px solid #ccc;">Ossigeno</div>' +
+        '<div style="' + S.content + '">' + (p.Ossigeno || '') + '</div>' +
+        '<div style="' + S.hdr + 'border-top:2px solid #333;">Note e Terapia</div>' +
+        '<div style="' + S.content + '">' + (p.NoteTerapia || '') + '</div>' +
+      '</td>' +
+      '<td style="' + S.col + 'width:66%;">' +
+        '<div style="' + S.hdr + '">Diaria ed Epicrisi</div>' +
+        '<div style="' + S.content + '">' + (p.Diaria || '') + '</div>' +
+      '</td>' +
+      '<td style="' + S.col + 'width:17%;">' +
+        '<div style="' + S.hdr + '">Da Fare / Richieste</div>' +
+        '<div style="' + S.content + '">' + (p.DaFare || '') + '</div>' +
+      '</td>' +
+    '</tr>' +
+    // Piano terapeutico
+    '<tr>' +
+      '<td style="' + S.piano + '" colspan="3">' +
+        '<div style="' + S.hdr + 'text-align:left;padding-left:8pt;border-top:2px solid #333;">Piano Terapeutico</div>' +
+        '<div style="' + S.content + '">' + (p.PianoTerapeutico || '') + '</div>' +
+      '</td>' +
+    '</tr>' +
+    '</table>';
+}
+
+// Esegue backup su Google Drive come Google Doc con layout standard.
 // Le cartelle vengono create la prima volta e l'ID salvato in Supabase.
 // Fire-and-forget: non blocca il flusso principale.
 function _driveBackupConsegne(pazienti, ts) {
@@ -976,30 +1047,33 @@ function _driveBackupConsegne(pazienti, ts) {
                   ' ' + pad(data.getHours()) + ':' + pad(data.getMinutes());
   var nomeSafe  = pad(data.getDate()) + '-' + pad(data.getMonth() + 1) + '-' + data.getFullYear() +
                   '_' + pad(data.getHours()) + '-' + pad(data.getMinutes());
-  var nomeFile  = 'Backup_' + nomeSafe + '.txt';
+  var nomeFile  = 'Backup_' + nomeSafe; // senza estensione → sarà un Google Doc
 
-  var linee = ['BACKUP CONSEGNE — ' + dataLabel, '='.repeat(50), ''];
-  (pazienti || []).forEach(function(p) {
-    linee.push('LETTO: ' + (p.Letto || '') + '  [' + (p.TipologiaLetto || 'STANDARD') + ']');
-    linee.push('PAZIENTE: ' + (p.Nome || '(vuoto)'));
-    if (p.Eta)              linee.push('ETA\': ' + p.Eta);
-    if (p.Diagnosi)         linee.push('DIAGNOSI: ' + p.Diagnosi);
-    if (p.Allergie)         linee.push('ALLERGIE: ' + p.Allergie);
-    if (p.NoteTerapia)      linee.push('TERAPIA: ' + p.NoteTerapia);
-    if (p.Diaria)           linee.push('DIARIA: ' + p.Diaria);
-    if (p.DaFare)           linee.push('DA FARE: ' + p.DaFare);
-    if (p.PianoTerapeutico) linee.push('PIANO: ' + p.PianoTerapeutico);
-    linee.push('-'.repeat(40));
+  // Ordina per numero letto
+  var ordinati = (pazienti || []).slice().sort(function(a, b) {
+    var nA = parseInt(a.Letto, 10), nB = parseInt(b.Letto, 10);
+    return (!isNaN(nA) && !isNaN(nB)) ? nA - nB : String(a.Letto).localeCompare(String(b.Letto));
   });
-  var contenuto = linee.join('\n');
 
-  // Legge/crea cartella root, poi sottocartella, poi crea file
+  // Costruisce HTML con layout standard (tabelle — Drive converte in Google Doc)
+  var cardsHtml = ordinati.map(_driveRenderCard).join('');
+
+  var html = '<!DOCTYPE html><html><head><meta charset="UTF-8">' +
+    '<style>body{font-family:Arial,sans-serif;font-size:10pt;margin:0;padding:0;}</style>' +
+    '</head><body>' +
+    '<table style="width:100%;margin-bottom:14pt;border-bottom:2pt solid #000;">' +
+    '<tr><td style="font-size:14pt;font-weight:bold;">Consegne Reparto</td>' +
+    '<td style="text-align:right;font-size:10pt;color:#555;">Backup del ' + dataLabel + '</td></tr>' +
+    '</table>' +
+    cardsHtml +
+    '</body></html>';
+
   return _driveOttieniCartellaId('DRIVE_FOLDER_ROOT', 'CONSEGNE APP', null)
     .then(function(rootId) {
       return _driveOttieniCartellaId('DRIVE_FOLDER_BACKUP', 'BACKUP EMERGENZA', rootId);
     })
-    .then(function(folderId) { return _driveCreaFileTesto(nomeFile, contenuto, folderId); })
-    .then(function(file) { console.log('[Drive backup] File creato:', file.name, file.id); })
+    .then(function(folderId) { return _driveCreaGoogleDoc(nomeFile, html, folderId); })
+    .then(function(file) { console.log('[Drive backup] Google Doc creato:', (file && file.name), (file && file.id)); })
     .catch(function(e) { console.warn('[Drive backup] Errore (non bloccante):', e.message || e); });
 }
 
