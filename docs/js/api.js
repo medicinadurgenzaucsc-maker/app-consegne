@@ -981,69 +981,79 @@ function _driveCreaGoogleDoc(nome, htmlContent, folderId) {
   }).then(function(r) { return r.json(); });
 }
 
-// Costruisce HTML per una singola scheda letto (layout standard).
+// Costruisce HTML per una singola scheda letto — layout a 3 colonne, orientamento landscape.
+// Struttura tabella compatibile Google Docs (no nested tables, colspan solo dove necessario):
+//   Riga 1 (header): C1=Letto+Tipologia | C2+C3=Nome/Diagnosi/Meta (colspan=2)
+//   Riga 2 (corpo):  C1=Allergie/Ossigeno/Terapia | C2=Diaria | C3=DaFare
+//   Riga 3 (piano):  C1+C2+C3=Piano Terapeutico (colspan=3)
+//
+// Larghezze calibrate su A4 landscape 297×210mm, margini 15mm lat. → 757pt utili:
+//   C1 = 130pt | C2 = 470pt | C3 = 157pt = 757pt
 function _driveRenderCard(p) {
   var tipo = (p.TipologiaLetto || '').trim().toUpperCase() || 'STANDARD';
-  var pad2 = function(n) { return String(n).padStart(2, '0'); };
 
-  // Riga nascita/ricovero/etc
   var meta = '';
-  if (p.DataNascita)      meta += 'Nasc.: <b>' + p.DataNascita + '</b>&nbsp;&nbsp;';
-  if (p.Eta)              meta += 'Et&agrave;: <b>' + p.Eta + '</b>&nbsp;&nbsp;';
-  if (p.DataRicovero)     meta += 'Ricovero: <b>' + p.DataRicovero + '</b>&nbsp;&nbsp;';
-  if (p.CodiceSanitario)  meta += 'C.S.: <b>' + p.CodiceSanitario + '</b>';
+  if (p.DataNascita)     meta += 'Nasc.: <b>' + p.DataNascita + '</b> &nbsp; ';
+  if (p.Eta)             meta += 'Et&agrave;: <b>' + p.Eta + '</b> &nbsp; ';
+  if (p.DataRicovero)    meta += 'Ricovero: <b>' + p.DataRicovero + '</b> &nbsp; ';
+  if (p.CodiceSanitario) meta += 'C.S.: <b>' + p.CodiceSanitario + '</b>';
 
-  // Stili inline per compatibilità Google Docs
-  var S = {
-    card:    'width:100%;border-collapse:collapse;margin-bottom:14pt;font-family:Arial,sans-serif;font-size:10pt;',
-    bed:     'border:2px solid #333;width:13%;text-align:center;vertical-align:middle;background-color:#f2efe9;padding:6pt;',
-    info:    'border:2px solid #333;width:87%;vertical-align:top;padding:6pt 10pt;',
-    hdr:     'background-color:#e8e6e1;font-weight:bold;font-size:8pt;text-align:center;text-transform:uppercase;padding:3pt 4pt;border-bottom:1px solid #ccc;',
-    col:     'border:1px solid #333;vertical-align:top;padding:0;',
-    content: 'padding:4pt 6pt;font-size:9pt;',
-    piano:   'border:1px solid #333;border-top:2px solid #333;vertical-align:top;padding:0;'
-  };
+  var B  = '1.5pt solid #333333'; // bordo esterno
+  var Bi = '1pt solid #888888';   // bordo interno
+  var HB = 'background-color:#e8e6e1;font-weight:bold;font-size:8pt;text-transform:uppercase;padding:3pt 5pt;border-bottom:' + Bi + ';';
+  var CB = 'padding:4pt 6pt;font-size:9pt;';
 
-  return '<table style="' + S.card + '">' +
-    // Header: numero letto + info paziente
+  return (
+    '<table style="width:757pt;border-collapse:collapse;margin-bottom:10pt;font-family:Arial,sans-serif;font-size:9pt;">' +
+
+    // ── Riga 1: header ──────────────────────────────────────────────────────
     '<tr>' +
-      '<td style="' + S.bed + '">' +
-        '<div style="font-size:20pt;font-weight:bold;line-height:1;">' + (p.Letto || '') + '</div>' +
-        '<div style="font-size:8pt;color:#546e7a;font-weight:bold;text-transform:uppercase;margin-top:3pt;">' + tipo + '</div>' +
+      // C1: numero letto + tipologia
+      '<td style="width:130pt;border:' + B + ';text-align:center;vertical-align:middle;background-color:#f2efe9;padding:6pt;">' +
+        '<p style="font-size:22pt;font-weight:bold;margin:0;line-height:1;">' + (p.Letto || '') + '</p>' +
+        '<p style="font-size:7pt;font-weight:bold;color:#546e7a;text-transform:uppercase;margin:2pt 0 0;">' + tipo + '</p>' +
       '</td>' +
-      '<td style="' + S.info + '">' +
-        '<div style="font-size:13pt;font-weight:bold;text-transform:uppercase;border-bottom:1px solid #999;padding-bottom:2pt;">' + (p.Nome || '') + '</div>' +
-        '<div style="font-weight:bold;margin-top:4pt;border-bottom:1px solid #999;padding-bottom:2pt;">' + (p.Diagnosi || '') + '</div>' +
-        (meta ? '<div style="font-size:8pt;color:#333;text-align:right;margin-top:3pt;">' + meta + '</div>' : '') +
+      // C2+C3: nome paziente, diagnosi, meta (colspan=2)
+      '<td colspan="2" style="border:' + B + ';vertical-align:top;padding:5pt 8pt;">' +
+        '<p style="font-size:12pt;font-weight:bold;text-transform:uppercase;border-bottom:1pt solid #999;padding-bottom:2pt;margin:0 0 4pt;">' + (p.Nome || '') + '</p>' +
+        '<p style="font-weight:bold;margin:0 0 3pt;">' + (p.Diagnosi || '') + '</p>' +
+        (meta ? '<p style="font-size:8pt;color:#444;margin:3pt 0 0;">' + meta + '</p>' : '') +
       '</td>' +
     '</tr>' +
-    // Corpo: Allergie/Ossigeno/Terapia | Diaria | Da Fare
+
+    // ── Riga 2: corpo ───────────────────────────────────────────────────────
     '<tr>' +
-      '<td style="' + S.col + 'width:17%;" colspan="1">' +
-        '<div style="' + S.hdr + '">&nbsp;&Delta; Allergie</div>' +
-        '<div style="' + S.content + '">' + (p.Allergie || '') + '</div>' +
-        '<div style="' + S.hdr + 'border-top:1px solid #ccc;">Ossigeno</div>' +
-        '<div style="' + S.content + '">' + (p.Ossigeno || '') + '</div>' +
-        '<div style="' + S.hdr + 'border-top:2px solid #333;">Note e Terapia</div>' +
-        '<div style="' + S.content + '">' + (p.NoteTerapia || '') + '</div>' +
+      // C1: Allergie + Ossigeno + Note e Terapia
+      '<td style="width:130pt;border:' + B + ';vertical-align:top;padding:0;">' +
+        '<p style="' + HB + '">&#x26A0; Allergie</p>' +
+        '<p style="' + CB + '">' + (p.Allergie || '') + '</p>' +
+        '<p style="' + HB + 'border-top:' + Bi + ';">Ossigeno</p>' +
+        '<p style="' + CB + '">' + (p.Ossigeno || '') + '</p>' +
+        '<p style="' + HB + 'border-top:' + B + ';">Note e Terapia</p>' +
+        '<p style="' + CB + '">' + (p.NoteTerapia || '') + '</p>' +
       '</td>' +
-      '<td style="' + S.col + 'width:66%;">' +
-        '<div style="' + S.hdr + '">Diaria ed Epicrisi</div>' +
-        '<div style="' + S.content + '">' + (p.Diaria || '') + '</div>' +
+      // C2: Diaria ed Epicrisi
+      '<td style="width:470pt;border:' + B + ';vertical-align:top;padding:0;">' +
+        '<p style="' + HB + '">Diaria ed Epicrisi</p>' +
+        '<p style="' + CB + '">' + (p.Diaria || '') + '</p>' +
       '</td>' +
-      '<td style="' + S.col + 'width:17%;">' +
-        '<div style="' + S.hdr + '">Da Fare / Richieste</div>' +
-        '<div style="' + S.content + '">' + (p.DaFare || '') + '</div>' +
+      // C3: Da Fare / Richieste
+      '<td style="width:157pt;border:' + B + ';vertical-align:top;padding:0;">' +
+        '<p style="' + HB + '">Da Fare / Richieste</p>' +
+        '<p style="' + CB + '">' + (p.DaFare || '') + '</p>' +
       '</td>' +
     '</tr>' +
-    // Piano terapeutico
+
+    // ── Riga 3: piano terapeutico ────────────────────────────────────────────
     '<tr>' +
-      '<td style="' + S.piano + '" colspan="3">' +
-        '<div style="' + S.hdr + 'text-align:left;padding-left:8pt;border-top:2px solid #333;">Piano Terapeutico</div>' +
-        '<div style="' + S.content + '">' + (p.PianoTerapeutico || '') + '</div>' +
+      '<td colspan="3" style="border:' + B + ';border-top:' + B + ';vertical-align:top;padding:0;">' +
+        '<p style="' + HB + 'text-align:left;">Piano Terapeutico</p>' +
+        '<p style="' + CB + '">' + (p.PianoTerapeutico || '') + '</p>' +
       '</td>' +
     '</tr>' +
-    '</table>';
+
+    '</table>'
+  );
 }
 
 // Esegue backup su Google Drive come Google Doc con layout standard.
@@ -1072,12 +1082,17 @@ function _driveBackupConsegne(pazienti, ts) {
   var cardsHtml = ordinati.map(_driveRenderCard).join('');
 
   var html = '<!DOCTYPE html><html><head><meta charset="UTF-8">' +
-    '<style>body{font-family:Arial,sans-serif;font-size:10pt;margin:0;padding:0;}</style>' +
+    '<style>' +
+    '@page{size:A4 landscape;margin:15mm 20mm 15mm 20mm;}' +
+    'body{font-family:Arial,sans-serif;font-size:9pt;margin:0;padding:0;}' +
+    'p{margin:0;padding:0;}' +
+    '</style>' +
     '</head><body>' +
-    '<table style="width:100%;margin-bottom:14pt;border-bottom:2pt solid #000;">' +
-    '<tr><td style="font-size:14pt;font-weight:bold;">Consegne Reparto</td>' +
-    '<td style="text-align:right;font-size:10pt;color:#555;">Backup del ' + dataLabel + '</td></tr>' +
-    '</table>' +
+    '<table style="width:757pt;margin-bottom:12pt;border-bottom:2pt solid #333;">' +
+    '<tr>' +
+    '<td style="font-size:14pt;font-weight:bold;padding-bottom:4pt;">Consegne Reparto</td>' +
+    '<td style="text-align:right;font-size:9pt;color:#555;padding-bottom:4pt;">Backup del ' + dataLabel + '</td>' +
+    '</tr></table>' +
     cardsHtml +
     '</body></html>';
 
