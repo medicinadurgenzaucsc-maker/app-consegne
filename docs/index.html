@@ -1420,7 +1420,9 @@
           return;
         }
       }
-      _tokenClient.requestAccessToken({ prompt: '' });
+      // 'select_account' mostra sempre il selettore Google → permette di
+      // scegliere l'account corretto anche se il browser ha già un account personale
+      _tokenClient.requestAccessToken({ prompt: 'select_account' });
     };
 
     function _mostraErroreLogin(msg) {
@@ -1481,6 +1483,7 @@
       // Se non ancora autorizzato → mostrerà il consent screen di Drive
       if (_inizializzaDriveClient()) {
         try {
+          // Usa lo stesso account del login (nessun prompt aggiuntivo se già autorizzato)
           _driveTokenClient.requestAccessToken({ prompt: '' });
         } catch(e) {
           _avviaAppDopoLogin(); // fallback: avvia senza Drive
