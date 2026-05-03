@@ -40,92 +40,19 @@ body { padding-top: 70px; background-color: #d4e6f1 !important; }
 
 /* ===== FOCUS MODE EDITING ===== */
 
-/* ── Layout principale (standard) ─────────────────────────────────────────── */
-.patient-card.focus-mode {
-  position: fixed !important;
-  z-index: 1070 !important;
-  box-shadow: 0 12px 48px rgba(0,0,0,0.28), 0 2px 8px rgba(0,0,0,0.10) !important;
-  background: #fff;
-  border-radius: 10px !important;
-  /* height fissa calcolata in JS; flex column distribuisce header / corpo / piano */
-  overflow: hidden !important;
-  display: flex !important;
-  flex-direction: column !important;
-}
-
-/* Header: dimensione naturale */
-.patient-card.focus-mode .header-row {
-  flex-shrink: 0 !important;
-}
-
-/* Corpo: occupa tutto lo spazio tra header e piano; sovrascrive min-height:250px */
-.patient-card.focus-mode .content-row {
-  flex: 1 1 0% !important;
-  min-height: 0 !important;
-  overflow: hidden !important;
-}
-
-/* Colonne: contengono il contenuto, non scrollano loro stesse */
-.patient-card.focus-mode .column-box {
-  overflow: hidden !important;
-  min-height: 0 !important;
-}
-
-/* ── NoteTerapia, Diaria, DaFare: riempiono la colonna e scrollano ── */
-.patient-card.focus-mode .column-box .editable-area {
-  flex: 1 1 0% !important;
-  min-height: 0 !important;
-  overflow-y: auto !important;
-}
-
-/* ── Allergie e Ossigeno: si allungano al contenuto, nessuna scrollbar ── */
-.patient-card.focus-mode .col-terapia .editable-area[data-field="Allergie"],
-.patient-card.focus-mode .col-terapia .editable-area[data-field="Ossigeno"] {
-  flex: 0 0 auto !important;
-  min-height: 0 !important;
-  overflow-y: visible !important;
-}
-
-/* Piano terapeutico: massimo 25% altezza, scorre internamente */
-.patient-card.focus-mode .piano-terapeutico-row {
-  flex-shrink: 0 !important;
-  max-height: 25% !important;
-  overflow: hidden !important;
-  display: flex !important;
-  flex-direction: column !important;
-}
-.patient-card.focus-mode .piano-terapeutico-row .editable-area {
-  flex: 1 1 0% !important;
-  min-height: 0 !important;
-  overflow-y: auto !important;
-}
-
-/* ── Layout alternativo ──────────────────────────────────────────────────── */
+/* La card scolla intera come un documento — semplice e stabile.
+   max-height dinamico calcolato in JS garantisce il margine inferiore.
+   overscroll-behavior:contain impedisce che lo scroll si propaghi allo sfondo. */
+.patient-card.focus-mode,
 .alt-row.focus-mode {
   position: fixed !important;
   z-index: 1070 !important;
   box-shadow: 0 12px 48px rgba(0,0,0,0.28), 0 2px 8px rgba(0,0,0,0.10) !important;
+  overflow-y: auto !important;
   background: #fff;
   border-radius: 10px !important;
-  overflow: hidden !important;
-  /* display:flex + colonne width% già nel base — non toccare la struttura */
-}
-
-/* Colonna info sinistra: scorre se il contenuto supera l'altezza */
-.alt-row.focus-mode .alt-col-info {
-  overflow-y: auto !important;
-}
-
-/* Colonna diagnosi/piano/da-fare: scorre come unità
-   (diagnosi e piano crescono, da-fare in fondo — scrollbar sulla colonna) */
-.alt-row.focus-mode .alt-col-diag {
-  overflow-y: auto !important;
-}
-
-/* Diaria, Note e Terapia: scrollano */
-.alt-row.focus-mode .alt-col-diaria,
-.alt-row.focus-mode .alt-col-terapia {
-  overflow-y: auto !important;
+  scroll-behavior: smooth;
+  overscroll-behavior: contain; /* blocca propagazione scroll allo sfondo */
 }
 
 /* ===== STICKY TOOLBAR IN FOCUS-MODE ===== */

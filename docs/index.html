@@ -420,15 +420,20 @@
       var newWidth = Math.round(vw * 0.94);                 // 3% margine per lato
       var newLeft  = Math.round(vw * 0.03);
       var newTop   = Math.max(60, Math.round(vh * 0.05));   // almeno sotto la navbar
-      var newH     = Math.round(vh - newTop - vh * 0.05);   // 5% spazio sotto
+      var newMaxH  = Math.round(vh - newTop - vh * 0.05);   // 5% margine inferiore fisso
 
       card.style.position  = 'fixed';
       card.style.top       = newTop + 'px';
       card.style.left      = newLeft + 'px';
       card.style.width     = newWidth + 'px';
-      card.style.height    = newH + 'px';    // altezza fissa → il flex interno scorre
-      card.style.maxHeight = '';             // resetta eventuale max-height residua
+      card.style.height    = '';             // nessuna altezza fissa: la card cresce
+      card.style.maxHeight = newMaxH + 'px'; // ma non supera mai il margine inferiore
       card.style.margin    = '0';
+
+      // Blocca scroll pagina mentre focus mode è attivo
+      // (impedisce che l'overlay scivoli e lo sfondo si muova)
+      document.body.style.overflow = 'hidden';
+      document.documentElement.style.overflow = 'hidden';
       card.classList.add('focus-mode');
 
       card.querySelectorAll('[contenteditable="true"]').forEach(function(el) {
@@ -608,8 +613,11 @@
       card.style.width     = _focusOrigStyle.width    || '';
       card.style.zIndex    = _focusOrigStyle.zIndex   || '';
       card.style.margin    = _focusOrigStyle.margin   || '';
-      card.style.height    = '';   // reset height fissa impostata in focus mode
+      card.style.height    = '';
       card.style.maxHeight = '';
+      // Ripristina scroll pagina
+      document.body.style.overflow = '';
+      document.documentElement.style.overflow = '';
       card.classList.remove('focus-mode');
 
       if (document.activeElement && card.contains(document.activeElement)) {
