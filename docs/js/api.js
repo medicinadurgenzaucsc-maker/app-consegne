@@ -906,40 +906,52 @@ function _sbOttieniAccountLogin() {
 // GOOGLE DRIVE BACKUP
 // ══════════════════════════════════════════════════════════════
 
-// Legge/salva ID cartella Drive da Supabase (per non doverla cercare ogni volta)
-function _sbGetDriveFolderId(chiave) {
-  return _q(_sb.from('impostazioni').select('valore').eq('chiave', chiave).maybeSingle())
-    .then(function(row) { return row ? row.valore : null; });
-}
-function _sbSalvaDriveFolderId(chiave, id) {
-  return _q(_sb.from('impostazioni').upsert({ chiave: chiave, valore: id }, { onConflict: 'chiave' }));
-}
-
-// Crea una cartella Drive (scope drive.file) e ne salva l'ID in Supabase
-function _driveCreaCartella(nome, parentId) {
+// Cerca o crea la cartella "BACKUP CONSEGNE EMERGENZA" nella root dell'utente.
+// Con scope drive.file, files.list restituisce solo le cartelle create da quest'app.
+function _driveGetOrCreateFolder(nome) {
   var token = window._googleDriveToken;
   if (!token) return Promise.reject(new Error('No Drive token'));
-  var meta = { name: nome, mimeType: 'application/vnd.google-apps.folder' };
-  if (parentId) meta.parents = [parentId];
-  return fetch('https://www.googleapis.com/drive/v3/files', {
-    method: 'POST',
-    headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-    body: JSON.stringify(meta)
-  }).then(function(r) { return r.json(); }).then(function(f) {
-    if (f.error) throw new Error(f.error.message);
-    return f.id;
+  var q = "name='" + nome.replace(/'/g, "\\'") + "'" +
+          " and mimeType='application/vnd.google-apps.folder'" +
+          " and trashed=false";
+  return fetch('https://www.googleapis.com/drive/v3/files?q=' + encodeURIComponent(q) + '&fields=files(id)', {
+    headers: { 'Authorization': 'Bearer ' + token }
+  }).then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.files && data.files.length > 0) return data.files[0].id;
+    // Non trovata → crea nella root
+    return fetch('https://www.googleapis.com/drive/v3/files', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: nome, mimeType: 'application/vnd.google-apps.folder' })
+    }).then(function(r) { return r.json(); }).then(function(f) {
+      if (f.error) throw new Error(f.error.message);
+      return f.id;
+    });
   });
 }
 
-// Restituisce l'ID della cartella (legge da Supabase, crea se non esiste)
-function _driveOttieniCartellaId(chiaveSupabase, nome, parentId) {
-  return _sbGetDriveFolderId(chiaveSupabase).then(function(id) {
-    if (id) return id; // già salvato
-    return _driveCreaCartella(nome, parentId).then(function(newId) {
-      _sbSalvaDriveFolderId(chiaveSupabase, newId); // salva per le prossime volte
-      return newId;
-    });
-  });
+// Elimina i file Drive nella cartella più vecchi di cutoffMs (basato su createdTime di Drive).
+function _driveEliminaVecchi(folderId, cutoffMs) {
+  var token = window._googleDriveToken;
+  if (!token) return Promise.resolve();
+  var cutoffISO = new Date(cutoffMs).toISOString();
+  var q = "'" + folderId + "' in parents" +
+          " and createdTime < '" + cutoffISO + "'" +
+          " and trashed=false";
+  return fetch('https://www.googleapis.com/drive/v3/files?q=' + encodeURIComponent(q) + '&fields=files(id,name)', {
+    headers: { 'Authorization': 'Bearer ' + token }
+  }).then(function(r) { return r.json(); })
+  .then(function(data) {
+    var files = data.files || [];
+    if (files.length > 0) console.log('[Drive cleanup] Eliminazione ' + files.length + ' file vecchi');
+    return Promise.all(files.map(function(f) {
+      return fetch('https://www.googleapis.com/drive/v3/files/' + f.id, {
+        method: 'DELETE',
+        headers: { 'Authorization': 'Bearer ' + token }
+      }).catch(function() {});
+    }));
+  }).catch(function() {});
 }
 
 // Crea un file di testo plain in una cartella Drive (multipart upload)
@@ -1069,14 +1081,19 @@ function _driveBackupConsegne(pazienti, ts) {
     cardsHtml +
     '</body></html>';
 
-  // L'ID della cartella "CONSEGNE APP/BACKUP EMERGENZA" è salvato direttamente
-  // in Supabase (chiave DRIVE_FOLDER_BACKUP) — nessuna ricerca né creazione.
-  return _sbGetDriveFolderId('DRIVE_FOLDER_BACKUP')
+  // Cerca o crea la cartella nella root, crea il file, poi pulisce i vecchi
+  return _driveGetOrCreateFolder('BACKUP CONSEGNE EMERGENZA')
     .then(function(folderId) {
-      if (!folderId) throw new Error('ID cartella DRIVE_FOLDER_BACKUP non trovato in Supabase.');
-      return _driveCreaGoogleDoc(nomeFile, html, folderId);
+      return _driveCreaGoogleDoc(nomeFile, html, folderId)
+        .then(function(file) {
+          console.log('[Drive backup] Google Doc creato:', (file && file.name), (file && file.id));
+          // Pulizia file vecchi con la stessa retention di Supabase archivio
+          return _sbGetGiorniConservazione().then(function(giorni) {
+            var cutoff = Number(ts) - (giorni * 86400000);
+            _driveEliminaVecchi(folderId, cutoff); // fire-and-forget
+          });
+        });
     })
-    .then(function(file) { console.log('[Drive backup] Google Doc creato:', (file && file.name), (file && file.id)); })
     .catch(function(e) { console.warn('[Drive backup] Errore (non bloccante):', e.message || e); });
 }
 
