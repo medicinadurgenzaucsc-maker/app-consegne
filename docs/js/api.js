@@ -345,6 +345,7 @@ function _renderAltCard(p) {
     '<div class="alt-col-header">Note e Terapia</div>' +
     '<div class="editable-area rich-text alt-editable" contenteditable="true" data-field="NoteTerapia">' + (p.NoteTerapia || '') + '</div>' +
     '</div>' +
+    '<div class="alt-row-spacer"></div>' +
     '</div>';
 }
 
