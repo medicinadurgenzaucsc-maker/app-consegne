@@ -1446,14 +1446,22 @@
 
         // Ingresso / data ricovero
         if (lower.indexOf('ingresso') !== -1) {
-          var dm = text.match(/\d{1,2}[\-\/\.]\d{1,2}[\-\/\.]\d{2,4}/);
-          if (dm) { result.DataRicovero = dm[0]; }
-          else {
-            var after = text.replace(/ingresso\s*/i,'').trim();
-            if (after) result.DataRicovero = after;
-            else if (i+1 < paras.length) {
-              var nt = _imp_paraGetText(paras[i+1]).trim();
-              if (nt && /\d/.test(nt)) { result.DataRicovero = nt; i++; }
+          // 1) Data completa dd/mm/yyyy (o con - o .)
+          var dm = text.match(/\b\d{1,2}[\-\/\.]\d{1,2}[\-\/\.]\d{2,4}\b/);
+          if (dm) {
+            result.DataRicovero = dm[0];
+          } else {
+            // 2) Data parziale dd/mm senza anno → aggiunge anno corrente
+            var dmParz = text.match(/\b(\d{1,2})[\-\/\.](\d{1,2})\b/);
+            if (dmParz) {
+              result.DataRicovero = dmParz[1] + '/' + dmParz[2] + '/' + new Date().getFullYear();
+            } else {
+              var after = text.replace(/ingresso\s*[:=]?\s*/i,'').trim();
+              if (after) result.DataRicovero = after;
+              else if (i+1 < paras.length) {
+                var nt = _imp_paraGetText(paras[i+1]).trim();
+                if (nt && /\d/.test(nt)) { result.DataRicovero = nt; i++; }
+              }
             }
           }
           continue;
@@ -1467,11 +1475,29 @@
           if (i+1 < paras.length) { result.CodiceSanitario = _imp_paraGetText(paras[i+1]).trim(); i++; } continue;
         }
 
-        // Allergie
+        // Allergie — prende solo il testo DOPO "Allergie:", "Allergia:", "Allergie", "Allergia"
         if (/^allergi[ae]/i.test(text)) {
-          var av = text.replace(/^allergi[ae]\s*[:=]?\s*/i,'').trim();
-          if (av) result.Allergie = _imp_paraToHtml(paras[i]).replace(/^allergi[ae]\s*[:=]?\s*/i,'').trim();
-          else if (i+1 < paras.length && _imp_paraGetText(paras[i+1]).trim()) { result.Allergie = _imp_paraToHtml(paras[i+1]); i++; }
+          // Cerca il primo ':' nel testo (fuori dai tag HTML) per separare etichetta da contenuto
+          var rawHtml = _imp_paraToHtml(paras[i]);
+          // Trova la posizione del primo ':' nel testo (non all'interno di tag HTML)
+          var colonPosHtml = -1;
+          var inTag = false;
+          for (var ci = 0; ci < rawHtml.length; ci++) {
+            if (rawHtml[ci] === '<') { inTag = true; continue; }
+            if (rawHtml[ci] === '>') { inTag = false; continue; }
+            if (!inTag && rawHtml[ci] === ':') { colonPosHtml = ci; break; }
+          }
+          var avText = text.indexOf(':') !== -1
+            ? text.substring(text.indexOf(':') + 1).trim()
+            : text.replace(/^allergi[ae]\s*/i, '').trim();
+          if (avText) {
+            // Prende l'HTML dopo il ':' (preserva formattazione colori/grassetto)
+            result.Allergie = colonPosHtml !== -1
+              ? rawHtml.substring(colonPosHtml + 1).trim()
+              : rawHtml.replace(/^allergi[ae]\s*/i, '').trim();
+          } else if (i+1 < paras.length && _imp_paraGetText(paras[i+1]).trim()) {
+            result.Allergie = _imp_paraToHtml(paras[i+1]); i++;
+          }
           continue;
         }
 
