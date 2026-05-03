@@ -650,14 +650,24 @@ function _sbSalvaGiorniConservazione(giorni) {
 
 var BACKUP_INTERVALLO_MS = 6 * 60 * 60 * 1000; // 6 ore
 
+// Cache in memoria dell'ultimo backup — evita query DB nel setInterval
+// Viene aggiornata al caricamento pagina e dopo ogni backup eseguito.
+var _cachedUltimoBackup = 0;
+
 function _sbArchiviaGiornoCorrente() {
   var dataStr = _oggiStr();
   var now = Date.now();
 
-  // Legge quando è stato fatto l'ultimo backup da impostazioni
+  // Controllo rapido in memoria prima di fare qualsiasi query DB
+  if (_cachedUltimoBackup > 0 && now - _cachedUltimoBackup < BACKUP_INTERVALLO_MS) {
+    return Promise.resolve({ inCorso: false }); // 0 query DB
+  }
+
+  // Legge ULTIMO_BACKUP da Supabase (solo quando la cache dice che potrebbe essere ora)
   return _q(_sb.from('impostazioni').select('valore').eq('chiave', 'ULTIMO_BACKUP').maybeSingle())
     .then(function(row) {
       var ultimoBackup = row ? Number(row.valore) : 0;
+      _cachedUltimoBackup = ultimoBackup; // Aggiorna cache con il valore reale dal DB
       if (now - ultimoBackup < BACKUP_INTERVALLO_MS) {
         return { inCorso: false }; // Backup recente → skip
       }
@@ -671,6 +681,7 @@ function _sbArchiviaGiornoCorrente() {
           dati: pazienti
         }));
       }).then(function() {
+        _cachedUltimoBackup = now; // Aggiorna cache dopo backup riuscito
         // Aggiorna timestamp ultimo backup
         return _q(_sb.from('impostazioni').upsert(
           { chiave: 'ULTIMO_BACKUP', valore: String(now) },
