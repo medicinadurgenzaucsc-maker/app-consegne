@@ -148,6 +148,16 @@
         break-inside: auto !important;
         page-break-inside: auto !important;
       }
+      /* Impedisce che il salto pagina avvenga SUBITO DOPO le intestazioni delle
+         colonne, lasciando solo le intestazioni visibili in fondo alla pagina */
+      .column-header,
+      .column-header-piano,
+      .alt-col-header,
+      .alt-col-header-split,
+      .header-row {
+        break-after: avoid !important;
+        page-break-after: avoid !important;
+      }
     }
   </style>
 </head>
@@ -417,11 +427,12 @@
 
     var MM_PX   = 96 / 25.4;
     // Margine superiore 20mm + inferiore 8mm = 28mm totali sottratti all'altezza pagina
-    // (laterali 8mm non influenzano l'altezza utile)
     var pageHmm = (orientamento === 'landscape' ? 210 : 297) - 28;
     // Con zoom z, offsetHeight restituisce l'altezza pre-zoom (layout units).
     // L'altezza fisica della pagina in layout units = pageH_fisica / z.
-    var pageH   = Math.round(pageHmm * MM_PX / z);
+    // Fattore 0.97: margine di sicurezza del 3% per compensare piccole differenze
+    // tra rendering screen e print (evita che card inizino a fondo pagina).
+    var pageH   = Math.round(pageHmm * MM_PX / z * 0.97);
     var MARGIN  = 3;
 
     var header     = document.querySelector('.print-header');
