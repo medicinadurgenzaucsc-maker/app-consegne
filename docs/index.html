@@ -839,7 +839,7 @@
   <div style="background:#fff;border-radius:18px;padding:44px 48px;max-width:400px;width:92%;box-shadow:0 24px 64px rgba(0,0,0,0.45);text-align:center;">
     <div style="font-size:3rem;margin-bottom:10px;">🏥</div>
     <h2 style="font-size:1.35rem;font-weight:700;color:#263238;margin:0 0 6px;">Consegne Reparto</h2>
-    <p style="color:#607d8b;font-size:0.88rem;margin:0 0 28px;line-height:1.5;">Accedi con l'account Google autorizzato<br>per visualizzare le consegne.</p>
+    <p style="color:#607d8b;font-size:0.88rem;margin:0 0 28px;line-height:1.5;">Inserisci le credenziali dell'account Google del reparto<br>per accedere alle consegne.</p>
     <button id="btnGoogleLogin" onclick="_avviaLoginGoogle()"
       style="display:flex;align-items:center;justify-content:center;gap:12px;width:100%;
              padding:13px 20px;border:2px solid #e0e0e0;border-radius:10px;
@@ -855,13 +855,9 @@
       </svg>
       Accedi con Google
     </button>
-    <div style="margin-top:14px;padding:9px 12px;background:#fff8e1;border-radius:8px;border:1px solid #ffe082;font-size:0.78rem;color:#5d4037;text-align:left;line-height:1.5;">
-      <i>⚠️ <strong>Importante:</strong> al click apparirà una finestra popup di Google.<br>
-      Se non compare, <strong>autorizza i popup</strong> per questo sito nelle impostazioni del browser.</i>
-    </div>
     <div id="loginSpinner" style="display:none;align-items:center;justify-content:center;gap:10px;margin-top:16px;">
       <div style="width:20px;height:20px;border:3px solid #ccc;border-top-color:#546e7a;border-radius:50%;animation:_lockSpin 0.8s linear infinite;"></div>
-      <span style="color:#607d8b;font-size:0.85rem;">Verifica in corso... (completa il popup Google)</span>
+      <span style="color:#607d8b;font-size:0.85rem;">Accesso in corso...</span>
     </div>
     <div id="loginError" style="display:none;margin-top:16px;padding:12px 14px;background:#ffebee;border-radius:8px;color:#c62828;font-size:0.83rem;text-align:left;white-space:pre-line;"></div>
     <p style="margin-top:20px;font-size:0.75rem;color:#b0bec5;">Accesso riservato al personale autorizzato</p>
@@ -1335,196 +1331,163 @@
   <script>
   (function() {
 
-    var _tokenClient = null;
+    // ── Unico client OAuth2 con TUTTI gli scope necessari ────────────────────
+    // email+profile: verifica identità
+    // drive.file: crea/gestisce file backup su Drive
+    // documents: imposta orientamento landscape via Docs API batchUpdate
+    // Un solo popup → tutte le autorizzazioni in una volta
+    var _tokenClient   = null;
+    var _emailConsentita = '';
+    window._googleAccessToken = null;
+    window._googleDriveToken  = null; // punta allo stesso token
 
-    // Inizializza il client OAuth2 quando la libreria GIS è pronta
     function _inizializzaGoogleClient() {
       if (typeof google === 'undefined' || !google.accounts || !google.accounts.oauth2) return false;
-      if (typeof GOOGLE_CLIENT_ID === 'undefined' || GOOGLE_CLIENT_ID.startsWith('INSERISCI')) {
-        console.error('[Login] GOOGLE_CLIENT_ID non configurato in api.js');
-        return false;
-      }
+      if (typeof GOOGLE_CLIENT_ID === 'undefined' || GOOGLE_CLIENT_ID.startsWith('INSERISCI')) return false;
       _tokenClient = google.accounts.oauth2.initTokenClient({
         client_id: GOOGLE_CLIENT_ID,
-        // email+profile per verificare l'utente; drive per il backup su Drive
-        // Solo email+profile: nessuna verifica Google richiesta.
-        // Drive viene richiesto separatamente al momento del backup.
-        scope: 'email profile',
+        scope: 'email profile https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/documents',
         callback: _onGoogleToken
       });
       return true;
     }
 
-    // Callback chiamata da GIS dopo che l'utente autorizza
+    // ── Callback unica per tutti i flussi OAuth ───────────────────────────────
     function _onGoogleToken(resp) {
-      var spinner = document.getElementById('loginSpinner');
-      var btn     = document.getElementById('btnGoogleLogin');
       if (resp.error) {
+        // 'login_required' / 'interaction_required' → login silenzioso fallito → mostra UI
+        if (resp.error === 'login_required' || resp.error === 'interaction_required' ||
+            resp.error === 'user_logged_out') {
+          _mostraLoginOverlay();
+          return;
+        }
         _mostraErroreLogin(resp.error === 'access_denied'
-          ? 'Accesso rifiutato. Riprova e autorizza le permissioni richieste.'
+          ? 'Accesso rifiutato. Riprova.'
           : 'Errore Google: ' + resp.error);
-        if (btn) btn.disabled = false;
-        if (spinner) spinner.style.display = 'none';
+        _abilitaBottone();
         return;
       }
-      window._googleAccessToken = resp.access_token;
-      // Recupera info utente per verificare l'email
+
+      // Token valido → verifica email
       fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
         headers: { 'Authorization': 'Bearer ' + resp.access_token }
       })
       .then(function(r) { return r.json(); })
       .then(function(info) {
-        // Legge l'email autorizzata da Supabase
-        return _sbOttieniAccountLogin().then(function(emailAutorizzata) {
-          var emailUtente = (info.email || '').toLowerCase().trim();
-          var emailOk     = (emailAutorizzata || '').toLowerCase().trim();
-          if (!emailOk || emailUtente === emailOk) {
-            // Salva sessione (token valido ~58 min)
-            sessionStorage.setItem('appSession', JSON.stringify({
-              email: info.email,
-              token: resp.access_token,
-              expiry: Date.now() + 3500000
-            }));
-            _completaLogin();
-          } else {
-            window._googleAccessToken = null;
-            _mostraErroreLogin(
-              'Account non autorizzato (' + info.email + ').\n' +
-              'Accedi con: ' + emailAutorizzata
-            );
-            if (btn) btn.disabled = false;
-            if (spinner) spinner.style.display = 'none';
-          }
-        });
+        var emailUtente = (info.email || '').toLowerCase().trim();
+        var emailOk     = (_emailConsentita || '').toLowerCase().trim();
+        if (!emailOk || emailUtente === emailOk) {
+          // ✅ Account corretto → salva in localStorage (persiste oltre la chiusura)
+          window._googleAccessToken = resp.access_token;
+          window._googleDriveToken  = resp.access_token; // stesso token per Drive
+          localStorage.setItem('appSession', JSON.stringify({
+            email: info.email,
+            token: resp.access_token,
+            expiry: Date.now() + 3500000  // ~58 minuti
+          }));
+          _avviaApp();
+        } else {
+          _mostraErroreLogin('Account non autorizzato (' + info.email + ').\nUsare: ' + _emailConsentita);
+          _abilitaBottone();
+        }
       })
       .catch(function() {
         _mostraErroreLogin('Errore di verifica. Controlla la connessione e riprova.');
-        if (btn) btn.disabled = false;
-        if (spinner) spinner.style.display = 'none';
+        _abilitaBottone();
       });
     }
 
-    // Avvia il flusso OAuth2 al click del pulsante
+    // ── Login al click del pulsante: prompt:'login' + hint email reparto ──────
     window._avviaLoginGoogle = function() {
-      var btn     = document.getElementById('btnGoogleLogin');
-      var spinner = document.getElementById('loginSpinner');
-      var err     = document.getElementById('loginError');
-      if (btn) btn.disabled = true;
-      if (spinner) spinner.style.display = 'flex';
+      var err = document.getElementById('loginError');
       if (err) err.style.display = 'none';
-      if (!_tokenClient) {
-        if (!_inizializzaGoogleClient()) {
-          _mostraErroreLogin('Client Google non disponibile. Ricarica la pagina.');
-          if (btn) btn.disabled = false;
-          if (spinner) spinner.style.display = 'none';
-          return;
-        }
+      if (!_tokenClient && !_inizializzaGoogleClient()) {
+        _mostraErroreLogin('Client Google non disponibile. Ricarica la pagina.');
+        return;
       }
-      // 'select_account' mostra sempre il selettore Google → permette di
-      // scegliere l'account corretto anche se il browser ha già un account personale
-      _tokenClient.requestAccessToken({ prompt: 'select_account' });
+      _disabilitaBottone();
+      // prompt:'login' → forza inserimento credenziali (email + password)
+      // login_hint → pre-compila l'email dell'account reparto
+      _tokenClient.requestAccessToken({
+        prompt: 'login',
+        login_hint: _emailConsentita || ''
+      });
     };
+
+    // ── Login silenzioso al caricamento ──────────────────────────────────────
+    function _tentaLoginSilenzioso() {
+      if (!_tokenClient && !_inizializzaGoogleClient()) { _mostraLoginOverlay(); return; }
+      try {
+        // prompt:'none' → nessun popup; se Google ha già la sessione restituisce token
+        _tokenClient.requestAccessToken({ prompt: 'none', login_hint: _emailConsentita || '' });
+      } catch(e) {
+        _mostraLoginOverlay();
+      }
+    }
+
+    function _avviaApp() {
+      var ov = document.getElementById('loginOverlay');
+      if (ov) { ov.style.transition = 'opacity 0.4s'; ov.style.opacity = '0'; setTimeout(function() { ov.style.display = 'none'; }, 420); }
+      if (typeof window._avviaFlussoApp === 'function') window._avviaFlussoApp();
+    }
+
+    function _mostraLoginOverlay() {
+      var ov = document.getElementById('loginOverlay');
+      if (ov) ov.style.display = 'flex';
+    }
 
     function _mostraErroreLogin(msg) {
       var err = document.getElementById('loginError');
       if (err) { err.textContent = msg; err.style.display = 'block'; }
     }
 
-    // ── Drive token (scope drive.file, richiesto dopo il login) ──
-    window._googleDriveToken = null;
-    var _driveTokenClient = null;
-
-    function _inizializzaDriveClient() {
-      if (typeof google === 'undefined' || !google.accounts || !google.accounts.oauth2) return false;
-      if (typeof GOOGLE_CLIENT_ID === 'undefined') return false;
-      _driveTokenClient = google.accounts.oauth2.initTokenClient({
-        client_id: GOOGLE_CLIENT_ID,
-        // drive.file: crea/gestisce file propri su Drive
-        // documents: necessario per batchUpdate (imposta orientamento landscape)
-        scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/documents',
-        callback: function(resp) {
-          if (!resp.error && resp.access_token) {
-            window._googleDriveToken = resp.access_token;
-            // Salva drive token in sessione
-            try {
-              var sess = JSON.parse(sessionStorage.getItem('appSession') || '{}');
-              sess.driveToken  = resp.access_token;
-              sess.driveExpiry = Date.now() + 3500000;
-              sessionStorage.setItem('appSession', JSON.stringify(sess));
-            } catch(e) {}
-          }
-          // Che sia riuscito o no, avvia l'app
-          _avviaAppDopoLogin();
-        }
-      });
-      return true;
+    function _disabilitaBottone() {
+      var btn = document.getElementById('btnGoogleLogin');
+      var sp  = document.getElementById('loginSpinner');
+      if (btn) btn.disabled = true;
+      if (sp)  sp.style.display = 'flex';
     }
 
-    function _avviaAppDopoLogin() {
-      var ov = document.getElementById('loginOverlay');
-      if (ov) {
-        ov.style.transition = 'opacity 0.4s';
-        ov.style.opacity = '0';
-        setTimeout(function() { ov.style.display = 'none'; }, 420);
+    function _abilitaBottone() {
+      var btn = document.getElementById('btnGoogleLogin');
+      var sp  = document.getElementById('loginSpinner');
+      if (btn) btn.disabled = false;
+      if (sp)  sp.style.display = 'none';
+    }
+
+    // ── Avvio ────────────────────────────────────────────────────────────────
+    window.addEventListener('load', function() {
+      // Init GIS client (riprova se non ancora caricato)
+      if (!_inizializzaGoogleClient()) {
+        var retry = setInterval(function() { if (_inizializzaGoogleClient()) clearInterval(retry); }, 200);
       }
-      if (typeof window._avviaFlussoApp === 'function') window._avviaFlussoApp();
-    }
 
-    function _completaLogin() {
-      // Ripristina token Drive dalla sessione se ancora valido
+      // Legge l'email autorizzata da Supabase per usarla come hint
+      _sbOttieniAccountLogin().then(function(email) {
+        _emailConsentita = email || '';
+      }).catch(function() {});
+
+      // 1. Controlla sessione in localStorage (persiste oltre chiusura browser)
       try {
-        var sess = JSON.parse(sessionStorage.getItem('appSession') || '{}');
-        if (sess.driveToken && sess.driveExpiry > Date.now()) {
-          window._googleDriveToken = sess.driveToken;
-          _avviaAppDopoLogin();
+        var sess = JSON.parse(localStorage.getItem('appSession') || 'null');
+        if (sess && sess.expiry > Date.now() && sess.token) {
+          window._googleAccessToken = sess.token;
+          window._googleDriveToken  = sess.token;
+          var ov = document.getElementById('loginOverlay');
+          if (ov) ov.style.display = 'none';
+          if (typeof window._avviaFlussoApp === 'function') window._avviaFlussoApp();
           return;
         }
       } catch(e) {}
 
-      // Richiedi drive.file silenziosamente (se già autorizzato → nessun popup)
-      // Se non ancora autorizzato → mostrerà il consent screen di Drive
-      if (_inizializzaDriveClient()) {
-        try {
-          // Usa lo stesso account del login (nessun prompt aggiuntivo se già autorizzato)
-          _driveTokenClient.requestAccessToken({ prompt: '' });
-        } catch(e) {
-          _avviaAppDopoLogin(); // fallback: avvia senza Drive
+      // 2. Nessuna sessione valida → tenta login silenzioso (0 popup se Google ricorda)
+      // Aspetta GIS pronto prima di tentare
+      var silentTimer = setInterval(function() {
+        if (_tokenClient) {
+          clearInterval(silentTimer);
+          _tentaLoginSilenzioso();
         }
-      } else {
-        _avviaAppDopoLogin();
-      }
-    }
-
-    function _verificaSessioneEsistente() {
-      try {
-        var sess = JSON.parse(sessionStorage.getItem('appSession') || 'null');
-        if (sess && sess.expiry > Date.now() && sess.token) {
-          window._googleAccessToken = sess.token;
-          // Ripristina anche il Drive token se disponibile
-          if (sess.driveToken && sess.driveExpiry > Date.now()) {
-            window._googleDriveToken = sess.driveToken;
-          }
-          return true;
-        }
-      } catch(e) {}
-      return false;
-    }
-
-    window.addEventListener('load', function() {
-      // Tenta di inizializzare subito; se GIS non è ancora pronto riprova
-      if (!_inizializzaGoogleClient()) {
-        var retry = setInterval(function() {
-          if (_inizializzaGoogleClient()) clearInterval(retry);
-        }, 200);
-      }
-
-      if (_verificaSessioneEsistente()) {
-        // Sessione ancora valida: salta login
-        var ov = document.getElementById('loginOverlay');
-        if (ov) ov.style.display = 'none';
-        if (typeof window._avviaFlussoApp === 'function') window._avviaFlussoApp();
-      }
-      // else: loginOverlay resta visibile, l'utente clicca il pulsante
+      }, 100);
     });
 
   })();
