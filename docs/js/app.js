@@ -319,6 +319,8 @@
         if (confBtn) {
           confBtn.addEventListener('click', function() {
             var saltaVuoti = document.getElementById('checkSaltaVuoti').checked;
+            var includiNoteEl = document.getElementById('checkIncludiNote');
+            var includiNote = includiNoteEl ? includiNoteEl.checked : true;
             var orientamento = 'portrait';
             var tipologie = 'all';
             var scalaEl = document.querySelector('input[name="scalaStampa"]:checked');
@@ -332,7 +334,7 @@
               }
             }
             mi.hide();
-            if (typeof _scalaModalCallback === 'function') _scalaModalCallback(saltaVuoti, orientamento, tipologie, scala);
+            if (typeof _scalaModalCallback === 'function') _scalaModalCallback(saltaVuoti, orientamento, tipologie, scala, includiNote);
           });
         }
       }
@@ -340,14 +342,15 @@
     }
 
     function stampaConsegne() {
-      _apriModalScala(function(saltaVuoti, orientamento, tipologie, scala) {
+      _apriModalScala(function(saltaVuoti, orientamento, tipologie, scala, includiNote) {
         var layout = _viewAltAttiva ? 'alt' : 'main';
         var url = PRINT_URL + '?layout=' + layout +
                   '&saltaVuoti=' + (saltaVuoti ? '1' : '0') +
                   '&orientamento=' + orientamento +
                   '&ordinamento=' + encodeURIComponent(localStorage.getItem('ordinamentoPreferito') || 'tipologia') +
                   '&tipologie=' + encodeURIComponent(tipologie || 'all') +
-                  '&scala=' + (scala || 100);
+                  '&scala=' + (scala || 100) +
+                  '&includiNote=' + (includiNote !== false ? '1' : '0');
         window.open(url, '_blank');
       });
     }
@@ -474,7 +477,7 @@
     }
 
     function showToast(title, msg, type) { const toastContainer = document.getElementById('toastContainer'); let bgColor = type === "danger" ? "bg-danger" : (type === "success" ? "bg-success" : "bg-warning text-dark"); let icon = type === "danger" ? "bi-exclamation-triangle" : (type === "success" ? "bi-check-circle" : "bi-exclamation-circle"); const toastHTML = `<div class="toast align-items-center text-white border-0 mb-2 ${bgColor}" role="alert" aria-live="assertive" aria-atomic="true"><div class="d-flex"><div class="toast-body"><i class="bi ${icon} me-2 fs-5 align-middle"></i><strong>${title}</strong><br><span class="${type==='warning'?'text-dark':'text-white'}">${msg}</span></div><button type="button" class="btn-close ${type==='warning'?'':'btn-close-white'} me-2 m-auto" data-bs-dismiss="toast"></button></div></div>`; const div = document.createElement('div'); div.innerHTML = toastHTML; const toastElement = div.firstElementChild; toastContainer.appendChild(toastElement); const bsToast = new bootstrap.Toast(toastElement, { delay: 4000 }); bsToast.show(); toastElement.addEventListener('hidden.bs.toast', () => { toastElement.remove(); }); }
-    function ordinaLetti(criterio, isSilent = false) { const container = document.getElementById('cardsContainer'); if (!container) return; const cards = Array.from(container.querySelectorAll('.patient-card')); if (cards.length === 0) return; cards.sort((a, b) => { const getLettoVal = (el) => el.getAttribute('data-bed'); const cmpLetto = (bedA, bedB) => { let numA = parseInt(bedA, 10); let numB = parseInt(bedB, 10); if(!isNaN(numA) && !isNaN(numB)) return numA - numB; return String(bedA).localeCompare(String(bedB)); }; if (criterio === 'numero') return cmpLetto(getLettoVal(a), getLettoVal(b)); if (criterio === 'nome') { let nA=(a.querySelector('[data-field="Nome"]').innerText||'').trim().toLowerCase(), nB=(b.querySelector('[data-field="Nome"]').innerText||'').trim().toLowerCase(); if(!nA&&!nB) return cmpLetto(getLettoVal(a), getLettoVal(b)); if(!nA) return 1; if(!nB) return -1; let res = nA.localeCompare(nB); return res!==0 ? res : cmpLetto(getLettoVal(a), getLettoVal(b)); } if (criterio === 'tipologia') { let tA=(a.getAttribute('data-tipologia')||'').trim().toLowerCase(), tB=(b.getAttribute('data-tipologia')||'').trim().toLowerCase(); if(!tA&&!tB) return cmpLetto(getLettoVal(a), getLettoVal(b)); if(!tA) return 1; if(!tB) return -1; let res = tA.localeCompare(tB); return res!==0 ? res : cmpLetto(getLettoVal(a), getLettoVal(b)); } }); cards.forEach(card => container.appendChild(card)); localStorage.setItem('ordinamentoPreferito', criterio); if (typeof _sincronizzaOrdineAlt === 'function') _sincronizzaOrdineAlt(); }
+    function ordinaLetti(criterio, isSilent = false) { const container = document.getElementById('cardsContainer'); if (!container) return; const cards = Array.from(container.querySelectorAll('.patient-card')); if (cards.length === 0) return; cards.sort((a, b) => { const getLettoVal = (el) => el.getAttribute('data-bed'); // NOTE sempre in fondo if(getLettoVal(a)==='NOTE') return 1; if(getLettoVal(b)==='NOTE') return -1; const cmpLetto = (bedA, bedB) => { let numA = parseInt(bedA, 10); let numB = parseInt(bedB, 10); if(!isNaN(numA) && !isNaN(numB)) return numA - numB; return String(bedA).localeCompare(String(bedB)); }; if (criterio === 'numero') return cmpLetto(getLettoVal(a), getLettoVal(b)); if (criterio === 'nome') { let nA=(a.querySelector('[data-field="Nome"]')?.innerText||'').trim().toLowerCase(), nB=(b.querySelector('[data-field="Nome"]')?.innerText||'').trim().toLowerCase(); if(!nA&&!nB) return cmpLetto(getLettoVal(a), getLettoVal(b)); if(!nA) return 1; if(!nB) return -1; let res = nA.localeCompare(nB); return res!==0 ? res : cmpLetto(getLettoVal(a), getLettoVal(b)); } if (criterio === 'tipologia') { let tA=(a.getAttribute('data-tipologia')||'').trim().toLowerCase(), tB=(b.getAttribute('data-tipologia')||'').trim().toLowerCase(); if(!tA&&!tB) return cmpLetto(getLettoVal(a), getLettoVal(b)); if(!tA) return 1; if(!tB) return -1; let res = tA.localeCompare(tB); return res!==0 ? res : cmpLetto(getLettoVal(a), getLettoVal(b)); } }); cards.forEach(card => container.appendChild(card)); localStorage.setItem('ordinamentoPreferito', criterio); if (typeof _sincronizzaOrdineAlt === 'function') _sincronizzaOrdineAlt(); }
     function applicaOrdinamentoSalvato() { const saved = localStorage.getItem('ordinamentoPreferito'); if (saved) ordinaLetti(saved, true); else ordinaLetti('tipologia', true); }
 
     // Restituisce entrambi i badge (main + alt) per un letto

@@ -134,6 +134,10 @@
     .alt-diag-top   { display: flex; flex-direction: column; }
     .alt-diag-bottom, .alt-diag-third { display: flex; flex-direction: column; }
 
+    /* ── Scheda NOTE ── */
+    .note-card .bed-number-box { background: #eceff1 !important; }
+    .note-card .bed-number { font-size: 1.2rem; letter-spacing: 2px; color: #546e7a; }
+
     /* ── Regole di stampa ── */
     @media print {
       #printBar { display: none !important; }
@@ -197,6 +201,7 @@
   var ordinamento  = params.get('ordinamento')  || 'tipologia';
   var dataArchivio = params.get('dataArchivio') || '';
   var tipologieParam = params.get('tipologie')  || 'all';
+  var includiNote = params.get('includiNote') !== '0'; // default: true
   var scala = Math.min(100, Math.max(10, parseInt(params.get('scala') || '100', 10)));
   var z     = scala / 100;  // es. 80% → z = 0.8
 
@@ -381,6 +386,34 @@
     '</div>';
   }
 
+  // ── Renderer scheda NOTE ───────────────────────────────────────
+  function renderNoteMain(p) {
+    return '<div class="patient-card">' +
+      '<div class="header-row">' +
+        '<div class="bed-number-box">' +
+          '<div class="bed-label">Note</div>' +
+          '<div class="bed-number" style="font-size:1.4rem;letter-spacing:1px;">NOTE</div>' +
+        '</div>' +
+        '<div class="patient-info-box" style="width:83.33333%;">' +
+          '<div style="padding:6px;font-size:0.85rem;">' + (p.Diaria || '') + '</div>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  }
+
+  function renderNoteAlt(p) {
+    return '<div class="alt-row">' +
+      '<div class="alt-col alt-col-info">' +
+        '<div class="alt-info-box">' +
+          '<div class="alt-bed-number" style="font-size:1rem;letter-spacing:1px;">NOTE</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="alt-col" style="flex:1;border-right:none;">' +
+        '<div class="alt-editable" style="padding:6px;font-size:0.85rem;">' + (p.Diaria || '') + '</div>' +
+      '</div>' +
+    '</div>';
+  }
+
   // ── Ordinamento ────────────────────────────────────────────────
   function ordinaPazienti(pazienti) {
     var cmpL = function(a, b) {
@@ -388,6 +421,9 @@
       return (isNaN(nA)||isNaN(nB)) ? String(a.Letto).localeCompare(String(b.Letto)) : nA - nB;
     };
     pazienti.sort(function(a, b) {
+      // NOTE sempre in fondo
+      if (a.Letto === 'NOTE') return 1;
+      if (b.Letto === 'NOTE') return -1;
       if (ordinamento === 'numero') return cmpL(a, b);
       if (ordinamento === 'nome') {
         var nA = (a.Nome||'').toLowerCase().trim(), nB = (b.Nome||'').toLowerCase().trim();
@@ -486,14 +522,21 @@
     // Ordina
     ordinaPazienti(pazienti);
 
-    // Filtra vuoti
+    // Separa NOTE dal resto
+    var noteCard = null;
+    pazienti = pazienti.filter(function(p) {
+      if (p.Letto === 'NOTE') { noteCard = p; return false; }
+      return true;
+    });
+
+    // Filtra vuoti (solo letti normali)
     if (saltaVuoti) {
       pazienti = pazienti.filter(function(p) {
         return String(p.Nome||'').trim() !== '' || String(p.Diagnosi||'').trim() !== '';
       });
     }
 
-    // Filtra tipologie
+    // Filtra tipologie (solo letti normali)
     if (tipologieFiltro && tipologieFiltro.length > 0) {
       pazienti = pazienti.filter(function(p) {
         var t = String(p.TipologiaLetto||'').trim().toUpperCase() || 'STANDARD';
@@ -506,6 +549,10 @@
     pazienti.forEach(function(p) {
       html += layout === 'alt' ? renderAlt(p) : renderMain(p);
     });
+    // NOTE sempre ultima (se inclusa e presente)
+    if (noteCard && includiNote) {
+      html += layout === 'alt' ? renderNoteAlt(noteCard) : renderNoteMain(noteCard);
+    }
     document.getElementById('printCards').innerHTML = html;
 
     // Pulizia celle

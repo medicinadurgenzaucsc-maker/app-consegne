@@ -350,14 +350,61 @@ function _renderAltCard(p) {
 }
 
 
+// ── RENDERER SCHEDA NOTE (layout principale) ──────────────────
+function _renderNoteCardMain(p) {
+  return '<div class="patient-card note-card shadow-sm" data-bed="NOTE">' +
+    '<div class="row m-0 header-row">' +
+    '<div class="col-2 bed-number-box p-3">' +
+    '<button class="focus-pencil-btn" title="Modifica note"' +
+    ' onclick="_attivaFocusMode(this.closest(\'.patient-card\'))"><i class="bi bi-pencil-fill"></i></button>' +
+    '<span id="status-NOTE" class="badge status-badge position-absolute top-0 start-0 m-1 bg-secondary"></span>' +
+    '<div class="text-muted fw-bold mt-2" style="font-size:0.75rem;">NOTE</div>' +
+    '<div class="bed-number-flex">' +
+    '<div class="bed-number" style="font-size:1.5rem;letter-spacing:1px;">NOTE</div>' +
+    '</div>' +
+    '</div>' +
+    '<div class="col-10 patient-info-box d-flex align-items-stretch p-0">' +
+    '<div class="editable-area rich-text w-100" contenteditable="true" data-field="Diaria"' +
+    ' style="min-height:300px;padding:10px;font-size:0.9rem;">' + (p.Diaria || '') + '</div>' +
+    '</div>' +
+    '</div>' +
+    '</div>';
+}
+
+// ── RENDERER SCHEDA NOTE (layout alternativo) ─────────────────
+function _renderNoteCardAlt(p) {
+  return '<div class="alt-row patient-card note-card" data-bed="NOTE">' +
+    '<div class="alt-col alt-col-info" style="justify-content:center;">' +
+    '<button class="focus-pencil-btn" title="Modifica note"' +
+    ' onclick="_attivaFocusMode(this.closest(\'.patient-card\'))"><i class="bi bi-pencil-fill"></i></button>' +
+    '<span id="status-alt-NOTE" class="badge status-badge position-absolute top-0 start-0 m-1 bg-secondary"></span>' +
+    '<div class="alt-info-box">' +
+    '<div class="alt-bed-number" style="font-size:1rem;letter-spacing:1px;">NOTE</div>' +
+    '</div>' +
+    '</div>' +
+    '<div class="alt-col" style="flex:1;border-right:none;">' +
+    '<div class="editable-area rich-text alt-editable" contenteditable="true" data-field="Diaria"' +
+    ' style="min-height:300px;padding:10px;font-size:0.9rem;">' + (p.Diaria || '') + '</div>' +
+    '</div>' +
+    '<div class="alt-row-spacer"></div>' +
+    '</div>';
+}
+
 // ── RENDERER COMPLETO (entrambe le viste) ─────────────────────
 function _renderCardsHtml(pazienti) {
   var main = '<div class="container-fluid" id="cardsContainer">';
   var alt  = '<div class="container-fluid" id="cardsContainerAlt">';
+  var noteP = null;
   (pazienti || []).forEach(function(p) {
+    if (p.Letto === 'NOTE') { noteP = p; return; }
     main += _renderMainCard(p);
     alt  += _renderAltCard(p);
   });
+  // NOTE sempre in fondo
+  if (noteP) {
+    main += _renderNoteCardMain(noteP);
+    alt  += _renderNoteCardAlt(noteP);
+  }
   main += '<div id="noLettiMsg" class="container text-center mt-5"' +
           ' style="display:none;"><i class="bi bi-inboxes text-muted" style="font-size:4rem;"></i>' +
           '<h4 class="mt-3 text-secondary">Nessun Letto configurato.</h4></div></div>';
@@ -409,6 +456,9 @@ function _sbGetPazienti() {
   return _q(_sb.from('consegne').select('*')).then(function(rows) {
     var pazienti = (rows || []).map(_fromDb);
     pazienti.sort(function(a, b) {
+      // NOTE sempre in fondo
+      if (a.Letto === 'NOTE') return 1;
+      if (b.Letto === 'NOTE') return -1;
       var nA = parseInt(a.Letto, 10), nB = parseInt(b.Letto, 10);
       return (!isNaN(nA) && !isNaN(nB)) ? nA - nB : String(a.Letto).localeCompare(String(b.Letto));
     });
@@ -418,7 +468,7 @@ function _sbGetPazienti() {
 
 function _sbGetLettiFull() {
   return _q(_sb.from('consegne').select('letto,nome,tipologia_letto')).then(function(rows) {
-    var letti = (rows || []).map(function(r) {
+    var letti = (rows || []).filter(function(r) { return r.letto !== 'NOTE'; }).map(function(r) {
       return { letto: r.letto, nome: r.nome || '', tipologia: (r.tipologia_letto || 'STANDARD').toUpperCase() };
     });
     letti.sort(function(a, b) {
@@ -514,6 +564,7 @@ function _sbGetRiepilogo() {
     var uomini = 0, donne = 0, indefinito = 0, vuoti = 0;
     var tipologie = {};
     pazienti.forEach(function(p) {
+      if (p.Letto === 'NOTE') return; // non contare NOTE come letto
       var hasPaziente = (p.Nome || '').trim() !== '';
       if (!hasPaziente) { vuoti++; return; }
       var sesso = (p.Sesso || '').toUpperCase();
@@ -835,10 +886,11 @@ function _sbGetDatiLettiConTipologia() {
 }
 
 function _sbGetTipologieLettiBed() {
-  // Ritorna un array ordinato di tipologie UNICHE presenti in almeno 1 letto
-  return _q(_sb.from('consegne').select('tipologia_letto')).then(function(rows) {
+  // Ritorna un array ordinato di tipologie UNICHE presenti in almeno 1 letto (esclusa NOTE)
+  return _q(_sb.from('consegne').select('letto,tipologia_letto')).then(function(rows) {
     var set = {};
     (rows || []).forEach(function(r) {
+      if (r.letto === 'NOTE') return;
       var t = (r.tipologia_letto || 'STANDARD').trim().toUpperCase();
       if (t) set[t] = true;
     });
@@ -1115,6 +1167,24 @@ function _driveRenderCard(p) {
   );
 }
 
+function _driveRenderNoteCard(p) {
+  var B = '1.5pt solid #546e7a';
+  var HB = 'background-color:#eceff1;font-weight:bold;font-size:8pt;text-transform:uppercase;padding:3pt 5pt;border-bottom:1pt solid #90a4ae;';
+  var CB = 'padding:4pt 6pt;font-size:9pt;';
+  return (
+    '<table width="100%" style="border-collapse:collapse;margin-bottom:10pt;font-family:Arial,sans-serif;font-size:9pt;border:' + B + ';">' +
+    '<tr>' +
+      '<td width="17%" style="border:' + B + ';text-align:center;vertical-align:middle;background-color:#eceff1;padding:6pt;">' +
+        '<p style="font-size:1rem;font-weight:bold;letter-spacing:2px;color:#546e7a;margin:0;">NOTE</p>' +
+      '</td>' +
+      '<td width="83%" style="border:' + B + ';vertical-align:top;padding:0;">' +
+        '<p style="' + CB + '">' + (p.Diaria || '') + '</p>' +
+      '</td>' +
+    '</tr>' +
+    '</table>'
+  );
+}
+
 // Esegue backup su Google Drive come Google Doc con layout standard.
 // Le cartelle vengono create la prima volta e l'ID salvato in Supabase.
 // Fire-and-forget: non blocca il flusso principale.
@@ -1131,14 +1201,18 @@ function _driveBackupConsegne(pazienti, ts) {
                   '_' + pad(data.getHours()) + '-' + pad(data.getMinutes());
   var nomeFile  = 'Backup_' + nomeSafe; // senza estensione → sarà un Google Doc
 
-  // Ordina per numero letto
+  // Ordina per numero letto (NOTE sempre ultima)
   var ordinati = (pazienti || []).slice().sort(function(a, b) {
+    if (a.Letto === 'NOTE') return 1;
+    if (b.Letto === 'NOTE') return -1;
     var nA = parseInt(a.Letto, 10), nB = parseInt(b.Letto, 10);
     return (!isNaN(nA) && !isNaN(nB)) ? nA - nB : String(a.Letto).localeCompare(String(b.Letto));
   });
 
   // Costruisce HTML con layout standard (tabelle — Drive converte in Google Doc)
-  var cardsHtml = ordinati.map(_driveRenderCard).join('');
+  var cardsHtml = ordinati.map(function(p) {
+    return p.Letto === 'NOTE' ? _driveRenderNoteCard(p) : _driveRenderCard(p);
+  }).join('');
 
   var html = '<!DOCTYPE html><html><head><meta charset="UTF-8">' +
     '<style>' +

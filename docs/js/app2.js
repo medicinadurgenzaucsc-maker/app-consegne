@@ -18,6 +18,7 @@
         sel.innerHTML = '<option value="">--</option>';
         cards.forEach(function(card) {
           var letto = card.getAttribute('data-bed');
+          if (letto === 'NOTE') return; // la scheda NOTE non può essere eliminata
           var opt = document.createElement('option');
           opt.value = letto;
           opt.textContent = 'Letto ' + letto;

@@ -6,6 +6,11 @@
 body { padding-top: 70px; background-color: #d4e6f1 !important; }
 .navbar-custom { background-color: #78909c; }
 .patient-card { border: 2px solid #333; border-radius: 8px; margin-bottom: 30px; background-color: #fdfbf7; position: relative; }
+
+/* ── SCHEDA NOTE ─────────────────────────────────────────────── */
+.note-card { border-color: #78909c; border-style: dashed; }
+.note-card .bed-number-box { background-color: #eceff1; }
+.note-card .bed-number { font-size: 1.2rem !important; letter-spacing: 2px; color: #546e7a; }
 .header-row { border-bottom: 2px solid #333; }
 .bed-number-box { border-right: 2px solid #333; display: flex; flex-direction: column; align-items: center; justify-content: center; background-color: #f2efe9; position: relative; }
 .bed-number { font-size: 2.5rem; font-weight: bold; line-height: 1; }
