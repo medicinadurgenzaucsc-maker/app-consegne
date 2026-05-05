@@ -1,26 +1,30 @@
-name: Supabase Keepalive
+name: Supabase Keep Alive
+
+# Esegue ogni 3 giorni alle 07:00 UTC per prevenire la pausa del DB free tier.
+# Supabase pausa i progetti free dopo 7 giorni di inattività.
+# Può essere triggerato manualmente da GitHub Actions per testare.
 
 on:
   schedule:
-    - cron: '0 7 */5 * *'   # ogni 5 giorni alle 07:00 UTC
-  workflow_dispatch:          # eseguibile anche a mano
+    - cron: '0 7 */3 * *'   # ogni 3 giorni alle 07:00 UTC
+  workflow_dispatch:         # trigger manuale per test
 
 jobs:
   keepalive:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping Supabase (previene auto-pause)
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+      - name: Ping Supabase REST API
         run: |
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-            -H "apikey: $SUPABASE_ANON_KEY" \
-            -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
-            "$SUPABASE_URL/rest/v1/impostazioni?chiave=eq.NOME_REPARTO&select=valore")
-          echo "HTTP status: $STATUS"
-          if [ "$STATUS" != "200" ]; then
-            echo "ERRORE: Supabase ha risposto con status $STATUS"
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlmbW1jdnh6aHdka216aHN4Y3ZiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc2Nzk1ODAsImV4cCI6MjA5MzI1NTU4MH0.LH8h4Fivtl3-TuiA050oF8iS4b80xrd2Dn6z8JjCoeA" \
+            -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlmbW1jdnh6aHdka216aHN4Y3ZiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc2Nzk1ODAsImV4cCI6MjA5MzI1NTU4MH0.LH8h4Fivtl3-TuiA050oF8iS4b80xrd2Dn6z8JjCoeA" \
+            "https://ifmmcvxzhwdkmzhsxcvb.supabase.co/rest/v1/impostazioni?select=chiave&limit=1")
+
+          echo "HTTP Status: $HTTP_STATUS"
+
+          if [ "$HTTP_STATUS" = "200" ]; then
+            echo "Supabase attivo e raggiungibile"
+          else
+            echo "Risposta inattesa: $HTTP_STATUS"
             exit 1
           fi
-          echo "Keepalive OK — database attivo."
