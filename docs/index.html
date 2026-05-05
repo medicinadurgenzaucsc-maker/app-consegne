@@ -949,6 +949,7 @@
         <li class="nav-item"><a class="nav-link active" href="javascript:void(0)" onclick="stampaConsegne();"><i class="bi bi-printer me-1"></i>Stampa Consegne</a></li>
         <li class="nav-item"><a class="nav-link active" href="javascript:void(0)" onclick="apriArchivio();"><i class="bi bi-archive-fill me-1"></i>Archivio Consegne</a></li>
         <li class="nav-item"><a class="nav-link active" href="javascript:void(0)" onclick="apriLinkUtili();"><i class="bi bi-link-45deg me-1"></i>Link Utili</a></li>
+        <li class="nav-item"><a class="nav-link active" href="javascript:void(0)" onclick="apriRubrica();"><i class="bi bi-telephone-fill me-1"></i>Numeri Telefono</a></li>
       </ul>
       <ul class="navbar-nav ms-auto align-items-center">
         <li class="nav-item me-2">
@@ -1560,6 +1561,132 @@
     window.addEventListener('appinstalled', function() {
       if (installItem) installItem.style.display = 'none';
       deferredPrompt = null;
+    });
+  })();
+  </script>
+
+  <!-- ===== PANNELLO RUBRICA TELEFONICA ===== -->
+  <div id="rubricaPanel" style="
+      display:none;
+      position:fixed;
+      z-index:9500;
+      width:390px;
+      height:580px;
+      background:#fff;
+      border-radius:12px;
+      box-shadow:0 8px 32px rgba(0,0,0,0.28);
+      overflow:hidden;
+      top:80px;
+      right:24px;
+      flex-direction:column;
+      user-select:none;
+  ">
+    <!-- Handle drag -->
+    <div id="rubricaPanelHeader" style="
+        background:linear-gradient(135deg,#37474f,#546e7a);
+        color:#fff;
+        padding:10px 14px;
+        display:flex;
+        align-items:center;
+        justify-content:space-between;
+        cursor:grab;
+        border-radius:12px 12px 0 0;
+        flex-shrink:0;
+    ">
+      <span style="font-size:0.92rem;font-weight:700;letter-spacing:0.5px;">
+        <i class="bi bi-telephone-fill me-2"></i>Numeri Telefono
+      </span>
+      <button onclick="chiudiRubrica()" style="
+          background:none;border:none;color:#fff;font-size:1.2rem;
+          cursor:pointer;line-height:1;padding:0 2px;opacity:0.85;
+      " title="Chiudi">&times;</button>
+    </div>
+    <!-- Iframe rubrica -->
+    <iframe
+      id="rubricaIframe"
+      src=""
+      style="flex:1;border:none;width:100%;height:100%;"
+      allow="clipboard-write"
+      loading="lazy"
+    ></iframe>
+  </div>
+
+  <script>
+  (function() {
+    var panel = document.getElementById('rubricaPanel');
+    var header = document.getElementById('rubricaPanelHeader');
+    var iframe = document.getElementById('rubricaIframe');
+    var RUBRICA_URL = 'https://medicinadurgenzaucsc-maker.github.io/rubrica-gemelli/';
+    var _rubricaCaricata = false;
+
+    window.apriRubrica = function() {
+      if (!_rubricaCaricata) {
+        iframe.src = RUBRICA_URL;
+        _rubricaCaricata = true;
+      }
+      panel.style.display = 'flex';
+    };
+
+    window.chiudiRubrica = function() {
+      panel.style.display = 'none';
+    };
+
+    // ── Drag ──────────────────────────────────────────────────────
+    var _drag = { active:false, ox:0, oy:0, px:0, py:0 };
+
+    header.addEventListener('mousedown', function(e) {
+      if (e.button !== 0) return;
+      _drag.active = true;
+      var rect = panel.getBoundingClientRect();
+      _drag.ox = e.clientX - rect.left;
+      _drag.oy = e.clientY - rect.top;
+      header.style.cursor = 'grabbing';
+      e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', function(e) {
+      if (!_drag.active) return;
+      var x = e.clientX - _drag.ox;
+      var y = e.clientY - _drag.oy;
+      // Mantieni dentro la viewport
+      var maxX = window.innerWidth  - panel.offsetWidth;
+      var maxY = window.innerHeight - panel.offsetHeight;
+      x = Math.max(0, Math.min(x, maxX));
+      y = Math.max(0, Math.min(y, maxY));
+      panel.style.left = x + 'px';
+      panel.style.top  = y + 'px';
+      panel.style.right = 'auto';
+    });
+
+    document.addEventListener('mouseup', function() {
+      if (_drag.active) { _drag.active = false; header.style.cursor = 'grab'; }
+    });
+
+    // Touch drag (mobile)
+    header.addEventListener('touchstart', function(e) {
+      var t = e.touches[0];
+      var rect = panel.getBoundingClientRect();
+      _drag.active = true;
+      _drag.ox = t.clientX - rect.left;
+      _drag.oy = t.clientY - rect.top;
+    }, { passive: true });
+
+    document.addEventListener('touchmove', function(e) {
+      if (!_drag.active) return;
+      var t = e.touches[0];
+      var x = t.clientX - _drag.ox;
+      var y = t.clientY - _drag.oy;
+      var maxX = window.innerWidth  - panel.offsetWidth;
+      var maxY = window.innerHeight - panel.offsetHeight;
+      x = Math.max(0, Math.min(x, maxX));
+      y = Math.max(0, Math.min(y, maxY));
+      panel.style.left = x + 'px';
+      panel.style.top  = y + 'px';
+      panel.style.right = 'auto';
+    }, { passive: true });
+
+    document.addEventListener('touchend', function() {
+      _drag.active = false;
     });
   })();
   </script>
