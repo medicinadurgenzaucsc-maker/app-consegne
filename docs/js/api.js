@@ -762,6 +762,43 @@ function _sbArchiviaGiornoCorrente() {
     .catch(function() { return { inCorso: false }; });
 }
 
+// Backup forzato: inserisce subito un record in archivio e aggiorna ULTIMO_BACKUP.
+// Usato dal backup manuale; bypassa il controllo delle 6h.
+function _sbBackupForzato() {
+  var dataStr = _oggiStr();
+  var now = Date.now();
+  return _sbGetPazienti().then(function(pazienti) {
+    return _q(_sb.from('archivio').insert({ data_str: dataStr, ts: now, dati: pazienti }))
+      .then(function() {
+        return _q(_sb.from('impostazioni')
+          .upsert({ chiave: 'ULTIMO_BACKUP', valore: String(now) }, { onConflict: 'chiave' }));
+      }).then(function() {
+        _driveBackupConsegne(pazienti, now); // fire-and-forget
+        return { success: true, ts: now, count: pazienti.length };
+      });
+  });
+}
+
+// Ripristina i dati di uno o più letti dal backup.
+// Aggiorna solo letti che esistono nel DB corrente; salta quelli rimossi.
+function _sbRipristinaLetti(pazientiDaRipristinare) {
+  return _q(_sb.from('consegne').select('letto')).then(function(rows) {
+    var lettiEsistenti = {};
+    (rows || []).forEach(function(r) { lettiEsistenti[r.letto] = true; });
+    var validi = (pazientiDaRipristinare || []).filter(function(p) {
+      return lettiEsistenti[String(p.Letto)];
+    });
+    if (validi.length === 0) return { success: true, count: 0 };
+    var promises = validi.map(function(p) {
+      var row = _toDb(p);
+      row.ultimo_aggiornamento = _oraStr();
+      row.updated_at = new Date().toISOString();
+      return _q(_sb.from('consegne').update(row).eq('letto', String(p.Letto)));
+    });
+    return Promise.all(promises).then(function() { return { success: true, count: validi.length }; });
+  });
+}
+
 function _sbGetGiorniArchivio() {
   // Ritorna array di date uniche (YYYY-MM-DD) con almeno un backup
   return _q(_sb.from('archivio').select('data_str').order('data_str', { ascending: false }))
@@ -1385,6 +1422,14 @@ function _scheduleRealtimeSync() {
     wrap(_sbSalvaGiorniConservazione(val), ok, err);
   };
   Runner.prototype.pulisciArchivioVecchio = function() { /* gestito in archiviaGiornoCorrente */ };
+  Runner.prototype.backupForzato = function() {
+    var ok = this._ok, err = this._err;
+    wrap(_sbBackupForzato(), ok, err);
+  };
+  Runner.prototype.ripristinaLetti = function(pazienti) {
+    var ok = this._ok, err = this._err;
+    wrap(_sbRipristinaLetti(pazienti), ok, err);
+  };
   Runner.prototype.pulisciBackupEmergenzaVecchi = function() { /* no-op */ };
 
   // ── Backup / status (no-op, non più necessario) ───────────────

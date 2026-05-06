@@ -977,6 +977,8 @@
             <li><a class="dropdown-item" href="javascript:void(0)" data-bs-toggle="modal" data-bs-target="#modalRinomina"><i class="bi bi-pencil-square text-primary me-2"></i>Modifica Nome Consegne</a></li>
             <li><hr class="dropdown-divider"></li>
             <li><a class="dropdown-item" href="javascript:void(0)" onclick="apriImpostazioniArchivio()"><i class="bi bi-archive text-secondary me-2"></i>Impostazioni archivio consegne</a></li>
+            <li><a class="dropdown-item" href="javascript:void(0)" onclick="_avviaBackupManuale()"><i class="bi bi-cloud-arrow-up-fill text-success me-2"></i>Esegui Backup Manuale</a></li>
+            <li><a class="dropdown-item" href="javascript:void(0)" onclick="_apriRipristina()"><i class="bi bi-arrow-counterclockwise text-danger me-2"></i>Ripristina da Backup</a></li>
             <li><hr class="dropdown-divider"></li>
             <li><a class="dropdown-item" href="javascript:void(0)" onclick="apriModalImportaConsegne()"><i class="bi bi-file-earmark-arrow-down text-warning me-2"></i>Importa da file consegne</a></li>
             <li style="display:none"><a class="dropdown-item" href="javascript:void(0)" id="btnToggleSync" onclick="toggleSync()"><i class="bi bi-pause-circle text-warning me-2" id="iconToggleSync"></i><span id="labelToggleSync">Metti in pausa il sync</span></a></li>
@@ -1562,6 +1564,427 @@
       if (installItem) installItem.style.display = 'none';
       deferredPrompt = null;
     });
+  })();
+  </script>
+
+  <!-- ===== MODAL RIPRISTINA DA BACKUP ===== -->
+  <div class="modal fade" id="modalRipristina" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-content border-0 shadow-lg">
+        <div class="modal-header" style="background:linear-gradient(135deg,#b71c1c,#c62828);color:#fff;">
+          <div class="d-flex flex-column w-100">
+            <h5 class="modal-title mb-1"><i class="bi bi-arrow-counterclockwise me-2"></i>Ripristina da Backup</h5>
+            <div id="ripristinaBreadcrumb" class="d-flex align-items-center gap-1" style="font-size:0.78rem;opacity:0.85;min-height:18px;"></div>
+          </div>
+          <button type="button" class="btn-close btn-close-white ms-2" data-bs-dismiss="modal" onclick="_chiudiRipristina()"></button>
+        </div>
+        <div class="modal-body p-0" style="min-height:420px;">
+          <!-- VIEW 1: lista giorni -->
+          <div id="ripristinaViewGiorni" style="display:none;">
+            <div class="p-3 border-bottom bg-light"><small class="text-muted"><i class="bi bi-info-circle me-1"></i>Seleziona il giorno del backup da cui ripristinare</small></div>
+            <div id="ripristinaListaGiorni" class="list-group list-group-flush"></div>
+          </div>
+          <!-- VIEW 2: lista orari -->
+          <div id="ripristinaViewOrari" style="display:none;">
+            <div class="p-3 border-bottom bg-light d-flex align-items-center gap-2">
+              <button class="btn btn-sm btn-outline-secondary" onclick="_ripristinaGoGiorni()"><i class="bi bi-arrow-left me-1"></i>Indietro</button>
+              <small class="text-muted">Seleziona l'orario del backup</small>
+            </div>
+            <div id="ripristinaListaOrari" class="list-group list-group-flush"></div>
+          </div>
+          <!-- VIEW 3: selezione letti -->
+          <div id="ripristinaViewLetti" style="display:none;">
+            <div class="p-3 border-bottom bg-light d-flex align-items-center gap-2 flex-wrap">
+              <button class="btn btn-sm btn-outline-secondary" onclick="_ripristinaGoOrari()"><i class="bi bi-arrow-left me-1"></i>Indietro</button>
+              <div class="form-check ms-2 mb-0">
+                <input class="form-check-input" type="checkbox" id="ripristinaTutto" onchange="_ripristinaTuttoChange(this)">
+                <label class="form-check-label fw-semibold" for="ripristinaTutto">Ripristina tutto</label>
+              </div>
+              <small class="text-muted ms-2" id="ripristinaConteggioSel"></small>
+            </div>
+            <div id="ripristinaGridLetti" class="p-3 d-flex flex-wrap gap-3"></div>
+          </div>
+          <!-- Spinner caricamento -->
+          <div id="ripristinaSpinner" style="display:none;" class="d-flex align-items-center justify-content-center p-5">
+            <div class="spinner-border text-danger me-3" role="status"></div>
+            <span class="text-muted" id="ripristinaSpinnerMsg">Caricamento...</span>
+          </div>
+        </div>
+        <div class="modal-footer border-0 pt-0" id="ripristinaFooter" style="display:none;">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" onclick="_chiudiRipristina()">Annulla</button>
+          <button type="button" class="btn btn-danger" id="btnRipristinaEsegui" onclick="_eseguiRipristina()">
+            <i class="bi bi-arrow-counterclockwise me-1"></i>Ripristina selezionati
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  // ============================================================
+  // BACKUP MANUALE + RIPRISTINA DA BACKUP
+  // ============================================================
+  (function() {
+
+    // ── Helper: verifica password IMPORT_PWD ─────────────────────
+    function _verificaPassword(pwdInserita) {
+      return _q(_sb.from('impostazioni').select('valore').eq('chiave', 'IMPORT_PWD').maybeSingle())
+        .then(function(row) {
+          var attesa = row ? row.valore : null;
+          return !!attesa && pwdInserita === attesa;
+        });
+    }
+
+    function _chiediPassword(titoloAzione) {
+      return Swal.fire({
+        title: '<i class="bi bi-lock-fill me-2"></i>' + titoloAzione,
+        html: '<input id="swal-pwd-input" type="password" class="swal2-input" placeholder="Password di autorizzazione" autocomplete="off">',
+        confirmButtonText: 'Continua',
+        confirmButtonColor: '#37474f',
+        showCancelButton: true,
+        cancelButtonText: 'Annulla',
+        focusConfirm: false,
+        preConfirm: function() {
+          var v = (document.getElementById('swal-pwd-input').value || '').trim();
+          if (!v) { Swal.showValidationMessage('Inserisci la password'); return false; }
+          return v;
+        }
+      });
+    }
+
+    // ── BACKUP MANUALE ───────────────────────────────────────────
+    window._avviaBackupManuale = function() {
+      _chiediPassword('Backup Manuale').then(function(result) {
+        if (!result.isConfirmed || !result.value) return;
+        var pwd = result.value;
+        _verificaPassword(pwd).then(function(ok) {
+          if (!ok) {
+            Swal.fire({ icon: 'error', title: 'Password errata', text: 'Password non corretta.', confirmButtonColor: '#d33' });
+            return;
+          }
+          return Swal.fire({
+            icon: 'question',
+            title: 'Conferma Backup',
+            html: 'Verrà creato subito un nuovo backup con i dati attuali.<br><br>' +
+                  '<small class="text-muted">Il backup verrà salvato nell\'archivio Supabase e, se disponibile, su Google Drive.</small>',
+            confirmButtonText: '<i class="bi bi-cloud-arrow-up-fill me-1"></i>Esegui Backup',
+            confirmButtonColor: '#2e7d32',
+            showCancelButton: true,
+            cancelButtonText: 'Annulla'
+          }).then(function(conf) {
+            if (!conf.isConfirmed) return;
+            Swal.fire({
+              title: 'Backup in corso...',
+              html: '<div class="d-flex align-items-center justify-content-center gap-3 py-2"><div class="spinner-border text-success"></div><span>Creazione backup...</span></div>',
+              allowOutsideClick: false, showConfirmButton: false
+            });
+            google.script.run
+              .withSuccessHandler(function(res) {
+                Swal.fire({
+                  icon: 'success', title: 'Backup completato!',
+                  html: 'Backup salvato con successo.<br><small class="text-muted">' +
+                        (res && res.count ? 'Letti salvati: <b>' + res.count + '</b>' : '') + '</small>',
+                  timer: 3500, showConfirmButton: false, timerProgressBar: true
+                });
+              })
+              .withFailureHandler(function(e) {
+                Swal.fire({ icon: 'error', title: 'Errore Backup', text: (e && e.message) || 'Si è verificato un errore.', confirmButtonColor: '#d33' });
+              })
+              .backupForzato();
+          });
+        }).catch(function() {
+          Swal.fire({ icon: 'error', title: 'Errore', text: 'Impossibile verificare la password.', confirmButtonColor: '#d33' });
+        });
+      });
+    };
+
+    // ── RIPRISTINA DA BACKUP ─────────────────────────────────────
+    var _ripristinaModal = null;
+    var _ripristinaGiornoSelezionato = null;
+    var _riprisinaTsSelezionato = null;
+    var _ripristinaPazientiBackup = [];
+
+    function _mostraSpinner(msg) {
+      ['ripristinaViewGiorni','ripristinaViewOrari','ripristinaViewLetti'].forEach(function(id) {
+        document.getElementById(id).style.display = 'none';
+      });
+      document.getElementById('ripristinaSpinnerMsg').textContent = msg || 'Caricamento...';
+      document.getElementById('ripristinaSpinner').style.display = 'flex';
+      document.getElementById('ripristinaFooter').style.display = 'none';
+    }
+
+    function _nascondiSpinner() {
+      document.getElementById('ripristinaSpinner').style.display = 'none';
+    }
+
+    function _aggiornaBreadcrumb(parts) {
+      var bc = document.getElementById('ripristinaBreadcrumb');
+      if (!parts || !parts.length) { bc.innerHTML = ''; return; }
+      bc.innerHTML = parts.map(function(p, i) {
+        return i === parts.length - 1
+          ? '<span>' + p + '</span>'
+          : '<span class="text-white-50">' + p + '</span><i class="bi bi-chevron-right mx-1" style="font-size:0.65rem;"></i>';
+      }).join('');
+    }
+
+    window._chiudiRipristina = function() {
+      _ripristinaGiornoSelezionato = null;
+      _riprisinaTsSelezionato = null;
+      _ripristinaPazientiBackup = [];
+    };
+
+    window._apriRipristina = function() {
+      _chiediPassword('Ripristina da Backup').then(function(result) {
+        if (!result.isConfirmed || !result.value) return;
+        var pwd = result.value;
+        _verificaPassword(pwd).then(function(ok) {
+          if (!ok) {
+            Swal.fire({ icon: 'error', title: 'Password errata', text: 'Password non corretta.', confirmButtonColor: '#d33' });
+            return;
+          }
+          _ripristinaModal = bootstrap.Modal.getOrCreateInstance(document.getElementById('modalRipristina'));
+          _ripristinaModal.show();
+          _ripristinaGoGiorni();
+        }).catch(function() {
+          Swal.fire({ icon: 'error', title: 'Errore', text: 'Impossibile verificare la password.', confirmButtonColor: '#d33' });
+        });
+      });
+    };
+
+    // ── VIEW 1: lista giorni ────────────────────────────────────
+    window._ripristinaGoGiorni = function() {
+      _mostraSpinner('Caricamento giorni...');
+      _aggiornaBreadcrumb(['Scegli giorno']);
+      _ripristinaGiornoSelezionato = null;
+      _riprisinaTsSelezionato = null;
+      google.script.run
+        .withSuccessHandler(function(giorni) {
+          _nascondiSpinner();
+          var container = document.getElementById('ripristinaListaGiorni');
+          if (!giorni || !giorni.length) {
+            container.innerHTML = '<div class="p-4 text-center text-muted"><i class="bi bi-inbox fs-2 d-block mb-2"></i>Nessun backup trovato.</div>';
+          } else {
+            container.innerHTML = giorni.map(function(d) {
+              var p = d.split('-');
+              var vis = (p[2] || '') + '/' + (p[1] || '') + '/' + (p[0] || '');
+              return '<a href="javascript:void(0)" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center px-4 py-3"' +
+                     ' onclick="_ripristinaSelGiorno(\'' + d + '\',\'' + vis + '\')">' +
+                     '<span><i class="bi bi-calendar3 text-danger me-2"></i><strong>' + vis + '</strong></span>' +
+                     '<i class="bi bi-chevron-right text-muted"></i></a>';
+            }).join('');
+          }
+          document.getElementById('ripristinaViewGiorni').style.display = '';
+        })
+        .withFailureHandler(function() {
+          _nascondiSpinner();
+          document.getElementById('ripristinaListaGiorni').innerHTML =
+            '<div class="p-4 text-center text-danger">Errore nel caricamento dei backup.</div>';
+          document.getElementById('ripristinaViewGiorni').style.display = '';
+        })
+        .getGiorniArchiviati();
+    };
+
+    // ── VIEW 2: lista orari ──────────────────────────────────────
+    window._ripristinaSelGiorno = function(dataStr, dataVis) {
+      _ripristinaGiornoSelezionato = { str: dataStr, vis: dataVis };
+      _mostraSpinner('Caricamento orari...');
+      _aggiornaBreadcrumb([dataVis, 'Scegli orario']);
+      google.script.run
+        .withSuccessHandler(function(timestamps) {
+          _nascondiSpinner();
+          var container = document.getElementById('ripristinaListaOrari');
+          if (!timestamps || !timestamps.length) {
+            container.innerHTML = '<div class="p-4 text-center text-muted">Nessun orario trovato per questo giorno.</div>';
+          } else {
+            container.innerHTML = timestamps.map(function(ts) {
+              var d = new Date(Number(ts));
+              var ora = String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0') + ':' + String(d.getSeconds()).padStart(2,'0');
+              return '<a href="javascript:void(0)" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center px-4 py-3"' +
+                     ' onclick="_ripristinaSelTimestamp(\'' + ts + '\',\'' + ora + '\')">' +
+                     '<span><i class="bi bi-clock text-danger me-2"></i><strong>' + ora + '</strong></span>' +
+                     '<i class="bi bi-chevron-right text-muted"></i></a>';
+            }).join('');
+          }
+          document.getElementById('ripristinaViewOrari').style.display = '';
+        })
+        .withFailureHandler(function() {
+          _nascondiSpinner();
+          document.getElementById('ripristinaListaOrari').innerHTML =
+            '<div class="p-4 text-center text-danger">Errore nel caricamento degli orari.</div>';
+          document.getElementById('ripristinaViewOrari').style.display = '';
+        })
+        .getTimestampGiorno(dataStr);
+    };
+
+    window._ripristinaGoOrari = function() {
+      if (_ripristinaGiornoSelezionato) {
+        _ripristinaSelGiorno(_ripristinaGiornoSelezionato.str, _ripristinaGiornoSelezionato.vis);
+      } else {
+        _ripristinaGoGiorni();
+      }
+    };
+
+    // ── VIEW 3: selezione letti ──────────────────────────────────
+    window._ripristinaSelTimestamp = function(ts, oraVis) {
+      _riprisinaTsSelezionato = { ts: ts, ora: oraVis };
+      var dayVis = _ripristinaGiornoSelezionato ? _ripristinaGiornoSelezionato.vis : '';
+      _mostraSpinner('Caricamento dati backup...');
+      _aggiornaBreadcrumb([dayVis, oraVis, 'Seleziona letti']);
+      google.script.run
+        .withSuccessHandler(function(dati) {
+          _nascondiSpinner();
+          _ripristinaPazientiBackup = (dati && dati.pazienti) ? dati.pazienti.map(function(r) {
+            return typeof _fromDb === 'function' ? _fromDb(r) : r;
+          }) : [];
+          _renderRipristinaLetti();
+        })
+        .withFailureHandler(function() {
+          _nascondiSpinner();
+          document.getElementById('ripristinaGridLetti').innerHTML =
+            '<div class="p-4 text-center text-danger w-100">Errore nel caricamento del backup.</div>';
+          document.getElementById('ripristinaViewLetti').style.display = '';
+          document.getElementById('ripristinaFooter').style.display = 'flex';
+        })
+        .getDatiArchivioGiorno(ts);
+    };
+
+    function _renderRipristinaLetti() {
+      var pazienti = _ripristinaPazientiBackup;
+      var grid = document.getElementById('ripristinaGridLetti');
+      document.getElementById('ripristinaTutto').checked = false;
+      if (!pazienti.length) {
+        grid.innerHTML = '<div class="text-center text-muted py-4 w-100"><i class="bi bi-inbox fs-2 d-block mb-2"></i>Nessun dato trovato in questo backup.</div>';
+        document.getElementById('ripristinaViewLetti').style.display = '';
+        document.getElementById('ripristinaFooter').style.display = 'flex';
+        return;
+      }
+      grid.innerHTML = pazienti.map(function(p) {
+        var letto = String(p.Letto || '');
+        var tipo  = String(p.TipologiaLetto || '').trim().toUpperCase();
+        var nome  = String(p.Nome || '').toUpperCase();
+        var diag  = String(p.Diagnosi || '');
+        var colore = (typeof stringToColor === 'function') ? stringToColor(tipo || 'STANDARD') : '#546e7a';
+        var badgeHtml = tipo
+          ? '<span class="badge text-white" style="background:' + colore + ';font-size:0.6rem;">' + tipo + '</span>'
+          : '<span class="badge bg-light text-secondary border" style="font-size:0.6rem;">STANDARD</span>';
+        var isNote = letto === 'NOTE';
+        return '<div class="ripristina-letto-card" data-letto="' + letto + '" onclick="_toggleRipristinaCard(this)"' +
+               ' style="width:170px;border:2px dashed #aaa;border-radius:8px;padding:10px;cursor:pointer;' +
+               'background:#fff;transition:all 0.15s;user-select:none;">' +
+               '<div class="d-flex align-items-center gap-2 mb-1">' +
+               '<span style="font-size:1.4rem;font-weight:bold;line-height:1;color:#37474f;">' +
+               (isNote ? '<i class="bi bi-stickies-fill" style="font-size:1rem;color:#546e7a;"></i>' : letto) +
+               '</span>' + badgeHtml + '</div>' +
+               '<div style="font-size:0.78rem;font-weight:700;color:#263238;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="' + nome + '">' +
+               (nome || '<span class="text-muted fst-italic">Vuoto</span>') + '</div>' +
+               '<div style="font-size:0.68rem;color:#607d8b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;" title="' + diag + '">' +
+               (diag || '') + '</div></div>';
+      }).join('');
+      _aggiornaConteggioSel();
+      document.getElementById('ripristinaViewLetti').style.display = '';
+      document.getElementById('ripristinaFooter').style.display = 'flex';
+    }
+
+    window._toggleRipristinaCard = function(el) {
+      var sel = el.classList.contains('selected');
+      if (sel) {
+        el.classList.remove('selected');
+        el.style.borderColor = '#aaa';
+        el.style.background = '#fff';
+        el.style.boxShadow = '';
+      } else {
+        el.classList.add('selected');
+        el.style.borderColor = '#c62828';
+        el.style.background = '#fff8f8';
+        el.style.boxShadow = '0 0 0 2px #ef9a9a';
+        document.getElementById('ripristinaTutto').checked = false;
+      }
+      _aggiornaConteggioSel();
+    };
+
+    window._ripristinaTuttoChange = function(cb) {
+      var cards = document.querySelectorAll('.ripristina-letto-card');
+      if (cb.checked) {
+        cards.forEach(function(c) {
+          c.classList.add('selected');
+          c.style.borderColor = '#c62828';
+          c.style.background = '#fff8f8';
+          c.style.boxShadow = '0 0 0 2px #ef9a9a';
+        });
+      } else {
+        cards.forEach(function(c) {
+          c.classList.remove('selected');
+          c.style.borderColor = '#aaa';
+          c.style.background = '#fff';
+          c.style.boxShadow = '';
+        });
+      }
+      _aggiornaConteggioSel();
+    };
+
+    function _aggiornaConteggioSel() {
+      var sel = document.querySelectorAll('.ripristina-letto-card.selected').length;
+      var tot = document.querySelectorAll('.ripristina-letto-card').length;
+      var lbl = document.getElementById('ripristinaConteggioSel');
+      if (lbl) lbl.textContent = sel > 0 ? sel + ' / ' + tot + ' selezionati' : '';
+      var btn = document.getElementById('btnRipristinaEsegui');
+      if (btn) btn.disabled = sel === 0;
+    }
+
+    // ── Esecuzione ripristino ────────────────────────────────────
+    window._eseguiRipristina = function() {
+      var selCards = Array.from(document.querySelectorAll('.ripristina-letto-card.selected'));
+      if (!selCards.length) return;
+      var lettiSelezionati = selCards.map(function(c) { return c.getAttribute('data-letto'); });
+      var pazientiDaRipristinare = _ripristinaPazientiBackup.filter(function(p) {
+        return lettiSelezionati.indexOf(String(p.Letto)) !== -1;
+      });
+      var tuttoSelezionato = document.getElementById('ripristinaTutto').checked;
+      var dayVis = _ripristinaGiornoSelezionato ? _ripristinaGiornoSelezionato.vis : '?';
+      var oraVis = _riprisinaTsSelezionato ? _riprisinaTsSelezionato.ora : '?';
+      var riassunto = tuttoSelezionato
+        ? '<b>Tutti i ' + pazientiDaRipristinare.length + ' letti</b> verranno ripristinati'
+        : 'I seguenti letti: <b>' + lettiSelezionati.filter(function(l){return l!=='NOTE';}).join(', ') +
+          (lettiSelezionati.indexOf('NOTE') !== -1 ? ' + NOTE' : '') + '</b>';
+      Swal.fire({
+        icon: 'warning',
+        title: 'Conferma Ripristino',
+        html: '<div class="text-start">' +
+              '<p class="mb-2">Backup: <strong>' + dayVis + ' alle ' + oraVis + '</strong></p>' +
+              '<p class="mb-2">' + riassunto + '</p>' +
+              '<div class="alert alert-danger py-2 mb-0" style="font-size:0.85rem;">' +
+              '<i class="bi bi-exclamation-triangle-fill me-1"></i>' +
+              '<strong>Attenzione:</strong> I dati attuali dei letti selezionati verranno <strong>sovrascritti</strong>. ' +
+              'Questa operazione <strong>non è reversibile</strong>.</div></div>',
+        confirmButtonText: '<i class="bi bi-arrow-counterclockwise me-1"></i>Ripristina',
+        confirmButtonColor: '#c62828',
+        showCancelButton: true,
+        cancelButtonText: 'Annulla'
+      }).then(function(conf) {
+        if (!conf.isConfirmed) return;
+        if (_ripristinaModal) _ripristinaModal.hide();
+        Swal.fire({
+          title: 'Ripristino in corso...',
+          html: '<div class="d-flex align-items-center justify-content-center gap-3 py-2"><div class="spinner-border text-danger"></div><span>Aggiornamento dati...</span></div>',
+          allowOutsideClick: false, showConfirmButton: false
+        });
+        google.script.run
+          .withSuccessHandler(function(res) {
+            _sincronizzaEPoiFai(function() {
+              Swal.fire({
+                icon: 'success', title: 'Ripristino completato!',
+                html: 'Sono stati ripristinati <b>' + (res && res.count != null ? res.count : lettiSelezionati.length) + ' letti</b>.',
+                timer: 3500, showConfirmButton: false, timerProgressBar: true
+              });
+            });
+          })
+          .withFailureHandler(function(e) {
+            Swal.fire({ icon: 'error', title: 'Errore Ripristino', text: (e && e.message) || 'Si è verificato un errore.', confirmButtonColor: '#d33' });
+          })
+          .ripristinaLetti(pazientiDaRipristinare);
+      });
+    };
+
   })();
   </script>
 
