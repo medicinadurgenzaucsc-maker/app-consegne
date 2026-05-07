@@ -1377,9 +1377,11 @@ function _emergenzaAvviaPolling() {
     }).catch(function(){});
   }, 5000);
 
-  // FORCE-SAVE SCAN — bypassa il debounce di 60s e ritenta saves falliti.
-  // Funziona insieme alla modifica di _dopoSalvataggio in app.js: quando un
-  // save fallisce, il letto resta in _dirtyLetti e questo scan lo riprova.
+  // FORCE-SAVE SCAN — safety net per la modalità emergenza:
+  // ogni 10s, se ci sono letti in _dirtyLetti che NON hanno un retry esponenziale
+  // attivo (gestito nativamente da app.js) e NON sono in focus mode, forza il save.
+  // Utile quando: (a) i 3 retry esponenziali sono esauriti, (b) un save è stato
+  // bloccato dal _syncPaused di un altro ciclo, (c) un dirty rimane stagnante.
   _emergenzaForceSaveId = setInterval(function() {
     // Niente da fare se non ci sono letti dirty
     if (typeof _dirtyLetti === 'undefined' || !_dirtyLetti.size) return;

@@ -2314,7 +2314,13 @@
       });
     }
 
+    // Flag modalità silenziosa (diagnostica al caricamento pagina, senza modal live).
+    // Quando true: _diagLog è no-op, _dumpRawData skippa, _mostraReport mostra il modal
+    // SOLO se ci sono problemi rilevati.
+    var _silentDiag = false;
+
     function _diagLog(msg, tipo) {
+      if (_silentDiag) return; // no-op in modalità silent
       var el = document.getElementById('diagLog');
       if (!el) return;
       var c = tipo==='ok'?'#4ec9b0': tipo==='warn'?'#dcdcaa': tipo==='err'?'#f48771':'#9cdcfe';
@@ -2344,6 +2350,25 @@
       function next() { if (idx < tests.length) tests[idx++](next); }
       next();
     }
+
+    // ── Esegue diagnostica silenziosa (al caricamento pagina) ──────
+    // Non mostra modal/log durante l'esecuzione. A fine test, valuta i risultati:
+    // - Tutto OK → silenzioso, nessuna interruzione
+    // - Warning/errori → modal compatto con report e raccomandazione
+    window._eseguiDiagnosticaSilent = function() {
+      if (_silentDiag) return; // già in corso
+      // Skip se è in corso una diagnostica manuale (modal con #diagLog aperto)
+      if (document.getElementById('diagLog')) return;
+      // Skip se c'è un altro Swal aperto (per non interrompere l'utente)
+      if (typeof Swal !== 'undefined' && Swal.isVisible && Swal.isVisible()) {
+        // Riprova tra 10s
+        setTimeout(window._eseguiDiagnosticaSilent, 10000);
+        return;
+      }
+      _silentDiag = true;
+      _runAllTests();
+      // _silentDiag verrà rimesso a false in _mostraReport (alla fine)
+    };
 
     // ── Header sistema (per il tecnico IT) ────────────────────
     function _logSistemaInfo(next) {
@@ -2393,6 +2418,8 @@
 
     // ── Dump dati grezzi finali (per il tecnico IT) ───────────
     function _dumpRawData(next) {
+      // In modalità silent il modal/diagLog non esiste → skip integrale
+      if (_silentDiag) { setTimeout(next, 0); return; }
       _diagLog('', 'info');
       _diagLog('── RIEPILOGO DATI GREZZI ───────────────────', 'info');
       try {
@@ -2418,6 +2445,15 @@
         _diagLog('_focusCard attivo: '+(typeof _focusCard!=='undefined' && !!_focusCard), 'info');
         _diagLog('_lettoLockAtt: '+(typeof _lettoLockAtt!=='undefined' ? (_lettoLockAtt||'(nessuno)') : '?'), 'info');
         _diagLog('_mioToken presente: '+(typeof _mioToken!=='undefined' && !!_mioToken), 'info');
+        // Stato sistema salvataggio (heartbeat + retry esponenziale)
+        _diagLog('_ultimoSaveTs (letti tracciati): '+(typeof _ultimoSaveTs!=='undefined' ? Object.keys(_ultimoSaveTs).length : '?'), 'info');
+        _diagLog('_saveRetryCount attivi: '+(typeof _saveRetryCount!=='undefined' ? Object.keys(_saveRetryCount).filter(function(k){return _saveRetryCount[k]>0;}).length : '?'), 'info');
+        _diagLog('_saveRetryTimer attivi: '+(typeof _saveRetryTimer!=='undefined' ? Object.keys(_saveRetryTimer).filter(function(k){return !!_saveRetryTimer[k];}).length : '?'), 'info');
+        _diagLog('LOCK_TTL_MS: '+(typeof LOCK_TTL_MS!=='undefined' ? LOCK_TTL_MS+' ms ('+Math.round(LOCK_TTL_MS/60000)+' min)' : '?'), 'info');
+        _diagLog('RITARDO_SALVATAGGIO: '+(typeof RITARDO_SALVATAGGIO!=='undefined' ? RITARDO_SALVATAGGIO+' ms' : '?'), 'info');
+        _diagLog('HEARTBEAT_MS: '+(typeof HEARTBEAT_MS!=='undefined' ? HEARTBEAT_MS+' ms' : '?'), 'info');
+        _diagLog('Timer focus inattivo attivo: '+(typeof _timerFocusInattivo!=='undefined' && !!_timerFocusInattivo), 'info');
+        _diagLog('Timer rilascio attivo: '+(typeof _timerRilascio!=='undefined' && !!_timerRilascio), 'info');
         // localStorage keys (sanitizzate)
         try {
           _diagLog('localStorage chiavi:', 'info');
@@ -3221,22 +3257,31 @@
 
       // Apre/riapre il modal di report (può essere richiamato dopo "Mostra log")
       function _aproReport() {
+        var hasLog = !!_logHtmlSalvato;
         Swal.fire({
           icon: tipoSwal,
-          title: 'Report diagnostica',
+          title: eraSilent
+            ? '<i class="bi bi-exclamation-circle me-2"></i>Diagnostica automatica'
+            : 'Report diagnostica',
           width: 640,
-          html: rischioBox + problemiBox +
+          html: (eraSilent
+              ? '<div class="alert alert-secondary text-start py-2 mb-3" style="font-size:0.78rem;">' +
+                '<i class="bi bi-info-circle me-1"></i>Diagnostica eseguita automaticamente al caricamento della pagina. ' +
+                'Sono stati rilevati <strong>'+problemi.length+'</strong> problema/i potenziale/i.' +
+                '</div>'
+              : '') +
+            rischioBox + problemiBox +
             '<div class="alert alert-'+(tipoSwal==='error'?'danger':tipoSwal==='warning'?'warning':'info')+
             ' text-start py-2 mb-0" style="font-size:0.82rem;">'+testo+'</div>',
           confirmButtonText: mostraAttivaBtn
             ? '<i class="bi bi-play-fill me-1"></i>Attiva modalità emergenza'
             : 'Chiudi',
           confirmButtonColor: mostraAttivaBtn ? '#c62828' : '#37474f',
-          showDenyButton: true,
+          showDenyButton: hasLog, // nasconde "Mostra log" se log vuoto (modalità silent)
           denyButtonText: '<i class="bi bi-list-ul me-1"></i>Mostra log',
           denyButtonColor: '#546e7a',
           showCancelButton: mostraAttivaBtn,
-          cancelButtonText: 'Chiudi senza attivare',
+          cancelButtonText: eraSilent ? 'Ignora per ora' : 'Chiudi senza attivare',
           reverseButtons: false
         }).then(function(res) {
           if (res.isDenied) {
@@ -3256,12 +3301,72 @@
         });
       }
 
+      // ── Branch silent: in modalità silenziosa, mostra il report SOLO se
+      // ci sono problemi degni di nota; altrimenti reset e nessuna interruzione.
+      var eraSilent = _silentDiag;
+      if (_silentDiag) {
+        _silentDiag = false; // reset per future esecuzioni manuali
+        var ciSonoProblemi = (problemi.length > 0) || (rischioSalvataggio >= 25) || critici > 0;
+        if (!ciSonoProblemi) {
+          // Tutto OK: silenziosamente, nessun modal
+          console.log('[Diagnostica startup] Tutti i test superati. Nessun problema.');
+          return;
+        }
+        console.log('[Diagnostica startup] Problemi rilevati: ', problemi);
+      }
+
       // Apri il report
       _aproReport();
     }
 
     // Aggiorna aspetto pulsante immediatamente
     _aggiornaBottoneEmergenza();
+
+    // ══════════════════════════════════════════════════════════════
+    // DIAGNOSTICA AUTOMATICA AL CARICAMENTO PAGINA (silent)
+    // Esegue tutti i test in background al primo caricamento.
+    // Se tutto OK: nessuna interruzione. Se ci sono warning/errori:
+    // mostra un modal compatto con report e raccomandazioni.
+    // ══════════════════════════════════════════════════════════════
+    (function _autoDiagAtStartup() {
+      var avviata = false;
+      function avvia() {
+        if (avviata) return;
+        avviata = true;
+        // Skip se la modalità emergenza è già stata attivata manualmente
+        // (ad esempio da una sessione precedente in tab bg, anche se in pratica
+        // emergenza è in-memory e parte sempre OFF; questo è solo un safety check).
+        if (typeof _emergenzaPollingAttivo === 'function' && _emergenzaPollingAttivo()) return;
+        try {
+          window._eseguiDiagnosticaSilent();
+        } catch (e) {
+          console.warn('[Diagnostica startup] Errore esecuzione:', e);
+        }
+      }
+      // Strategia: aspetta che le consegne siano renderizzate, oppure timeout 30s.
+      function controllaConsegne() {
+        var card = document.querySelector('#cardsContainer .patient-card, #cardsContainerAlt .patient-card');
+        if (card) {
+          // Card presenti → attendiamo 2s di stabilizzazione poi avviamo
+          setTimeout(avvia, 2000);
+          return;
+        }
+        // Non ancora renderizzate → ricontrolla tra 1s
+        setTimeout(controllaConsegne, 1000);
+      }
+      // Safety net: se dopo 30s ancora non vediamo card, partiamo lo stesso
+      // (la diagnostica identificherà eventuali problemi di rete/caricamento).
+      setTimeout(avvia, 30000);
+
+      if (document.readyState === 'complete') {
+        // Pagina già caricata
+        setTimeout(controllaConsegne, 500);
+      } else {
+        window.addEventListener('load', function() {
+          setTimeout(controllaConsegne, 500);
+        });
+      }
+    })();
 
   })();
   </script>
