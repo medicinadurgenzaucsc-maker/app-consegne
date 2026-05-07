@@ -271,8 +271,9 @@
     var nasc = parseNascita(p.DataNascita);
     var eta  = nasc.eta !== '-' ? nasc.eta : (p.Eta || '-');
     var tipo = String(p.TipologiaLetto || '').trim().toUpperCase();
+    var tipoColore = typeof window._printGetColoreTipo === 'function' ? window._printGetColoreTipo(tipo) : '#546e7a';
     var tipoBadge = tipo
-      ? '<span class="badge text-white text-uppercase mt-1" style="background:#546e7a;font-size:0.65rem;">' + tipo + '</span>'
+      ? '<span class="badge text-white text-uppercase mt-1" style="background:' + tipoColore + ';font-size:0.65rem;">' + tipo + '</span>'
       : '<span style="font-size:0.65rem;color:#999;">STANDARD</span>';
 
     return '<div class="patient-card">' +
@@ -338,8 +339,9 @@
     var nasc = parseNascita(p.DataNascita);
     var eta  = nasc.eta !== '-' ? nasc.eta : (p.Eta || '-');
     var tipo = String(p.TipologiaLetto || '').trim().toUpperCase();
+    var tipoColore = typeof window._printGetColoreTipo === 'function' ? window._printGetColoreTipo(tipo) : '#546e7a';
     var tipoBadge = tipo
-      ? '<span class="badge text-white text-uppercase" style="background:#546e7a;font-size:0.62rem;">' + tipo + '</span>'
+      ? '<span class="badge text-white text-uppercase" style="background:' + tipoColore + ';font-size:0.62rem;">' + tipo + '</span>'
       : '<span style="font-size:0.62rem;color:#999;">STANDARD</span>';
 
     return '<div class="alt-row">' +
@@ -587,7 +589,7 @@
     });
   }
 
-  // ── Caricamento dati — 2 query parallele, nessuna dipendenza tra loro ──
+  // ── Caricamento dati — 3 query parallele ─────────────────────────────
   // Usa direttamente le funzioni Supabase definite in api.js
   var fetchPazienti = dataArchivio
     ? _sbGetDatiArchivioGiorno(dataArchivio).then(function(r) { return r ? (r.pazienti || []) : []; })
@@ -595,10 +597,17 @@
 
   Promise.all([
     fetchPazienti,
-    _sbOttieniNomeReparto()
+    _sbOttieniNomeReparto(),
+    _sbGetColoriTipologie()
   ]).then(function(results) {
-    var pazienti    = results[0] || [];
-    var nomeReparto = (results[1] && results[1].nome) || 'Reparto';
+    var pazienti       = results[0] || [];
+    var nomeReparto    = (results[1] && results[1].nome) || 'Reparto';
+    var coloriTipologie = results[2] || {};
+    // Funzione colore badge: usa il colore salvato, altrimenti stringToColor come fallback
+    window._printGetColoreTipo = function(tipo) {
+      if (!tipo) return '#6c757d';
+      return coloriTipologie[tipo] || stringToColor(tipo);
+    };
     renderPagina(pazienti, nomeReparto);
   }).catch(function(e) {
     document.getElementById('loadingScreen').innerHTML =

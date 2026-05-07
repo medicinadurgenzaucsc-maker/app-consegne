@@ -1864,7 +1864,9 @@
         var tipo  = String(p.TipologiaLetto || '').trim().toUpperCase();
         var nome  = String(p.Nome || '').toUpperCase();
         var diag  = String(p.Diagnosi || '');
-        var colore = (typeof stringToColor === 'function') ? stringToColor(tipo || 'STANDARD') : '#546e7a';
+        var colore = tipo
+          ? ((typeof window._getColoreTipo === 'function') ? window._getColoreTipo(tipo) : stringToColor(tipo))
+          : '#6c757d';
         var badgeHtml = tipo
           ? '<span class="badge text-white" style="background:' + colore + ';font-size:0.6rem;">' + tipo + '</span>'
           : '<span class="badge bg-light text-secondary border" style="font-size:0.6rem;">STANDARD</span>';
