@@ -314,15 +314,12 @@
           '</div>';
       }
       _caricaColoriTipologie(function() {
-        _sbGetColoriTipologie().then(function(mappa){ return Object.keys(mappa).filter(Boolean).map(function(nome){ return {nome:nome,colore:mappa[nome]||stringToColor(nome)}; }); })
-          .then(function(arr) {
-            _gtRighe = (arr || []).map(function(item) {
-              return { nomeOld: item.nome, nomeNew: item.nome,
-                       colore: item.colore || stringToColor(item.nome), isNew: false };
-            });
-            _gtRenderLista();
-          })
-          .catch(function() { _gtRenderLista(); });
+        // _coloriTipologie è già aggiornato da _caricaColoriTipologie — nessuna seconda query
+        _gtRighe = Object.keys(_coloriTipologie).filter(Boolean).map(function(nome) {
+          return { nomeOld: nome, nomeNew: nome,
+                   colore: _coloriTipologie[nome] || stringToColor(nome), isNew: false };
+        });
+        _gtRenderLista();
       });
     }
 
