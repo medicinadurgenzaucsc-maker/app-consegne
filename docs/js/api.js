@@ -1355,3 +1355,35 @@ function _scheduleRealtimeSync() {
 }
 
 
+// ══════════════════════════════════════════════════════════════
+// MODALITÀ EMERGENZA PC LENTO — funzioni standalone, on-demand
+// Non interferiscono con il resto del codice. Attivate solo se
+// l'utente clicca esplicitamente il pulsante in navbar.
+// ══════════════════════════════════════════════════════════════
+var _emergenzaPollingId = null;
+
+// Avvia polling ogni 5s: aggiorna card pazienti + stato lock
+// Richiama funzioni esistenti già usate dal Realtime normale.
+function _emergenzaAvviaPolling() {
+  if (_emergenzaPollingId) return;
+  console.log('[Emergenza] Polling attivato (5s)');
+  _emergenzaPollingId = setInterval(function() {
+    _scheduleRealtimeSync();   // funzione esistente, già usata dal canale Realtime
+    _sbGetLocks().then(function(locks) {
+      if (typeof _applicaLocks === 'function') _applicaLocks(locks || {});
+    }).catch(function(){});
+  }, 5000);
+}
+
+function _emergenzaFermaPolling() {
+  if (!_emergenzaPollingId) return;
+  clearInterval(_emergenzaPollingId);
+  _emergenzaPollingId = null;
+  console.log('[Emergenza] Polling disattivato');
+}
+
+function _emergenzaPollingAttivo() {
+  return !!_emergenzaPollingId;
+}
+
+

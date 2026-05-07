@@ -964,6 +964,15 @@
         <li class="nav-item"><a class="nav-link active" href="javascript:void(0)" onclick="apriRubrica();"><i class="bi bi-telephone-fill me-1"></i>Numeri Telefono</a></li>
       </ul>
       <ul class="navbar-nav ms-auto align-items-center">
+        <li class="nav-item me-2" id="navItemEmergenza">
+          <button id="btnEmergenzaPC"
+                  class="btn btn-danger btn-sm fw-bold py-0 px-2"
+                  onclick="_toggleModalitaEmergenza()"
+                  title="Diagnostica e modalità emergenza per PC lento"
+                  style="font-size:0.75rem;">
+            <i class="bi bi-exclamation-triangle-fill me-1"></i>PC Lento
+          </button>
+        </li>
         <li class="nav-item me-2">
           <span id="syncIndicator" class="badge bg-secondary" style="font-size:0.65rem; font-weight:normal;" title="Aggiornamento automatico">
             <i class="bi bi-arrow-repeat"></i> <span id="syncStatus">in attesa...</span>
@@ -2128,6 +2137,356 @@
     document.addEventListener('touchend', function() {
       _drag.active = false;
     });
+  })();
+  </script>
+
+  <!-- ===== MODALITÀ EMERGENZA PC LENTO — diagnostica + toggle (standalone) ===== -->
+  <script>
+  (function() {
+
+    // ── Aggiorna aspetto pulsante ─────────────────────────────
+    function _aggiornaBottoneEmergenza() {
+      var btn = document.getElementById('btnEmergenzaPC');
+      if (!btn) return;
+      if (typeof _emergenzaPollingAttivo === 'function' && _emergenzaPollingAttivo()) {
+        btn.className = 'btn btn-warning text-dark btn-sm fw-bold py-0 px-2';
+        btn.style.fontSize = '0.75rem';
+        btn.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i>Polling ON';
+      } else {
+        btn.className = 'btn btn-danger btn-sm fw-bold py-0 px-2';
+        btn.style.fontSize = '0.75rem';
+        btn.innerHTML = '<i class="bi bi-exclamation-triangle-fill me-1"></i>PC Lento';
+      }
+    }
+
+    // ── Toggle principale ─────────────────────────────────────
+    window._toggleModalitaEmergenza = function() {
+      if (typeof _emergenzaPollingAttivo === 'function' && _emergenzaPollingAttivo()) {
+        // Polling attivo → chiedi se disattivare
+        Swal.fire({
+          icon: 'question',
+          title: 'Disattivare la modalità emergenza?',
+          html: 'Il sistema tornerà alla modalità Realtime standard.<br>' +
+                '<small class="text-muted">Se il PC è ancora lento, potrebbe smettere di ricevere aggiornamenti.</small>',
+          showCancelButton: true,
+          confirmButtonText: 'Sì, disattiva',
+          confirmButtonColor: '#37474f',
+          cancelButtonText: 'No, lascia attivo'
+        }).then(function(r) {
+          if (!r.isConfirmed) return;
+          _emergenzaFermaPolling();
+          _aggiornaBottoneEmergenza();
+          Swal.fire({ icon: 'info', title: 'Modalità emergenza disattivata',
+            timer: 2000, showConfirmButton: false, timerProgressBar: true });
+        });
+      } else {
+        // Prima attivazione → avviso + invito a diagnostica
+        Swal.fire({
+          icon: 'warning',
+          title: '<i class="bi bi-exclamation-triangle-fill text-danger me-2"></i>Problemi con questo PC?',
+          html: '<p class="mb-2">Stai per avviare la <strong>diagnostica di emergenza</strong>. ' +
+                'Prima di procedere:</p>' +
+                '<div class="alert alert-info text-start py-2 mb-0" style="font-size:0.83rem;">' +
+                '<i class="bi bi-lightbulb me-1"></i>' +
+                'Prova prima a <strong>riavviare il browser</strong> oppure ' +
+                '<strong>usa un altro PC</strong> — spesso risolve il problema.' +
+                '</div>',
+          confirmButtonText: '<i class="bi bi-search me-1"></i>Continua con la diagnostica',
+          confirmButtonColor: '#c62828',
+          showCancelButton: true,
+          cancelButtonText: 'Annulla'
+        }).then(function(r) {
+          if (r.isConfirmed) _eseguiDiagnostica();
+        });
+      }
+    };
+
+    // ── Avvia diagnostica con modal live ─────────────────────
+    function _eseguiDiagnostica() {
+      Swal.fire({
+        title: '<i class="bi bi-cpu me-2"></i>Diagnostica in corso...',
+        html: '<div id="diagLog" style="text-align:left;font-size:0.78rem;' +
+              'font-family:monospace;max-height:240px;overflow-y:auto;' +
+              'background:#1e1e1e;color:#d4d4d4;padding:10px 12px;' +
+              'border-radius:6px;line-height:1.7;"></div>',
+        allowOutsideClick: false,
+        showConfirmButton: false,
+        didOpen: function() { _runAllTests(); }
+      });
+    }
+
+    function _diagLog(msg, tipo) {
+      var el = document.getElementById('diagLog');
+      if (!el) return;
+      var c = tipo==='ok'?'#4ec9b0': tipo==='warn'?'#dcdcaa': tipo==='err'?'#f48771':'#9cdcfe';
+      var i = tipo==='ok'?'✓': tipo==='warn'?'⚠': tipo==='err'?'✗':'→';
+      el.innerHTML += '<span style="color:'+c+'">'+i+' '+msg+'</span><br>';
+      el.scrollTop = el.scrollHeight;
+    }
+
+    var _diagR = {};  // risultati test
+
+    // ── Orchestrazione test ───────────────────────────────────
+    function _runAllTests() {
+      _diagR = {};
+      var tests = [
+        _testBrowser, _testJavaScript, _testLibrerie,
+        _testHardware, _testCPUPerf,
+        _testREST, _testDB, _testWebSocket,
+        _mostraReport
+      ];
+      var idx = 0;
+      function next() { if (idx < tests.length) tests[idx++](next); }
+      next();
+    }
+
+    // ── TEST 1: Browser ───────────────────────────────────────
+    function _testBrowser(next) {
+      _diagLog('Verifica browser...', 'info');
+      var ua = navigator.userAgent;
+      var nome = 'Sconosciuto', ver = 0;
+      var m;
+      if ((m = ua.match(/Edg\/(\d+)/)))     { nome='Edge';    ver=+m[1]; }
+      else if ((m=ua.match(/Chrome\/(\d+)/))){ nome='Chrome';  ver=+m[1]; }
+      else if ((m=ua.match(/Firefox\/(\d+)/))){ nome='Firefox'; ver=+m[1]; }
+      else if (/Safari/.test(ua))            { nome='Safari';  ver=0; }
+      var ok = (ver===0) || ver >= 90;
+      _diagR.browser = { ok: ok, nome: nome, ver: ver };
+      if (!ok) _diagLog(nome+' v'+ver+' — VERSIONE OBSOLETA, aggiorna il browser', 'err');
+      else     _diagLog(nome+(ver?' v'+ver:'')+' — OK', 'ok');
+      setTimeout(next, 200);
+    }
+
+    // ── TEST 2: Funzionalità JS ───────────────────────────────
+    function _testJavaScript(next) {
+      _diagLog('Funzionalità JavaScript (ES6+)...', 'info');
+      var mancanti = [];
+      ['Promise','fetch','Set','Map','Symbol','MutationObserver','WeakMap',
+       'requestAnimationFrame','CSS','DOMParser'].forEach(function(api) {
+        if (typeof window[api] === 'undefined') mancanti.push(api);
+      });
+      _diagR.js = { ok: mancanti.length === 0, mancanti: mancanti };
+      if (mancanti.length) _diagLog('API mancanti: '+mancanti.join(', '), 'err');
+      else                 _diagLog('Tutte le API ES6+ presenti', 'ok');
+      setTimeout(next, 200);
+    }
+
+    // ── TEST 3: Librerie caricate ─────────────────────────────
+    function _testLibrerie(next) {
+      _diagLog('Librerie applicazione...', 'info');
+      var lib = [
+        { nome:'Bootstrap', ok: typeof bootstrap!=='undefined' && !!bootstrap.Modal },
+        { nome:'Supabase-js', ok: typeof supabase!=='undefined' },
+        { nome:'SweetAlert2', ok: typeof Swal!=='undefined' },
+        { nome:'Bootstrap Icons', ok: !!document.querySelector('link[href*="bootstrap-icons"]') }
+      ];
+      lib.forEach(function(l) {
+        if (l.ok) _diagLog(l.nome+': caricato correttamente', 'ok');
+        else      _diagLog(l.nome+': NON trovato!', 'err');
+      });
+      _diagR.lib = { ok: lib.every(function(l){ return l.ok; }) };
+      setTimeout(next, 200);
+    }
+
+    // ── TEST 4: Hardware ──────────────────────────────────────
+    function _testHardware(next) {
+      _diagLog('Risorse hardware...', 'info');
+      var ram = navigator.deviceMemory;
+      if (ram) {
+        _diagR.ram = { ok: ram >= 2, gb: ram };
+        if (ram < 2) _diagLog('RAM rilevata: '+ram+' GB — insufficiente (consigliato ≥2 GB)', 'err');
+        else         _diagLog('RAM rilevata: '+ram+' GB — OK', 'ok');
+      } else {
+        _diagLog('RAM: non rilevabile (API non supportata da questo browser)', 'warn');
+      }
+      var cpu = navigator.hardwareConcurrency;
+      if (cpu) {
+        _diagR.cpu = { ok: cpu >= 2, cores: cpu };
+        if (cpu < 2) _diagLog('CPU: '+cpu+' core — bassa potenza', 'warn');
+        else         _diagLog('CPU: '+cpu+' core — OK', 'ok');
+      }
+      if (performance && performance.memory) {
+        var usedMB = Math.round(performance.memory.usedJSHeapSize/1048576);
+        var totMB  = Math.round(performance.memory.totalJSHeapSize/1048576);
+        _diagR.heap = { ok: usedMB < 300, usedMB: usedMB };
+        if (usedMB > 300) _diagLog('Memoria JS: '+usedMB+'/'+totMB+' MB — ALTA, consigliato riavvio', 'warn');
+        else              _diagLog('Memoria JS: '+usedMB+'/'+totMB+' MB — OK', 'ok');
+      }
+      setTimeout(next, 200);
+    }
+
+    // ── TEST 5: Performance CPU (benchmark sintetico) ─────────
+    function _testCPUPerf(next) {
+      _diagLog('Performance CPU (benchmark)...', 'info');
+      var t0 = performance.now();
+      var x = 0;
+      for (var i = 0; i < 50000; i++) { x += Math.sqrt(i) * Math.sin(i); }
+      var ms = Math.round(performance.now() - t0);
+      _diagR.cpuPerf = { ok: ms < 100, ms: ms };
+      if (ms > 200)     _diagLog('CPU: '+ms+'ms — MOLTO LENTA (PC datato o sovraccarico)', 'err');
+      else if (ms > 100)_diagLog('CPU: '+ms+'ms — lenta, potrebbe causare ritardi', 'warn');
+      else              _diagLog('CPU: '+ms+'ms — OK', 'ok');
+      setTimeout(next, 200);
+    }
+
+    // ── TEST 6: Connessione REST Supabase ─────────────────────
+    function _testREST(next) {
+      _diagLog('Connessione REST a Supabase...', 'info');
+      var t0 = performance.now();
+      fetch(SUPABASE_URL+'/rest/v1/impostazioni?chiave=eq.NOME_REPARTO&select=valore', {
+        headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer '+SUPABASE_ANON_KEY }
+      }).then(function(r) {
+        var ms = Math.round(performance.now()-t0);
+        _diagR.rest = { ok: r.ok && ms<2000, ms: ms, status: r.status };
+        if (!r.ok)        _diagLog('REST: errore HTTP '+r.status, 'err');
+        else if (ms>2000) _diagLog('REST: '+ms+'ms — LENTO (rete lenta o congestionata)', 'warn');
+        else              _diagLog('REST: '+ms+'ms — OK', 'ok');
+        next();
+      }).catch(function(e) {
+        _diagR.rest = { ok: false, ms: 9999 };
+        _diagLog('REST: ERRORE — rete irraggiungibile ('+(e.message||'sconosciuto')+')', 'err');
+        next();
+      });
+    }
+
+    // ── TEST 7: Velocità query DB ─────────────────────────────
+    function _testDB(next) {
+      _diagLog('Velocità query database...', 'info');
+      var t0 = performance.now();
+      _q(_sb.from('consegne').select('letto').limit(1)).then(function() {
+        var ms = Math.round(performance.now()-t0);
+        _diagR.db = { ok: ms<1500, ms: ms };
+        if (ms>3000)      _diagLog('DB query: '+ms+'ms — MOLTO LENTA', 'err');
+        else if (ms>1500) _diagLog('DB query: '+ms+'ms — lenta', 'warn');
+        else              _diagLog('DB query: '+ms+'ms — OK', 'ok');
+        next();
+      }).catch(function() {
+        _diagR.db = { ok: false, ms: 9999 };
+        _diagLog('DB query: FALLITA', 'err');
+        next();
+      });
+    }
+
+    // ── TEST 8: WebSocket (raw, indipendente da _realtimeChannel) ──
+    function _testWebSocket(next) {
+      _diagLog('Connessione WebSocket (Realtime)...', 'info');
+      var risolto = false;
+      var t0 = performance.now();
+      var wsUrl = 'wss://'+SUPABASE_URL.replace('https://','').replace('http://','')+
+                  '/realtime/v1/websocket?apikey='+SUPABASE_ANON_KEY+'&vsn=1.0.0';
+      var ws;
+      var timeoutId = setTimeout(function() {
+        if (risolto) return;
+        risolto = true;
+        _diagR.ws = { ok: false, ms: 5000, motivo: 'timeout 5s' };
+        _diagLog('WebSocket: TIMEOUT (5s) — BLOCCATO da firewall, proxy o antivirus!', 'err');
+        try { ws && ws.close(); } catch(e2){}
+        next();
+      }, 5000);
+      try {
+        ws = new WebSocket(wsUrl);  // connessione raw, non interferisce con _realtimeChannel
+        ws.onopen = function() {
+          if (risolto) return;
+          risolto = true; clearTimeout(timeoutId);
+          var ms = Math.round(performance.now()-t0);
+          _diagR.ws = { ok: true, ms: ms };
+          _diagLog('WebSocket: connesso in '+ms+'ms — OK', 'ok');
+          try { ws.close(); } catch(e2){}
+          next();
+        };
+        ws.onerror = function() {
+          if (risolto) return;
+          risolto = true; clearTimeout(timeoutId);
+          _diagR.ws = { ok: false, ms: 9999, motivo: 'errore di connessione' };
+          _diagLog('WebSocket: ERRORE — bloccato da firewall/antivirus/proxy', 'err');
+          next();
+        };
+      } catch(e) {
+        risolto = true; clearTimeout(timeoutId);
+        _diagR.ws = { ok: false, ms: 9999, motivo: e.message };
+        _diagLog('WebSocket: impossibile aprire ('+e.message+')', 'err');
+        next();
+      }
+    }
+
+    // ── Report finale con raccomandazione ─────────────────────
+    function _mostraReport() {
+      _diagLog('', 'info');
+      _diagLog('══ REPORT COMPLETATO ══', 'info');
+      var r = _diagR;
+      var problemi = [], critici = 0;
+
+      if (r.browser && !r.browser.ok) { problemi.push('Browser obsoleto ('+r.browser.nome+' v'+r.browser.ver+')'); critici++; }
+      if (r.js && !r.js.ok)           { problemi.push('JavaScript obsoleto: '+r.js.mancanti.join(', ')); critici++; }
+      if (r.lib && !r.lib.ok)         { problemi.push('Librerie mancanti'); critici++; }
+      if (r.heap && !r.heap.ok)        problemi.push('Memoria JS alta ('+r.heap.usedMB+' MB)');
+      if (r.cpuPerf && r.cpuPerf.ms>200) problemi.push('CPU molto lenta ('+r.cpuPerf.ms+'ms)');
+      if (r.rest && !r.rest.ok)       { problemi.push('Connessione REST Supabase assente/lenta'); critici++; }
+      if (r.db && !r.db.ok)           { problemi.push('Query DB fallita/lenta'); critici++; }
+      if (r.ws && !r.ws.ok)           { problemi.push('WebSocket bloccato ('+r.ws.motivo+')'); critici++; }
+
+      var tipoSwal, testo, mostraAttivaBtn;
+
+      if (r.rest && !r.rest.ok) {
+        tipoSwal='error';
+        testo='La connessione di rete è assente o bloccata. <strong>Verifica la connessione di rete</strong> prima di procedere. La modalità emergenza non sarà utile senza connessione.';
+        mostraAttivaBtn=false;
+      } else if (critici >= 2 || (r.browser && !r.browser.ok)) {
+        tipoSwal='warning';
+        testo='Rilevati problemi seri. <strong>Aggiorna il browser</strong> o <strong>usa un altro PC</strong>. Se non è possibile, puoi provare la modalità emergenza.';
+        mostraAttivaBtn=true;
+      } else if (r.ws && !r.ws.ok) {
+        tipoSwal='warning';
+        testo='Il WebSocket è bloccato dal sistema (firewall/antivirus). La modalità emergenza (polling ogni 5s) è <strong>consigliata</strong> per questo PC.';
+        mostraAttivaBtn=true;
+      } else if (r.heap && !r.heap.ok) {
+        tipoSwal='info';
+        testo='La memoria è satura. <strong>Riavvia il browser</strong> e ricarica la pagina — spesso risolve il problema senza attivare la modalità emergenza.';
+        mostraAttivaBtn=true;
+      } else if (problemi.length===0) {
+        tipoSwal='success';
+        testo='Nessun problema rilevato. Il PC sembra funzionare correttamente. Prova a <strong>riavviare il browser</strong> e ricaricare prima di attivare la modalità emergenza.';
+        mostraAttivaBtn=true;
+      } else {
+        tipoSwal='info';
+        testo='Rilevati problemi minori. Prova a <strong>riavviare il browser</strong>. Se il problema persiste, puoi attivare la modalità emergenza.';
+        mostraAttivaBtn=true;
+      }
+
+      Swal.fire({
+        icon: tipoSwal,
+        title: 'Report diagnostica',
+        html: (problemi.length
+          ? '<div class="text-start mb-3"><strong>Problemi rilevati:</strong>' +
+            '<ul class="mb-0 mt-1">'+problemi.map(function(p){
+              return '<li style="font-size:0.82rem;">'+p+'</li>';
+            }).join('')+'</ul></div>'
+          : '<p class="mb-2 text-success fw-bold"><i class="bi bi-check-circle-fill me-1"></i>Nessun problema rilevato.</p>') +
+          '<div class="alert alert-'+(tipoSwal==='error'?'danger':tipoSwal==='warning'?'warning':'info')+
+          ' text-start py-2 mb-0" style="font-size:0.82rem;">'+testo+'</div>',
+        confirmButtonText: mostraAttivaBtn
+          ? '<i class="bi bi-play-fill me-1"></i>Attiva modalità emergenza'
+          : 'Chiudi',
+        confirmButtonColor: mostraAttivaBtn ? '#c62828' : '#37474f',
+        showCancelButton: mostraAttivaBtn,
+        cancelButtonText: 'Chiudi senza attivare'
+      }).then(function(res) {
+        if (res.isConfirmed && mostraAttivaBtn) {
+          _emergenzaAvviaPolling();
+          _aggiornaBottoneEmergenza();
+          Swal.fire({
+            icon:'success', title:'Modalità emergenza attivata',
+            html:'Aggiornamento ogni <strong>5 secondi</strong> via polling.<br>'+
+                 '<small class="text-muted">Premi "Polling ON" per disattivare.</small>',
+            timer:3000, showConfirmButton:false, timerProgressBar:true
+          });
+        }
+      });
+    }
+
+    // Aggiorna aspetto pulsante immediatamente
+    _aggiornaBottoneEmergenza();
+
   })();
   </script>
 
