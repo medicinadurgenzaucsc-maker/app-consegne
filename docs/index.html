@@ -2232,9 +2232,13 @@
     function _runAllTests() {
       _diagR = {};
       var tests = [
-        _testBrowser, _testJavaScript, _testLibrerie,
-        _testHardware, _testCPUPerf,
-        _testREST, _testDB, _testWebSocket,
+        _testBrowser, _testJavaScript, _testES2017, _testDOMAPIs,
+        _testLibrerie,
+        _testStorage, _testCookies, _testSession,
+        _testHardware, _testCPUPerf, _testJSONPerf, _testDOMParserPerf,
+        _testTimerAccuracy, _testFPS,
+        _testNetworkInfo, _testREST, _testRESTPing, _testDB,
+        _testCDN, _testWebSocket, _testRealtimeStatus,
         _mostraReport
       ];
       var idx = 0;
@@ -2242,9 +2246,9 @@
       next();
     }
 
-    // ── TEST 1: Browser ───────────────────────────────────────
+    // ── TEST: Browser ─────────────────────────────────────────
     function _testBrowser(next) {
-      _diagLog('Verifica browser...', 'info');
+      _diagLog('▶ Verifica browser...', 'info');
       var ua = navigator.userAgent;
       var nome = 'Sconosciuto', ver = 0;
       var m;
@@ -2254,86 +2258,336 @@
       else if (/Safari/.test(ua))            { nome='Safari';  ver=0; }
       var ok = (ver===0) || ver >= 90;
       _diagR.browser = { ok: ok, nome: nome, ver: ver };
-      if (!ok) _diagLog(nome+' v'+ver+' — VERSIONE OBSOLETA, aggiorna il browser', 'err');
+      if (!ok) _diagLog(nome+' v'+ver+' — VERSIONE OBSOLETA (consigliato ≥90)', 'err');
       else     _diagLog(nome+(ver?' v'+ver:'')+' — OK', 'ok');
-      setTimeout(next, 200);
+      // Online/offline status
+      _diagR.online = { ok: navigator.onLine };
+      if (!navigator.onLine) _diagLog('Stato rete: OFFLINE!', 'err');
+      else                   _diagLog('Stato rete: online', 'ok');
+      setTimeout(next, 150);
     }
 
-    // ── TEST 2: Funzionalità JS ───────────────────────────────
+    // ── TEST: API JavaScript ES6+ ─────────────────────────────
     function _testJavaScript(next) {
-      _diagLog('Funzionalità JavaScript (ES6+)...', 'info');
+      _diagLog('▶ API JavaScript ES6+...', 'info');
       var mancanti = [];
       ['Promise','fetch','Set','Map','Symbol','MutationObserver','WeakMap',
-       'requestAnimationFrame','CSS','DOMParser'].forEach(function(api) {
+       'WeakSet','requestAnimationFrame','CSS','DOMParser','URL',
+       'URLSearchParams','crypto','TextEncoder'].forEach(function(api) {
         if (typeof window[api] === 'undefined') mancanti.push(api);
       });
       _diagR.js = { ok: mancanti.length === 0, mancanti: mancanti };
       if (mancanti.length) _diagLog('API mancanti: '+mancanti.join(', '), 'err');
       else                 _diagLog('Tutte le API ES6+ presenti', 'ok');
-      setTimeout(next, 200);
+      setTimeout(next, 150);
     }
 
-    // ── TEST 3: Librerie caricate ─────────────────────────────
+    // ── TEST: ES2017+ (async/await, Object.assign, etc.) ─────
+    function _testES2017(next) {
+      _diagLog('▶ Sintassi ES2017+...', 'info');
+      var problemi = [];
+      try {
+        // async/await test
+        eval('(async function(){ await Promise.resolve(1); })()');
+      } catch(e) { problemi.push('async/await'); }
+      try {
+        // Spread operator e destructuring
+        eval('var [a,b]=[1,2]; var c={...{x:1}};');
+      } catch(e) { problemi.push('spread/destructuring'); }
+      try {
+        // Optional chaining (richiesto in api.js attuale per ?.)
+        eval('var x={a:{b:1}}; x?.a?.b;');
+      } catch(e) { problemi.push('optional chaining (?.)'); }
+      if (typeof Object.assign !== 'function') problemi.push('Object.assign');
+      if (typeof Array.from !== 'function')    problemi.push('Array.from');
+      if (typeof Promise.all !== 'function')   problemi.push('Promise.all');
+      _diagR.es2017 = { ok: problemi.length===0, problemi: problemi };
+      if (problemi.length) _diagLog('Mancanti: '+problemi.join(', ')+' — browser troppo vecchio', 'err');
+      else                 _diagLog('Sintassi moderna supportata', 'ok');
+      setTimeout(next, 150);
+    }
+
+    // ── TEST: DOM API (editing, selection, parsing) ──────────
+    function _testDOMAPIs(next) {
+      _diagLog('▶ DOM API per editing schede...', 'info');
+      var problemi = [];
+      if (!document.createElement) problemi.push('createElement');
+      if (typeof document.querySelector !== 'function')    problemi.push('querySelector');
+      if (typeof document.querySelectorAll !== 'function') problemi.push('querySelectorAll');
+      if (typeof window.getSelection !== 'function')       problemi.push('Selection API');
+      if (typeof Range === 'undefined')                    problemi.push('Range API');
+      if (typeof Element.prototype.getBoundingClientRect !== 'function') problemi.push('getBoundingClientRect');
+      // Test contentEditable funzionante
+      try {
+        var d = document.createElement('div');
+        d.contentEditable = 'true';
+        if (d.contentEditable !== 'true') problemi.push('contentEditable');
+      } catch(e) { problemi.push('contentEditable'); }
+      // Test DOMParser funzionante
+      try {
+        var p = new DOMParser();
+        var doc = p.parseFromString('<div data-bed="1">x</div>', 'text/html');
+        if (!doc.querySelector('[data-bed="1"]')) problemi.push('DOMParser HTML');
+      } catch(e) { problemi.push('DOMParser HTML'); }
+      _diagR.dom = { ok: problemi.length===0, problemi: problemi };
+      if (problemi.length) _diagLog('DOM API mancanti: '+problemi.join(', '), 'err');
+      else                 _diagLog('DOM API per editing OK', 'ok');
+      setTimeout(next, 150);
+    }
+
+    // ── TEST: Librerie caricate ───────────────────────────────
     function _testLibrerie(next) {
-      _diagLog('Librerie applicazione...', 'info');
+      _diagLog('▶ Librerie applicazione...', 'info');
       var lib = [
-        { nome:'Bootstrap', ok: typeof bootstrap!=='undefined' && !!bootstrap.Modal },
-        { nome:'Supabase-js', ok: typeof supabase!=='undefined' },
+        { nome:'Bootstrap', ok: typeof bootstrap!=='undefined' && !!bootstrap.Modal && !!bootstrap.Dropdown },
+        { nome:'Supabase-js v2', ok: typeof supabase!=='undefined' && !!supabase.createClient },
         { nome:'SweetAlert2', ok: typeof Swal!=='undefined' },
-        { nome:'Bootstrap Icons', ok: !!document.querySelector('link[href*="bootstrap-icons"]') }
+        { nome:'Bootstrap Icons', ok: !!document.querySelector('link[href*="bootstrap-icons"]') },
+        { nome:'Pickr (color picker)', ok: typeof Pickr !== 'undefined' },
+        { nome:'Google Identity Services', ok: typeof google !== 'undefined' && !!(google.accounts && google.accounts.oauth2) }
       ];
       lib.forEach(function(l) {
-        if (l.ok) _diagLog(l.nome+': caricato correttamente', 'ok');
-        else      _diagLog(l.nome+': NON trovato!', 'err');
+        if (l.ok) _diagLog(l.nome+': caricata', 'ok');
+        else      _diagLog(l.nome+': NON trovata!', 'err');
       });
-      _diagR.lib = { ok: lib.every(function(l){ return l.ok; }) };
-      setTimeout(next, 200);
+      _diagR.lib = { ok: lib.filter(function(l){return l.nome.indexOf('Pickr')<0 && l.nome.indexOf('Google')<0;}).every(function(l){return l.ok;}) };
+      setTimeout(next, 150);
     }
 
-    // ── TEST 4: Hardware ──────────────────────────────────────
+    // ── TEST: localStorage / sessionStorage ──────────────────
+    function _testStorage(next) {
+      _diagLog('▶ Storage del browser...', 'info');
+      var problemi = [];
+      // localStorage
+      try {
+        var k='_diag_'+Date.now();
+        localStorage.setItem(k,'test');
+        if (localStorage.getItem(k) !== 'test') problemi.push('localStorage read/write');
+        localStorage.removeItem(k);
+        _diagLog('localStorage: scrittura/lettura OK', 'ok');
+      } catch(e) {
+        problemi.push('localStorage non disponibile');
+        _diagLog('localStorage: BLOCCATO ('+(e.message||'')+ ') — sessione utente NON salvata!', 'err');
+      }
+      // sessionStorage
+      try {
+        sessionStorage.setItem('_diag','x');
+        sessionStorage.removeItem('_diag');
+        _diagLog('sessionStorage: OK', 'ok');
+      } catch(e) {
+        problemi.push('sessionStorage');
+        _diagLog('sessionStorage: bloccato', 'warn');
+      }
+      // Quota localStorage usata
+      try {
+        var totLen = 0;
+        for (var i=0; i<localStorage.length; i++) {
+          var key = localStorage.key(i);
+          totLen += key.length + (localStorage.getItem(key)||'').length;
+        }
+        var kb = Math.round(totLen/1024);
+        _diagLog('localStorage: '+kb+' KB usati ('+localStorage.length+' chiavi)', kb>3000?'warn':'ok');
+        _diagR.lsKb = kb;
+      } catch(e){}
+      _diagR.storage = { ok: problemi.length===0, problemi: problemi };
+      setTimeout(next, 150);
+    }
+
+    // ── TEST: Cookies abilitati (importante per Google OAuth) ──
+    function _testCookies(next) {
+      _diagLog('▶ Cookie del browser...', 'info');
+      var ok = navigator.cookieEnabled;
+      _diagR.cookies = { ok: ok };
+      if (ok) _diagLog('Cookie abilitati — OK (necessari per Google login)', 'ok');
+      else    _diagLog('Cookie DISABILITATI — Google login non funzionerà!', 'err');
+      setTimeout(next, 150);
+    }
+
+    // ── TEST: Sessione corrente (Google token + ward) ────────
+    function _testSession(next) {
+      _diagLog('▶ Sessione utente...', 'info');
+      var problemi = [];
+      // Token Google
+      var hasGToken = !!(window._googleAccessToken);
+      if (hasGToken) _diagLog('Token Google: presente', 'ok');
+      else { _diagLog('Token Google: ASSENTE', 'err'); problemi.push('Token Google'); }
+      // Sessione localStorage
+      try {
+        var sess = JSON.parse(localStorage.getItem('appSession')||'null');
+        if (sess && sess.expiry) {
+          var rimMin = Math.round((sess.expiry - Date.now())/60000);
+          if (rimMin < 0)      _diagLog('Sessione localStorage: SCADUTA da '+(-rimMin)+' min', 'warn');
+          else if (rimMin < 5) _diagLog('Sessione localStorage: scade tra '+rimMin+' min', 'warn');
+          else                 _diagLog('Sessione localStorage: valida (scade tra '+rimMin+' min)', 'ok');
+        } else {
+          _diagLog('Sessione localStorage: assente', 'warn');
+        }
+      } catch(e) { _diagLog('Sessione localStorage: corrotta!', 'err'); problemi.push('appSession corrotta'); }
+      // Ward token
+      var wardId = '';
+      try { wardId = localStorage.getItem('wardSessionId')||''; } catch(e){}
+      if (wardId) _diagLog('Ward token: presente', 'ok');
+      else        _diagLog('Ward token: assente (verrà generato)', 'warn');
+      _diagR.session = { ok: hasGToken, problemi: problemi };
+      setTimeout(next, 150);
+    }
+
+    // ── TEST: Hardware ────────────────────────────────────────
     function _testHardware(next) {
-      _diagLog('Risorse hardware...', 'info');
+      _diagLog('▶ Risorse hardware...', 'info');
       var ram = navigator.deviceMemory;
       if (ram) {
         _diagR.ram = { ok: ram >= 2, gb: ram };
-        if (ram < 2) _diagLog('RAM rilevata: '+ram+' GB — insufficiente (consigliato ≥2 GB)', 'err');
-        else         _diagLog('RAM rilevata: '+ram+' GB — OK', 'ok');
+        if (ram < 2) _diagLog('RAM: '+ram+' GB — INSUFFICIENTE (consigliato ≥2 GB)', 'err');
+        else if (ram < 4) _diagLog('RAM: '+ram+' GB — bassa', 'warn');
+        else         _diagLog('RAM: '+ram+' GB — OK', 'ok');
       } else {
-        _diagLog('RAM: non rilevabile (API non supportata da questo browser)', 'warn');
+        _diagLog('RAM: non rilevabile (API non supportata)', 'warn');
       }
       var cpu = navigator.hardwareConcurrency;
       if (cpu) {
         _diagR.cpu = { ok: cpu >= 2, cores: cpu };
         if (cpu < 2) _diagLog('CPU: '+cpu+' core — bassa potenza', 'warn');
+        else if (cpu < 4) _diagLog('CPU: '+cpu+' core — sufficiente', 'ok');
         else         _diagLog('CPU: '+cpu+' core — OK', 'ok');
       }
       if (performance && performance.memory) {
         var usedMB = Math.round(performance.memory.usedJSHeapSize/1048576);
         var totMB  = Math.round(performance.memory.totalJSHeapSize/1048576);
-        _diagR.heap = { ok: usedMB < 300, usedMB: usedMB };
-        if (usedMB > 300) _diagLog('Memoria JS: '+usedMB+'/'+totMB+' MB — ALTA, consigliato riavvio', 'warn');
-        else              _diagLog('Memoria JS: '+usedMB+'/'+totMB+' MB — OK', 'ok');
+        var limitMB= Math.round(performance.memory.jsHeapSizeLimit/1048576);
+        var pct    = Math.round((usedMB/limitMB)*100);
+        _diagR.heap = { ok: usedMB<300 && pct<70, usedMB: usedMB, pct: pct };
+        if (pct > 80)     _diagLog('Memoria JS: '+usedMB+'/'+limitMB+' MB ('+pct+'%) — CRITICA, riavvia browser!', 'err');
+        else if (usedMB>300 || pct>70) _diagLog('Memoria JS: '+usedMB+'/'+limitMB+' MB ('+pct+'%) — alta', 'warn');
+        else              _diagLog('Memoria JS: '+usedMB+'/'+limitMB+' MB ('+pct+'%) — OK', 'ok');
       }
-      setTimeout(next, 200);
+      setTimeout(next, 150);
     }
 
-    // ── TEST 5: Performance CPU (benchmark sintetico) ─────────
+    // ── TEST: CPU benchmark sintetico ─────────────────────────
     function _testCPUPerf(next) {
-      _diagLog('Performance CPU (benchmark)...', 'info');
+      _diagLog('▶ Performance CPU (benchmark)...', 'info');
       var t0 = performance.now();
       var x = 0;
       for (var i = 0; i < 50000; i++) { x += Math.sqrt(i) * Math.sin(i); }
       var ms = Math.round(performance.now() - t0);
       _diagR.cpuPerf = { ok: ms < 100, ms: ms };
-      if (ms > 200)     _diagLog('CPU: '+ms+'ms — MOLTO LENTA (PC datato o sovraccarico)', 'err');
-      else if (ms > 100)_diagLog('CPU: '+ms+'ms — lenta, potrebbe causare ritardi', 'warn');
+      if (ms > 200)     _diagLog('CPU: '+ms+'ms — MOLTO LENTA (PC datato/sovraccarico)', 'err');
+      else if (ms > 100)_diagLog('CPU: '+ms+'ms — lenta', 'warn');
       else              _diagLog('CPU: '+ms+'ms — OK', 'ok');
-      setTimeout(next, 200);
+      setTimeout(next, 150);
     }
 
-    // ── TEST 6: Connessione REST Supabase ─────────────────────
+    // ── TEST: JSON parse/stringify (usato per dati pazienti) ──
+    function _testJSONPerf(next) {
+      _diagLog('▶ JSON parse/stringify (dati pazienti)...', 'info');
+      // Simula un payload di 20 letti × ~10 campi di testo
+      var fakeRow = {};
+      for (var i=0;i<20;i++) {
+        fakeRow['letto'+i] = { nome:'Mario Rossi '+i, diagnosi:'Lorem ipsum dolor sit amet '.repeat(8),
+          terapia:'Paracetamolo 1g x3, '.repeat(5), allergie:'Nichel, polline' };
+      }
+      var t0 = performance.now();
+      var s = '';
+      for (var k=0;k<200;k++) {
+        s = JSON.stringify(fakeRow);
+        JSON.parse(s);
+      }
+      var ms = Math.round(performance.now()-t0);
+      _diagR.json = { ok: ms<300, ms: ms };
+      if (ms>500)      _diagLog('JSON: '+ms+'ms — molto lento (può rallentare salvataggio)', 'err');
+      else if (ms>300) _diagLog('JSON: '+ms+'ms — lento', 'warn');
+      else             _diagLog('JSON: '+ms+'ms — OK', 'ok');
+      setTimeout(next, 150);
+    }
+
+    // ── TEST: DOMParser (usato in _applicaAggiornamentoDaHtml) ──
+    function _testDOMParserPerf(next) {
+      _diagLog('▶ DOMParser performance (sync card)...', 'info');
+      // Simula HTML di 20 schede
+      var html = '<div>';
+      for (var i=0;i<20;i++) {
+        html += '<div class="patient-card" data-bed="'+i+'"><div data-field="Nome">Mario '+i+'</div>'+
+                '<div data-field="Diagnosi">Lorem ipsum dolor sit amet, consectetur adipiscing elit.</div>'+
+                '<div data-field="NoteTerapia">Paracetamolo 1g x3, Augmentin 1g x2</div></div>';
+      }
+      html += '</div>';
+      var t0 = performance.now();
+      for (var j=0;j<10;j++) {
+        var p = new DOMParser();
+        var doc = p.parseFromString(html, 'text/html');
+        doc.querySelectorAll('[data-bed]').forEach(function(){});
+      }
+      var ms = Math.round(performance.now()-t0);
+      _diagR.domParser = { ok: ms<200, ms: ms };
+      if (ms>400)      _diagLog('DOMParser: '+ms+'ms — molto lento (sync card laggosa)', 'err');
+      else if (ms>200) _diagLog('DOMParser: '+ms+'ms — lento', 'warn');
+      else             _diagLog('DOMParser: '+ms+'ms — OK', 'ok');
+      setTimeout(next, 150);
+    }
+
+    // ── TEST: Precisione setTimeout (debounce salvataggio) ────
+    function _testTimerAccuracy(next) {
+      _diagLog('▶ Precisione timer setTimeout...', 'info');
+      var t0 = performance.now();
+      setTimeout(function() {
+        var ms = performance.now() - t0;
+        var drift = Math.round(ms - 100); // atteso 100ms
+        _diagR.timer = { ok: drift < 50, drift: drift, ms: Math.round(ms) };
+        if (drift > 200)     _diagLog('Timer: drift '+drift+'ms (atteso 100, ottenuto '+Math.round(ms)+') — GRAVE, salvataggio compromesso', 'err');
+        else if (drift > 50) _diagLog('Timer: drift '+drift+'ms — il debounce di salvataggio potrebbe ritardare', 'warn');
+        else                 _diagLog('Timer: drift '+drift+'ms — OK', 'ok');
+        next();
+      }, 100);
+    }
+
+    // ── TEST: requestAnimationFrame / FPS ─────────────────────
+    function _testFPS(next) {
+      _diagLog('▶ Fluidità rendering (FPS)...', 'info');
+      if (typeof requestAnimationFrame !== 'function') {
+        _diagR.fps = { ok: false, fps: 0 };
+        _diagLog('rAF non supportato — rendering non fluido', 'err');
+        return setTimeout(next, 150);
+      }
+      var frames = 0;
+      var t0 = performance.now();
+      function tick() {
+        frames++;
+        if (performance.now() - t0 < 500) requestAnimationFrame(tick);
+        else {
+          var fps = Math.round(frames * 1000 / (performance.now() - t0));
+          _diagR.fps = { ok: fps>=45, fps: fps };
+          if (fps < 30)      _diagLog('Rendering: '+fps+' FPS — MOLTO LENTO, UI bloccata', 'err');
+          else if (fps < 45) _diagLog('Rendering: '+fps+' FPS — lento', 'warn');
+          else               _diagLog('Rendering: '+fps+' FPS — OK', 'ok');
+          next();
+        }
+      }
+      requestAnimationFrame(tick);
+    }
+
+    // ── TEST: Network Information API ─────────────────────────
+    function _testNetworkInfo(next) {
+      _diagLog('▶ Tipo connessione di rete...', 'info');
+      var conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+      if (conn) {
+        var tipo = conn.effectiveType || 'sconosciuto';
+        var down = conn.downlink || 0;
+        var rtt  = conn.rtt || 0;
+        _diagR.netInfo = { tipo: tipo, downlink: down, rtt: rtt, ok: tipo!=='2g' && tipo!=='slow-2g' };
+        var msg = 'Tipo: '+tipo+(down?' • '+down+' Mbps':'')+(rtt?' • RTT '+rtt+'ms':'');
+        if (tipo==='2g' || tipo==='slow-2g')  _diagLog(msg+' — RETE LENTA', 'err');
+        else if (tipo==='3g' || down<1)       _diagLog(msg+' — rete sotto la media', 'warn');
+        else                                  _diagLog(msg, 'ok');
+      } else {
+        _diagLog('Network Information API non supportata (normale su desktop)', 'warn');
+      }
+      setTimeout(next, 150);
+    }
+
+    // ── TEST: REST Supabase (singola) ─────────────────────────
     function _testREST(next) {
-      _diagLog('Connessione REST a Supabase...', 'info');
+      _diagLog('▶ Connessione REST a Supabase...', 'info');
       var t0 = performance.now();
       fetch(SUPABASE_URL+'/rest/v1/impostazioni?chiave=eq.NOME_REPARTO&select=valore', {
         headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer '+SUPABASE_ANON_KEY }
@@ -2341,37 +2595,81 @@
         var ms = Math.round(performance.now()-t0);
         _diagR.rest = { ok: r.ok && ms<2000, ms: ms, status: r.status };
         if (!r.ok)        _diagLog('REST: errore HTTP '+r.status, 'err');
-        else if (ms>2000) _diagLog('REST: '+ms+'ms — LENTO (rete lenta o congestionata)', 'warn');
+        else if (ms>2000) _diagLog('REST: '+ms+'ms — LENTO', 'warn');
         else              _diagLog('REST: '+ms+'ms — OK', 'ok');
         next();
       }).catch(function(e) {
         _diagR.rest = { ok: false, ms: 9999 };
-        _diagLog('REST: ERRORE — rete irraggiungibile ('+(e.message||'sconosciuto')+')', 'err');
+        _diagLog('REST: ERRORE — rete irraggiungibile ('+(e.message||'')+')', 'err');
         next();
       });
     }
 
-    // ── TEST 7: Velocità query DB ─────────────────────────────
+    // ── TEST: REST ping multiplo (latenza media + jitter) ────
+    function _testRESTPing(next) {
+      _diagLog('▶ Latenza Supabase (3 ping)...', 'info');
+      var pings = [];
+      function pingOne(rimasti) {
+        if (rimasti === 0) {
+          var media = pings.reduce(function(a,b){return a+b;}, 0) / pings.length;
+          var max = Math.max.apply(null, pings);
+          var min = Math.min.apply(null, pings);
+          var jitter = max - min;
+          _diagR.restPing = { ok: media<1500 && jitter<1500, media: Math.round(media), jitter: jitter };
+          var msg = 'Media: '+Math.round(media)+'ms (min '+min+', max '+max+', jitter '+jitter+'ms)';
+          if (media>2000 || jitter>2000) _diagLog(msg+' — CONNESSIONE INSTABILE', 'err');
+          else if (media>1000 || jitter>1000) _diagLog(msg+' — instabile', 'warn');
+          else _diagLog(msg+' — OK', 'ok');
+          return next();
+        }
+        var t0 = performance.now();
+        fetch(SUPABASE_URL+'/rest/v1/impostazioni?chiave=eq.NOME_REPARTO&select=chiave', {
+          headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer '+SUPABASE_ANON_KEY }
+        }).then(function(){ pings.push(Math.round(performance.now()-t0)); pingOne(rimasti-1); })
+          .catch(function(){ pings.push(9999); pingOne(rimasti-1); });
+      }
+      pingOne(3);
+    }
+
+    // ── TEST: Velocità query DB ───────────────────────────────
     function _testDB(next) {
-      _diagLog('Velocità query database...', 'info');
+      _diagLog('▶ Velocità query database (SELECT)...', 'info');
       var t0 = performance.now();
       _q(_sb.from('consegne').select('letto').limit(1)).then(function() {
         var ms = Math.round(performance.now()-t0);
         _diagR.db = { ok: ms<1500, ms: ms };
-        if (ms>3000)      _diagLog('DB query: '+ms+'ms — MOLTO LENTA', 'err');
-        else if (ms>1500) _diagLog('DB query: '+ms+'ms — lenta', 'warn');
-        else              _diagLog('DB query: '+ms+'ms — OK', 'ok');
+        if (ms>3000)      _diagLog('DB: '+ms+'ms — MOLTO LENTA (rischio timeout salvataggio)', 'err');
+        else if (ms>1500) _diagLog('DB: '+ms+'ms — lenta', 'warn');
+        else              _diagLog('DB: '+ms+'ms — OK', 'ok');
         next();
       }).catch(function() {
         _diagR.db = { ok: false, ms: 9999 };
-        _diagLog('DB query: FALLITA', 'err');
+        _diagLog('DB: query FALLITA', 'err');
         next();
       });
     }
 
-    // ── TEST 8: WebSocket (raw, indipendente da _realtimeChannel) ──
+    // ── TEST: CDN raggiungibile (jsdelivr) ────────────────────
+    function _testCDN(next) {
+      _diagLog('▶ Raggiungibilità CDN (jsdelivr)...', 'info');
+      var t0 = performance.now();
+      fetch('https://cdn.jsdelivr.net/favicon.ico', { method: 'HEAD', cache: 'no-store', mode: 'no-cors' })
+        .then(function() {
+          var ms = Math.round(performance.now()-t0);
+          _diagR.cdn = { ok: ms<2000, ms: ms };
+          if (ms>2000) _diagLog('CDN: '+ms+'ms — lento', 'warn');
+          else         _diagLog('CDN: '+ms+'ms — OK', 'ok');
+          next();
+        }).catch(function() {
+          _diagR.cdn = { ok: false, ms: 9999 };
+          _diagLog('CDN: NON raggiungibile (firewall blocca CDN esterni?)', 'err');
+          next();
+        });
+    }
+
+    // ── TEST: WebSocket raw ───────────────────────────────────
     function _testWebSocket(next) {
-      _diagLog('Connessione WebSocket (Realtime)...', 'info');
+      _diagLog('▶ Connessione WebSocket Realtime...', 'info');
       var risolto = false;
       var t0 = performance.now();
       var wsUrl = 'wss://'+SUPABASE_URL.replace('https://','').replace('http://','')+
@@ -2381,12 +2679,12 @@
         if (risolto) return;
         risolto = true;
         _diagR.ws = { ok: false, ms: 5000, motivo: 'timeout 5s' };
-        _diagLog('WebSocket: TIMEOUT (5s) — BLOCCATO da firewall, proxy o antivirus!', 'err');
+        _diagLog('WebSocket: TIMEOUT (5s) — BLOCCATO da firewall/proxy/antivirus!', 'err');
         try { ws && ws.close(); } catch(e2){}
         next();
       }, 5000);
       try {
-        ws = new WebSocket(wsUrl);  // connessione raw, non interferisce con _realtimeChannel
+        ws = new WebSocket(wsUrl);
         ws.onopen = function() {
           if (risolto) return;
           risolto = true; clearTimeout(timeoutId);
@@ -2399,7 +2697,7 @@
         ws.onerror = function() {
           if (risolto) return;
           risolto = true; clearTimeout(timeoutId);
-          _diagR.ws = { ok: false, ms: 9999, motivo: 'errore di connessione' };
+          _diagR.ws = { ok: false, ms: 9999, motivo: 'errore connessione' };
           _diagLog('WebSocket: ERRORE — bloccato da firewall/antivirus/proxy', 'err');
           next();
         };
@@ -2411,6 +2709,21 @@
       }
     }
 
+    // ── TEST: Stato canale Realtime corrente ──────────────────
+    function _testRealtimeStatus(next) {
+      _diagLog('▶ Stato canale Realtime corrente...', 'info');
+      if (typeof _realtimeChannel === 'undefined' || !_realtimeChannel) {
+        _diagR.realtimeStatus = { ok: false, stato: 'non inizializzato' };
+        _diagLog('Canale Realtime: NON INIZIALIZZATO', 'err');
+      } else {
+        var stato = _realtimeChannel.state || 'sconosciuto';
+        _diagR.realtimeStatus = { ok: stato==='joined', stato: stato };
+        if (stato === 'joined') _diagLog('Canale Realtime: connesso (joined) — OK', 'ok');
+        else                    _diagLog('Canale Realtime: stato "'+stato+'" — non operativo!', 'err');
+      }
+      setTimeout(next, 150);
+    }
+
     // ── Report finale con raccomandazione ─────────────────────
     function _mostraReport() {
       _diagLog('', 'info');
@@ -2418,21 +2731,102 @@
       var r = _diagR;
       var problemi = [], critici = 0;
 
+      // ── Problemi generali ───────────────────────────────────
       if (r.browser && !r.browser.ok) { problemi.push('Browser obsoleto ('+r.browser.nome+' v'+r.browser.ver+')'); critici++; }
-      if (r.js && !r.js.ok)           { problemi.push('JavaScript obsoleto: '+r.js.mancanti.join(', ')); critici++; }
-      if (r.lib && !r.lib.ok)         { problemi.push('Librerie mancanti'); critici++; }
-      if (r.heap && !r.heap.ok)        problemi.push('Memoria JS alta ('+r.heap.usedMB+' MB)');
+      if (r.online && !r.online.ok)   { problemi.push('PC OFFLINE'); critici++; }
+      if (r.js && !r.js.ok)           { problemi.push('API JS mancanti: '+r.js.mancanti.join(', ')); critici++; }
+      if (r.es2017 && !r.es2017.ok)   { problemi.push('Sintassi ES2017+ non supportata: '+r.es2017.problemi.join(', ')); critici++; }
+      if (r.dom && !r.dom.ok)         { problemi.push('DOM API mancanti: '+r.dom.problemi.join(', ')); critici++; }
+      if (r.lib && !r.lib.ok)         { problemi.push('Librerie applicazione mancanti'); critici++; }
+      if (r.storage && !r.storage.ok) { problemi.push('Storage browser non funzionante: '+r.storage.problemi.join(', ')); critici++; }
+      if (r.cookies && !r.cookies.ok) { problemi.push('Cookie disabilitati (Google login non funzionerà)'); critici++; }
+      if (r.session && !r.session.ok) problemi.push('Sessione utente non valida');
+      if (r.heap && !r.heap.ok)       problemi.push('Memoria JS alta ('+r.heap.usedMB+' MB, '+r.heap.pct+'%)');
       if (r.cpuPerf && r.cpuPerf.ms>200) problemi.push('CPU molto lenta ('+r.cpuPerf.ms+'ms)');
-      if (r.rest && !r.rest.ok)       { problemi.push('Connessione REST Supabase assente/lenta'); critici++; }
-      if (r.db && !r.db.ok)           { problemi.push('Query DB fallita/lenta'); critici++; }
+      if (r.json && !r.json.ok)       problemi.push('JSON serialization lenta ('+r.json.ms+'ms)');
+      if (r.domParser && !r.domParser.ok) problemi.push('DOMParser lento ('+r.domParser.ms+'ms)');
+      if (r.timer && !r.timer.ok)     problemi.push('Timer setTimeout impreciso (drift '+r.timer.drift+'ms)');
+      if (r.fps && !r.fps.ok)         problemi.push('Rendering lento ('+r.fps.fps+' FPS)');
+      if (r.netInfo && !r.netInfo.ok) problemi.push('Connessione di rete '+r.netInfo.tipo);
+      if (r.rest && !r.rest.ok)       { problemi.push('REST Supabase assente/lenta ('+r.rest.ms+'ms)'); critici++; }
+      if (r.restPing && !r.restPing.ok) problemi.push('Latenza REST instabile (media '+r.restPing.media+'ms, jitter '+r.restPing.jitter+'ms)');
+      if (r.db && !r.db.ok)           { problemi.push('Query DB lenta/fallita ('+r.db.ms+'ms)'); critici++; }
+      if (r.cdn && !r.cdn.ok)         problemi.push('CDN jsdelivr non raggiungibile');
       if (r.ws && !r.ws.ok)           { problemi.push('WebSocket bloccato ('+r.ws.motivo+')'); critici++; }
+      if (r.realtimeStatus && !r.realtimeStatus.ok) problemi.push('Canale Realtime: '+r.realtimeStatus.stato);
 
+      // ── VALUTAZIONE RISCHIO BUG SALVATAGGIO ─────────────────
+      // Calcola un punteggio specifico per il rischio "consegne non si salvano"
+      var rischioSalvataggio = 0;
+      var motiviRischio = [];
+
+      // CPU lenta → typing lag → debounce 60s continuamente resettato → save mai parte
+      if (r.cpuPerf && r.cpuPerf.ms > 200) { rischioSalvataggio += 30; motiviRischio.push('CPU molto lenta ('+r.cpuPerf.ms+'ms): la digitazione potrebbe essere a scatti e il debounce di 60s del salvataggio resettato continuamente'); }
+      else if (r.cpuPerf && r.cpuPerf.ms > 100) { rischioSalvataggio += 10; motiviRischio.push('CPU lenta ('+r.cpuPerf.ms+'ms)'); }
+
+      // Timer impreciso → setTimeout di salvataggio non scatta mai
+      if (r.timer && r.timer.drift > 200) { rischioSalvataggio += 35; motiviRischio.push('Timer molto impreciso (drift '+r.timer.drift+'ms): il setTimeout di salvataggio non scatterà più ai 60s previsti'); }
+      else if (r.timer && r.timer.drift > 50) { rischioSalvataggio += 15; motiviRischio.push('Timer impreciso (drift '+r.timer.drift+'ms)'); }
+
+      // Memoria satura → GC pauses → typing freeze → save mai parte
+      if (r.heap && r.heap.pct > 80) { rischioSalvataggio += 30; motiviRischio.push('Memoria al '+r.heap.pct+'%: pause del garbage collector bloccano la digitazione'); }
+      else if (r.heap && (r.heap.pct > 70 || r.heap.usedMB > 300)) { rischioSalvataggio += 10; motiviRischio.push('Memoria alta ('+r.heap.usedMB+' MB)'); }
+
+      // FPS basso → UI bloccata
+      if (r.fps && r.fps.fps < 30) { rischioSalvataggio += 20; motiviRischio.push('Rendering a '+r.fps.fps+' FPS: UI bloccata, evento "input" potrebbe non scattare regolarmente'); }
+      else if (r.fps && r.fps.fps < 45) { rischioSalvataggio += 5; }
+
+      // localStorage rotto → token sessione perso → 401 al salvataggio
+      if (r.storage && !r.storage.ok) { rischioSalvataggio += 40; motiviRischio.push('localStorage non funzionante: la sessione utente non viene salvata, le richieste di salvataggio falliranno con errore di autenticazione'); }
+
+      // Sessione scaduta/assente → 401 al salvataggio
+      if (r.session && !r.session.ok) { rischioSalvataggio += 25; motiviRischio.push('Token Google assente: tentativi di salvataggio possono fallire'); }
+
+      // REST lenta → POST salvataggio in timeout
+      if (r.rest && !r.rest.ok) { rischioSalvataggio += 30; motiviRischio.push('REST Supabase irraggiungibile/lenta ('+r.rest.ms+'ms): il POST di salvataggio andrà in timeout'); }
+      else if (r.rest && r.rest.ms > 1500) { rischioSalvataggio += 15; motiviRischio.push('REST Supabase lenta ('+r.rest.ms+'ms): salvataggio rallentato'); }
+
+      // DB lenta
+      if (r.db && r.db.ms > 3000) { rischioSalvataggio += 15; motiviRischio.push('DB query molto lenta ('+r.db.ms+'ms)'); }
+
+      // Rete instabile → jitter alto → save sporadicamente fallisce
+      if (r.restPing && r.restPing.jitter > 2000) { rischioSalvataggio += 20; motiviRischio.push('Rete molto instabile (jitter '+r.restPing.jitter+'ms): salvataggi sporadici possono fallire'); }
+
+      // JSON serialization lenta → typing stutter durante autosave
+      if (r.json && r.json.ms > 500) { rischioSalvataggio += 10; motiviRischio.push('Serializzazione dati lenta ('+r.json.ms+'ms)'); }
+
+      // DOMParser lento → re-render durante typing causa perdita digitazione
+      if (r.domParser && r.domParser.ms > 400) { rischioSalvataggio += 10; motiviRischio.push('DOMParser lento ('+r.domParser.ms+'ms): re-render dopo Realtime sync può sovrascrivere il testo digitato'); }
+
+      // Determina livello rischio
+      var livelloRischio, coloreRischio;
+      if      (rischioSalvataggio >= 50) { livelloRischio = 'ALTO'; coloreRischio = '#c62828'; }
+      else if (rischioSalvataggio >= 25) { livelloRischio = 'MEDIO'; coloreRischio = '#f57c00'; }
+      else if (rischioSalvataggio >= 10) { livelloRischio = 'BASSO'; coloreRischio = '#fbc02d'; }
+      else                                { livelloRischio = 'NESSUNO'; coloreRischio = '#2e7d32'; }
+
+      _diagLog('Rischio bug salvataggio: '+livelloRischio+' ('+rischioSalvataggio+' punti)',
+               rischioSalvataggio>=50?'err': rischioSalvataggio>=25?'warn':'ok');
+
+      // ── Decisione raccomandazione ───────────────────────────
       var tipoSwal, testo, mostraAttivaBtn;
 
       if (r.rest && !r.rest.ok) {
         tipoSwal='error';
         testo='La connessione di rete è assente o bloccata. <strong>Verifica la connessione di rete</strong> prima di procedere. La modalità emergenza non sarà utile senza connessione.';
         mostraAttivaBtn=false;
+      } else if (r.storage && !r.storage.ok) {
+        tipoSwal='error';
+        testo='Lo storage del browser non funziona. <strong>Riavvia il browser</strong> e ripulisci la cache (Ctrl+Shift+Canc). La sessione utente non può essere salvata in questo stato.';
+        mostraAttivaBtn=false;
+      } else if (r.cookies && !r.cookies.ok) {
+        tipoSwal='error';
+        testo='I cookie sono disabilitati. <strong>Abilita i cookie</strong> nelle impostazioni del browser, poi ricarica la pagina.';
+        mostraAttivaBtn=false;
+      } else if (rischioSalvataggio >= 50) {
+        tipoSwal='error';
+        testo='<strong>Rischio ALTO di mancato salvataggio.</strong> Il PC ha problemi seri che possono causare perdita di dati. <strong>Riavvia immediatamente il computer</strong> oppure usa un altro PC. La modalità emergenza non risolverà tutti questi problemi.';
+        mostraAttivaBtn=true;
       } else if (critici >= 2 || (r.browser && !r.browser.ok)) {
         tipoSwal='warning';
         testo='Rilevati problemi seri. <strong>Aggiorna il browser</strong> o <strong>usa un altro PC</strong>. Se non è possibile, puoi provare la modalità emergenza.';
@@ -2441,9 +2835,13 @@
         tipoSwal='warning';
         testo='Il WebSocket è bloccato dal sistema (firewall/antivirus). La modalità emergenza (polling ogni 5s) è <strong>consigliata</strong> per questo PC.';
         mostraAttivaBtn=true;
-      } else if (r.heap && !r.heap.ok) {
-        tipoSwal='info';
-        testo='La memoria è satura. <strong>Riavvia il browser</strong> e ricarica la pagina — spesso risolve il problema senza attivare la modalità emergenza.';
+      } else if (rischioSalvataggio >= 25) {
+        tipoSwal='warning';
+        testo='<strong>Rischio MEDIO</strong> di salvataggio non affidabile. Ti consigliamo di <strong>riavviare il browser e ricaricare</strong> la pagina prima di lavorare. Se il problema persiste, attiva la modalità emergenza.';
+        mostraAttivaBtn=true;
+      } else if (r.heap && r.heap.pct > 80) {
+        tipoSwal='warning';
+        testo='La memoria è critica ('+r.heap.pct+'%). <strong>Riavvia il browser</strong> immediatamente — la digitazione potrebbe essere bloccata e i salvataggi fallire.';
         mostraAttivaBtn=true;
       } else if (problemi.length===0) {
         tipoSwal='success';
@@ -2455,15 +2853,33 @@
         mostraAttivaBtn=true;
       }
 
+      // ── Costruisci HTML report ──────────────────────────────
+      var rischioBox = '<div class="card mb-3" style="border:2px solid '+coloreRischio+';">' +
+        '<div class="card-body p-2">' +
+        '<div class="d-flex align-items-center justify-content-between mb-1">' +
+        '<strong style="font-size:0.9rem;">Rischio bug salvataggio:</strong>' +
+        '<span class="badge" style="background:'+coloreRischio+';color:#fff;font-size:0.85rem;">'+livelloRischio+'</span>' +
+        '</div>' +
+        (motiviRischio.length
+          ? '<ul class="mb-0 mt-1 ps-3" style="font-size:0.75rem;color:#444;">' +
+            motiviRischio.slice(0,5).map(function(m){return '<li>'+m+'</li>';}).join('') +
+            (motiviRischio.length>5?'<li><em>... e altri '+(motiviRischio.length-5)+' fattori</em></li>':'') +
+            '</ul>'
+          : '<small class="text-success">Nessun fattore di rischio identificato.</small>') +
+        '</div></div>';
+
+      var problemiBox = problemi.length
+        ? '<div class="text-start mb-2"><strong style="font-size:0.85rem;">Problemi rilevati ('+problemi.length+'):</strong>' +
+          '<ul class="mb-0 mt-1" style="max-height:140px;overflow-y:auto;">'+problemi.map(function(p){
+            return '<li style="font-size:0.75rem;">'+p+'</li>';
+          }).join('')+'</ul></div>'
+        : '<p class="mb-2 text-success fw-bold" style="font-size:0.85rem;"><i class="bi bi-check-circle-fill me-1"></i>Tutti i test superati.</p>';
+
       Swal.fire({
         icon: tipoSwal,
         title: 'Report diagnostica',
-        html: (problemi.length
-          ? '<div class="text-start mb-3"><strong>Problemi rilevati:</strong>' +
-            '<ul class="mb-0 mt-1">'+problemi.map(function(p){
-              return '<li style="font-size:0.82rem;">'+p+'</li>';
-            }).join('')+'</ul></div>'
-          : '<p class="mb-2 text-success fw-bold"><i class="bi bi-check-circle-fill me-1"></i>Nessun problema rilevato.</p>') +
+        width: 640,
+        html: rischioBox + problemiBox +
           '<div class="alert alert-'+(tipoSwal==='error'?'danger':tipoSwal==='warning'?'warning':'info')+
           ' text-start py-2 mb-0" style="font-size:0.82rem;">'+testo+'</div>',
         confirmButtonText: mostraAttivaBtn
