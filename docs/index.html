@@ -2232,6 +2232,7 @@
     function _runAllTests() {
       _diagR = {};
       var tests = [
+        _logSistemaInfo,
         _testBrowser, _testJavaScript, _testES2017, _testDOMAPIs,
         _testLibrerie,
         _testStorage, _testCookies, _testSession,
@@ -2239,6 +2240,7 @@
         _testTimerAccuracy, _testFPS,
         _testNetworkInfo, _testREST, _testRESTPing, _testDB,
         _testCDN, _testWebSocket, _testRealtimeStatus,
+        _dumpRawData,
         _mostraReport
       ];
       var idx = 0;
@@ -2246,20 +2248,139 @@
       next();
     }
 
+    // ── Header sistema (per il tecnico IT) ────────────────────
+    function _logSistemaInfo(next) {
+      _diagLog('═══════════════════════════════════════════', 'info');
+      _diagLog('  REPORT DIAGNOSTICA — APP CONSEGNE', 'info');
+      _diagLog('═══════════════════════════════════════════', 'info');
+      _diagLog('Data/ora: '+new Date().toString(), 'info');
+      _diagLog('URL pagina: '+window.location.href, 'info');
+      _diagLog('Referrer: '+(document.referrer || '(nessuno)'), 'info');
+      _diagLog('Document readyState: '+document.readyState, 'info');
+      _diagLog('Page Visibility: '+(document.visibilityState||'?'), 'info');
+      _diagLog('Compatibility mode: '+(document.compatMode||'?'), 'info');
+      _diagLog('', 'info');
+      _diagLog('── ENVIRONMENT ─────────────────────────────', 'info');
+      _diagLog('User Agent: '+navigator.userAgent, 'info');
+      _diagLog('Platform: '+(navigator.platform||'?'), 'info');
+      _diagLog('Vendor: '+(navigator.vendor||'?'), 'info');
+      _diagLog('Lingue: '+((navigator.languages||[navigator.language]||[]).join(', ')), 'info');
+      _diagLog('Timezone: '+(Intl && Intl.DateTimeFormat ? Intl.DateTimeFormat().resolvedOptions().timeZone : '?'), 'info');
+      _diagLog('Schermo: '+screen.width+'×'+screen.height+' (color depth '+screen.colorDepth+'bit)', 'info');
+      _diagLog('Viewport: '+window.innerWidth+'×'+window.innerHeight, 'info');
+      _diagLog('Device Pixel Ratio: '+window.devicePixelRatio, 'info');
+      _diagLog('Cookie enabled: '+navigator.cookieEnabled, 'info');
+      _diagLog('Do Not Track: '+(navigator.doNotTrack||'(non impostato)'), 'info');
+      _diagLog('Service Worker API: '+(typeof navigator.serviceWorker !== 'undefined' ? 'presente' : 'assente'), 'info');
+      if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+        _diagLog('Service Worker attivo: '+navigator.serviceWorker.controller.scriptURL, 'info');
+      }
+      // Storage estimate (quota disponibile)
+      if (navigator.storage && navigator.storage.estimate) {
+        navigator.storage.estimate().then(function(e) {
+          var usedMB = Math.round((e.usage||0)/1048576);
+          var quotaMB = Math.round((e.quota||0)/1048576);
+          _diagLog('Storage Quota: '+usedMB+' / '+quotaMB+' MB usati', 'info');
+        }).catch(function(){});
+      }
+      // Battery (se disponibile)
+      if (navigator.getBattery) {
+        navigator.getBattery().then(function(b) {
+          _diagLog('Batteria: '+Math.round(b.level*100)+'% '+(b.charging?'(in carica)':''), 'info');
+        }).catch(function(){});
+      }
+      _diagLog('', 'info');
+      _diagLog('── INIZIO TEST ─────────────────────────────', 'info');
+      setTimeout(next, 200);
+    }
+
+    // ── Dump dati grezzi finali (per il tecnico IT) ───────────
+    function _dumpRawData(next) {
+      _diagLog('', 'info');
+      _diagLog('── RIEPILOGO DATI GREZZI ───────────────────', 'info');
+      try {
+        // Versioni/identificativi runtime
+        if (typeof bootstrap !== 'undefined') {
+          _diagLog('Bootstrap: v'+(bootstrap.Modal && bootstrap.Modal.VERSION || '?'), 'info');
+        }
+        if (typeof Swal !== 'undefined' && Swal.version) {
+          _diagLog('SweetAlert2: v'+Swal.version, 'info');
+        }
+        // Stato applicativo
+        _diagLog('_realtimeChannel definito: '+(typeof _realtimeChannel !== 'undefined' && !!_realtimeChannel), 'info');
+        if (typeof _realtimeChannel !== 'undefined' && _realtimeChannel) {
+          _diagLog('_realtimeChannel.state: '+(_realtimeChannel.state||'?'), 'info');
+          _diagLog('_realtimeChannel.topic: '+(_realtimeChannel.topic||'?'), 'info');
+          _diagLog('_realtimeChannel.joinedOnce: '+(_realtimeChannel.joinedOnce||false), 'info');
+        }
+        _diagLog('_emergenzaPollingId attivo: '+(typeof _emergenzaPollingAttivo==='function' && _emergenzaPollingAttivo()), 'info');
+        _diagLog('_lockState chiavi: '+(typeof _lockState!=='undefined' ? Object.keys(_lockState).length : '?'), 'info');
+        _diagLog('_dirtyLetti: '+(typeof _dirtyLetti!=='undefined' ? _dirtyLetti.size+' modifiche pending' : '?'), 'info');
+        _diagLog('_letti_salvataggioAttivi: '+(typeof _letti_salvataggioAttivi!=='undefined' ? _letti_salvataggioAttivi.size : '?'), 'info');
+        _diagLog('_syncPaused: '+(typeof _syncPaused!=='undefined' ? _syncPaused : '?'), 'info');
+        _diagLog('_focusCard attivo: '+(typeof _focusCard!=='undefined' && !!_focusCard), 'info');
+        _diagLog('_lettoLockAtt: '+(typeof _lettoLockAtt!=='undefined' ? (_lettoLockAtt||'(nessuno)') : '?'), 'info');
+        _diagLog('_mioToken presente: '+(typeof _mioToken!=='undefined' && !!_mioToken), 'info');
+        // localStorage keys (sanitizzate)
+        try {
+          _diagLog('localStorage chiavi:', 'info');
+          for (var i=0; i<localStorage.length; i++) {
+            var k = localStorage.key(i);
+            var v = localStorage.getItem(k) || '';
+            var preview = v.length>40 ? v.substring(0,40)+'... ('+v.length+' char)' : v;
+            // Maschera token sensibili
+            if (/token|session|secret|key/i.test(k)) preview = '<'+v.length+' char nascosti>';
+            _diagLog('  '+k+' = '+preview, 'info');
+          }
+        } catch(e) { _diagLog('  (errore lettura localStorage)', 'warn'); }
+        // Conteggi DOM
+        _diagLog('Card DOM (cardsContainer): '+document.querySelectorAll('#cardsContainer .patient-card').length, 'info');
+        _diagLog('Card DOM (cardsContainerAlt): '+document.querySelectorAll('#cardsContainerAlt .patient-card').length, 'info');
+        _diagLog('Card lockate (overlay): '+document.querySelectorAll('.lock-overlay').length, 'info');
+      } catch(e) {
+        _diagLog('Errore raccolta dati grezzi: '+e.message, 'err');
+      }
+      _diagLog('', 'info');
+      _diagLog('── JSON COMPLETO RISULTATI ─────────────────', 'info');
+      try {
+        var jsonR = JSON.stringify(_diagR, null, 2);
+        // Splitta su righe per leggibilità
+        jsonR.split('\n').forEach(function(riga) {
+          _diagLog(riga, 'info');
+        });
+      } catch(e) { _diagLog('(errore serializzazione JSON)', 'err'); }
+      _diagLog('', 'info');
+      _diagLog('═══════════════════════════════════════════', 'info');
+      setTimeout(next, 200);
+    }
+
     // ── TEST: Browser ─────────────────────────────────────────
     function _testBrowser(next) {
       _diagLog('▶ Verifica browser...', 'info');
       var ua = navigator.userAgent;
-      var nome = 'Sconosciuto', ver = 0;
+      var nome = 'Sconosciuto', ver = 0, fullVer = '';
       var m;
-      if ((m = ua.match(/Edg\/(\d+)/)))     { nome='Edge';    ver=+m[1]; }
-      else if ((m=ua.match(/Chrome\/(\d+)/))){ nome='Chrome';  ver=+m[1]; }
-      else if ((m=ua.match(/Firefox\/(\d+)/))){ nome='Firefox'; ver=+m[1]; }
-      else if (/Safari/.test(ua))            { nome='Safari';  ver=0; }
+      if ((m = ua.match(/Edg\/([\d.]+)/)))     { nome='Edge';    fullVer=m[1]; ver=parseInt(m[1],10); }
+      else if ((m=ua.match(/Chrome\/([\d.]+)/))){ nome='Chrome';  fullVer=m[1]; ver=parseInt(m[1],10); }
+      else if ((m=ua.match(/Firefox\/([\d.]+)/))){ nome='Firefox'; fullVer=m[1]; ver=parseInt(m[1],10); }
+      else if (/Safari/.test(ua) && (m=ua.match(/Version\/([\d.]+)/))){ nome='Safari'; fullVer=m[1]; ver=parseInt(m[1],10); }
+      else if (/Trident|MSIE/.test(ua))         { nome='Internet Explorer'; ver=0; }
+      var os = 'Sconosciuto';
+      if (/Windows NT 10/.test(ua))      os = 'Windows 10/11';
+      else if (/Windows NT 6.3/.test(ua)) os = 'Windows 8.1';
+      else if (/Windows NT 6.2/.test(ua)) os = 'Windows 8';
+      else if (/Windows NT 6.1/.test(ua)) os = 'Windows 7';
+      else if (/Windows NT 6.0/.test(ua)) os = 'Windows Vista';
+      else if (/Windows NT 5/.test(ua))   os = 'Windows XP';
+      else if (/Mac OS X/.test(ua))       os = 'macOS';
+      else if (/Linux/.test(ua))          os = 'Linux';
+      else if (/Android/.test(ua))        os = 'Android';
+      else if (/iPhone|iPad/.test(ua))    os = 'iOS';
       var ok = (ver===0) || ver >= 90;
-      _diagR.browser = { ok: ok, nome: nome, ver: ver };
-      if (!ok) _diagLog(nome+' v'+ver+' — VERSIONE OBSOLETA (consigliato ≥90)', 'err');
-      else     _diagLog(nome+(ver?' v'+ver:'')+' — OK', 'ok');
+      _diagR.browser = { ok: ok, nome: nome, ver: ver, fullVer: fullVer, os: os };
+      _diagLog('Sistema operativo: '+os, 'info');
+      _diagLog('Browser: '+nome+(fullVer?' v'+fullVer:''), ok?'ok':'err');
+      if (!ok) _diagLog('VERSIONE OBSOLETA (consigliato ≥90) — molti bug fix mancanti', 'err');
       // Online/offline status
       _diagR.online = { ok: navigator.onLine };
       if (!navigator.onLine) _diagLog('Stato rete: OFFLINE!', 'err');
@@ -2409,26 +2530,46 @@
       var problemi = [];
       // Token Google
       var hasGToken = !!(window._googleAccessToken);
-      if (hasGToken) _diagLog('Token Google: presente', 'ok');
-      else { _diagLog('Token Google: ASSENTE', 'err'); problemi.push('Token Google'); }
+      if (hasGToken) {
+        _diagLog('Token Google access: presente ('+window._googleAccessToken.length+' char)', 'ok');
+      } else {
+        _diagLog('Token Google access: ASSENTE — login non completato!', 'err');
+        problemi.push('Token Google');
+      }
+      var hasDriveToken = !!(window._googleDriveToken);
+      _diagLog('Token Google Drive: '+(hasDriveToken?'presente':'assente'), hasDriveToken?'ok':'warn');
       // Sessione localStorage
       try {
-        var sess = JSON.parse(localStorage.getItem('appSession')||'null');
-        if (sess && sess.expiry) {
-          var rimMin = Math.round((sess.expiry - Date.now())/60000);
-          if (rimMin < 0)      _diagLog('Sessione localStorage: SCADUTA da '+(-rimMin)+' min', 'warn');
-          else if (rimMin < 5) _diagLog('Sessione localStorage: scade tra '+rimMin+' min', 'warn');
-          else                 _diagLog('Sessione localStorage: valida (scade tra '+rimMin+' min)', 'ok');
+        var raw = localStorage.getItem('appSession');
+        if (!raw) {
+          _diagLog('appSession (localStorage): assente', 'warn');
         } else {
-          _diagLog('Sessione localStorage: assente', 'warn');
+          var sess = JSON.parse(raw);
+          if (sess && sess.expiry) {
+            var rimMin = Math.round((sess.expiry - Date.now())/60000);
+            var scadIso = new Date(sess.expiry).toLocaleString('it-IT');
+            _diagLog('appSession scadenza: '+scadIso+' (tra '+rimMin+' min)', rimMin<0?'err':rimMin<5?'warn':'ok');
+            if (rimMin < 0) problemi.push('Sessione SCADUTA da '+(-rimMin)+' min');
+          } else {
+            _diagLog('appSession: presente ma malformata', 'warn');
+          }
         }
-      } catch(e) { _diagLog('Sessione localStorage: corrotta!', 'err'); problemi.push('appSession corrotta'); }
+      } catch(e) {
+        _diagLog('appSession: CORROTTA ('+e.message+')', 'err');
+        problemi.push('appSession corrotta');
+      }
       // Ward token
       var wardId = '';
       try { wardId = localStorage.getItem('wardSessionId')||''; } catch(e){}
-      if (wardId) _diagLog('Ward token: presente', 'ok');
-      else        _diagLog('Ward token: assente (verrà generato)', 'warn');
-      _diagR.session = { ok: hasGToken, problemi: problemi };
+      if (wardId) _diagLog('wardSessionId: '+wardId.substring(0,8)+'... ('+wardId.length+' char)', 'ok');
+      else        _diagLog('wardSessionId: assente (verrà generato al prossimo login)', 'warn');
+      // _mioToken in memoria
+      if (typeof _mioToken !== 'undefined' && _mioToken) {
+        _diagLog('_mioToken (memoria): '+_mioToken.substring(0,8)+'...', 'ok');
+      } else {
+        _diagLog('_mioToken (memoria): NON inizializzato', 'err');
+      }
+      _diagR.session = { ok: hasGToken && problemi.length===0, problemi: problemi };
       setTimeout(next, 150);
     }
 
@@ -2588,19 +2729,29 @@
     // ── TEST: REST Supabase (singola) ─────────────────────────
     function _testREST(next) {
       _diagLog('▶ Connessione REST a Supabase...', 'info');
+      _diagLog('  Endpoint: '+SUPABASE_URL+'/rest/v1/impostazioni', 'info');
       var t0 = performance.now();
       fetch(SUPABASE_URL+'/rest/v1/impostazioni?chiave=eq.NOME_REPARTO&select=valore', {
         headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer '+SUPABASE_ANON_KEY }
       }).then(function(r) {
         var ms = Math.round(performance.now()-t0);
-        _diagR.rest = { ok: r.ok && ms<2000, ms: ms, status: r.status };
+        _diagR.rest = { ok: r.ok && ms<2000, ms: ms, status: r.status, statusText: r.statusText, type: r.type };
+        _diagLog('  HTTP '+r.status+' '+r.statusText+' • type: '+r.type, r.ok?'ok':'err');
+        // Header utili
+        try {
+          var server = r.headers.get('server');
+          var date = r.headers.get('date');
+          if (server) _diagLog('  Server: '+server, 'info');
+          if (date)   _diagLog('  Server time: '+date, 'info');
+        } catch(e){}
         if (!r.ok)        _diagLog('REST: errore HTTP '+r.status, 'err');
         else if (ms>2000) _diagLog('REST: '+ms+'ms — LENTO', 'warn');
         else              _diagLog('REST: '+ms+'ms — OK', 'ok');
         next();
       }).catch(function(e) {
-        _diagR.rest = { ok: false, ms: 9999 };
-        _diagLog('REST: ERRORE — rete irraggiungibile ('+(e.message||'')+')', 'err');
+        _diagR.rest = { ok: false, ms: 9999, error: e.message };
+        _diagLog('REST: ERRORE — '+(e.message||'rete irraggiungibile'), 'err');
+        _diagLog('  Tipo errore: '+(e.name||'?'), 'err');
         next();
       });
     }
@@ -2672,34 +2823,45 @@
       _diagLog('▶ Connessione WebSocket Realtime...', 'info');
       var risolto = false;
       var t0 = performance.now();
-      var wsUrl = 'wss://'+SUPABASE_URL.replace('https://','').replace('http://','')+
-                  '/realtime/v1/websocket?apikey='+SUPABASE_ANON_KEY+'&vsn=1.0.0';
+      var wsHost = SUPABASE_URL.replace('https://','').replace('http://','');
+      var wsUrl = 'wss://'+wsHost+'/realtime/v1/websocket?apikey='+SUPABASE_ANON_KEY+'&vsn=1.0.0';
+      _diagLog('  URL WebSocket: wss://'+wsHost+'/realtime/v1/websocket', 'info');
       var ws;
+      var readyStateNomi = ['CONNECTING','OPEN','CLOSING','CLOSED'];
       var timeoutId = setTimeout(function() {
         if (risolto) return;
         risolto = true;
-        _diagR.ws = { ok: false, ms: 5000, motivo: 'timeout 5s' };
+        var rs = ws ? readyStateNomi[ws.readyState] : '?';
+        _diagR.ws = { ok: false, ms: 5000, motivo: 'timeout 5s', readyState: rs };
+        _diagLog('  Stato finale ready: '+rs, 'info');
         _diagLog('WebSocket: TIMEOUT (5s) — BLOCCATO da firewall/proxy/antivirus!', 'err');
         try { ws && ws.close(); } catch(e2){}
         next();
       }, 5000);
       try {
         ws = new WebSocket(wsUrl);
+        _diagLog('  Stato iniziale ready: '+readyStateNomi[ws.readyState], 'info');
         ws.onopen = function() {
           if (risolto) return;
           risolto = true; clearTimeout(timeoutId);
           var ms = Math.round(performance.now()-t0);
-          _diagR.ws = { ok: true, ms: ms };
+          _diagR.ws = { ok: true, ms: ms, protocol: ws.protocol||'(default)', extensions: ws.extensions||'(none)' };
+          _diagLog('  Protocol: '+(ws.protocol||'(default)'), 'info');
+          _diagLog('  Extensions: '+(ws.extensions||'(none)'), 'info');
           _diagLog('WebSocket: connesso in '+ms+'ms — OK', 'ok');
-          try { ws.close(); } catch(e2){}
+          try { ws.close(1000, 'diagnostic test ended'); } catch(e2){}
           next();
         };
-        ws.onerror = function() {
+        ws.onerror = function(ev) {
           if (risolto) return;
           risolto = true; clearTimeout(timeoutId);
-          _diagR.ws = { ok: false, ms: 9999, motivo: 'errore connessione' };
+          _diagR.ws = { ok: false, ms: 9999, motivo: 'errore connessione', readyState: readyStateNomi[ws.readyState] };
           _diagLog('WebSocket: ERRORE — bloccato da firewall/antivirus/proxy', 'err');
           next();
+        };
+        ws.onclose = function(ev) {
+          if (!risolto) return; // se ancora non risolto, gestito da onerror
+          _diagLog('  WS chiuso: code '+ev.code+' '+(ev.reason||'(no reason)')+' • clean='+ev.wasClean, 'info');
         };
       } catch(e) {
         risolto = true; clearTimeout(timeoutId);
@@ -2880,18 +3042,83 @@
       var _logEl = document.getElementById('diagLog');
       if (_logEl) _logHtmlSalvato = _logEl.innerHTML;
 
+      // Estrae il testo plain dal log HTML (rimuove tag, mantiene struttura)
+      function _logComeTesto() {
+        var div = document.createElement('div');
+        div.innerHTML = _logHtmlSalvato.replace(/<br\s*\/?>/gi, '\n');
+        return (div.innerText || div.textContent || '');
+      }
+
       // Funzione per mostrare il log dettagliato in un modal separato
       function _mostraLogDettagliato() {
         Swal.fire({
-          title: '<i class="bi bi-terminal me-2"></i>Log diagnostica',
-          width: 720,
-          html: '<div style="text-align:left;font-size:0.78rem;' +
-                'font-family:Consolas,Monaco,monospace;max-height:420px;overflow-y:auto;' +
+          title: '<i class="bi bi-terminal me-2"></i>Log diagnostica completo',
+          width: 760,
+          html: '<div class="d-flex gap-2 mb-2 justify-content-end">' +
+                  '<button id="btnCopiaLog" class="btn btn-sm btn-outline-secondary">' +
+                    '<i class="bi bi-clipboard me-1"></i>Copia negli appunti</button>' +
+                  '<button id="btnScaricaLog" class="btn btn-sm btn-outline-secondary">' +
+                    '<i class="bi bi-download me-1"></i>Scarica .txt</button>' +
+                '</div>' +
+                '<div style="text-align:left;font-size:0.74rem;' +
+                'font-family:Consolas,Monaco,monospace;max-height:440px;overflow-y:auto;' +
                 'background:#1e1e1e;color:#d4d4d4;padding:12px 14px;' +
-                'border-radius:6px;line-height:1.7;">'+_logHtmlSalvato+'</div>',
+                'border-radius:6px;line-height:1.7;white-space:pre-wrap;word-break:break-word;">' +
+                _logHtmlSalvato+'</div>' +
+                '<small class="text-muted d-block mt-2 text-start">' +
+                '<i class="bi bi-info-circle me-1"></i>Questo log contiene informazioni tecniche dettagliate ' +
+                'utili al supporto IT per analizzare il PC.</small>',
           confirmButtonText: '<i class="bi bi-arrow-left me-1"></i>Torna al report',
           confirmButtonColor: '#37474f',
-          showCancelButton: false
+          showCancelButton: false,
+          didOpen: function() {
+            // Pulsante Copia
+            var btnCopia = document.getElementById('btnCopiaLog');
+            if (btnCopia) {
+              btnCopia.addEventListener('click', function() {
+                var testo = _logComeTesto();
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                  navigator.clipboard.writeText(testo).then(function() {
+                    btnCopia.innerHTML = '<i class="bi bi-check2 me-1"></i>Copiato!';
+                    btnCopia.classList.remove('btn-outline-secondary');
+                    btnCopia.classList.add('btn-success');
+                    setTimeout(function() {
+                      btnCopia.innerHTML = '<i class="bi bi-clipboard me-1"></i>Copia negli appunti';
+                      btnCopia.classList.remove('btn-success');
+                      btnCopia.classList.add('btn-outline-secondary');
+                    }, 1800);
+                  }).catch(function() { alert('Impossibile copiare. Seleziona manualmente il testo.'); });
+                } else {
+                  // Fallback
+                  var ta = document.createElement('textarea');
+                  ta.value = testo;
+                  document.body.appendChild(ta);
+                  ta.select();
+                  try { document.execCommand('copy'); btnCopia.innerHTML = '<i class="bi bi-check2 me-1"></i>Copiato!'; } catch(e) {}
+                  document.body.removeChild(ta);
+                }
+              });
+            }
+            // Pulsante Scarica
+            var btnScarica = document.getElementById('btnScaricaLog');
+            if (btnScarica) {
+              btnScarica.addEventListener('click', function() {
+                var testo = _logComeTesto();
+                var blob = new Blob([testo], { type: 'text/plain;charset=utf-8' });
+                var url = URL.createObjectURL(blob);
+                var a = document.createElement('a');
+                var d = new Date();
+                var pad = function(n){return String(n).padStart(2,'0');};
+                var nomeFile = 'diagnostica-app-consegne-'+d.getFullYear()+pad(d.getMonth()+1)+pad(d.getDate())+'-'+pad(d.getHours())+pad(d.getMinutes())+'.txt';
+                a.href = url;
+                a.download = nomeFile;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+              });
+            }
+          }
         }).then(function() { _aproReport(); });
       }
 
