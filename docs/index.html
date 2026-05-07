@@ -2355,19 +2355,17 @@
     // Non mostra modal/log durante l'esecuzione. A fine test, valuta i risultati:
     // - Tutto OK → silenzioso, nessuna interruzione
     // - Warning/errori → modal compatto con report e raccomandazione
-    window._eseguiDiagnosticaSilent = function() {
-      if (_silentDiag) return; // già in corso
+    // Callback opzionale chiamato a fine diagnostica silent (sia OK sia con problemi).
+    // In caso di problemi, viene chiamato DOPO l'apertura del modal di report.
+    var _silentDoneCallback = null;
+    window._eseguiDiagnosticaSilent = function(onDone) {
+      if (_silentDiag) { if (onDone) onDone(); return; }
       // Skip se è in corso una diagnostica manuale (modal con #diagLog aperto)
-      if (document.getElementById('diagLog')) return;
-      // Skip se c'è un altro Swal aperto (per non interrompere l'utente)
-      if (typeof Swal !== 'undefined' && Swal.isVisible && Swal.isVisible()) {
-        // Riprova tra 10s
-        setTimeout(window._eseguiDiagnosticaSilent, 10000);
-        return;
-      }
+      if (document.getElementById('diagLog')) { if (onDone) onDone(); return; }
       _silentDiag = true;
+      _silentDoneCallback = onDone || null;
       _runAllTests();
-      // _silentDiag verrà rimesso a false in _mostraReport (alla fine)
+      // _silentDiag e callback verranno gestiti in _mostraReport (alla fine)
     };
 
     // ── Header sistema (per il tecnico IT) ────────────────────
@@ -3304,12 +3302,15 @@
       // ── Branch silent: in modalità silenziosa, mostra il report SOLO se
       // ci sono problemi degni di nota; altrimenti reset e nessuna interruzione.
       var eraSilent = _silentDiag;
+      var cb = _silentDoneCallback;
       if (_silentDiag) {
         _silentDiag = false; // reset per future esecuzioni manuali
+        _silentDoneCallback = null;
         var ciSonoProblemi = (problemi.length > 0) || (rischioSalvataggio >= 25) || critici > 0;
         if (!ciSonoProblemi) {
-          // Tutto OK: silenziosamente, nessun modal
+          // Tutto OK: silenziosamente, nessun modal. Notifica completamento.
           console.log('[Diagnostica startup] Tutti i test superati. Nessun problema.');
+          if (cb) try { cb(); } catch(e){}
           return;
         }
         console.log('[Diagnostica startup] Problemi rilevati: ', problemi);
@@ -3317,56 +3318,16 @@
 
       // Apri il report
       _aproReport();
+      // Notifica completamento (modal aperto, ma il caricamento può proseguire)
+      if (cb) try { cb(); } catch(e){}
     }
 
     // Aggiorna aspetto pulsante immediatamente
     _aggiornaBottoneEmergenza();
 
-    // ══════════════════════════════════════════════════════════════
-    // DIAGNOSTICA AUTOMATICA AL CARICAMENTO PAGINA (silent)
-    // Esegue tutti i test in background al primo caricamento.
-    // Se tutto OK: nessuna interruzione. Se ci sono warning/errori:
-    // mostra un modal compatto con report e raccomandazioni.
-    // ══════════════════════════════════════════════════════════════
-    (function _autoDiagAtStartup() {
-      var avviata = false;
-      function avvia() {
-        if (avviata) return;
-        avviata = true;
-        // Skip se la modalità emergenza è già stata attivata manualmente
-        // (ad esempio da una sessione precedente in tab bg, anche se in pratica
-        // emergenza è in-memory e parte sempre OFF; questo è solo un safety check).
-        if (typeof _emergenzaPollingAttivo === 'function' && _emergenzaPollingAttivo()) return;
-        try {
-          window._eseguiDiagnosticaSilent();
-        } catch (e) {
-          console.warn('[Diagnostica startup] Errore esecuzione:', e);
-        }
-      }
-      // Strategia: aspetta che le consegne siano renderizzate, oppure timeout 30s.
-      function controllaConsegne() {
-        var card = document.querySelector('#cardsContainer .patient-card, #cardsContainerAlt .patient-card');
-        if (card) {
-          // Card presenti → attendiamo 2s di stabilizzazione poi avviamo
-          setTimeout(avvia, 2000);
-          return;
-        }
-        // Non ancora renderizzate → ricontrolla tra 1s
-        setTimeout(controllaConsegne, 1000);
-      }
-      // Safety net: se dopo 30s ancora non vediamo card, partiamo lo stesso
-      // (la diagnostica identificherà eventuali problemi di rete/caricamento).
-      setTimeout(avvia, 30000);
-
-      if (document.readyState === 'complete') {
-        // Pagina già caricata
-        setTimeout(controllaConsegne, 500);
-      } else {
-        window.addEventListener('load', function() {
-          setTimeout(controllaConsegne, 500);
-        });
-      }
-    })();
+    // NOTA: la diagnostica silent al caricamento è invocata da app.js come
+    // ultima fase di _avviaCaricamentoDati (subito prima di _setProgress(100)).
+    // Vedi window._eseguiDiagnosticaSilent definita sopra.
 
   })();
   </script>

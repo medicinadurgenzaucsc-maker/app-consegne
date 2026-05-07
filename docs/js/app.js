@@ -81,16 +81,53 @@
           .catch(function(e) { console.error('ottieniNomeReparto error:', e); });
 
         // FASE 5: overlay sparisce solo quando le card sono caricate
+        // FASE 6 (nuova): diagnostica silent come ultima fase prima di chiudere overlay.
+        // Se rileva problemi, il modal si apre PRIMA della chiusura overlay,
+        // così l'utente lo vede subito.
         _sincronizzaEPoiFai(function() {
-          _setProgress(100);
-          setTimeout(function() {
-            var ov = document.getElementById('backupCheckOverlay');
-            if (ov) {
-              ov.style.transition = 'opacity 0.4s';
-              ov.style.opacity = '0';
-              setTimeout(function() { ov.style.display = 'none'; }, 420);
-            }
-          }, 300);
+          // Card caricate. Ora barra al 95% e fase diagnostica.
+          _setProgress(95);
+          var msg = document.getElementById('backupCheckMsg');
+          if (msg) msg.innerHTML =
+            'Diagnostica in corso...<br>' +
+            '<span style="font-size:0.75rem;color:#78909c;font-weight:normal;">' +
+            'Verifica del PC e della connessione.' +
+            '</span>';
+
+          function _chiudiOverlay() {
+            _setProgress(100);
+            setTimeout(function() {
+              var ov = document.getElementById('backupCheckOverlay');
+              if (ov) {
+                ov.style.transition = 'opacity 0.4s';
+                ov.style.opacity = '0';
+                setTimeout(function() { ov.style.display = 'none'; }, 420);
+              }
+            }, 300);
+          }
+
+          // Avvia diagnostica silent. Quando completa (con o senza problemi),
+          // chiude l'overlay. Il modal di report (se aperto per problemi)
+          // si sovrappone all'overlay già in chiusura.
+          if (typeof window._eseguiDiagnosticaSilent === 'function') {
+            // Safety net: se la diagnostica non termina in 20s, chiudi comunque l'overlay.
+            var done = false;
+            var safety = setTimeout(function() {
+              if (done) return;
+              done = true;
+              console.warn('[Caricamento] Diagnostica oltre 20s, chiusura overlay');
+              _chiudiOverlay();
+            }, 20000);
+            window._eseguiDiagnosticaSilent(function() {
+              if (done) return;
+              done = true;
+              clearTimeout(safety);
+              _chiudiOverlay();
+            });
+          } else {
+            // Fallback: nessuna diagnostica disponibile, chiudi subito
+            _chiudiOverlay();
+          }
         }, _setProgress);
       }
 
