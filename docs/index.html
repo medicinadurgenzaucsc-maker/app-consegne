@@ -76,7 +76,7 @@
               if (c && c.getAttribute('data-bed') === lettoRilasciato) active.blur();
             }
           }
-          google.script.run.rilasciaLock(lettoRilasciato, _mioToken);
+          _sbRilasciaLock(lettoRilasciato, _mioToken).catch(function(){});
         }
         _timerRilascio = null;
       }, _focusCard ? 120000 : 20000);
@@ -94,7 +94,7 @@
 
     window.addEventListener('beforeunload', function(e) {
       // Rilascia il lock
-      if (_lettoLockAtt) google.script.run.rilasciaLock(_lettoLockAtt, _mioToken);
+      if (_lettoLockAtt) _sbRilasciaLock(_lettoLockAtt, _mioToken).catch(function(){});
 
       // Se ci sono modifiche non salvate → salva con fetch keepalive e mostra dialogo nativo
       if (typeof _dirtyLetti !== 'undefined' && _dirtyLetti.size > 0) {
@@ -534,18 +534,18 @@
 
       // ── FASE 2: scrivi lock sul DB (1 upsert) ────────────────────────────
       // Realtime propagherà l'evento a tutti gli altri client istantaneamente.
-      google.script.run
-        .withSuccessHandler(function(res) {
+      _sbAcquistaLock(letto, _mioToken)
+        .then(function(res) {
           var lockOvEl = document.getElementById('lockCheckOverlay');
           if (lockOvEl) lockOvEl.parentNode.removeChild(lockOvEl);
           if (!_focusCard) {
             // Focus mode chiuso mentre il callback era in attesa — rilascia subito il lock
-            if (res && res.success) google.script.run.rilasciaLock(letto, _mioToken);
+            if (res && res.success) _sbRilasciaLock(letto, _mioToken).catch(function(){});
             return;
           }
           if (res.success) {
             if (_lettoLockAtt && _lettoLockAtt !== letto) {
-              google.script.run.rilasciaLock(_lettoLockAtt, _mioToken);
+              _sbRilasciaLock(_lettoLockAtt, _mioToken).catch(function(){});
             }
             _lettoLockAtt = letto;
             _rinnovaDebounce(letto);
@@ -559,7 +559,7 @@
             _mostraAvvisoLock(letto);
           }
         })
-        .withFailureHandler(function() {
+        .catch(function() {
           // Errore di rete: apri comunque, il lock sarà rilasciato alla chiusura
           var lockOvEl = document.getElementById('lockCheckOverlay');
           if (lockOvEl) lockOvEl.parentNode.removeChild(lockOvEl);
@@ -568,8 +568,7 @@
           _rinnovaDebounce(letto);
           _syncPaused = false;
           _completaApertura();
-        })
-        .acquistaLock(letto, _mioToken);
+        });
     }
 
     function _disattivaFocusMode(scrollToCard) {
@@ -588,7 +587,7 @@
         if (_timerRilascio) { clearTimeout(_timerRilascio); _timerRilascio = null; }
         var lettoRilasciato = _lettoLockAtt;
         _lettoLockAtt = null;
-        google.script.run.rilasciaLock(lettoRilasciato, _mioToken);
+        _sbRilasciaLock(lettoRilasciato, _mioToken).catch(function(){});
       }
 
       var card = _focusCard;
@@ -693,7 +692,7 @@
           if (_lettoLockAtt) {
             var lettoRilasciato = _lettoLockAtt;
             _lettoLockAtt = null;
-            google.script.run.rilasciaLock(lettoRilasciato, _mioToken);
+            _sbRilasciaLock(lettoRilasciato, _mioToken).catch(function(){});
           }
         }
       }
@@ -704,8 +703,8 @@
       var body = document.getElementById('lettiRiepilogoBody');
       body.innerHTML = '<span class="text-muted" style="font-size:0.78rem;"><span class="spinner-border spinner-border-sm me-1" style="width:10px;height:10px;border-width:1.5px;"></span>Caricamento...</span>';
 
-      google.script.run
-        .withSuccessHandler(function(r) {
+      _sbGetRiepilogo()
+        .then(function(r) {
           var html = '';
           html += '<div class="d-flex align-items-center gap-2 flex-wrap mb-1">';
           html += '<span style="color:#7ec8e3;-webkit-text-stroke:1.5px #7ec8e3;font-size:1.1rem;line-height:1;">♂</span>'
@@ -731,10 +730,9 @@
                 + '</div>';
           body.innerHTML = html;
         })
-        .withFailureHandler(function() {
+        .catch(function() {
           body.innerHTML = '<span class="text-danger" style="font-size:0.78rem;">Errore caricamento</span>';
-        })
-        .getRiepilogoLetti();
+        });
     }
 
     document.addEventListener('show.bs.dropdown', function(e) {
@@ -1331,7 +1329,7 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@simonwep/pickr@1.9.1/dist/themes/nano.min.css">
   <script src="https://cdn.jsdelivr.net/npm/@simonwep/pickr@1.9.1/dist/pickr.min.js"></script>
 
-  <!-- Script principale: prima api.js (emulazione google.script.run) poi app logic -->
+  <!-- Script principali: api.js (Supabase + helpers), poi logica app -->
   <script src="js/api.js"></script>
   <script src="js/app.js"></script>
   <script src="js/app2.js"></script>
@@ -1678,8 +1676,8 @@
               html: '<div class="d-flex align-items-center justify-content-center gap-3 py-2"><div class="spinner-border text-success"></div><span>Creazione backup...</span></div>',
               allowOutsideClick: false, showConfirmButton: false
             });
-            google.script.run
-              .withSuccessHandler(function(res) {
+            _sbBackupForzato()
+              .then(function(res) {
                 Swal.fire({
                   icon: 'success', title: 'Backup completato!',
                   html: 'Backup salvato con successo.<br><small class="text-muted">' +
@@ -1687,10 +1685,9 @@
                   timer: 3500, showConfirmButton: false, timerProgressBar: true
                 });
               })
-              .withFailureHandler(function(e) {
+              .catch(function(e) {
                 Swal.fire({ icon: 'error', title: 'Errore Backup', text: (e && e.message) || 'Si è verificato un errore.', confirmButtonColor: '#d33' });
-              })
-              .backupForzato();
+              });
           });
         }).catch(function() {
           Swal.fire({ icon: 'error', title: 'Errore', text: 'Impossibile verificare la password.', confirmButtonColor: '#d33' });
@@ -1763,7 +1760,7 @@
       _aggiornaBreadcrumb(['Scegli giorno']);
       _ripristinaGiornoSelezionato = null;
       _riprisinaTsSelezionato = null;
-      // Chiamata diretta a Supabase (senza il layer google.script.run)
+      // Chiamata diretta a Supabase
       _sbGetGiorniArchivio()
         .then(function(giorni) {
           _nascondiSpinner();
@@ -1972,8 +1969,8 @@
           html: '<div class="d-flex align-items-center justify-content-center gap-3 py-2"><div class="spinner-border text-danger"></div><span>Aggiornamento dati...</span></div>',
           allowOutsideClick: false, showConfirmButton: false
         });
-        google.script.run
-          .withSuccessHandler(function(res) {
+        _sbRipristinaLetti(pazientiDaRipristinare)
+          .then(function(res) {
             _sincronizzaEPoiFai(function() {
               Swal.fire({
                 icon: 'success', title: 'Ripristino completato!',
@@ -1982,10 +1979,9 @@
               });
             });
           })
-          .withFailureHandler(function(e) {
+          .catch(function(e) {
             Swal.fire({ icon: 'error', title: 'Errore Ripristino', text: (e && e.message) || 'Si è verificato un errore.', confirmButtonColor: '#d33' });
-          })
-          .ripristinaLetti(pazientiDaRipristinare);
+          });
       });
     };
 

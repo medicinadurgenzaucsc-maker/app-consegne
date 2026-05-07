@@ -31,8 +31,8 @@
         if (!sel) return;
         sel.innerHTML = '<option value="">Caricamento...</option>';
         sel.disabled = true;
-        google.script.run
-          .withSuccessHandler(function(letti) {
+        _sbGetLettiFull()
+          .then(function(letti) {
             sel.innerHTML = '<option value="">-- Seleziona letto --</option>';
             letti.forEach(function(l) {
               var opt = document.createElement('option');
@@ -42,11 +42,10 @@
             });
             sel.disabled = false;
           })
-          .withFailureHandler(function() {
+          .catch(function() {
             sel.innerHTML = '<option value="">Errore caricamento</option>';
             sel.disabled = false;
-          })
-          .getLettiFull();
+          });
       }
 
       if (id === 'modalSposta') {
@@ -55,8 +54,8 @@
         if (!selO || !selD) return;
         var prevO = selO.value, prevD = selD.value;
         [selO, selD].forEach(function(s) { s.innerHTML = '<option value="">Caricamento...</option>'; s.disabled = true; });
-        google.script.run
-          .withSuccessHandler(function(letti) {
+        _sbGetLettiFull()
+          .then(function(letti) {
             selO.innerHTML = '<option value="">-- Letto origine --</option>';
             selD.innerHTML = '<option value="">-- Letto destinazione --</option>';
             letti.forEach(function(l) {
@@ -72,10 +71,9 @@
             if (prevO) selO.value = prevO;
             if (prevD) selD.value = prevD;
           })
-          .withFailureHandler(function() {
+          .catch(function() {
             [selO, selD].forEach(function(s) { s.innerHTML = '<option value="">Errore caricamento</option>'; s.disabled = false; });
-          })
-          .getLettiFull();
+          });
       }
 
       if (id === 'modalGestisciTipologie') { _gtApri(); }
@@ -89,12 +87,12 @@
         if (navName && navName.innerText) {
           inp.value = navName.innerText;
         } else {
-          google.script.run
-            .withSuccessHandler(function(res) {
+          _sbOttieniNomeReparto()
+            .then(function(res) {
               var nome = (res && res.nome) ? res.nome : (typeof res === 'string' ? res : '');
               if (inp) inp.value = nome;
             })
-            .ottieniNomeReparto();
+            .catch(function(e) { console.error('ottieniNomeReparto error:', e); });
         }
       }
     });
@@ -159,16 +157,15 @@
       if (!modalEl) return;
       var input = document.getElementById('inputGiorniArchivio');
       if (input) input.value = '';
-      google.script.run
-        .withSuccessHandler(function(giorni) {
+      _sbGetGiorniConservazione()
+        .then(function(giorni) {
           if (input) input.value = giorni || 30;
           bootstrap.Modal.getOrCreateInstance(modalEl).show();
         })
-        .withFailureHandler(function() {
+        .catch(function() {
           if (input) input.value = 30;
           bootstrap.Modal.getOrCreateInstance(modalEl).show();
-        })
-        .getGiorniArchivio();
+        });
     }
 
     function salvaImpostazioniArchivio() {
@@ -180,8 +177,8 @@
       var modalEl = document.getElementById('modalImpostazioniArchivio');
       var mi = bootstrap.Modal.getInstance(modalEl); if (mi) mi.hide();
       _opStart('Salvataggio impostazioni...');
-      google.script.run
-        .withSuccessHandler(function(res) {
+      _sbSalvaGiorniConservazione(val)
+        .then(function(res) {
           _opEnd();
           if (res && res.success) {
             Swal.fire({ icon: 'success', title: 'Impostazioni salvate',
@@ -191,11 +188,10 @@
             Swal.fire({ icon: 'error', title: 'Errore', text: (res && res.message) || 'Salvataggio fallito.' });
           }
         })
-        .withFailureHandler(function(err) {
+        .catch(function(err) {
           _opEnd();
           Swal.fire({ icon: 'error', title: 'Errore', text: err.message || 'Salvataggio fallito.' });
-        })
-        .salvaGiorniArchivio(val);
+        });
     }
 
 
@@ -225,8 +221,8 @@
     window._aggiornaBadgePrincipali = _aggiornaBadgePrincipali;
 
     function _caricaColoriTipologie(callback) {
-      google.script.run
-        .withSuccessHandler(function(arr) {
+      _sbGetColoriTipologie().then(function(mappa){ return Object.keys(mappa).filter(Boolean).map(function(nome){ return {nome:nome,colore:mappa[nome]||stringToColor(nome)}; }); })
+        .then(function(arr) {
           if (arr) {
             arr.forEach(function(item) {
               _coloriTipologie[item.nome] = item.colore || null;
@@ -235,10 +231,9 @@
           _aggiornaBadgePrincipali();
           if (typeof callback === 'function') callback();
         })
-        .withFailureHandler(function() {
+        .catch(function() {
           if (typeof callback === 'function') callback();
-        })
-        .getTipologieConfigurate();
+        });
     }
 
     // ============================================================
@@ -319,16 +314,15 @@
           '</div>';
       }
       _caricaColoriTipologie(function() {
-        google.script.run
-          .withSuccessHandler(function(arr) {
+        _sbGetColoriTipologie().then(function(mappa){ return Object.keys(mappa).filter(Boolean).map(function(nome){ return {nome:nome,colore:mappa[nome]||stringToColor(nome)}; }); })
+          .then(function(arr) {
             _gtRighe = (arr || []).map(function(item) {
               return { nomeOld: item.nome, nomeNew: item.nome,
                        colore: item.colore || stringToColor(item.nome), isNew: false };
             });
             _gtRenderLista();
           })
-          .withFailureHandler(function() { _gtRenderLista(); })
-          .getTipologieConfigurate();
+          .catch(function() { _gtRenderLista(); });
       });
     }
 
@@ -447,8 +441,8 @@
           '</div>';
         }
 
-        google.script.run
-          .withSuccessHandler(function(res) {
+        _sbEliminaTipologia(riga.nomeOld, false)
+          .then(function(res) {
             if (res.success) {
               _gtRighe.splice(idx, 1);
               _gtDirty = true;
@@ -474,29 +468,27 @@
                     'Eliminazione in corso...' +
                   '</div>';
                 }
-                google.script.run
-                  .withSuccessHandler(function() {
+                _sbEliminaTipologia(riga.nomeOld, true)
+                  .then(function() {
                     delete _coloriTipologie[riga.nomeOld];
                     _gtRighe.splice(idx, 1);
                     _gtDirty = true;
                     _gtRenderLista();
                   })
-                  .withFailureHandler(function(err) {
+                  .catch(function(err) {
                     _gtRenderLista();
                     Swal.fire({ icon:'error', title:'Errore', text: err.message || 'Eliminazione fallita.' });
-                  })
-                  .eliminaTipologiaConfigurata(riga.nomeOld, true);
+                  });
               });
             } else {
               _gtRenderLista();
               Swal.fire({ icon:'error', title:'Errore', text:'Impossibile verificare i letti assegnati.' });
             }
           })
-          .withFailureHandler(function(err) {
+          .catch(function(err) {
             _gtRenderLista();
             Swal.fire({ icon:'error', title:'Errore', text: err.message || 'Operazione fallita.' });
-          })
-          .eliminaTipologiaConfigurata(riga.nomeOld, false);
+          });
       });
     }
 
@@ -547,8 +539,8 @@
         return { nomeOld: r.nomeOld || r.nomeNew, nomeNew: r.nomeNew.trim().toUpperCase(), colore: r.colore || null };
       });
 
-      google.script.run
-        .withSuccessHandler(function() {
+      _sbSalvaTipologieBatch(payload)
+        .then(function() {
           _gtDirty = false;
           _coloriTipologie = {};
           payload.forEach(function(p) { if (p.nomeNew) _coloriTipologie[p.nomeNew] = p.colore; });
@@ -558,11 +550,10 @@
             Swal.fire({ icon:'success', title:'Tipologie salvate', timer:2000, showConfirmButton:false, timerProgressBar:true });
           });
         })
-        .withFailureHandler(function(err) {
+        .catch(function(err) {
           _opEnd();
           Swal.fire({ icon:'error', title:'Errore', text: err.message || 'Salvataggio fallito.' });
-        })
-        .salvaTipologieBatch(payload);
+        });
     }
 
     // ============================================================
@@ -583,8 +574,8 @@
 
       selLetto.innerHTML = '<option value="">Caricamento...</option>';
       selLetto.disabled = true;
-      google.script.run
-        .withSuccessHandler(function(letti) {
+      _sbGetLettiFull()
+        .then(function(letti) {
           selLetto.innerHTML = '<option value="">-- Seleziona letto --</option>';
           letti.forEach(function(l) {
             var opt = document.createElement('option');
@@ -595,11 +586,10 @@
           selLetto.disabled = false;
           if (_ctlPreselezioneLetto) { selLetto.value = _ctlPreselezioneLetto; _ctlPreselezioneLetto = null; }
         })
-        .withFailureHandler(function() {
+        .catch(function() {
           selLetto.innerHTML = '<option value="">Errore caricamento</option>';
           selLetto.disabled = false;
-        })
-        .getLettiFull();
+        });
     }
 
     var _ctlPreselezioneLetto = null;
@@ -623,16 +613,15 @@
       _opServer({ barMsg: 'Aggiornamento tipologia letto in corso...', successTitle: 'Tipologia aggiornata',
         successText: 'Letto ' + letto + ' → ' + label, errorTitle: 'Errore',
         serverFn: function(onOk, onErr) {
-          google.script.run
-            .withSuccessHandler(function(res) {
+          _sbCambiaTipologiaALetto(letto, nuovaTipo)
+            .then(function(res) {
               if (res && res.success) {
                 onOk();
               } else {
                 onErr((res && res.message) || 'Operazione fallita.');
               }
             })
-            .withFailureHandler(function(err) { onErr(err.message || 'Operazione fallita.'); })
-            .cambiaTipologiaALetto(letto, nuovaTipo);
+            .catch(function(err) { onErr(err.message || 'Operazione fallita.'); });
         }
       });
     }

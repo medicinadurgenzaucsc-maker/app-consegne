@@ -65,8 +65,6 @@
         }
 
         _setProgress(5);
-        google.script.run.pulisciArchivioVecchio();
-        google.script.run.pulisciBackupEmergenzaVecchi();
         _caricaColoriTipologie();
         _inizializzaView();
         _inizializzaDataNascita();
@@ -74,13 +72,13 @@
         _setProgress(10);
 
         // Carica il nome del reparto in navbar
-        google.script.run
-          .withSuccessHandler(function(res) {
+        _sbOttieniNomeReparto()
+          .then(function(res) {
             var nome = (res && res.nome) ? res.nome : (typeof res === 'string' ? res : 'Consegne Reparto');
             var el = document.getElementById('nav-app-name');
             if (el) el.innerText = nome;
           })
-          .ottieniNomeReparto();
+          .catch(function(e) { console.error('ottieniNomeReparto error:', e); });
 
         // FASE 5: overlay sparisce solo quando le card sono caricate
         _sincronizzaEPoiFai(function() {
@@ -96,10 +94,8 @@
         }, _setProgress);
       }
 
-      // Rinnova lock ogni 5s (utile solo se questo client sta eseguendo il backup)
-      var _lockRenewal = setInterval(function() {
-        google.script.run.rinnovaLockBackup();
-      }, 5000);
+      // _lockRenewal rimosso: rinnovaLockBackup è un no-op nella versione Supabase
+      var _lockRenewal = setInterval(function() {}, 5000);
 
       // Il backup viene eseguito solo al caricamento pagina (vedi sotto).
       // Non servono setInterval: il CAS in _sbArchiviaGiornoCorrente
@@ -125,20 +121,19 @@
           'Attendi. Il caricamento partirà automaticamente al termine.' +
           '</span>';
         function poll() {
-          google.script.run
-            .withSuccessHandler(function(res) {
+          Promise.resolve({inCorso:false})
+            .then(function(res) {
               if (!res || !res.inCorso) { _avviaCaricamentoDati(); }
               else { setTimeout(poll, 3000); }
             })
-            .withFailureHandler(function() { setTimeout(poll, 3000); })
-            .checkBackupStatus();
+            .catch(function() { setTimeout(poll, 3000); });
         }
         setTimeout(poll, 3000);
       }
 
       // FASE 2: controllo backup
-      google.script.run
-        .withSuccessHandler(function(res) {
+      _sbArchiviaGiornoCorrente()
+        .then(function(res) {
           clearTimeout(_msgBackupTimer);
           if (res && res.inCorso) {
             _mostraAttesoBackup();
@@ -146,11 +141,10 @@
           }
           _avviaCaricamentoDati();
         })
-        .withFailureHandler(function() {
+        .catch(function() {
           clearTimeout(_msgBackupTimer);
           _avviaCaricamentoDati();
-        })
-        .archiviaGiornoCorrente();
+        });
 
     }; // fine _avviaFlussoApp
 
@@ -160,15 +154,17 @@
 
     function apriArchivio() {
       _opStart('Caricamento archivio consegne...');
-      google.script.run.withSuccessHandler((giorni) => {
-        listaGiorniArchiviati = giorni;
-        calDate = new Date();
-        ripristinaCalendarioView();
-        _opEnd();
-        let modalEl = document.getElementById('modalCalendario');
-        let modalInstance = bootstrap.Modal.getOrCreateInstance(modalEl);
-        modalInstance.show();
-      }).getGiorniArchiviati();
+      _sbGetGiorniArchivio()
+        .then(function(giorni) {
+          listaGiorniArchiviati = giorni;
+          calDate = new Date();
+          ripristinaCalendarioView();
+          _opEnd();
+          let modalEl = document.getElementById('modalCalendario');
+          let modalInstance = bootstrap.Modal.getOrCreateInstance(modalEl);
+          modalInstance.show();
+        })
+        .catch(function(e) { _opEnd(); console.error('getGiorniArchiviati error:', e); });
     }
 
     function cambiaMese(dir) { calDate.setMonth(calDate.getMonth() + dir); disegnaCalendario(); }
@@ -210,8 +206,8 @@
             <h4 class="text-success fw-bold">Verifica backup disponibili...</h4>
             <p class="text-muted">Controllo archivio del ${dataIta}.</p>
         </div>`;
-      google.script.run
-        .withSuccessHandler(function(timestamps) {
+      _sbGetTimestampsGiorno(dataStr)
+        .then(function(timestamps) {
           if (!timestamps || timestamps.length === 0) {
             document.getElementById('cal-grid').innerHTML = `<div class="text-center py-5"><i class="bi bi-exclamation-triangle-fill text-warning" style="font-size: 4rem;"></i><h4 class="mt-3">Nessun backup trovato</h4><button class="btn btn-outline-secondary mt-3" onclick="ripristinaCalendarioView()"><i class="bi bi-arrow-left me-1"></i> Torna al calendario</button></div>`;
             return;
@@ -231,10 +227,9 @@
               <button class="btn btn-outline-secondary mt-3" onclick="ripristinaCalendarioView()"><i class="bi bi-arrow-left me-1"></i> Torna al calendario</button>
             </div>`;
         })
-        .withFailureHandler(function(err) {
-          document.getElementById('cal-grid').innerHTML = `<div class="text-center py-5"><i class="bi bi-exclamation-triangle-fill text-danger" style="font-size: 4rem;"></i><h4 class="mt-3 text-danger">Errore</h4><p>${err.message}</p><button class="btn btn-outline-secondary mt-3" onclick="ripristinaCalendarioView()">Torna al Calendario</button></div>`;
-        })
-        .getTimestampGiorno(dataStr);
+        .catch(function(e) {
+          document.getElementById('cal-grid').innerHTML = `<div class="text-center py-5"><i class="bi bi-exclamation-triangle-fill text-danger" style="font-size: 4rem;"></i><h4 class="mt-3 text-danger">Errore</h4><p>${e.message}</p><button class="btn btn-outline-secondary mt-3" onclick="ripristinaCalendarioView()">Torna al Calendario</button></div>`;
+        });
     }
 
     function apriFinestraStampaSalvata(tsStr) {
@@ -273,8 +268,8 @@
         tipoLista.innerHTML = '<span class="text-muted small"><span class="spinner-border spinner-border-sm me-1"' +
           ' style="width:.85rem;height:.85rem;border-width:2px;"></span> Caricamento...</span>';
         if (tipoTutte) tipoTutte.checked = true;
-        google.script.run
-          .withSuccessHandler(function(tipologie) {
+        _sbGetTipologieLettiBed()
+          .then(function(tipologie) {
             var html = '';
             (tipologie || []).forEach(function(t) {
               var sid = 'ckTip_' + t.replace(/[^a-zA-Z0-9]/g, '_');
@@ -285,8 +280,7 @@
             });
             tipoLista.innerHTML = html || '';
           })
-          .withFailureHandler(function() { tipoLista.innerHTML = ''; })
-          .getTipologieLettiBed();
+          .catch(function() { tipoLista.innerHTML = ''; });
       }
 
       if (!modalEl._stampaBound) {
@@ -361,10 +355,9 @@
       var mi = bootstrap.Modal.getOrCreateInstance(modalEl);
       var container = document.getElementById('linkUtiliList');
       container.innerHTML = '<div class="text-center text-muted py-3"><span class="spinner-border spinner-border-sm me-1"></span> Caricamento...</div>';
-      google.script.run
-        .withSuccessHandler(function(links) { _renderLinkUtili(links); })
-        .withFailureHandler(function() { container.innerHTML = '<p class="text-danger small text-center py-2">Errore nel caricamento.</p>'; })
-        .getLinkUtili();
+      _sbGetLinkUtili()
+        .then(function(links) { _renderLinkUtili(links); })
+        .catch(function() { container.innerHTML = '<p class="text-danger small text-center py-2">Errore nel caricamento.</p>'; });
       mi.show();
     }
 
@@ -415,20 +408,19 @@
       if (!nomeEl || !urlEl) return;
       var row = document.getElementById('luRow_' + id);
       if (row) row.style.opacity = '0.5';
-      google.script.run
-        .withSuccessHandler(function(r) {
+      _sbModificaLink(id, nomeEl.value.trim(), urlEl.value.trim())
+        .then(function(r) {
           if (r && r.success) {
-            google.script.run.withSuccessHandler(_renderLinkUtili).getLinkUtili();
+            _sbGetLinkUtili().then(_renderLinkUtili).catch(function(e) { console.error('getLinkUtili error:', e); });
           } else {
             if (row) row.style.opacity = '1';
             Swal.fire({ icon: 'error', title: 'Errore', text: 'Impossibile salvare.' });
           }
         })
-        .withFailureHandler(function() {
+        .catch(function() {
           if (row) row.style.opacity = '1';
           Swal.fire({ icon: 'error', title: 'Errore', text: 'Impossibile salvare.' });
-        })
-        .modificaLinkUtile(id, nomeEl.value.trim(), urlEl.value.trim());
+        });
     }
 
     function _luElimina(id) {
@@ -438,12 +430,11 @@
         confirmButtonColor: '#dc3545'
       }).then(function(r) {
         if (!r.isConfirmed) return;
-        google.script.run
-          .withSuccessHandler(function() {
-            google.script.run.withSuccessHandler(_renderLinkUtili).getLinkUtili();
+        _sbEliminaLink(id)
+          .then(function() {
+            _sbGetLinkUtili().then(_renderLinkUtili).catch(function(e) { console.error('getLinkUtili error:', e); });
           })
-          .withFailureHandler(function() { Swal.fire({ icon: 'error', title: 'Errore', text: 'Impossibile eliminare.' }); })
-          .eliminaLinkUtile(id);
+          .catch(function() { Swal.fire({ icon: 'error', title: 'Errore', text: 'Impossibile eliminare.' }); });
       });
     }
 
@@ -455,12 +446,11 @@
       if (!url) { Swal.fire({ icon: 'warning', title: 'URL mancante', text: 'Inserisci almeno il link.' }); return; }
       if (nomeEl) nomeEl.value = '';
       if (urlEl)  urlEl.value  = '';
-      google.script.run
-        .withSuccessHandler(function() {
-          google.script.run.withSuccessHandler(_renderLinkUtili).getLinkUtili();
+      _sbAggiungiLink(nome, url)
+        .then(function() {
+          _sbGetLinkUtili().then(_renderLinkUtili).catch(function(e) { console.error('getLinkUtili error:', e); });
         })
-        .withFailureHandler(function() { Swal.fire({ icon: 'error', title: 'Errore', text: 'Impossibile aggiungere il link.' }); })
-        .aggiungiLinkUtile(nome, url);
+        .catch(function() { Swal.fire({ icon: 'error', title: 'Errore', text: 'Impossibile aggiungere il link.' }); });
     }
     // ── Fine Link Utili ───────────────────────────────────────────────
 
@@ -732,26 +722,25 @@
         _mostraMatite();
         _syncPaused = false; // Realtime si occupa di aggiornare gli altri client
       }
-      google.script.run
-        .withSuccessHandler((res) => {
+      _sbSalvaPaziente(letto, datiPaziente)
+        .then(function(res) {
           if (!res || !res.success) {
             _getBadges(letto).forEach(function(b) { b.innerText = 'Salvataggio impedito — scheda in uso'; b.className = 'badge status-badge position-absolute top-0 start-0 m-1 bg-danger visible'; b.style.opacity='1'; });
             if(timerDissolvenza[letto]) clearTimeout(timerDissolvenza[letto]);
-            timerDissolvenza[letto] = setTimeout(() => { _getBadges(letto).forEach(function(b) { b.classList.remove('visible'); b.style.opacity='0'; }); }, 6000);
+            timerDissolvenza[letto] = setTimeout(function() { _getBadges(letto).forEach(function(b) { b.classList.remove('visible'); b.style.opacity='0'; }); }, 6000);
             _dopoSalvataggio(); return;
           }
           _getBadges(letto).forEach(function(b) { b.innerText = 'Salvato alle ' + res.ora; b.className = 'badge status-badge position-absolute top-0 start-0 m-1 bg-success visible'; b.style.opacity='1'; });
           if(timerDissolvenza[letto]) clearTimeout(timerDissolvenza[letto]);
-          timerDissolvenza[letto] = setTimeout(() => { _getBadges(letto).forEach(function(b) { b.classList.remove('visible'); b.style.opacity='0'; }); }, 6000);
+          timerDissolvenza[letto] = setTimeout(function() { _getBadges(letto).forEach(function(b) { b.classList.remove('visible'); b.style.opacity='0'; }); }, 6000);
           _dopoSalvataggio();
         })
-        .withFailureHandler((err) => {
+        .catch(function() {
           _getBadges(letto).forEach(function(b) { b.innerText = 'Errore di rete — riprova'; b.className = 'badge status-badge position-absolute top-0 start-0 m-1 bg-danger visible'; b.style.opacity='1'; });
           if(timerDissolvenza[letto]) clearTimeout(timerDissolvenza[letto]);
-          timerDissolvenza[letto] = setTimeout(() => { _getBadges(letto).forEach(function(b) { b.classList.remove('visible'); b.style.opacity='0'; }); }, 6000);
+          timerDissolvenza[letto] = setTimeout(function() { _getBadges(letto).forEach(function(b) { b.classList.remove('visible'); b.style.opacity='0'; }); }, 6000);
           _dopoSalvataggio();
-        })
-        .autoSavePazienteCompleto(letto, datiPaziente, _mioToken);
+        });
     }
 
     function setLoadingState(buttonId, text) { const btn = document.getElementById(buttonId); if(!btn.dataset.originalText) btn.dataset.originalText = btn.innerHTML; btn.disabled = true; btn.innerHTML = `<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>${text}`; }
@@ -761,19 +750,21 @@
       const nuovoNome = document.getElementById("inputNuovoNome").value.trim();
       if(nuovoNome === "") return;
       setLoadingState('btnSalvaRinomina', 'Elaborazione...');
-      google.script.run.withSuccessHandler((res) => {
-        // REST API restituisce { nome: '...' }, GAS diretto restituisce stringa
-        var nomeSalvato = (res && typeof res === 'object' && res.nome) ? res.nome : (typeof res === 'string' ? res : nuovoNome);
-        document.getElementById("nav-app-name").innerText = nomeSalvato;
-        resetLoadingState('btnSalvaRinomina');
-        let modalEl = document.getElementById('modalRinomina');
-        let modalInstance = bootstrap.Modal.getInstance(modalEl);
-        if(modalInstance) modalInstance.hide();
-        Swal.fire({icon: 'success', title: 'Salvato!', timer: 2000, showConfirmButton: false});
-      }).withFailureHandler(function(err) {
-        resetLoadingState('btnSalvaRinomina');
-        Swal.fire({icon: 'error', title: 'Errore', text: err.message || 'Salvataggio fallito.'});
-      }).salvaNomeReparto(nuovoNome);
+      _sbSalvaNomeReparto(nuovoNome)
+        .then(function(res) {
+          // REST API restituisce { nome: '...' }, GAS diretto restituisce stringa
+          var nomeSalvato = (res && typeof res === 'object' && res.nome) ? res.nome : (typeof res === 'string' ? res : nuovoNome);
+          document.getElementById("nav-app-name").innerText = nomeSalvato;
+          resetLoadingState('btnSalvaRinomina');
+          let modalEl = document.getElementById('modalRinomina');
+          let modalInstance = bootstrap.Modal.getInstance(modalEl);
+          if(modalInstance) modalInstance.hide();
+          Swal.fire({icon: 'success', title: 'Salvato!', timer: 2000, showConfirmButton: false});
+        })
+        .catch(function(err) {
+          resetLoadingState('btnSalvaRinomina');
+          Swal.fire({icon: 'error', title: 'Errore', text: err.message || 'Salvataggio fallito.'});
+        });
     }
 
     function eseguiAggiungiLetto() {
@@ -782,8 +773,8 @@
       var modalEl = document.getElementById('modalAggiungiLetto');
       var mi = bootstrap.Modal.getInstance(modalEl); if (mi) mi.hide();
       Swal.fire({ title: 'Aggiunta letto in corso...', allowOutsideClick: false, showConfirmButton: false, didOpen: function() { Swal.showLoading(); } });
-      google.script.run
-        .withSuccessHandler(function(res) {
+      _sbAggiungiLetto(numLetto)
+        .then(function(res) {
           Swal.close();
           if (res.success) {
             _opServer({ barMsg: 'Aggiornamento dati...', successTitle: 'Letto aggiunto',
@@ -795,11 +786,10 @@
             Swal.fire({ icon: 'error', title: 'Impossibile aggiungere', text: res.message || 'Operazione fallita.' });
           }
         })
-        .withFailureHandler(function(err) {
+        .catch(function(err) {
           Swal.close();
           Swal.fire({ icon: 'error', title: 'Errore', text: err.message || 'Operazione fallita.' });
-        })
-        .aggiungiLetto(numLetto);
+        });
     }
 
     // Controlla i lock sui letti indicati usando lo stato in-memory (0 query).
@@ -832,15 +822,14 @@
             successText: 'Letto ' + numLetto + ' eliminato con successo.',
             errorTitle: 'Errore',
             serverFn: function(onOk, onErr) {
-              google.script.run
-                .withSuccessHandler(function(res) {
+              _sbEliminaLetto(numLetto)
+                .then(function(res) {
                   if (res.success) onOk();
                   else onErr(res.message || 'Operazione fallita.');
                 })
-                .withFailureHandler(function(err) {
+                .catch(function(err) {
                   onErr(err.message || 'Operazione fallita.');
-                })
-                .eliminaLetto(numLetto);
+                });
             }
           });
         });
@@ -867,7 +856,7 @@
               var ggEl = card.querySelector('.valore-giorni'); if (ggEl) ggEl.innerText = '-';
             });
           },
-          serverFn: function(onOk, onErr) { google.script.run.withSuccessHandler(function(res) { if (res.success) onOk(); else onErr(res.message); }).withFailureHandler(function(err) { onErr(err.message || 'Operazione fallita.'); }).dimettiLetto(numLetto); }
+          serverFn: function(onOk, onErr) { _sbDimettiLetto(numLetto).then(function(res) { if (res.success) onOk(); else onErr(res.message); }).catch(function(err) { onErr(err.message || 'Operazione fallita.'); }); }
         });
       });
       });
@@ -881,8 +870,8 @@
       var modalEl = document.getElementById('modalSposta'); var mi = bootstrap.Modal.getInstance(modalEl); if (mi) mi.hide();
 
       Swal.fire({ title: 'Verifica letti in corso...', allowOutsideClick: false, showConfirmButton: false, didOpen: function() { Swal.showLoading(); } });
-      google.script.run
-        .withSuccessHandler(function(letti) {
+      _sbGetLettiFull()
+        .then(function(letti) {
           Swal.close();
           var origInfo = null, destInfo = null;
           letti.forEach(function(l) {
@@ -903,8 +892,8 @@
             conferma.then(function(r) {
               if (!r.isConfirmed) return;
               Swal.fire({ title: 'Acquisizione blocco letti...', allowOutsideClick: false, showConfirmButton: false, didOpen: function() { Swal.showLoading(); } });
-              google.script.run
-                .withSuccessHandler(function(res) {
+              _sbAcquistaLockMultiplo([lettoOrig, lettoDest], _mioToken)
+                .then(function(res) {
                   if (!res.success) {
                     var msgErr = (res.bloccati && res.bloccati.length > 0)
                       ? 'I letti <strong>' + res.bloccati.join('</strong> e <strong>') + '</strong> sono stati modificati da un altro utente nel frattempo. Riprova.'
@@ -914,34 +903,31 @@
                   }
                   _eseguiSpostatoEffettivo(lettoOrig, lettoDest, nomeOrigine, nomeDestinazione.trim() !== '' ? nomeDestinazione : null);
                 })
-                .withFailureHandler(function(err) {
+                .catch(function(err) {
                   Swal.fire({ icon: 'error', title: 'Errore', text: err.message || 'Impossibile bloccare i letti.' });
-                })
-                .acquistaLockMultiplo([lettoOrig, lettoDest], _mioToken);
+                });
             });
           });
         })
-        .withFailureHandler(function() {
+        .catch(function() {
           Swal.close();
           Swal.fire({ icon: 'error', title: 'Errore', text: 'Impossibile verificare lo stato dei letti. Riprova.' });
-        })
-        .getLettiFull();
+        });
     }
 
     function _eseguiSpostatoEffettivo(lettoOrig, lettoDest, nomeOrig, nomeDest) {
       var testo = nomeDest ? (nomeOrig||'Paziente') + ' e ' + nomeDest + ' scambiati correttamente.' : (nomeOrig||'Paziente') + ' spostato al letto ' + lettoDest + '.';
       _opServer({ barMsg: 'Spostamento paziente in corso...', successTitle: 'Spostamento eseguito', successText: testo, errorTitle: 'Errore spostamento',
         serverFn: function(onOk, onErr) {
-          google.script.run
-            .withSuccessHandler(function(res) {
-              google.script.run.rilasciaLockMultiplo([lettoOrig, lettoDest], _mioToken);
+          _sbSpostaPaziente(lettoOrig, lettoDest)
+            .then(function(res) {
+              _sbRilasciaLockMultiplo([lettoOrig, lettoDest], _mioToken).catch(function(){});
               if (res.success) onOk(); else onErr(res.message);
             })
-            .withFailureHandler(function(err) {
-              google.script.run.rilasciaLockMultiplo([lettoOrig, lettoDest], _mioToken);
+            .catch(function(err) {
+              _sbRilasciaLockMultiplo([lettoOrig, lettoDest], _mioToken).catch(function(){});
               onErr(err.message || 'Operazione fallita.');
-            })
-            .spostaPaziente(lettoOrig, lettoDest);
+            });
         }
       });
     }
@@ -1073,32 +1059,30 @@
       var ind = document.getElementById('syncIndicator'); var st = document.getElementById('syncStatus');
       if (ind) ind.className = 'badge bg-warning text-dark ms-2'; if (st) st.innerText = 'Aggiornamento...';
       if (typeof onProgress === 'function') onProgress(20);
-      google.script.run
-        .withSuccessHandler(function(html) {
+      _sbGetPazienti().then(function(p){ return _renderCardsHtml(p); })
+        .then(function(html) {
           if (typeof onProgress === 'function') onProgress(65);
-          google.script.run
-            .withSuccessHandler(function(locks) {
+          return _sbGetLocks()
+            .then(function(locks) {
               if (typeof onProgress === 'function') onProgress(90);
               _applicaAggiornamentoCompleto(html); _applicaLocks(locks || {});
               if (ind) ind.className = 'badge bg-success ms-2'; if (st) st.innerText = new Date().toLocaleTimeString('it-IT');
               _syncPaused = false; _aggiornaVoceSync(); _inizializzaRealtime();
               if (typeof callback === 'function') callback();
             })
-            .withFailureHandler(function() {
+            .catch(function() {
               if (typeof onProgress === 'function') onProgress(90);
               _applicaAggiornamentoCompleto(html);
               if (ind) ind.className = 'badge bg-success ms-2'; if (st) st.innerText = new Date().toLocaleTimeString('it-IT');
               _syncPaused = false; _aggiornaVoceSync(); _inizializzaRealtime();
               if (typeof callback === 'function') callback();
-            })
-            .getLocks();
+            });
         })
-        .withFailureHandler(function() {
+        .catch(function() {
           if (ind) ind.className = 'badge bg-danger ms-2'; if (st) st.innerText = 'Errore sync';
           _syncPaused = false; _aggiornaVoceSync(); _inizializzaRealtime();
           if (typeof callback === 'function') callback();
-        })
-        .getNewHtml();
+        });
     }
 
     function _riprendiSync() { _syncPaused = false; _aggiornaVoceSync(); _inizializzaRealtime(); }
