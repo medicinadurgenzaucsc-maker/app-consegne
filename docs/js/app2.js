@@ -153,6 +153,7 @@
 
 
     function apriImpostazioniArchivio() {
+      if (typeof _emergGuard === 'function' && _emergGuard()) return;
       var modalEl = document.getElementById('modalImpostazioniArchivio');
       if (!modalEl) return;
       var input = document.getElementById('inputGiorniArchivio');
@@ -169,6 +170,7 @@
     }
 
     function salvaImpostazioniArchivio() {
+      if (typeof _emergGuard === 'function' && _emergGuard()) return;
       var input    = document.getElementById('inputGiorniArchivio');
       var feedback = document.getElementById('archivioFeedback');
       var val = parseInt(input ? input.value : '', 10);
@@ -519,6 +521,7 @@
     }
 
     function _gtSalva(chiudiDopo) {
+      if (typeof _emergGuard === 'function' && _emergGuard()) return;
       var vuoti = _gtRighe.filter(function(r) { return !r.nomeNew || !r.nomeNew.trim(); });
       if (vuoti.length > 0) {
         Swal.fire({ icon:'warning', text:'Ci sono tipologie senza nome. Compilale o rimuovile.', timer:3000, showConfirmButton:false });
@@ -599,6 +602,7 @@
     }
 
     function _ctlSalva() {
+      if (typeof _emergGuard === 'function' && _emergGuard()) return;
       var selLetto = document.getElementById('ctlSelectLetto');
       var selTipo  = document.getElementById('ctlSelectTipologia');
       var letto = selLetto ? selLetto.value : '';

@@ -9,7 +9,7 @@ var SUPABASE_URL     = 'https://ifmmcvxzhwdkmzhsxcvb.supabase.co';
 var SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlmbW1jdnh6aHdka216aHN4Y3ZiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc2Nzk1ODAsImV4cCI6MjA5MzI1NTU4MH0.LH8h4Fivtl3-TuiA050oF8iS4b80xrd2Dn6z8JjCoeA';
 var APP_URL          = 'https://medicinadurgenzaucsc-maker.github.io/app-consegne/';
 var PRINT_URL        = APP_URL + 'print.html';
-var LOCK_TTL_MS      = 300000; // 5 minuti — safety net per crash browser (nessun rinnovo attivo)
+var LOCK_TTL_MS      = 600000; // 10 minuti — safety net DB-side, deve essere > timer client (5 min) per evitare race
 
 // ── GOOGLE OAUTH2 ─────────────────────────────────────────────
 // Client ID OAuth2 da Google Cloud Console (Web application).
@@ -1393,6 +1393,9 @@ function _emergenzaAvviaPolling() {
       // Salta se l'utente è in focus mode su questo letto (lo gestisce il flusso normale)
       if (typeof _focusCard !== 'undefined' && _focusCard &&
           _focusCard.getAttribute('data-bed') === letto) return;
+      // Salta se un retry esponenziale è già pianificato per questo letto (evita race
+      // tra force-save e retry nativo). Il retry nativo lo gestirà al delay previsto.
+      if (typeof _saveRetryTimer !== 'undefined' && _saveRetryTimer[letto]) return;
       var card = document.querySelector('.patient-card[data-bed="' + letto + '"]');
       if (!card) return;
       // Annulla il debounce in corso (se presente) e forza il save adesso

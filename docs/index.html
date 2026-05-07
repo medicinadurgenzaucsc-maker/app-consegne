@@ -46,6 +46,8 @@
     // Nessun listener focusin/input per getLocks o acquistaLock.
     // Il lock viene acquisito solo al click sulla matita (_attivaFocusMode).
 
+    // Timer di inattività durante il focus mode: 5 minuti senza tocchi → auto-chiusura+save+release.
+    // Il timer si resetta ad ogni input/keydown/click (vedi _timerResetHandler in _completaApertura).
     function _avviaTimerFocusInattivo() {
       if (_timerFocusInattivo) { clearTimeout(_timerFocusInattivo); _timerFocusInattivo = null; }
       _timerFocusInattivo = setTimeout(function() {
@@ -57,29 +59,35 @@
           // _disattivaFocusMode controlla _dirtyLetti e salva solo se necessario
           _disattivaFocusMode(true);
         }
-      }, 120000);
+      }, 300000); // 5 minuti
     }
 
+    // Rinnova i timer di "vita" del lock.
+    // - In focus mode: resetta solo _timerFocusInattivo (5 min). Niente _timerRilascio: il rilascio
+    //   avviene SOLO in _disattivaFocusMode (quando il timer 5 min scatta o l'utente chiude).
+    // - Fuori focus mode (caso eccezionale, lock orfano): safety net 20s di _timerRilascio.
     function _rinnovaDebounce(letto) {
+      if (_focusCard) {
+        // In focus mode: solo timer 5 minuti, no rilascio anticipato
+        if (_timerRilascio) { clearTimeout(_timerRilascio); _timerRilascio = null; }
+        _avviaTimerFocusInattivo();
+        return;
+      }
+      // Fuori focus mode: safety 20s per lock orfano
       if (_timerRilascio) { clearTimeout(_timerRilascio); _timerRilascio = null; }
-      if (_focusCard) _avviaTimerFocusInattivo();
       _timerRilascio = setTimeout(function() {
         if (_lettoLockAtt) {
           var lettoRilasciato = _lettoLockAtt;
           _lettoLockAtt = null;
-          if (_focusCard && _focusCard.getAttribute('data-bed') === lettoRilasciato) {
-            _disattivaFocusMode(true);
-          } else {
-            var active = document.activeElement;
-            if (active) {
-              var c = active.closest && active.closest('.patient-card');
-              if (c && c.getAttribute('data-bed') === lettoRilasciato) active.blur();
-            }
+          var active = document.activeElement;
+          if (active) {
+            var c = active.closest && active.closest('.patient-card');
+            if (c && c.getAttribute('data-bed') === lettoRilasciato) active.blur();
           }
           _sbRilasciaLock(lettoRilasciato, _mioToken).catch(function(){});
         }
         _timerRilascio = null;
-      }, _focusCard ? 120000 : 20000);
+      }, 20000);
     }
 
     function _mostraAvvisoLock(letto) {
@@ -93,8 +101,20 @@
     }
 
     window.addEventListener('beforeunload', function(e) {
-      // Rilascia il lock
-      if (_lettoLockAtt) _sbRilasciaLock(_lettoLockAtt, _mioToken).catch(function(){});
+      // Rilascia il lock con fetch keepalive: il browser lo porta a termine anche durante la chiusura.
+      // (Sostituisce la chiamata async che poteva non completare in chiusura rapida.)
+      if (_lettoLockAtt) {
+        try {
+          fetch(SUPABASE_URL + '/rest/v1/locks?letto=eq.' + encodeURIComponent(_lettoLockAtt) + '&token=eq.' + encodeURIComponent(_mioToken), {
+            method: 'DELETE',
+            keepalive: true,
+            headers: {
+              'apikey': SUPABASE_ANON_KEY,
+              'Authorization': 'Bearer ' + SUPABASE_ANON_KEY
+            }
+          });
+        } catch(_e) { /* fallback silenzioso: il TTL DB-side rilascerà comunque */ }
+      }
 
       // Se ci sono modifiche non salvate → salva con fetch keepalive e mostra dialogo nativo
       if (typeof _dirtyLetti !== 'undefined' && _dirtyLetti.size > 0) {
@@ -568,14 +588,33 @@
           }
         })
         .catch(function() {
-          // Errore di rete: apri comunque, il lock sarà rilasciato alla chiusura
+          // Errore di rete sul lock acquisition.
+          // Default: FAIL-CLOSED (sicurezza > tolleranza). Il focus mode NON viene aperto:
+          // due PC offline non possono entrambi entrare nella stessa scheda.
+          // Eccezione: in MODALITÀ EMERGENZA si mantiene il fail-open (PC con rete instabile)
+          // perché il polling 5s sincronizzerà appena la rete torna.
           var lockOvEl = document.getElementById('lockCheckOverlay');
           if (lockOvEl) lockOvEl.parentNode.removeChild(lockOvEl);
-          if (!_focusCard) return;
-          _lettoLockAtt = letto;
-          _rinnovaDebounce(letto);
+          var emerOn = (typeof _emergenzaPollingAttivo === 'function' && _emergenzaPollingAttivo());
+          if (emerOn) {
+            // Fail-open solo in emergenza
+            if (!_focusCard) return;
+            _lettoLockAtt = letto;
+            _rinnovaDebounce(letto);
+            _syncPaused = false;
+            _completaApertura();
+            return;
+          }
+          // Fail-closed: chiudi focus mode e mostra errore
           _syncPaused = false;
-          _completaApertura();
+          _disattivaFocusMode(false);
+          Swal.fire({
+            icon: 'error',
+            title: 'Connessione assente',
+            html: 'Impossibile acquisire il blocco sulla scheda.<br>' +
+                  '<small class="text-muted">Verifica la connessione e riprova.</small>',
+            confirmButtonColor: '#d33'
+          });
         });
     }
 
@@ -892,7 +931,26 @@
                 border:3px solid #b0c4d8; border-top-color:#37474f;
                 border-radius:50%; animation:bkSpin 0.85s linear infinite;
                 margin-bottom:16px;"></div>
-    <style>@keyframes bkSpin{to{transform:rotate(360deg);}}</style>
+    <style>
+      @keyframes bkSpin{to{transform:rotate(360deg);}}
+      /* ── Modalità Emergenza: voci disabilitate ────────────────────── */
+      .emerg-disabled {
+        opacity: 0.45 !important;
+        pointer-events: none !important;
+        cursor: not-allowed !important;
+        text-decoration: line-through !important;
+        position: relative;
+      }
+      .emerg-disabled::after {
+        content: " 🔒";
+        font-size: 0.75em;
+        text-decoration: none;
+        display: inline-block;
+        margin-left: 0.25em;
+      }
+      button.emerg-disabled,
+      a.emerg-disabled { filter: grayscale(40%); }
+    </style>
     <div id="backupCheckMsg" style="font-size:0.82rem; color:#37474f;
                                     font-weight:bold; line-height:1.7;">
       Inizializzazione applicazione in corso...
@@ -935,9 +993,9 @@
         <li class="nav-item dropdown">
           <a class="nav-link dropdown-toggle active" href="javascript:void(0)" role="button" data-bs-toggle="dropdown" id="navLettiDropdownToggle">Letti</a>
           <ul class="dropdown-menu shadow" style="min-width:230px;">
-            <li><a class="dropdown-item" href="javascript:void(0)" data-bs-toggle="modal" data-bs-target="#modalSposta"><i class="bi bi-arrow-left-right text-primary me-2"></i>Sposta / Scambia</a></li>
-            <li><a class="dropdown-item" href="javascript:void(0)" data-bs-toggle="modal" data-bs-target="#modalDimetti"><i class="bi bi-person-dash text-danger me-2"></i>Dimetti / Svuota Letto</a></li>
-            <li><a class="dropdown-item" href="javascript:void(0)" data-bs-toggle="modal" data-bs-target="#modalCambiaTipologiaLetto"><i class="bi bi-tags text-info me-2"></i>Cambia Tipologia ad un Letto</a></li>
+            <li><a class="dropdown-item" href="javascript:void(0)" data-emerg-disable="1" data-bs-toggle="modal" data-bs-target="#modalSposta"><i class="bi bi-arrow-left-right text-primary me-2"></i>Sposta / Scambia</a></li>
+            <li><a class="dropdown-item" href="javascript:void(0)" data-emerg-disable="1" data-bs-toggle="modal" data-bs-target="#modalDimetti"><i class="bi bi-person-dash text-danger me-2"></i>Dimetti / Svuota Letto</a></li>
+            <li><a class="dropdown-item" href="javascript:void(0)" data-emerg-disable="1" data-bs-toggle="modal" data-bs-target="#modalCambiaTipologiaLetto"><i class="bi bi-tags text-info me-2"></i>Cambia Tipologia ad un Letto</a></li>
             <li><hr class="dropdown-divider"></li>
             <li>
               <div class="px-3 py-1" id="lettiRiepilogoPanel">
@@ -958,8 +1016,8 @@
             <li><a class="dropdown-item" id="btnToggleViewAlt" href="javascript:void(0)" onclick="toggleViewAlt()"><i class="bi bi-eye me-2"></i>Visualizzazione Alternativa</a></li>
           </ul>
         </li>
-        <li class="nav-item"><a class="nav-link active" href="javascript:void(0)" onclick="stampaConsegne();"><i class="bi bi-printer me-1"></i>Stampa Consegne</a></li>
-        <li class="nav-item"><a class="nav-link active" href="javascript:void(0)" onclick="apriArchivio();"><i class="bi bi-archive-fill me-1"></i>Archivio Consegne</a></li>
+        <li class="nav-item"><a class="nav-link active" href="javascript:void(0)" data-emerg-disable="1" onclick="stampaConsegne();"><i class="bi bi-printer me-1"></i>Stampa Consegne</a></li>
+        <li class="nav-item"><a class="nav-link active" href="javascript:void(0)" data-emerg-disable="1" onclick="apriArchivio();"><i class="bi bi-archive-fill me-1"></i>Archivio Consegne</a></li>
         <li class="nav-item"><a class="nav-link active" href="javascript:void(0)" onclick="apriLinkUtili();"><i class="bi bi-link-45deg me-1"></i>Link Utili</a></li>
         <li class="nav-item"><a class="nav-link active" href="javascript:void(0)" onclick="apriRubrica();"><i class="bi bi-telephone-fill me-1"></i>Numeri Telefono</a></li>
       </ul>
@@ -990,18 +1048,18 @@
             <i class="bi bi-gear-fill fs-5"></i>
           </a>
           <ul class="dropdown-menu dropdown-menu-end shadow">
-            <li><a class="dropdown-item" href="javascript:void(0)" data-bs-toggle="modal" data-bs-target="#modalAggiungiLetto"><i class="bi bi-plus-circle text-success me-2"></i>Aggiungi Posto Letto</a></li>
-            <li><a class="dropdown-item" href="javascript:void(0)" data-bs-toggle="modal" data-bs-target="#modalEliminaLetto"><i class="bi bi-trash3 text-danger me-2"></i>Elimina Posto Letto</a></li>
+            <li><a class="dropdown-item" href="javascript:void(0)" data-emerg-disable="1" data-bs-toggle="modal" data-bs-target="#modalAggiungiLetto"><i class="bi bi-plus-circle text-success me-2"></i>Aggiungi Posto Letto</a></li>
+            <li><a class="dropdown-item" href="javascript:void(0)" data-emerg-disable="1" data-bs-toggle="modal" data-bs-target="#modalEliminaLetto"><i class="bi bi-trash3 text-danger me-2"></i>Elimina Posto Letto</a></li>
             <li><hr class="dropdown-divider"></li>
-            <li><a class="dropdown-item" href="javascript:void(0)" data-bs-toggle="modal" data-bs-target="#modalGestisciTipologie"><i class="bi bi-tags text-info me-2"></i>Aggiungi/Modifica Tipologia Letto</a></li>
+            <li><a class="dropdown-item" href="javascript:void(0)" data-emerg-disable="1" data-bs-toggle="modal" data-bs-target="#modalGestisciTipologie"><i class="bi bi-tags text-info me-2"></i>Aggiungi/Modifica Tipologia Letto</a></li>
             <li><hr class="dropdown-divider"></li>
-            <li><a class="dropdown-item" href="javascript:void(0)" data-bs-toggle="modal" data-bs-target="#modalRinomina"><i class="bi bi-pencil-square text-primary me-2"></i>Modifica Nome Consegne</a></li>
+            <li><a class="dropdown-item" href="javascript:void(0)" data-emerg-disable="1" data-bs-toggle="modal" data-bs-target="#modalRinomina"><i class="bi bi-pencil-square text-primary me-2"></i>Modifica Nome Consegne</a></li>
             <li><hr class="dropdown-divider"></li>
-            <li><a class="dropdown-item" href="javascript:void(0)" onclick="apriImpostazioniArchivio()"><i class="bi bi-archive text-secondary me-2"></i>Impostazioni archivio consegne</a></li>
-            <li><a class="dropdown-item" href="javascript:void(0)" onclick="_avviaBackupManuale()"><i class="bi bi-cloud-arrow-up-fill text-success me-2"></i>Esegui Backup Manuale</a></li>
-            <li><a class="dropdown-item" href="javascript:void(0)" onclick="_apriRipristina()"><i class="bi bi-arrow-counterclockwise text-danger me-2"></i>Ripristina da Backup</a></li>
+            <li><a class="dropdown-item" href="javascript:void(0)" data-emerg-disable="1" onclick="apriImpostazioniArchivio()"><i class="bi bi-archive text-secondary me-2"></i>Impostazioni archivio consegne</a></li>
+            <li><a class="dropdown-item" href="javascript:void(0)" data-emerg-disable="1" onclick="_avviaBackupManuale()"><i class="bi bi-cloud-arrow-up-fill text-success me-2"></i>Esegui Backup Manuale</a></li>
+            <li><a class="dropdown-item" href="javascript:void(0)" data-emerg-disable="1" onclick="_apriRipristina()"><i class="bi bi-arrow-counterclockwise text-danger me-2"></i>Ripristina da Backup</a></li>
             <li><hr class="dropdown-divider"></li>
-            <li><a class="dropdown-item" href="javascript:void(0)" onclick="apriModalImportaConsegne()"><i class="bi bi-file-earmark-arrow-down text-warning me-2"></i>Importa da file consegne</a></li>
+            <li><a class="dropdown-item" href="javascript:void(0)" data-emerg-disable="1" onclick="apriModalImportaConsegne()"><i class="bi bi-file-earmark-arrow-down text-warning me-2"></i>Importa da file consegne</a></li>
             <li style="display:none"><a class="dropdown-item" href="javascript:void(0)" id="btnToggleSync" onclick="toggleSync()"><i class="bi bi-pause-circle text-warning me-2" id="iconToggleSync"></i><span id="labelToggleSync">Metti in pausa il sync</span></a></li>
           </ul>
         </li>
@@ -1675,6 +1733,7 @@
 
     // ── BACKUP MANUALE ───────────────────────────────────────────
     window._avviaBackupManuale = function() {
+      if (typeof _emergGuard === 'function' && _emergGuard()) return;
       _chiediPassword('Backup Manuale').then(function(result) {
         if (!result.isConfirmed || !result.value) return;
         var pwd = result.value;
@@ -1754,6 +1813,7 @@
     };
 
     window._apriRipristina = function() {
+      if (typeof _emergGuard === 'function' && _emergGuard()) return;
       _chiediPassword('Ripristina da Backup').then(function(result) {
         if (!result.isConfirmed || !result.value) return;
         var pwd = result.value;
@@ -1960,6 +2020,7 @@
 
     // ── Esecuzione ripristino ────────────────────────────────────
     window._eseguiRipristina = function() {
+      if (typeof _emergGuard === 'function' && _emergGuard()) return;
       var selCards = Array.from(document.querySelectorAll('.ripristina-letto-card.selected'));
       if (!selCards.length) return;
       var lettiSelezionati = selCards.map(function(c) { return c.getAttribute('data-letto'); });
@@ -2157,7 +2218,43 @@
         btn.style.fontSize = '0.75rem';
         btn.innerHTML = '<i class="bi bi-exclamation-triangle-fill me-1"></i>PC Lento';
       }
+      _emergUpdateUI();
     }
+
+    // ── Aggiorna stato visivo voci di menu disabilitate in emergenza ──
+    function _emergUpdateUI() {
+      var attivo = (typeof _emergenzaPollingAttivo === 'function' && _emergenzaPollingAttivo());
+      var els = document.querySelectorAll('[data-emerg-disable="1"]');
+      els.forEach(function(el) {
+        if (attivo) {
+          el.classList.add('emerg-disabled');
+          el.setAttribute('title', 'Disabilitato in Modalità Emergenza');
+          if (el.tagName === 'BUTTON' || el.tagName === 'INPUT') el.disabled = true;
+        } else {
+          el.classList.remove('emerg-disabled');
+          if (el.getAttribute('title') === 'Disabilitato in Modalità Emergenza') el.removeAttribute('title');
+          if (el.tagName === 'BUTTON' || el.tagName === 'INPUT') el.disabled = false;
+        }
+      });
+    }
+    // Esposta per chiamate da fuori IIFE (es. dopo aggiunte dinamiche al DOM)
+    window._emergUpdateUI = _emergUpdateUI;
+
+    // ── Guard runtime: blocca esecuzione se emergenza attiva ──────────
+    // Da chiamare all'inizio di ogni funzione disabilitata in emergenza.
+    // Ritorna true se la funzione DEVE interrompersi (emergenza attiva).
+    window._emergGuard = function() {
+      if (typeof _emergenzaPollingAttivo !== 'function' || !_emergenzaPollingAttivo()) return false;
+      Swal.fire({
+        icon: 'warning',
+        title: 'Funzione disabilitata',
+        html: 'Funzione disabilitata in <strong>Modalità Emergenza</strong>.<br><br>' +
+              '<small class="text-muted">Per usarla, disattiva la modalità emergenza dal pulsante in alto a destra, oppure usa un altro PC.</small>',
+        confirmButtonText: 'Ho capito',
+        confirmButtonColor: '#37474f'
+      });
+      return true;
+    };
 
     // ── Toggle principale ─────────────────────────────────────
     window._toggleModalitaEmergenza = function() {

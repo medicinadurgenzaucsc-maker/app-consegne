@@ -153,6 +153,7 @@
     let archivioHtmlPronto = "";
 
     function apriArchivio() {
+      if (typeof _emergGuard === 'function' && _emergGuard()) return;
       _opStart('Caricamento archivio consegne...');
       _sbGetGiorniArchivio()
         .then(function(giorni) {
@@ -336,6 +337,7 @@
     }
 
     function stampaConsegne() {
+      if (typeof _emergGuard === 'function' && _emergGuard()) return;
       _apriModalScala(function(saltaVuoti, orientamento, tipologie, scala, includiNote) {
         var layout = _viewAltAttiva ? 'alt' : 'main';
         var url = PRINT_URL + '?layout=' + layout +
@@ -484,6 +486,11 @@
 
     let timerSalvataggioLetto = {}; const RITARDO_SALVATAGGIO = 60000; let timerDissolvenza = {};
     var _dirtyLetti = new Set();        // letti con modifiche non ancora salvate
+    var _ultimoSaveTs = {};             // letto -> timestamp ultimo save completato (per heartbeat 90s)
+    var _saveRetryCount = {};           // letto -> numero retry attuali (max 3: 5s, 15s, 45s)
+    var _saveRetryTimer = {};           // letto -> handle del timer retry corrente
+    const HEARTBEAT_MS = 90000;         // save di sicurezza ogni 90s di scrittura ininterrotta
+    const RETRY_DELAYS = [5000, 15000, 45000]; // backoff esponenziale
     var _countdownIntervallo = {};      // intervalli per il countdown badge
     document.body.addEventListener('input', function(e) { if (e.target && e.target.classList && e.target.classList.contains('editable-area')) { const card = e.target.closest('.patient-card'); if(!card) return; const letto = card.getAttribute('data-bed'); attivaSalvataggioRitardato(letto, card); } });
 
@@ -679,6 +686,21 @@
       _letti_salvataggioAttivi.add(letto);
       _nascondMatite();
 
+      // ── HEARTBEAT 90s ────────────────────────────────────────────────
+      // Se il medico scrive ininterrottamente, il debounce 60s viene resettato
+      // ad ogni tasto e nessun save parte. Heartbeat: se sono passati >=90s
+      // dall'ultimo save effettivo per questo letto → save immediato in background
+      // (non blocca l'UI, mantiene il countdown attivo).
+      var ora = Date.now();
+      var lastSave = _ultimoSaveTs[letto] || 0;
+      if (lastSave && (ora - lastSave) >= HEARTBEAT_MS) {
+        // Save di sicurezza, non resetta debounce: il timer 60s riparte sotto
+        try { eseguiSalvataggioLettoCompleto(letto, card); } catch(_e) {}
+      } else if (!lastSave) {
+        // primo input dopo apertura: stabilisce baseline temporale
+        _ultimoSaveTs[letto] = ora;
+      }
+
       // Aggiorna il badge con il conto alla rovescia
       var _sec = Math.round(RITARDO_SALVATAGGIO / 1000);
       function _aggiornaBadge(s) {
@@ -715,14 +737,58 @@
       if(dataRicInput) { var drP = dataRicInput.value.split('/'); datiPaziente['DataRicovero'] = (drP.length===3&&drP[2].length===4) ? drP[2]+'-'+drP[1].padStart(2,'0')+'-'+drP[0].padStart(2,'0') : ''; }
       const nascitaInput = card.querySelector('.data-nascita-text');
       if(nascitaInput) datiPaziente['DataNascita'] = nascitaInput.value;
+
+      // ── BADGE "Salvataggio in corso..." durante la richiesta HTTP ──────
+      // Su rete lenta il medico vede che qualcosa sta succedendo (prima il countdown
+      // arriva a 0 e finora il badge restava lì silenzioso).
+      clearInterval(_countdownIntervallo[letto]);
+      _getBadges(letto).forEach(function(b) {
+        b.innerText = 'Salvataggio in corso...';
+        b.className = 'badge status-badge position-absolute top-0 start-0 m-1 bg-info text-dark visible';
+        b.style.cssText += ';opacity:1;';
+      });
+
+      function _pianificaRetry() {
+        var n = _saveRetryCount[letto] || 0;
+        if (n >= RETRY_DELAYS.length) {
+          // Tutti i retry esauriti: badge rosso persistente, letto resta dirty
+          // per essere ripreso da beforeunload o da prossima digitazione.
+          _getBadges(letto).forEach(function(b) {
+            b.innerText = 'Salvataggio fallito — controlla connessione';
+            b.className = 'badge status-badge position-absolute top-0 start-0 m-1 bg-danger visible';
+            b.style.opacity = '1';
+          });
+          // No timer dissolvenza: il badge resta visibile come allarme persistente
+          _saveRetryCount[letto] = 0; // reset per prossima sessione
+          return;
+        }
+        var delay = RETRY_DELAYS[n];
+        _saveRetryCount[letto] = n + 1;
+        if (_saveRetryTimer[letto]) clearTimeout(_saveRetryTimer[letto]);
+        _saveRetryTimer[letto] = setTimeout(function() {
+          _saveRetryTimer[letto] = null;
+          // Riprende dalla card più aggiornata in DOM
+          var c2 = document.querySelector('.patient-card[data-bed="' + letto + '"]') || card;
+          eseguiSalvataggioLettoCompleto(letto, c2);
+        }, delay);
+        // Badge intermedio
+        _getBadges(letto).forEach(function(b) {
+          b.innerText = 'Errore — nuovo tentativo tra ' + Math.round(delay/1000) + 's...';
+          b.className = 'badge status-badge position-absolute top-0 start-0 m-1 bg-warning text-dark visible';
+          b.style.opacity = '1';
+        });
+      }
+
       function _dopoSalvataggio(success) {
         clearInterval(_countdownIntervallo[letto]);
-        // Mantiene il letto in _dirtyLetti SOLO se: emergenza attiva E save fallito.
-        // Su PC normali (emerOn = false) la condizione vale sempre true → comportamento identico al codice originale.
-        var emerOn = (typeof _emergenzaPollingAttivo === 'function' && _emergenzaPollingAttivo());
-        if (success || !emerOn) {
+        if (success) {
           _dirtyLetti.delete(letto);
+          _ultimoSaveTs[letto] = Date.now();
+          _saveRetryCount[letto] = 0;
+          if (_saveRetryTimer[letto]) { clearTimeout(_saveRetryTimer[letto]); _saveRetryTimer[letto] = null; }
         }
+        // Su fallimento: il letto RESTA in _dirtyLetti per consentire il retry
+        // (sia in modalità normale tramite _pianificaRetry, sia in emergenza tramite force-save scan).
         _letti_salvataggioAttivi.delete(letto);
         _mostraMatite();
         _syncPaused = false; // Realtime si occupa di aggiornare gli altri client
@@ -730,10 +796,18 @@
       _sbSalvaPaziente(letto, datiPaziente)
         .then(function(res) {
           if (!res || !res.success) {
+            // "Salvataggio impedito — scheda in uso" è un caso particolare (lock di altri):
+            // non ha senso ritentare automaticamente, il letto è bloccato sul server.
             _getBadges(letto).forEach(function(b) { b.innerText = 'Salvataggio impedito — scheda in uso'; b.className = 'badge status-badge position-absolute top-0 start-0 m-1 bg-danger visible'; b.style.opacity='1'; });
             if(timerDissolvenza[letto]) clearTimeout(timerDissolvenza[letto]);
             timerDissolvenza[letto] = setTimeout(function() { _getBadges(letto).forEach(function(b) { b.classList.remove('visible'); b.style.opacity='0'; }); }, 6000);
-            _dopoSalvataggio(false); return;
+            // Caso "scheda in uso": NON ritentiamo (il server ha respinto perché il lock
+            // è di un altro). Rimuoviamo dal dirty per non triggerare loop di retry.
+            _dirtyLetti.delete(letto);
+            _saveRetryCount[letto] = 0;
+            if (_saveRetryTimer[letto]) { clearTimeout(_saveRetryTimer[letto]); _saveRetryTimer[letto] = null; }
+            _dopoSalvataggio(false);
+            return;
           }
           _getBadges(letto).forEach(function(b) { b.innerText = 'Salvato alle ' + res.ora; b.className = 'badge status-badge position-absolute top-0 start-0 m-1 bg-success visible'; b.style.opacity='1'; });
           if(timerDissolvenza[letto]) clearTimeout(timerDissolvenza[letto]);
@@ -741,10 +815,9 @@
           _dopoSalvataggio(true);
         })
         .catch(function() {
-          _getBadges(letto).forEach(function(b) { b.innerText = 'Errore di rete — riprova'; b.className = 'badge status-badge position-absolute top-0 start-0 m-1 bg-danger visible'; b.style.opacity='1'; });
-          if(timerDissolvenza[letto]) clearTimeout(timerDissolvenza[letto]);
-          timerDissolvenza[letto] = setTimeout(function() { _getBadges(letto).forEach(function(b) { b.classList.remove('visible'); b.style.opacity='0'; }); }, 6000);
+          // Errore di rete: pianifica retry esponenziale (5s → 15s → 45s).
           _dopoSalvataggio(false);
+          _pianificaRetry();
         });
     }
 
@@ -752,6 +825,7 @@
     function resetLoadingState(buttonId) { const btn = document.getElementById(buttonId); btn.disabled = false; if(btn.dataset.originalText) btn.innerHTML = btn.dataset.originalText; }
 
     function salvaNuovoNome() {
+      if (typeof _emergGuard === 'function' && _emergGuard()) return;
       const nuovoNome = document.getElementById("inputNuovoNome").value.trim();
       if(nuovoNome === "") return;
       setLoadingState('btnSalvaRinomina', 'Elaborazione...');
@@ -773,6 +847,7 @@
     }
 
     function eseguiAggiungiLetto() {
+      if (typeof _emergGuard === 'function' && _emergGuard()) return;
       var numLetto = document.getElementById('inputNuovoLetto').value.trim().toUpperCase();
       if (!numLetto) { Swal.fire({ icon: 'error', text: 'Inserisci un numero valido.' }); return; }
       var modalEl = document.getElementById('modalAggiungiLetto');
@@ -815,6 +890,7 @@
     }
 
     function eseguiEliminaLetto() {
+      if (typeof _emergGuard === 'function' && _emergGuard()) return;
       var numLetto = document.getElementById('selectEliminaLetto').value;
       if (!numLetto) return;
       var modalEl = document.getElementById('modalEliminaLetto');
@@ -842,6 +918,7 @@
     }
 
     function eseguiDimettiLetto() {
+      if (typeof _emergGuard === 'function' && _emergGuard()) return;
       var numLetto = document.getElementById('selectDimettiLetto').value;
       if (!numLetto) return;
       var modalEl = document.getElementById('modalDimetti');
@@ -868,6 +945,7 @@
     }
 
     function eseguiSpostaPaziente() {
+      if (typeof _emergGuard === 'function' && _emergGuard()) return;
       var selOrig = document.getElementById('selectSpostaOrigine'); var selDest = document.getElementById('selectSpostaDestinazione');
       var lettoOrig = selOrig ? selOrig.value : ''; var lettoDest = selDest ? selDest.value : '';
       if (!lettoOrig || !lettoDest) { Swal.fire({ icon: 'warning', title: 'Attenzione', text: 'Seleziona sia il letto di origine che quello di destinazione.', confirmButtonColor: '#0d6efd' }); return; }
@@ -1174,6 +1252,7 @@
     var _googleDocsToken = null;
 
     function apriModalImportaConsegne() {
+      if (typeof _emergGuard === 'function' && _emergGuard()) return;
       // Reset UI
       document.getElementById('importaStep1').style.display = '';
       document.getElementById('importaStep2').style.display = 'none';
@@ -1186,6 +1265,7 @@
     }
 
     function eseguiImportaConsegne() {
+      if (typeof _emergGuard === 'function' && _emergGuard()) return;
       var url = (document.getElementById('inputImportaUrl').value || '').trim();
       var pwd = (document.getElementById('inputImportaPwd').value || '').trim();
 
