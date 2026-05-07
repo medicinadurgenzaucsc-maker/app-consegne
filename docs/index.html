@@ -520,6 +520,14 @@
         };
         card.addEventListener('input', card._focusInputHandler);
         card.addEventListener('keyup', card._focusInputHandler);
+        // Resetta i timer di inattività (120s) ad ogni tasto/click dentro la scheda,
+        // evitando che il focus mode si chiuda da solo durante l'editing attivo.
+        card._timerResetHandler = function() {
+          if (_lettoLockAtt) _rinnovaDebounce(_lettoLockAtt);
+        };
+        card.addEventListener('input',   card._timerResetHandler);
+        card.addEventListener('keydown', card._timerResetHandler);
+        card.addEventListener('click',   card._timerResetHandler);
         var ovEl = document.getElementById('focusOverlay');
         if (ovEl) {
           ovEl.style.cursor = 'pointer';
@@ -623,6 +631,12 @@
         card.removeEventListener('input', card._focusInputHandler);
         card.removeEventListener('keyup', card._focusInputHandler);
         delete card._focusInputHandler;
+      }
+      if (card._timerResetHandler) {
+        card.removeEventListener('input',   card._timerResetHandler);
+        card.removeEventListener('keydown', card._timerResetHandler);
+        card.removeEventListener('click',   card._timerResetHandler);
+        delete card._timerResetHandler;
       }
       card.scrollTop = 0;
       // Reset minHeight equalizzato sulle colonne alt
