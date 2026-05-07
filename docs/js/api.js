@@ -1291,12 +1291,7 @@ var _realtimeTimer = null;
 var _realtimeChannel = null;
 
 function _inizializzaRealtime() {
-  // Crea il canale una sola volta per tutta la durata della sessione.
-  // Supabase SDK gestisce autonomamente le riconnessioni in caso di caduta.
-  // Il pattern precedente (teardown+rebuild ad ogni sync) creava una finestra
-  // cieca durante cui gli eventi di altri utenti venivano persi — specialmente
-  // problematico su connessioni lente o PC datati.
-  if (_realtimeChannel) return;
+  if (_realtimeChannel) { _sb.removeChannel(_realtimeChannel); }
 
   _realtimeChannel = _sb.channel('consegne-live')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'consegne' },
