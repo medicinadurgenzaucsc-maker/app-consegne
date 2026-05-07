@@ -1742,9 +1742,15 @@
             Swal.fire({ icon: 'error', title: 'Password errata', text: 'Password non corretta.', confirmButtonColor: '#d33' });
             return;
           }
-          _ripristinaModal = bootstrap.Modal.getOrCreateInstance(document.getElementById('modalRipristina'));
+          var modalEl = document.getElementById('modalRipristina');
+          _ripristinaModal = bootstrap.Modal.getOrCreateInstance(modalEl);
+          // Avvia il caricamento SOLO quando il modal è completamente visibile
+          // (evita conflitti con la chiusura di Swal che precede l'apertura)
+          modalEl.addEventListener('shown.bs.modal', function handler() {
+            modalEl.removeEventListener('shown.bs.modal', handler);
+            _ripristinaGoGiorni();
+          });
           _ripristinaModal.show();
-          _ripristinaGoGiorni();
         }).catch(function() {
           Swal.fire({ icon: 'error', title: 'Errore', text: 'Impossibile verificare la password.', confirmButtonColor: '#d33' });
         });
@@ -1757,8 +1763,9 @@
       _aggiornaBreadcrumb(['Scegli giorno']);
       _ripristinaGiornoSelezionato = null;
       _riprisinaTsSelezionato = null;
-      google.script.run
-        .withSuccessHandler(function(giorni) {
+      // Chiamata diretta a Supabase (senza il layer google.script.run)
+      _sbGetGiorniArchivio()
+        .then(function(giorni) {
           _nascondiSpinner();
           var container = document.getElementById('ripristinaListaGiorni');
           if (!giorni || !giorni.length) {
@@ -1775,13 +1782,12 @@
           }
           document.getElementById('ripristinaViewGiorni').style.display = '';
         })
-        .withFailureHandler(function() {
+        .catch(function() {
           _nascondiSpinner();
           document.getElementById('ripristinaListaGiorni').innerHTML =
             '<div class="p-4 text-center text-danger">Errore nel caricamento dei backup.</div>';
           document.getElementById('ripristinaViewGiorni').style.display = '';
-        })
-        .getGiorniArchiviati();
+        });
     };
 
     // ── VIEW 2: lista orari ──────────────────────────────────────
@@ -1789,8 +1795,8 @@
       _ripristinaGiornoSelezionato = { str: dataStr, vis: dataVis };
       _mostraSpinner('Caricamento orari...');
       _aggiornaBreadcrumb([dataVis, 'Scegli orario']);
-      google.script.run
-        .withSuccessHandler(function(timestamps) {
+      _sbGetTimestampsGiorno(dataStr)
+        .then(function(timestamps) {
           _nascondiSpinner();
           var container = document.getElementById('ripristinaListaOrari');
           if (!timestamps || !timestamps.length) {
@@ -1807,13 +1813,12 @@
           }
           document.getElementById('ripristinaViewOrari').style.display = '';
         })
-        .withFailureHandler(function() {
+        .catch(function() {
           _nascondiSpinner();
           document.getElementById('ripristinaListaOrari').innerHTML =
             '<div class="p-4 text-center text-danger">Errore nel caricamento degli orari.</div>';
           document.getElementById('ripristinaViewOrari').style.display = '';
-        })
-        .getTimestampGiorno(dataStr);
+        });
     };
 
     window._ripristinaGoOrari = function() {
@@ -1830,22 +1835,21 @@
       var dayVis = _ripristinaGiornoSelezionato ? _ripristinaGiornoSelezionato.vis : '';
       _mostraSpinner('Caricamento dati backup...');
       _aggiornaBreadcrumb([dayVis, oraVis, 'Seleziona letti']);
-      google.script.run
-        .withSuccessHandler(function(dati) {
+      _sbGetDatiArchivioGiorno(ts)
+        .then(function(dati) {
           _nascondiSpinner();
           _ripristinaPazientiBackup = (dati && dati.pazienti) ? dati.pazienti.map(function(r) {
             return typeof _fromDb === 'function' ? _fromDb(r) : r;
           }) : [];
           _renderRipristinaLetti();
         })
-        .withFailureHandler(function() {
+        .catch(function() {
           _nascondiSpinner();
           document.getElementById('ripristinaGridLetti').innerHTML =
             '<div class="p-4 text-center text-danger w-100">Errore nel caricamento del backup.</div>';
           document.getElementById('ripristinaViewLetti').style.display = '';
           document.getElementById('ripristinaFooter').style.display = 'flex';
-        })
-        .getDatiArchivioGiorno(ts);
+        });
     };
 
     function _renderRipristinaLetti() {
