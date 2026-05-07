@@ -2875,31 +2875,65 @@
           }).join('')+'</ul></div>'
         : '<p class="mb-2 text-success fw-bold" style="font-size:0.85rem;"><i class="bi bi-check-circle-fill me-1"></i>Tutti i test superati.</p>';
 
-      Swal.fire({
-        icon: tipoSwal,
-        title: 'Report diagnostica',
-        width: 640,
-        html: rischioBox + problemiBox +
-          '<div class="alert alert-'+(tipoSwal==='error'?'danger':tipoSwal==='warning'?'warning':'info')+
-          ' text-start py-2 mb-0" style="font-size:0.82rem;">'+testo+'</div>',
-        confirmButtonText: mostraAttivaBtn
-          ? '<i class="bi bi-play-fill me-1"></i>Attiva modalità emergenza'
-          : 'Chiudi',
-        confirmButtonColor: mostraAttivaBtn ? '#c62828' : '#37474f',
-        showCancelButton: mostraAttivaBtn,
-        cancelButtonText: 'Chiudi senza attivare'
-      }).then(function(res) {
-        if (res.isConfirmed && mostraAttivaBtn) {
-          _emergenzaAvviaPolling();
-          _aggiornaBottoneEmergenza();
-          Swal.fire({
-            icon:'success', title:'Modalità emergenza attivata',
-            html:'Aggiornamento ogni <strong>5 secondi</strong> via polling.<br>'+
-                 '<small class="text-muted">Premi "Polling ON" per disattivare.</small>',
-            timer:3000, showConfirmButton:false, timerProgressBar:true
-          });
-        }
-      });
+      // Cattura il contenuto del log prima che il modal corrente venga distrutto
+      var _logHtmlSalvato = '';
+      var _logEl = document.getElementById('diagLog');
+      if (_logEl) _logHtmlSalvato = _logEl.innerHTML;
+
+      // Funzione per mostrare il log dettagliato in un modal separato
+      function _mostraLogDettagliato() {
+        Swal.fire({
+          title: '<i class="bi bi-terminal me-2"></i>Log diagnostica',
+          width: 720,
+          html: '<div style="text-align:left;font-size:0.78rem;' +
+                'font-family:Consolas,Monaco,monospace;max-height:420px;overflow-y:auto;' +
+                'background:#1e1e1e;color:#d4d4d4;padding:12px 14px;' +
+                'border-radius:6px;line-height:1.7;">'+_logHtmlSalvato+'</div>',
+          confirmButtonText: '<i class="bi bi-arrow-left me-1"></i>Torna al report',
+          confirmButtonColor: '#37474f',
+          showCancelButton: false
+        }).then(function() { _aproReport(); });
+      }
+
+      // Apre/riapre il modal di report (può essere richiamato dopo "Mostra log")
+      function _aproReport() {
+        Swal.fire({
+          icon: tipoSwal,
+          title: 'Report diagnostica',
+          width: 640,
+          html: rischioBox + problemiBox +
+            '<div class="alert alert-'+(tipoSwal==='error'?'danger':tipoSwal==='warning'?'warning':'info')+
+            ' text-start py-2 mb-0" style="font-size:0.82rem;">'+testo+'</div>',
+          confirmButtonText: mostraAttivaBtn
+            ? '<i class="bi bi-play-fill me-1"></i>Attiva modalità emergenza'
+            : 'Chiudi',
+          confirmButtonColor: mostraAttivaBtn ? '#c62828' : '#37474f',
+          showDenyButton: true,
+          denyButtonText: '<i class="bi bi-list-ul me-1"></i>Mostra log',
+          denyButtonColor: '#546e7a',
+          showCancelButton: mostraAttivaBtn,
+          cancelButtonText: 'Chiudi senza attivare',
+          reverseButtons: false
+        }).then(function(res) {
+          if (res.isDenied) {
+            _mostraLogDettagliato();
+            return;
+          }
+          if (res.isConfirmed && mostraAttivaBtn) {
+            _emergenzaAvviaPolling();
+            _aggiornaBottoneEmergenza();
+            Swal.fire({
+              icon:'success', title:'Modalità emergenza attivata',
+              html:'Aggiornamento ogni <strong>5 secondi</strong> via polling.<br>'+
+                   '<small class="text-muted">Premi "Polling ON" per disattivare.</small>',
+              timer:3000, showConfirmButton:false, timerProgressBar:true
+            });
+          }
+        });
+      }
+
+      // Apri il report
+      _aproReport();
     }
 
     // Aggiorna aspetto pulsante immediatamente
