@@ -1603,7 +1603,7 @@
             <div id="ripristinaGridLetti" class="p-3 d-flex flex-wrap gap-3"></div>
           </div>
           <!-- Spinner caricamento -->
-          <div id="ripristinaSpinner" style="display:none;" class="d-flex align-items-center justify-content-center p-5">
+          <div id="ripristinaSpinner" style="display:none;" class="align-items-center justify-content-center p-5">
             <div class="spinner-border text-danger me-3" role="status"></div>
             <span class="text-muted" id="ripristinaSpinnerMsg">Caricamento...</span>
           </div>
@@ -1706,12 +1706,12 @@
         document.getElementById(id).style.display = 'none';
       });
       document.getElementById('ripristinaSpinnerMsg').textContent = msg || 'Caricamento...';
-      document.getElementById('ripristinaSpinner').style.display = 'flex';
+      document.getElementById('ripristinaSpinner').style.setProperty('display', 'flex', 'important');
       document.getElementById('ripristinaFooter').style.display = 'none';
     }
 
     function _nascondiSpinner() {
-      document.getElementById('ripristinaSpinner').style.display = 'none';
+      document.getElementById('ripristinaSpinner').style.setProperty('display', 'none', 'important');
     }
 
     function _aggiornaBreadcrumb(parts) {
