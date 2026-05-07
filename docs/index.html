@@ -1890,6 +1890,8 @@
 
     window._toggleRipristinaCard = function(el) {
       var sel = el.classList.contains('selected');
+      // Qualsiasi click su una card toglie sempre la spunta "Ripristina tutto"
+      document.getElementById('ripristinaTutto').checked = false;
       if (sel) {
         el.classList.remove('selected');
         el.style.borderColor = '#aaa';
@@ -1900,7 +1902,6 @@
         el.style.borderColor = '#c62828';
         el.style.background = '#fff8f8';
         el.style.boxShadow = '0 0 0 2px #ef9a9a';
-        document.getElementById('ripristinaTutto').checked = false;
       }
       _aggiornaConteggioSel();
     };
