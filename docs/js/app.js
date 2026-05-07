@@ -715,9 +715,14 @@
       if(dataRicInput) { var drP = dataRicInput.value.split('/'); datiPaziente['DataRicovero'] = (drP.length===3&&drP[2].length===4) ? drP[2]+'-'+drP[1].padStart(2,'0')+'-'+drP[0].padStart(2,'0') : ''; }
       const nascitaInput = card.querySelector('.data-nascita-text');
       if(nascitaInput) datiPaziente['DataNascita'] = nascitaInput.value;
-      function _dopoSalvataggio() {
+      function _dopoSalvataggio(success) {
         clearInterval(_countdownIntervallo[letto]);
-        _dirtyLetti.delete(letto);
+        // Mantiene il letto in _dirtyLetti SOLO se: emergenza attiva E save fallito.
+        // Su PC normali (emerOn = false) la condizione vale sempre true → comportamento identico al codice originale.
+        var emerOn = (typeof _emergenzaPollingAttivo === 'function' && _emergenzaPollingAttivo());
+        if (success || !emerOn) {
+          _dirtyLetti.delete(letto);
+        }
         _letti_salvataggioAttivi.delete(letto);
         _mostraMatite();
         _syncPaused = false; // Realtime si occupa di aggiornare gli altri client
@@ -728,18 +733,18 @@
             _getBadges(letto).forEach(function(b) { b.innerText = 'Salvataggio impedito — scheda in uso'; b.className = 'badge status-badge position-absolute top-0 start-0 m-1 bg-danger visible'; b.style.opacity='1'; });
             if(timerDissolvenza[letto]) clearTimeout(timerDissolvenza[letto]);
             timerDissolvenza[letto] = setTimeout(function() { _getBadges(letto).forEach(function(b) { b.classList.remove('visible'); b.style.opacity='0'; }); }, 6000);
-            _dopoSalvataggio(); return;
+            _dopoSalvataggio(false); return;
           }
           _getBadges(letto).forEach(function(b) { b.innerText = 'Salvato alle ' + res.ora; b.className = 'badge status-badge position-absolute top-0 start-0 m-1 bg-success visible'; b.style.opacity='1'; });
           if(timerDissolvenza[letto]) clearTimeout(timerDissolvenza[letto]);
           timerDissolvenza[letto] = setTimeout(function() { _getBadges(letto).forEach(function(b) { b.classList.remove('visible'); b.style.opacity='0'; }); }, 6000);
-          _dopoSalvataggio();
+          _dopoSalvataggio(true);
         })
         .catch(function() {
           _getBadges(letto).forEach(function(b) { b.innerText = 'Errore di rete — riprova'; b.className = 'badge status-badge position-absolute top-0 start-0 m-1 bg-danger visible'; b.style.opacity='1'; });
           if(timerDissolvenza[letto]) clearTimeout(timerDissolvenza[letto]);
           timerDissolvenza[letto] = setTimeout(function() { _getBadges(letto).forEach(function(b) { b.classList.remove('visible'); b.style.opacity='0'; }); }, 6000);
-          _dopoSalvataggio();
+          _dopoSalvataggio(false);
         });
     }
 

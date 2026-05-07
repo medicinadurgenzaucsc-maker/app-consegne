@@ -1360,26 +1360,63 @@ function _scheduleRealtimeSync() {
 // Non interferiscono con il resto del codice. Attivate solo se
 // l'utente clicca esplicitamente il pulsante in navbar.
 // ══════════════════════════════════════════════════════════════
-var _emergenzaPollingId = null;
+var _emergenzaPollingId   = null;  // Polling letture (5s)
+var _emergenzaForceSaveId = null;  // Force-save scan letti dirty (10s)
 
 // Avvia polling ogni 5s: aggiorna card pazienti + stato lock
-// Richiama funzioni esistenti già usate dal Realtime normale.
+// Avvia force-save scan ogni 10s: rilancia salvataggi pending/falliti
 function _emergenzaAvviaPolling() {
   if (_emergenzaPollingId) return;
-  console.log('[Emergenza] Polling attivato (5s)');
+  console.log('[Emergenza] Polling attivato (5s) + force-save (10s)');
+
+  // POLLING LETTURE — invariato
   _emergenzaPollingId = setInterval(function() {
     _scheduleRealtimeSync();   // funzione esistente, già usata dal canale Realtime
     _sbGetLocks().then(function(locks) {
       if (typeof _applicaLocks === 'function') _applicaLocks(locks || {});
     }).catch(function(){});
   }, 5000);
+
+  // FORCE-SAVE SCAN — bypassa il debounce di 60s e ritenta saves falliti.
+  // Funziona insieme alla modifica di _dopoSalvataggio in app.js: quando un
+  // save fallisce, il letto resta in _dirtyLetti e questo scan lo riprova.
+  _emergenzaForceSaveId = setInterval(function() {
+    // Niente da fare se non ci sono letti dirty
+    if (typeof _dirtyLetti === 'undefined' || !_dirtyLetti.size) return;
+    // Salta se un save è già in corso a livello globale (riproveremo al prossimo ciclo)
+    if (typeof _syncPaused !== 'undefined' && _syncPaused) {
+      console.log('[Emergenza] Force-save: save in corso, salto ciclo');
+      return;
+    }
+    console.log('[Emergenza] Force-save scan: '+_dirtyLetti.size+' letto/i dirty');
+    Array.from(_dirtyLetti).forEach(function(letto) {
+      // Salta se l'utente è in focus mode su questo letto (lo gestisce il flusso normale)
+      if (typeof _focusCard !== 'undefined' && _focusCard &&
+          _focusCard.getAttribute('data-bed') === letto) return;
+      var card = document.querySelector('.patient-card[data-bed="' + letto + '"]');
+      if (!card) return;
+      // Annulla il debounce in corso (se presente) e forza il save adesso
+      if (typeof timerSalvataggioLetto !== 'undefined' && timerSalvataggioLetto[letto]) {
+        clearTimeout(timerSalvataggioLetto[letto]);
+        delete timerSalvataggioLetto[letto];
+      }
+      if (typeof eseguiSalvataggioLettoCompleto === 'function') {
+        eseguiSalvataggioLettoCompleto(letto, card);
+      }
+    });
+  }, 10000);
 }
 
 function _emergenzaFermaPolling() {
-  if (!_emergenzaPollingId) return;
-  clearInterval(_emergenzaPollingId);
-  _emergenzaPollingId = null;
-  console.log('[Emergenza] Polling disattivato');
+  if (_emergenzaPollingId) {
+    clearInterval(_emergenzaPollingId);
+    _emergenzaPollingId = null;
+  }
+  if (_emergenzaForceSaveId) {
+    clearInterval(_emergenzaForceSaveId);
+    _emergenzaForceSaveId = null;
+  }
+  console.log('[Emergenza] Polling + force-save disattivati');
 }
 
 function _emergenzaPollingAttivo() {
