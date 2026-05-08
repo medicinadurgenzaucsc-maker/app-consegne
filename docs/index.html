@@ -3306,14 +3306,24 @@
       if (_silentDiag) {
         _silentDiag = false; // reset per future esecuzioni manuali
         _silentDoneCallback = null;
-        // Diagnostica AUTOMATICA al caricamento: il modal si apre se il livello
-        // rischio salvataggio è BASSO, MEDIO o ALTO (>=10 punti).
-        // Livello NESSUNO (<10 punti) → caricamento silenzioso, nessun modal,
-        // anche se alcuni test critici sono falliti (es. WebSocket bloccato
-        // ma rischio salvataggio basso).
+        // Diagnostica AUTOMATICA al caricamento: il modal si apre SOLO se serve
+        // davvero consigliare all'utente di attivare la Modalità Emergenza,
+        // cioè quando c'è rischio concreto che le consegne non si salvino.
+        //
+        // Si apre se:
+        //   (a) rischioSalvataggio >= 25 (livello MEDIO o ALTO) — fattori
+        //       multipli o seri che impattano il save
+        //   (b) WebSocket bloccato — Realtime non funziona, l'emergenza
+        //       (polling 5s) è la soluzione specifica
+        //
+        // NON si apre per:
+        //   - livello NESSUNO o BASSO senza WS bloccato (lievi rallentamenti
+        //     che NON impediscono il save)
+        //   - problemi minori isolati che non inficiano il salvataggio
+        //
         // NB: la diagnostica MANUALE (click su "PC Lento") mostra sempre il
-        // report perché _silentDiag è false in quel flusso.
-        var ciSonoProblemi = (rischioSalvataggio >= 10);
+        // report completo, perché _silentDiag è false in quel flusso.
+        var ciSonoProblemi = (rischioSalvataggio >= 25) || (r.ws && !r.ws.ok);
         if (!ciSonoProblemi) {
           // Tutto OK: silenziosamente, nessun modal. Notifica completamento.
           console.log('[Diagnostica startup] Tutti i test superati. Nessun problema.');
