@@ -1295,7 +1295,25 @@ function _inizializzaRealtime() {
 
   _realtimeChannel = _sb.channel('consegne-live')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'consegne' },
-      function() { _scheduleRealtimeSync(); })
+      function(payload) {
+        // FAST-PATH delta-update: aggiorna SOLO la card interessata invece di
+        // re-renderizzare l'intera lista. Su PC lento riduce il freeze da 2-5s
+        // a <100ms per evento Realtime. Se il delta non gestisce il caso
+        // (NOTE, INSERT, errori) → fallback automatico al full sync.
+        var ok = false;
+        try {
+          if (payload.eventType === 'UPDATE' && payload.new) {
+            ok = _applicaDeltaUpdate(payload.new);
+          } else if (payload.eventType === 'DELETE' && payload.old) {
+            ok = _applicaDeltaDelete(payload.old.letto);
+          }
+          // INSERT: lasciamo fare full sync (serve ordinamento corretto)
+        } catch (e) {
+          console.warn('[Realtime delta error, fallback full sync]', e);
+          ok = false;
+        }
+        if (!ok) _scheduleRealtimeSync();
+      })
     // Lock: gestiti direttamente in-memory, nessuna query aggiuntiva al DB
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'locks' },
       function(payload) { _onLockChange('INSERT', payload); })
@@ -1306,6 +1324,126 @@ function _inizializzaRealtime() {
     .subscribe(function(status) {
       console.log('[Realtime]', status);
     });
+}
+
+// ── DELTA UPDATE — aggiorna SOLO la card interessata ──────────────────
+// Ritorna true se gestito, false se serve fallback al full sync.
+function _applicaDeltaUpdate(row) {
+  if (!row || !row.letto) return false;
+  var p = _fromDb(row);
+  var letto = String(p.Letto);
+
+  // Skip card lockata da questo client (focus mode su questo letto):
+  // _applicaAggiornamentoDaHtml ha la stessa guard, replicata qui per coerenza.
+  if (typeof _lettoLockAtt !== 'undefined' && _lettoLockAtt === letto) return true;
+
+  // NOTE ha renderer dedicato (_renderNoteCard*): meglio fallback full sync
+  if (letto === 'NOTE') return false;
+
+  var cards = document.querySelectorAll('.patient-card[data-bed="' + letto + '"]');
+  if (!cards.length) return false; // card non esistente in DOM → full sync
+
+  cards.forEach(function(card) { _aggiornaCardDaPaziente(card, p); });
+
+  // Aggiorna sync indicator (come fa _scheduleRealtimeSync alla fine)
+  var ind = document.getElementById('syncIndicator');
+  var st  = document.getElementById('syncStatus');
+  if (ind) ind.className = 'badge bg-success ms-2';
+  if (st)  st.innerText  = new Date().toLocaleTimeString('it-IT');
+
+  // Aggiorna eventuali badge/riepiloghi se la funzione esiste
+  if (typeof window._aggiornaBadgePrincipali === 'function') {
+    try { window._aggiornaBadgePrincipali(); } catch(e) {}
+  }
+  return true;
+}
+
+// Rimuove la card dal DOM (delta DELETE).
+function _applicaDeltaDelete(letto) {
+  if (!letto) return false;
+  var rimossi = 0;
+  document.querySelectorAll('.patient-card[data-bed="' + String(letto) + '"]').forEach(function(c) {
+    c.remove();
+    rimossi++;
+  });
+  if (rimossi === 0) return true; // già non c'era → no-op, comunque success
+
+  // Aggiorna messaggio "Nessun letto" se la lista è vuota
+  var nessun = document.querySelectorAll('.patient-card[data-bed]').length === 0;
+  var noMsg  = document.getElementById('noLettiMsg');    if (noMsg)  noMsg.style.display  = nessun ? '' : 'none';
+  var noMsgA = document.getElementById('noLettiMsgAlt'); if (noMsgA) noMsgA.style.display = nessun ? '' : 'none';
+
+  // Aggiorna riepiloghi se disponibili
+  if (typeof window._aggiornaBadgePrincipali === 'function') {
+    try { window._aggiornaBadgePrincipali(); } catch(e) {}
+  }
+  return true;
+}
+
+// Applica i dati di un paziente alla card (entrambe le viste main e alt).
+// Replica la logica di _applicaAggiornamentoDaHtml ma per UN paziente,
+// lavorando sull'oggetto JS senza DOMParser. Preserva caret position.
+function _aggiornaCardDaPaziente(card, p) {
+  var activeEl = document.activeElement;
+
+  // Campi testuali (10 campi)
+  var campi = ['Nome','Diagnosi','Eta','NoteTerapia','Diaria','DaFare',
+               'PianoTerapeutico','Allergie','CodiceSanitario','Ossigeno'];
+  campi.forEach(function(campo) {
+    var dst = card.querySelector('[data-field="' + campo + '"]');
+    if (!dst) return;
+    var val = p[campo] != null ? String(p[campo]) : '';
+    var hasFocus = (dst === activeEl || dst.contains(activeEl));
+    var caretPos = (hasFocus && typeof _salvaCaretPos === 'function') ? _salvaCaretPos(dst) : null;
+    if (dst.classList.contains('plain-text')) {
+      if (dst.innerText !== val) dst.innerText = val;
+    } else {
+      if (dst.innerHTML !== val) dst.innerHTML = val;
+    }
+    if (hasFocus && caretPos !== null && typeof _ripristinaCaretPos === 'function') {
+      dst.focus();
+      _ripristinaCaretPos(dst, caretPos);
+    }
+  });
+
+  // Date (data ricovero + giorni calcolati, data nascita + età ricalcolata in UI)
+  var ric = _parseDataRicovero(p.DataRicovero);
+  var dr = card.querySelector('.data-ricovero-text');
+  if (dr && dr.value !== ric.vis) dr.value = ric.vis;
+  var gg = card.querySelector('.valore-giorni');
+  if (gg && String(gg.innerText) !== String(ric.giorni)) gg.innerText = ric.giorni;
+  var nasc = _parseDataNascita(p.DataNascita);
+  var dn = card.querySelector('.data-nascita-text');
+  if (dn && dn.value !== nasc.vis) dn.value = nasc.vis;
+
+  // Sesso (simbolo + colore via _aggiornaSimboloSesso definita in index.html)
+  var sesso = card.querySelector('.sesso-symbol[data-field="Sesso"]');
+  if (sesso) {
+    var nuovoSesso = p.Sesso || '';
+    if (sesso.getAttribute('data-sesso') !== nuovoSesso) {
+      sesso.setAttribute('data-sesso', nuovoSesso);
+      if (typeof _aggiornaSimboloSesso === 'function') _aggiornaSimboloSesso(sesso);
+    }
+  }
+
+  // Tipologia letto + badge
+  var nuovaTipo = (p.TipologiaLetto || '').toUpperCase();
+  if (card.getAttribute('data-tipologia') !== nuovaTipo) {
+    card.setAttribute('data-tipologia', nuovaTipo);
+  }
+  var badge = card.querySelector('[id^="badge-tipo-"]');
+  if (badge) {
+    var testoBadge = nuovaTipo || 'STANDARD';
+    if ((badge.innerText || '').trim() !== testoBadge) badge.innerText = testoBadge;
+    if (nuovaTipo && nuovaTipo !== 'STANDARD') {
+      var col = (typeof window._getColoreTipo === 'function')
+        ? window._getColoreTipo(nuovaTipo)
+        : stringToColor(nuovaTipo);
+      if (badge.style.backgroundColor !== col) badge.style.backgroundColor = col;
+    } else {
+      if (badge.style.backgroundColor) badge.style.backgroundColor = '';
+    }
+  }
 }
 
 // Aggiorna _lockState e UI senza toccare il DB
