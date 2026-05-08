@@ -3306,7 +3306,11 @@
       if (_silentDiag) {
         _silentDiag = false; // reset per future esecuzioni manuali
         _silentDoneCallback = null;
-        var ciSonoProblemi = (problemi.length > 0) || (rischioSalvataggio >= 25) || critici > 0;
+        // Mostra il modal SOLO se il rischio salvataggio è >= MEDIO (25) oppure
+        // ci sono problemi critici (browser obsoleto, offline, librerie mancanti,
+        // REST/DB/WS non funzionanti, storage rotto, cookie disabilitati).
+        // Rischio BASSO (10-24) o problemi minori senza impatto sul save → silenzioso.
+        var ciSonoProblemi = (rischioSalvataggio >= 25) || critici > 0;
         if (!ciSonoProblemi) {
           // Tutto OK: silenziosamente, nessun modal. Notifica completamento.
           console.log('[Diagnostica startup] Tutti i test superati. Nessun problema.');
