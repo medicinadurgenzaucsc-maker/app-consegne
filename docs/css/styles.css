@@ -274,6 +274,87 @@ body { padding-top: 70px; background-color: #d4e6f1 !important; }
 .patient-card.focus-mode .bed-number-box .focus-pencil-btn { display: none !important; }
 .patient-card.card-locked:hover .focus-pencil-btn { display: none !important; }
 
+/* ===== FLOPPY EMERGENZA — save manuale in focus mode ===== */
+/* Visibile SOLO in focus mode con modalità emergenza attiva.
+   Posizione identica alla matita (alto-destra del bed-number-box). */
+@keyframes _emergPulse {
+  0%, 100% { box-shadow: 0 2px 8px rgba(245,124,0,0.30); transform: scale(1); }
+  50%      { box-shadow: 0 4px 14px rgba(245,124,0,0.65); transform: scale(1.05); }
+}
+@keyframes _emergSpin { to { transform: rotate(360deg); } }
+
+.emerg-save-btn {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  border: 2px solid #b0bec5;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.35rem;
+  z-index: 11;
+  background: linear-gradient(135deg, #eceff1 60%, #cfd8dc 100%);
+  color: #546e7a;
+  transition: background 0.15s, transform 0.12s, box-shadow 0.15s, border-color 0.15s, color 0.15s;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+  user-select: none;
+}
+.emerg-save-btn:hover { transform: scale(1.10); }
+
+/* IDLE — tutto salvato */
+.emerg-save-btn[data-state="idle"] {
+  background: linear-gradient(135deg, #eceff1 60%, #cfd8dc 100%);
+  border-color: #b0bec5;
+  color: #546e7a;
+}
+
+/* DIRTY — modifiche non salvate */
+.emerg-save-btn[data-state="dirty"] {
+  background: linear-gradient(135deg, #ffe0b2 60%, #ffb74d 100%);
+  border-color: #f57c00;
+  color: #e65100;
+  animation: _emergPulse 1.6s ease-in-out infinite;
+}
+
+/* SAVING — spinner */
+.emerg-save-btn[data-state="saving"] {
+  background: linear-gradient(135deg, #b3e5fc 60%, #4fc3f7 100%);
+  border-color: #0288d1;
+  color: #01579b;
+  pointer-events: none;
+  cursor: wait;
+}
+.emerg-save-btn[data-state="saving"] .emerg-floppy-icon {
+  display: inline-block;
+  width: 22px; height: 22px;
+  border: 3px solid rgba(2,119,189,0.30);
+  border-top-color: #0277bd;
+  border-radius: 50%;
+  animation: _emergSpin 0.7s linear infinite;
+}
+
+/* SAVED — appena salvato */
+.emerg-save-btn[data-state="saved"] {
+  background: linear-gradient(135deg, #c8e6c9 60%, #81c784 100%);
+  border-color: #388e3c;
+  color: #1b5e20;
+}
+
+/* ERROR — save fallito, sistema sta riprovando */
+.emerg-save-btn[data-state="error"] {
+  background: linear-gradient(135deg, #ffcdd2 60%, #ef9a9a 100%);
+  border-color: #c62828;
+  color: #b71c1c;
+  animation: _emergPulse 1.2s ease-in-out infinite;
+}
+
+/* Hide floppy when card NOT in focus mode */
+.patient-card:not(.focus-mode) .emerg-save-btn { display: none !important; }
+
 
 /* ================================================================
    VISUALIZZAZIONE ALTERNATIVA (da ViewAlt.html)

@@ -558,6 +558,11 @@
         }
         var primo = card.querySelector('[contenteditable="true"]');
         if (primo) primo.focus();
+
+        // Modalità Emergenza: floppy intelligente per save manuale
+        if (typeof _emergenzaPollingAttivo === 'function' && _emergenzaPollingAttivo()) {
+          if (typeof window._emergCreaFloppy === 'function') window._emergCreaFloppy(card);
+        }
       }
 
       // ── FASE 2: scrivi lock sul DB (1 upsert) ────────────────────────────
@@ -621,6 +626,9 @@
     function _disattivaFocusMode(scrollToCard) {
       if (!_focusCard) return;
       var _lettoUscita = _focusCard.getAttribute('data-bed');
+
+      // Rimuovi il floppy emergenza (se presente) prima di smontare la card
+      if (typeof window._emergRimuoviFloppy === 'function') window._emergRimuoviFloppy(_focusCard);
 
       // Salva subito se ci sono modifiche non ancora salvate
       // Usa _focusCard direttamente (non querySelector che restituisce sempre la card main view)
@@ -2236,9 +2244,216 @@
           if (el.tagName === 'BUTTON' || el.tagName === 'INPUT') el.disabled = false;
         }
       });
+
+      // Aggiorna anche il floppy sulla card eventualmente in focus mode
+      // (toggle "hot" se l'utente attiva/disattiva l'emergenza mentre la card è aperta).
+      if (typeof _focusCard !== 'undefined' && _focusCard) {
+        if (attivo) _emergCreaFloppy(_focusCard);
+        else        _emergRimuoviFloppy(_focusCard);
+      }
     }
     // Esposta per chiamate da fuori IIFE (es. dopo aggiunte dinamiche al DOM)
     window._emergUpdateUI = _emergUpdateUI;
+
+    // ══════════════════════════════════════════════════════════════
+    // FLOPPY INTELLIGENTE — save manuale in focus mode (emergenza)
+    // Visibile solo quando: focus mode attivo + emergenza attiva.
+    // Stati: idle (grigio) / dirty (arancione pulsante) / saving (spinner)
+    //        / saved (check verde 2s) / error (X rossa pulsante).
+    // Click → forza save subito riusando eseguiSalvataggioLettoCompleto;
+    // resetta retry counter; cancella debounce in coda. Polling 1s su dirty
+    // come safety per mantenere lo stato visivo coerente con la realtà.
+    // ══════════════════════════════════════════════════════════════
+    var _emergFloppyPollId = null;     // setInterval per refresh stato visivo
+    var _emergFloppyTransientId = null; // timeout per stati transienti (saved/error)
+
+    function _emergCreaFloppy(card) {
+      if (!card) return;
+      // Evita duplicati
+      if (card.querySelector('.emerg-save-btn')) return;
+      var box = card.querySelector('.bed-number-box');
+      if (!box) return;
+      var letto = card.getAttribute('data-bed');
+
+      var btn = document.createElement('button');
+      btn.className = 'emerg-save-btn';
+      btn.setAttribute('type', 'button');
+      btn.setAttribute('data-state', 'idle');
+      btn.setAttribute('title', 'Salva ora (Modalità Emergenza)');
+      btn.innerHTML = _emergFloppyHTML('idle');
+      btn.addEventListener('click', function(ev) {
+        ev.stopPropagation();
+        ev.preventDefault();
+        _emergSalvaManuale(letto, card, btn);
+      });
+      box.appendChild(btn);
+
+      // Stato iniziale basato su _dirtyLetti
+      _emergAggiornaStatoFloppy(letto, btn);
+
+      // Avvia polling 1s su tutte le card in focus (1 solo timer globale)
+      _emergAvviaPollFloppy();
+    }
+
+    function _emergRimuoviFloppy(card) {
+      if (!card) return;
+      var btn = card.querySelector('.emerg-save-btn');
+      if (btn && btn.parentNode) btn.parentNode.removeChild(btn);
+      // Se non ci sono più floppy in giro, ferma il polling
+      if (!document.querySelector('.emerg-save-btn')) {
+        _emergFermaPollFloppy();
+      }
+    }
+
+    function _emergFloppyHTML(stato) {
+      if (stato === 'saving') return '<span class="emerg-floppy-icon"></span>';
+      if (stato === 'saved')  return '<i class="bi bi-check-lg"></i>';
+      if (stato === 'error')  return '<i class="bi bi-x-lg"></i>';
+      // idle / dirty entrambi mostrano il floppy
+      return '<i class="bi bi-floppy-fill"></i>';
+    }
+
+    function _emergAggiornaStatoFloppy(letto, btnOpt) {
+      var btn = btnOpt;
+      if (!btn) {
+        var card = document.querySelector('.patient-card.focus-mode[data-bed="'+letto+'"]');
+        if (!card) return;
+        btn = card.querySelector('.emerg-save-btn');
+        if (!btn) return;
+      }
+      // Non sovrascrivere stati transienti (saved/error mostrati per X secondi)
+      var current = btn.getAttribute('data-state');
+      if (current === 'saving' || current === 'saved' || current === 'error') return;
+
+      var dirty = (typeof _dirtyLetti !== 'undefined' && _dirtyLetti.has(letto));
+      var nuovoStato = dirty ? 'dirty' : 'idle';
+      if (nuovoStato !== current) {
+        btn.setAttribute('data-state', nuovoStato);
+        btn.innerHTML = _emergFloppyHTML(nuovoStato);
+        btn.setAttribute('title', dirty
+          ? 'Modifiche non salvate — clicca per salvare ora'
+          : 'Tutto salvato (Modalità Emergenza)');
+      }
+    }
+
+    function _emergAvviaPollFloppy() {
+      if (_emergFloppyPollId) return;
+      _emergFloppyPollId = setInterval(function() {
+        document.querySelectorAll('.emerg-save-btn').forEach(function(btn) {
+          var card = btn.closest('.patient-card');
+          if (!card) return;
+          var letto = card.getAttribute('data-bed');
+          if (letto) _emergAggiornaStatoFloppy(letto, btn);
+        });
+      }, 1000);
+    }
+
+    function _emergFermaPollFloppy() {
+      if (_emergFloppyPollId) { clearInterval(_emergFloppyPollId); _emergFloppyPollId = null; }
+    }
+
+    function _emergSalvaManuale(letto, card, btn) {
+      // Safety: se emergenza non più attiva (toggle nel frattempo), no-op
+      if (typeof _emergenzaPollingAttivo !== 'function' || !_emergenzaPollingAttivo()) return;
+      if (!btn) btn = card && card.querySelector('.emerg-save-btn');
+      if (!btn) return;
+      var stato = btn.getAttribute('data-state');
+      if (stato === 'saving') return; // già in corso
+
+      var dirty = (typeof _dirtyLetti !== 'undefined' && _dirtyLetti.has(letto));
+      if (!dirty) {
+        // Toast "già salvato"
+        Swal.fire({
+          toast: true, position: 'top-end',
+          icon: 'success', title: 'Già salvato',
+          text: 'Nessuna modifica da salvare.',
+          showConfirmButton: false, timer: 1500, timerProgressBar: true
+        });
+        return;
+      }
+
+      // Cancella debounce e retry pendenti — il save manuale "salta avanti"
+      if (typeof timerSalvataggioLetto !== 'undefined' && timerSalvataggioLetto[letto]) {
+        clearTimeout(timerSalvataggioLetto[letto]);
+        delete timerSalvataggioLetto[letto];
+      }
+      if (typeof _saveRetryTimer !== 'undefined' && _saveRetryTimer[letto]) {
+        clearTimeout(_saveRetryTimer[letto]);
+        _saveRetryTimer[letto] = null;
+      }
+      if (typeof _saveRetryCount !== 'undefined') _saveRetryCount[letto] = 0;
+
+      // Stato saving (spinner)
+      btn.setAttribute('data-state', 'saving');
+      btn.innerHTML = _emergFloppyHTML('saving');
+      btn.setAttribute('title', 'Salvataggio in corso...');
+
+      // Lancia il save standard. Il sistema esistente gestisce success/retry.
+      try {
+        if (typeof eseguiSalvataggioLettoCompleto === 'function') {
+          eseguiSalvataggioLettoCompleto(letto, card);
+        } else {
+          // Fallback impossibile in pratica
+          _emergFloppySetTransient(btn, 'error', 2500);
+          return;
+        }
+      } catch (e) {
+        console.warn('[Floppy] Errore lancio save:', e);
+        _emergFloppySetTransient(btn, 'error', 2500);
+        return;
+      }
+
+      // Polling 200ms per esito (max 15s)
+      var t0 = Date.now();
+      var pollId = setInterval(function() {
+        var ancoraDirty = (typeof _dirtyLetti !== 'undefined' && _dirtyLetti.has(letto));
+        var retryAttivo = (typeof _saveRetryTimer !== 'undefined' && !!_saveRetryTimer[letto]);
+
+        if (!ancoraDirty) {
+          // Save riuscito (il letto è stato rimosso da _dirtyLetti)
+          clearInterval(pollId);
+          _emergFloppySetTransient(btn, 'saved', 2000);
+          return;
+        }
+        if (retryAttivo) {
+          // Save fallito, sistema retry esponenziale partito
+          clearInterval(pollId);
+          _emergFloppySetTransient(btn, 'error', 2500);
+          return;
+        }
+        if (Date.now() - t0 > 15000) {
+          // Timeout di sicurezza: lo stato torna a dirty/idle al prossimo poll 1s
+          clearInterval(pollId);
+          btn.setAttribute('data-state', ancoraDirty ? 'dirty' : 'idle');
+          btn.innerHTML = _emergFloppyHTML(ancoraDirty ? 'dirty' : 'idle');
+        }
+      }, 200);
+    }
+
+    // Stato transiente (saved/error): mostra per `ms`, poi torna a dirty/idle.
+    function _emergFloppySetTransient(btn, stato, ms) {
+      if (!btn) return;
+      btn.setAttribute('data-state', stato);
+      btn.innerHTML = _emergFloppyHTML(stato);
+      btn.setAttribute('title',
+        stato === 'saved' ? 'Salvato' :
+        stato === 'error' ? 'Errore — il sistema sta riprovando automaticamente' : '');
+      if (_emergFloppyTransientId) clearTimeout(_emergFloppyTransientId);
+      _emergFloppyTransientId = setTimeout(function() {
+        // Reset a stato attuale (idle/dirty in base a _dirtyLetti)
+        var card = btn.closest('.patient-card');
+        if (!card) return;
+        var letto = card.getAttribute('data-bed');
+        if (!letto) return;
+        // Forza il reset (rimuovo lo stato transiente per permettere a _emergAggiornaStatoFloppy)
+        btn.setAttribute('data-state', 'idle');
+        _emergAggiornaStatoFloppy(letto, btn);
+      }, ms);
+    }
+
+    // Esposte per i hook in _completaApertura / _disattivaFocusMode
+    window._emergCreaFloppy = _emergCreaFloppy;
+    window._emergRimuoviFloppy = _emergRimuoviFloppy;
 
     // ── Guard runtime: blocca esecuzione se emergenza attiva ──────────
     // Da chiamare all'inizio di ogni funzione disabilitata in emergenza.
