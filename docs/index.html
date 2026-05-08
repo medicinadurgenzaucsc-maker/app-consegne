@@ -1070,7 +1070,7 @@
             <li style="display:none"><a class="dropdown-item" href="javascript:void(0)" id="btnToggleSync" onclick="toggleSync()"><i class="bi bi-pause-circle text-warning me-2" id="iconToggleSync"></i><span id="labelToggleSync">Metti in pausa il sync</span></a></li>
             <!-- TEMPORANEA: verifica versione deploy (rimuovere dopo i test delta-update) -->
             <li><hr class="dropdown-divider"></li>
-            <li><a class="dropdown-item" href="javascript:void(0)" onclick="_mostraVersioneDeploy()" style="font-family:monospace;font-size:0.8rem;"><i class="bi bi-tag me-2 text-muted"></i><span class="text-muted">Versione:</span> <strong id="navVersionTag">delta-v1</strong></a></li>
+            <li><a class="dropdown-item" href="javascript:void(0)" onclick="_mostraVersioneDeploy()" style="font-family:monospace;font-size:0.8rem;"><i class="bi bi-tag me-2 text-muted"></i><span class="text-muted">Versione:</span> <strong id="navVersionTag">delta-v2-counters</strong></a></li>
           </ul>
         </li>
       </ul>
@@ -3569,19 +3569,37 @@
     // ── TEMPORANEA: tag versione deploy + confronto con master remoto ──
     // Aggiornare manualmente _APP_DEPLOY_TAG ad ogni commit di test.
     // Rimuovere dopo i test del delta-update.
-    window._APP_DEPLOY_TAG = 'delta-v1';
+    window._APP_DEPLOY_TAG = 'delta-v2-counters';
     window._mostraVersioneDeploy = function() {
       var tagLocal = window._APP_DEPLOY_TAG || '?';
+      var c = window._diagCounters || {deltaUpdate:0,deltaDelete:0,deltaFallback:0,fullSync:0,lastEvent:'-',lastEventAt:'-'};
+      var totEventi = c.deltaUpdate + c.deltaDelete + c.deltaFallback + c.fullSync;
+      var pctDelta = totEventi > 0 ? Math.round(((c.deltaUpdate+c.deltaDelete)/totEventi)*100) : 0;
       Swal.fire({
-        title: 'Versione deploy',
-        html: '<div style="font-family:monospace;font-size:0.85rem;text-align:left;line-height:1.8;">' +
+        title: 'Versione & Diagnostica',
+        width: 540,
+        html: '<div style="font-family:monospace;font-size:0.82rem;text-align:left;line-height:1.7;">' +
               '<div><strong>Locale (in pagina):</strong> <span style="color:#1976d2;">' + tagLocal + '</span></div>' +
               '<div id="vTagRemote"><strong>Remoto (master):</strong> <span class="text-muted">caricamento...</span></div>' +
               '<div id="vTagDiff" class="mt-2"></div>' +
               '</div>' +
-              '<div class="mt-3 text-muted" style="font-size:0.75rem;">' +
-              'Se i due valori coincidono, la pagina è la versione più recente. ' +
-              'Altrimenti fai <kbd>Ctrl+Shift+R</kbd> per hard reload.</div>',
+              '<hr class="my-3">' +
+              '<div style="font-family:monospace;font-size:0.78rem;text-align:left;line-height:1.7;background:#f5f5f5;padding:10px 12px;border-radius:6px;">' +
+                '<div class="fw-bold mb-2 text-dark" style="font-size:0.82rem;">📊 Eventi Realtime ricevuti</div>' +
+                '<div>✅ Delta UPDATE: <strong style="color:#388e3c;">' + c.deltaUpdate + '</strong> (card singola)</div>' +
+                '<div>🗑️ Delta DELETE: <strong style="color:#388e3c;">' + c.deltaDelete + '</strong> (rimozione card)</div>' +
+                '<div>🔄 Full sync (fallback/altro): <strong style="color:#f57c00;">' + (c.fullSync + c.deltaFallback) + '</strong></div>' +
+                '<div class="mt-2"><strong>% delta su totale:</strong> ' +
+                  '<span style="color:' + (pctDelta>=80?'#388e3c':pctDelta>=50?'#f57c00':'#c62828') + ';font-weight:bold;">' +
+                  pctDelta + '%</span> ' +
+                  (totEventi===0 ? '<small class="text-muted">(ancora 0 eventi)</small>' : '') +
+                '</div>' +
+                '<div class="mt-2 text-muted"><strong>Ultimo evento:</strong> ' + c.lastEvent +
+                ' <small>(' + c.lastEventAt + ')</small></div>' +
+              '</div>' +
+              '<div class="mt-3" style="font-size:0.72rem;color:#666;">' +
+              '💡 <strong>Test rapido</strong>: lascia aperta una card su un altro PC, modificala e salvala. ' +
+              'Riapri questo modal: il contatore "Delta UPDATE" deve essere aumentato di 1 (NON il full sync).</div>',
         confirmButtonText: 'Chiudi',
         confirmButtonColor: '#37474f',
         didOpen: function() {

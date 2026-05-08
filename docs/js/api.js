@@ -1326,24 +1326,42 @@ function _inizializzaRealtime() {
     });
 }
 
+// Contatori per debug visuale (consultabili dal modal "Versione" senza console)
+window._diagCounters = window._diagCounters || {
+  deltaUpdate: 0, deltaDelete: 0, deltaFallback: 0, fullSync: 0,
+  lastEvent: '-', lastEventAt: '-'
+};
+function _diagSegna(tipo, dettaglio) {
+  if (!window._diagCounters) return;
+  if (tipo) window._diagCounters[tipo] = (window._diagCounters[tipo] || 0) + 1;
+  if (dettaglio) {
+    window._diagCounters.lastEvent = dettaglio;
+    window._diagCounters.lastEventAt = new Date().toLocaleTimeString('it-IT');
+  }
+}
+
 // ── DELTA UPDATE — aggiorna SOLO la card interessata ──────────────────
 // Ritorna true se gestito, false se serve fallback al full sync.
 function _applicaDeltaUpdate(row) {
-  if (!row || !row.letto) return false;
+  if (!row || !row.letto) { _diagSegna('deltaFallback', 'UPDATE senza letto'); return false; }
   var p = _fromDb(row);
   var letto = String(p.Letto);
 
   // Skip card lockata da questo client (focus mode su questo letto):
   // _applicaAggiornamentoDaHtml ha la stessa guard, replicata qui per coerenza.
-  if (typeof _lettoLockAtt !== 'undefined' && _lettoLockAtt === letto) return true;
+  if (typeof _lettoLockAtt !== 'undefined' && _lettoLockAtt === letto) {
+    _diagSegna('deltaUpdate', 'SKIP focus mode '+letto);
+    return true;
+  }
 
   // NOTE ha renderer dedicato (_renderNoteCard*): meglio fallback full sync
-  if (letto === 'NOTE') return false;
+  if (letto === 'NOTE') { _diagSegna('deltaFallback', 'NOTE → full sync'); return false; }
 
   var cards = document.querySelectorAll('.patient-card[data-bed="' + letto + '"]');
-  if (!cards.length) return false; // card non esistente in DOM → full sync
+  if (!cards.length) { _diagSegna('deltaFallback', 'card '+letto+' assente → full sync'); return false; }
 
   cards.forEach(function(card) { _aggiornaCardDaPaziente(card, p); });
+  _diagSegna('deltaUpdate', 'UPDATE '+letto);
 
   // Aggiorna sync indicator (come fa _scheduleRealtimeSync alla fine)
   var ind = document.getElementById('syncIndicator');
@@ -1360,12 +1378,13 @@ function _applicaDeltaUpdate(row) {
 
 // Rimuove la card dal DOM (delta DELETE).
 function _applicaDeltaDelete(letto) {
-  if (!letto) return false;
+  if (!letto) { _diagSegna('deltaFallback', 'DELETE senza letto'); return false; }
   var rimossi = 0;
   document.querySelectorAll('.patient-card[data-bed="' + String(letto) + '"]').forEach(function(c) {
     c.remove();
     rimossi++;
   });
+  _diagSegna('deltaDelete', 'DELETE '+letto+' (rimossi '+rimossi+')');
   if (rimossi === 0) return true; // già non c'era → no-op, comunque success
 
   // Aggiorna messaggio "Nessun letto" se la lista è vuota
@@ -1482,6 +1501,7 @@ function _scheduleRealtimeSync() {
       if (typeof _applicaAggiornamentoCompleto === 'function') {
         _applicaAggiornamentoCompleto(_renderCardsHtml(pazienti));
       }
+      if (typeof _diagSegna === 'function') _diagSegna('fullSync', 'FULL SYNC ('+ (pazienti||[]).length +' pazienti)');
       if (ind) ind.className = 'badge bg-success ms-2';
       if (st)  st.innerText  = new Date().toLocaleTimeString('it-IT');
     }).catch(function(e) {
