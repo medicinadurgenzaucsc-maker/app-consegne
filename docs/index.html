@@ -2271,8 +2271,13 @@
       if (!card) return;
       // Evita duplicati
       if (card.querySelector('.emerg-save-btn')) return;
-      var box = card.querySelector('.bed-number-box');
-      if (!box) return;
+      // Container: vista standard usa .bed-number-box; vista alternativa usa
+      // .alt-col-info (stesso parent della matita esistente).
+      var box = card.querySelector('.bed-number-box') || card.querySelector('.alt-col-info');
+      if (!box) {
+        console.warn('[Floppy] Container non trovato sulla card', card);
+        return;
+      }
       var letto = card.getAttribute('data-bed');
 
       var btn = document.createElement('button');
