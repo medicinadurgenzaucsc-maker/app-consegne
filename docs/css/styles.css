@@ -274,9 +274,10 @@ body { padding-top: 70px; background-color: #d4e6f1 !important; }
 .patient-card.focus-mode .bed-number-box .focus-pencil-btn { display: none !important; }
 .patient-card.card-locked:hover .focus-pencil-btn { display: none !important; }
 
-/* ===== FLOPPY EMERGENZA — save manuale in focus mode ===== */
-/* Visibile SOLO in focus mode con modalità emergenza attiva.
-   Posizione identica alla matita (alto-destra del bed-number-box). */
+/* ===== FLOPPY — save manuale + indicatore stato save in focus mode ===== */
+/* Visibile in focus mode (qualsiasi modalità: normale o emergenza).
+   Posizione identica alla matita (alto-destra del bed-number-box).
+   Stati: idle/dirty/saving/saved/error. */
 @keyframes _emergPulse {
   0%, 100% { box-shadow: 0 2px 8px rgba(245,124,0,0.30); transform: scale(1); }
   50%      { box-shadow: 0 4px 14px rgba(245,124,0,0.65); transform: scale(1.05); }

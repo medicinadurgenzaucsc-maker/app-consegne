@@ -559,10 +559,9 @@
         var primo = card.querySelector('[contenteditable="true"]');
         if (primo) primo.focus();
 
-        // Modalità Emergenza: floppy intelligente per save manuale
-        if (typeof _emergenzaPollingAttivo === 'function' && _emergenzaPollingAttivo()) {
-          if (typeof window._emergCreaFloppy === 'function') window._emergCreaFloppy(card);
-        }
+        // Floppy intelligente: indicatore stato save + click per forzare save manuale.
+        // Visibile in qualsiasi modalità (normale o emergenza).
+        if (typeof window._emergCreaFloppy === 'function') window._emergCreaFloppy(card);
       }
 
       // ── FASE 2: scrivi lock sul DB (1 upsert) ────────────────────────────
@@ -2245,24 +2244,25 @@
         }
       });
 
-      // Aggiorna anche il floppy sulla card eventualmente in focus mode
-      // (toggle "hot" se l'utente attiva/disattiva l'emergenza mentre la card è aperta).
-      if (typeof _focusCard !== 'undefined' && _focusCard) {
-        if (attivo) _emergCreaFloppy(_focusCard);
-        else        _emergRimuoviFloppy(_focusCard);
-      }
+      // NB: il floppy è sempre presente in focus mode (gestito da _completaApertura
+      // / _disattivaFocusMode), indipendentemente dalla modalità emergenza.
     }
     // Esposta per chiamate da fuori IIFE (es. dopo aggiunte dinamiche al DOM)
     window._emergUpdateUI = _emergUpdateUI;
 
     // ══════════════════════════════════════════════════════════════
-    // FLOPPY INTELLIGENTE — save manuale in focus mode (emergenza)
-    // Visibile solo quando: focus mode attivo + emergenza attiva.
+    // FLOPPY INTELLIGENTE — save manuale + indicatore stato save
+    // Visibile in focus mode in QUALSIASI modalità (normale o emergenza):
+    // dà al medico feedback continuo dello stato del save e capacità di
+    // forzarne uno immediato.
     // Stati: idle (grigio) / dirty (arancione pulsante) / saving (spinner)
     //        / saved (check verde 2s) / error (X rossa pulsante).
     // Click → forza save subito riusando eseguiSalvataggioLettoCompleto;
     // resetta retry counter; cancella debounce in coda. Polling 1s su dirty
     // come safety per mantenere lo stato visivo coerente con la realtà.
+    // NB: i nomi delle funzioni mantengono il prefisso _emerg* per ragioni
+    // storiche (l'idea nasceva dalla modalità emergenza), ma operano
+    // universalmente.
     // ══════════════════════════════════════════════════════════════
     var _emergFloppyPollId = null;     // setInterval per refresh stato visivo
     var _emergFloppyTransientId = null; // timeout per stati transienti (saved/error)
@@ -2284,7 +2284,7 @@
       btn.className = 'emerg-save-btn';
       btn.setAttribute('type', 'button');
       btn.setAttribute('data-state', 'idle');
-      btn.setAttribute('title', 'Salva ora (Modalità Emergenza)');
+      btn.setAttribute('title', 'Salva ora');
       btn.innerHTML = _emergFloppyHTML('idle');
       btn.addEventListener('click', function(ev) {
         ev.stopPropagation();
@@ -2337,7 +2337,7 @@
         btn.innerHTML = _emergFloppyHTML(nuovoStato);
         btn.setAttribute('title', dirty
           ? 'Modifiche non salvate — clicca per salvare ora'
-          : 'Tutto salvato (Modalità Emergenza)');
+          : 'Tutto salvato');
       }
     }
 
@@ -2358,8 +2358,6 @@
     }
 
     function _emergSalvaManuale(letto, card, btn) {
-      // Safety: se emergenza non più attiva (toggle nel frattempo), no-op
-      if (typeof _emergenzaPollingAttivo !== 'function' || !_emergenzaPollingAttivo()) return;
       if (!btn) btn = card && card.querySelector('.emerg-save-btn');
       if (!btn) return;
       var stato = btn.getAttribute('data-state');
