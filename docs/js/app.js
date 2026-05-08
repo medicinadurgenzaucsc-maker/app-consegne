@@ -526,6 +526,9 @@
     var _ultimoSaveTs = {};             // letto -> timestamp ultimo save completato (per heartbeat 90s)
     var _saveRetryCount = {};           // letto -> numero retry attuali (max 3: 5s, 15s, 45s)
     var _saveRetryTimer = {};           // letto -> handle del timer retry corrente
+    var _saveInFlight = {};             // letto -> true se HTTP save attualmente in volo (evita doppi save concorrenti)
+    var _savePending = {};              // letto -> true se è stato richiesto un nuovo save mentre uno è in volo (queue)
+    var _dirtyVersion = {};             // letto -> contatore incrementato ad ogni input (snapshot prima del save HTTP)
     const HEARTBEAT_MS = 90000;         // save di sicurezza ogni 90s di scrittura ininterrotta
     const RETRY_DELAYS = [5000, 15000, 45000]; // backoff esponenziale
     var _countdownIntervallo = {};      // intervalli per il countdown badge
@@ -718,6 +721,11 @@
     });
     function attivaSalvataggioRitardato(letto, card) {
       _dirtyLetti.add(letto);
+      // FIX #2: incrementa version → ogni input "marca" la card. Al ritorno
+      // di un save HTTP, _dopoSalvataggio confronta la version snapshotata
+      // all'avvio del save con quella attuale: se cambiata, dirty resta
+      // (ci sono modifiche più nuove non ancora salvate).
+      _dirtyVersion[letto] = (_dirtyVersion[letto] || 0) + 1;
       clearTimeout(timerSalvataggioLetto[letto]);
       clearInterval(_countdownIntervallo[letto]);
       _letti_salvataggioAttivi.add(letto);
@@ -726,11 +734,12 @@
       // ── HEARTBEAT 90s ────────────────────────────────────────────────
       // Se il medico scrive ininterrottamente, il debounce 60s viene resettato
       // ad ogni tasto e nessun save parte. Heartbeat: se sono passati >=90s
-      // dall'ultimo save effettivo per questo letto → save immediato in background
-      // (non blocca l'UI, mantiene il countdown attivo).
+      // dall'ultimo save effettivo per questo letto → save immediato in background.
+      // FIX #1: skip se c'è già un save HTTP in volo (evita doppi save concorrenti
+      // su PC lenti dove il save impiega secondi e l'utente continua a digitare).
       var ora = Date.now();
       var lastSave = _ultimoSaveTs[letto] || 0;
-      if (lastSave && (ora - lastSave) >= HEARTBEAT_MS) {
+      if (lastSave && (ora - lastSave) >= HEARTBEAT_MS && !_saveInFlight[letto]) {
         // Save di sicurezza, non resetta debounce: il timer 60s riparte sotto
         try { eseguiSalvataggioLettoCompleto(letto, card); } catch(_e) {}
       } else if (!lastSave) {
@@ -764,6 +773,24 @@
       }, RITARDO_SALVATAGGIO);
     }
     function eseguiSalvataggioLettoCompleto(letto, card) {
+      // FIX #1: se c'è già un save HTTP in volo per questo letto, evita di lanciarne
+      // un secondo. Marca _savePending: dopo il completamento del save corrente,
+      // _dopoSalvataggio kickerà un nuovo save (con i dati più aggiornati) se
+      // _dirtyLetti è ancora popolato (Fix #2).
+      if (_saveInFlight[letto]) {
+        _savePending[letto] = true;
+        return;
+      }
+      _saveInFlight[letto] = true;
+      // FIX #3: traccia il save anche per path non-debounce (retry, force-save, floppy).
+      // Fa sì che le matite siano nascoste durante qualsiasi save in volo, non solo quelli
+      // partiti da attivaSalvataggioRitardato.
+      _letti_salvataggioAttivi.add(letto);
+      _nascondMatite();
+      // FIX #2: snapshotta la version corrente. Se _dirtyVersion cambia durante il save
+      // (utente digita), al ritorno NON cancelliamo il dirty (mod più nuove pending).
+      var versionAtSave = _dirtyVersion[letto] || 0;
+
       _syncPaused = true;
       const datiPaziente = {};
       const aree = card.querySelectorAll('.editable-area');
@@ -819,7 +846,12 @@
       function _dopoSalvataggio(success) {
         clearInterval(_countdownIntervallo[letto]);
         if (success) {
-          _dirtyLetti.delete(letto);
+          // FIX #2: cancella dirty SOLO se non ci sono modifiche più nuove
+          // (version invariata dal momento del save HTTP). Altrimenti resta
+          // dirty per il prossimo save (debounce 60s, heartbeat o pending kick-off).
+          if ((_dirtyVersion[letto] || 0) === versionAtSave) {
+            _dirtyLetti.delete(letto);
+          }
           _ultimoSaveTs[letto] = Date.now();
           _saveRetryCount[letto] = 0;
           if (_saveRetryTimer[letto]) { clearTimeout(_saveRetryTimer[letto]); _saveRetryTimer[letto] = null; }
@@ -829,6 +861,21 @@
         _letti_salvataggioAttivi.delete(letto);
         _mostraMatite();
         _syncPaused = false; // Realtime si occupa di aggiornare gli altri client
+
+        // FIX #1 (queue): segnala fine del save in volo
+        _saveInFlight[letto] = false;
+        // Se c'è un save accodato (richiesto durante il save corrente) e ci sono
+        // ancora modifiche pending → kickoff. Esegue in microtask per dare al
+        // chiamante il tempo di stabilizzare lo stato (non re-entrante).
+        if (_savePending[letto]) {
+          _savePending[letto] = false;
+          if (_dirtyLetti.has(letto)) {
+            setTimeout(function() {
+              var c2 = document.querySelector('.patient-card[data-bed="' + letto + '"]') || card;
+              if (c2) eseguiSalvataggioLettoCompleto(letto, c2);
+            }, 0);
+          }
+        }
       }
       _sbSalvaPaziente(letto, datiPaziente)
         .then(function(res) {
@@ -843,6 +890,8 @@
             _dirtyLetti.delete(letto);
             _saveRetryCount[letto] = 0;
             if (_saveRetryTimer[letto]) { clearTimeout(_saveRetryTimer[letto]); _saveRetryTimer[letto] = null; }
+            // FIX #1: cancella anche un eventuale pending (otterrebbe lo stesso errore)
+            _savePending[letto] = false;
             _dopoSalvataggio(false);
             return;
           }

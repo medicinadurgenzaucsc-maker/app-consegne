@@ -2663,10 +2663,13 @@
         _diagLog('_focusCard attivo: '+(typeof _focusCard!=='undefined' && !!_focusCard), 'info');
         _diagLog('_lettoLockAtt: '+(typeof _lettoLockAtt!=='undefined' ? (_lettoLockAtt||'(nessuno)') : '?'), 'info');
         _diagLog('_mioToken presente: '+(typeof _mioToken!=='undefined' && !!_mioToken), 'info');
-        // Stato sistema salvataggio (heartbeat + retry esponenziale)
+        // Stato sistema salvataggio (heartbeat + retry esponenziale + dedup)
         _diagLog('_ultimoSaveTs (letti tracciati): '+(typeof _ultimoSaveTs!=='undefined' ? Object.keys(_ultimoSaveTs).length : '?'), 'info');
         _diagLog('_saveRetryCount attivi: '+(typeof _saveRetryCount!=='undefined' ? Object.keys(_saveRetryCount).filter(function(k){return _saveRetryCount[k]>0;}).length : '?'), 'info');
         _diagLog('_saveRetryTimer attivi: '+(typeof _saveRetryTimer!=='undefined' ? Object.keys(_saveRetryTimer).filter(function(k){return !!_saveRetryTimer[k];}).length : '?'), 'info');
+        _diagLog('_saveInFlight attivi: '+(typeof _saveInFlight!=='undefined' ? Object.keys(_saveInFlight).filter(function(k){return !!_saveInFlight[k];}).length : '?'), 'info');
+        _diagLog('_savePending attivi: '+(typeof _savePending!=='undefined' ? Object.keys(_savePending).filter(function(k){return !!_savePending[k];}).length : '?'), 'info');
+        _diagLog('_dirtyVersion (letti tracciati): '+(typeof _dirtyVersion!=='undefined' ? Object.keys(_dirtyVersion).length : '?'), 'info');
         _diagLog('LOCK_TTL_MS: '+(typeof LOCK_TTL_MS!=='undefined' ? LOCK_TTL_MS+' ms ('+Math.round(LOCK_TTL_MS/60000)+' min)' : '?'), 'info');
         _diagLog('RITARDO_SALVATAGGIO: '+(typeof RITARDO_SALVATAGGIO!=='undefined' ? RITARDO_SALVATAGGIO+' ms' : '?'), 'info');
         _diagLog('HEARTBEAT_MS: '+(typeof HEARTBEAT_MS!=='undefined' ? HEARTBEAT_MS+' ms' : '?'), 'info');
