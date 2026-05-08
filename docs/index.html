@@ -3306,12 +3306,14 @@
       if (_silentDiag) {
         _silentDiag = false; // reset per future esecuzioni manuali
         _silentDoneCallback = null;
-        // Diagnostica AUTOMATICA al caricamento: mostra il modal se il rischio è
-        // BASSO, MEDIO o ALTO (>=10) oppure se ci sono problemi critici.
-        // Solo livello NESSUNO (0-9 punti, zero critici) → silenzioso.
-        // NB: la diagnostica MANUALE (click su "PC Lento") mostra sempre il report,
-        // perché _silentDiag è false in quel flusso.
-        var ciSonoProblemi = (rischioSalvataggio >= 10) || critici > 0;
+        // Diagnostica AUTOMATICA al caricamento: il modal si apre se il livello
+        // rischio salvataggio è BASSO, MEDIO o ALTO (>=10 punti).
+        // Livello NESSUNO (<10 punti) → caricamento silenzioso, nessun modal,
+        // anche se alcuni test critici sono falliti (es. WebSocket bloccato
+        // ma rischio salvataggio basso).
+        // NB: la diagnostica MANUALE (click su "PC Lento") mostra sempre il
+        // report perché _silentDiag è false in quel flusso.
+        var ciSonoProblemi = (rischioSalvataggio >= 10);
         if (!ciSonoProblemi) {
           // Tutto OK: silenziosamente, nessun modal. Notifica completamento.
           console.log('[Diagnostica startup] Tutti i test superati. Nessun problema.');
