@@ -1070,7 +1070,7 @@
             <li style="display:none"><a class="dropdown-item" href="javascript:void(0)" id="btnToggleSync" onclick="toggleSync()"><i class="bi bi-pause-circle text-warning me-2" id="iconToggleSync"></i><span id="labelToggleSync">Metti in pausa il sync</span></a></li>
             <!-- TEMPORANEA: verifica versione deploy (rimuovere dopo i test delta-update) -->
             <li><hr class="dropdown-divider"></li>
-            <li><a class="dropdown-item" href="javascript:void(0)" onclick="_mostraVersioneDeploy()" style="font-family:monospace;font-size:0.8rem;"><i class="bi bi-tag me-2 text-muted"></i><span class="text-muted">Versione:</span> <strong id="navVersionTag">delta-v2-counters</strong></a></li>
+            <li><a class="dropdown-item" href="javascript:void(0)" onclick="_mostraVersioneDeploy()" style="font-family:monospace;font-size:0.8rem;"><i class="bi bi-tag me-2 text-muted"></i><span class="text-muted">Versione:</span> <strong id="navVersionTag">delta-v3-localfetch</strong></a></li>
           </ul>
         </li>
       </ul>
@@ -3569,7 +3569,7 @@
     // ── TEMPORANEA: tag versione deploy + confronto con master remoto ──
     // Aggiornare manualmente _APP_DEPLOY_TAG ad ogni commit di test.
     // Rimuovere dopo i test del delta-update.
-    window._APP_DEPLOY_TAG = 'delta-v2-counters';
+    window._APP_DEPLOY_TAG = 'delta-v3-localfetch';
     window._mostraVersioneDeploy = function() {
       var tagLocal = window._APP_DEPLOY_TAG || '?';
       var c = window._diagCounters || {deltaUpdate:0,deltaDelete:0,deltaFallback:0,fullSync:0,lastEvent:'-',lastEventAt:'-'};
@@ -3603,30 +3603,34 @@
         confirmButtonText: 'Chiudi',
         confirmButtonColor: '#37474f',
         didOpen: function() {
-          fetch('https://api.github.com/repos/medicinadurgenzaucsc-maker/app-consegne/commits/master')
-            .then(function(r) { return r.json(); })
+          // Fetch da version.json sullo stesso dominio (GitHub Pages),
+          // così niente firewall corporate o blocchi GitHub API.
+          // Cache-bust con timestamp per evitare cache aggressiva (Safari).
+          fetch('version.json?_t=' + Date.now(), { cache: 'no-store' })
+            .then(function(r) {
+              if (!r.ok) throw new Error('HTTP ' + r.status);
+              return r.json();
+            })
             .then(function(d) {
-              var sha7 = (d && d.sha) ? d.sha.substring(0,7) : '?';
-              var msg = (d && d.commit && d.commit.message) ? d.commit.message.split('\n')[0] : '';
+              var verRemota = (d && d.version) ? d.version : '?';
               var rEl = document.getElementById('vTagRemote');
               var dEl = document.getElementById('vTagDiff');
               if (rEl) {
-                rEl.innerHTML = '<strong>Ultimo commit master:</strong> <span style="color:#388e3c;">' + sha7 + '</span><br>' +
-                                '<small class="text-muted" style="font-size:0.72rem;">' + msg + '</small>';
+                rEl.innerHTML = '<strong>Remoto (server):</strong> <span style="color:#388e3c;">' + verRemota + '</span>';
               }
               if (dEl) {
-                // Confronto qualitativo: il tag locale dovrebbe essere allineato al commit message
-                if (msg.toLowerCase().indexOf(tagLocal.toLowerCase()) !== -1 ||
-                    msg.toLowerCase().indexOf('delta') !== -1) {
-                  dEl.innerHTML = '<span class="text-success"><i class="bi bi-check-circle-fill"></i> Versione coerente con il deploy attuale.</span>';
+                if (verRemota === tagLocal) {
+                  dEl.innerHTML = '<span class="text-success"><i class="bi bi-check-circle-fill"></i> Versione allineata. La pagina è quella corrente.</span>';
                 } else {
-                  dEl.innerHTML = '<span class="text-warning"><i class="bi bi-exclamation-triangle-fill"></i> Possibile mismatch — verifica con hard reload.</span>';
+                  dEl.innerHTML = '<span class="text-warning"><i class="bi bi-exclamation-triangle-fill"></i> ' +
+                                  'La pagina caricata è <strong>' + tagLocal + '</strong> ma il server serve <strong>' + verRemota + '</strong>.<br>' +
+                                  'Cancella cache Safari (Impostazioni → Safari → Cancella dati siti) e ricarica.</span>';
                 }
               }
             })
-            .catch(function() {
+            .catch(function(e) {
               var rEl = document.getElementById('vTagRemote');
-              if (rEl) rEl.innerHTML = '<strong>Remoto:</strong> <span class="text-danger">errore di rete</span>';
+              if (rEl) rEl.innerHTML = '<strong>Remoto:</strong> <span class="text-danger">errore (' + (e.message||'rete') + ')</span>';
             });
         }
       });
