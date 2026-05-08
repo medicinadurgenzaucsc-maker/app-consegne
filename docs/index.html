@@ -1070,7 +1070,7 @@
             <li style="display:none"><a class="dropdown-item" href="javascript:void(0)" id="btnToggleSync" onclick="toggleSync()"><i class="bi bi-pause-circle text-warning me-2" id="iconToggleSync"></i><span id="labelToggleSync">Metti in pausa il sync</span></a></li>
             <!-- TEMPORANEA: verifica versione deploy (rimuovere dopo i test delta-update) -->
             <li><hr class="dropdown-divider"></li>
-            <li><a class="dropdown-item" href="javascript:void(0)" onclick="_mostraVersioneDeploy()" style="font-family:monospace;font-size:0.8rem;"><i class="bi bi-tag me-2 text-muted"></i><span class="text-muted">Versione:</span> <strong id="navVersionTag">delta-v3-localfetch</strong></a></li>
+            <li><a class="dropdown-item" href="javascript:void(0)" onclick="_mostraVersioneDeploy()" style="font-family:monospace;font-size:0.8rem;"><i class="bi bi-tag me-2 text-muted"></i><span class="text-muted">Versione:</span> <strong id="navVersionTag">delta-v4-payload-debug</strong></a></li>
           </ul>
         </li>
       </ul>
@@ -3569,7 +3569,7 @@
     // ── TEMPORANEA: tag versione deploy + confronto con master remoto ──
     // Aggiornare manualmente _APP_DEPLOY_TAG ad ogni commit di test.
     // Rimuovere dopo i test del delta-update.
-    window._APP_DEPLOY_TAG = 'delta-v3-localfetch';
+    window._APP_DEPLOY_TAG = 'delta-v4-payload-debug';
     window._mostraVersioneDeploy = function() {
       var tagLocal = window._APP_DEPLOY_TAG || '?';
       var c = window._diagCounters || {deltaUpdate:0,deltaDelete:0,deltaFallback:0,fullSync:0,lastEvent:'-',lastEventAt:'-'};
@@ -3596,6 +3596,11 @@
                 '</div>' +
                 '<div class="mt-2 text-muted"><strong>Ultimo evento:</strong> ' + c.lastEvent +
                 ' <small>(' + c.lastEventAt + ')</small></div>' +
+                (c.lastPayload ?
+                  '<div class="mt-1 text-muted" style="font-size:0.72rem;"><strong>Ultimo payload Realtime:</strong> ' +
+                  'evType=<code>' + c.lastPayload.evType + '</code>, letto=<code>' + c.lastPayload.letto + '</code> ' +
+                  '<small>(' + c.lastPayload.ts + ')</small></div>'
+                  : '') +
               '</div>' +
               '<div class="mt-3" style="font-size:0.72rem;color:#666;">' +
               '💡 <strong>Test rapido</strong>: lascia aperta una card su un altro PC, modificala e salvala. ' +

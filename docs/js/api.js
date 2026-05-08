@@ -1300,11 +1300,23 @@ function _inizializzaRealtime() {
         // re-renderizzare l'intera lista. Su PC lento riduce il freeze da 2-5s
         // a <100ms per evento Realtime. Se il delta non gestisce il caso
         // (NOTE, INSERT, errori) → fallback automatico al full sync.
+        // Compat: in alcune versioni Supabase v2 il campo è "eventType",
+        // in altre "event". Accettiamo entrambi.
+        var evType = payload && (payload.eventType || payload.event || '');
+        // Debug: salva ultimo payload ricevuto (visibile nel modal Versione)
+        if (window._diagCounters) {
+          window._diagCounters.lastPayload = {
+            evType: evType,
+            letto: (payload && payload.new && payload.new.letto) ||
+                   (payload && payload.old && payload.old.letto) || '?',
+            ts: new Date().toLocaleTimeString('it-IT')
+          };
+        }
         var ok = false;
         try {
-          if (payload.eventType === 'UPDATE' && payload.new) {
+          if (evType === 'UPDATE' && payload.new) {
             ok = _applicaDeltaUpdate(payload.new);
-          } else if (payload.eventType === 'DELETE' && payload.old) {
+          } else if (evType === 'DELETE' && payload.old) {
             ok = _applicaDeltaDelete(payload.old.letto);
           }
           // INSERT: lasciamo fare full sync (serve ordinamento corretto)
