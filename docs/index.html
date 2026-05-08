@@ -3306,11 +3306,12 @@
       if (_silentDiag) {
         _silentDiag = false; // reset per future esecuzioni manuali
         _silentDoneCallback = null;
-        // Mostra il modal SOLO se il rischio salvataggio è >= MEDIO (25) oppure
-        // ci sono problemi critici (browser obsoleto, offline, librerie mancanti,
-        // REST/DB/WS non funzionanti, storage rotto, cookie disabilitati).
-        // Rischio BASSO (10-24) o problemi minori senza impatto sul save → silenzioso.
-        var ciSonoProblemi = (rischioSalvataggio >= 25) || critici > 0;
+        // Diagnostica AUTOMATICA al caricamento: mostra il modal se il rischio è
+        // BASSO, MEDIO o ALTO (>=10) oppure se ci sono problemi critici.
+        // Solo livello NESSUNO (0-9 punti, zero critici) → silenzioso.
+        // NB: la diagnostica MANUALE (click su "PC Lento") mostra sempre il report,
+        // perché _silentDiag è false in quel flusso.
+        var ciSonoProblemi = (rischioSalvataggio >= 10) || critici > 0;
         if (!ciSonoProblemi) {
           // Tutto OK: silenziosamente, nessun modal. Notifica completamento.
           console.log('[Diagnostica startup] Tutti i test superati. Nessun problema.');
