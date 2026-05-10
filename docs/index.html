@@ -931,7 +931,13 @@
   <div style="background:#fff;border-radius:18px;padding:44px 48px;max-width:400px;width:92%;box-shadow:0 24px 64px rgba(0,0,0,0.45);text-align:center;">
     <div style="font-size:3rem;margin-bottom:10px;">🏥</div>
     <h2 style="font-size:1.35rem;font-weight:700;color:#263238;margin:0 0 6px;">Consegne Reparto</h2>
-    <p style="color:#607d8b;font-size:0.88rem;margin:0 0 28px;line-height:1.5;">Inserisci le credenziali dell'account Google del reparto<br>per accedere alle consegne.</p>
+    <p style="color:#607d8b;font-size:0.88rem;margin:0 0 24px;line-height:1.5;">Accedi con l'account Google autorizzato<br>per il reparto.</p>
+
+    <!-- Toast errore (sopra il pulsante) — visibile solo in caso di errore precedente -->
+    <div id="loginError" role="alert" style="display:none;margin-bottom:18px;padding:12px 14px;background:#fff3e0;border:1px solid #ffb74d;border-left:4px solid #f57c00;border-radius:8px;color:#bf360c;font-size:0.84rem;text-align:left;line-height:1.45;white-space:pre-line;">
+      <strong style="display:inline-block;margin-right:4px;">⚠</strong><span id="loginErrorText"></span>
+    </div>
+
     <button id="btnGoogleLogin" onclick="_avviaLoginGoogle()"
       style="display:flex;align-items:center;justify-content:center;gap:12px;width:100%;
              padding:13px 20px;border:2px solid #e0e0e0;border-radius:10px;
@@ -951,12 +957,7 @@
       <div style="width:20px;height:20px;border:3px solid #ccc;border-top-color:#546e7a;border-radius:50%;animation:_lockSpin 0.8s linear infinite;"></div>
       <span style="color:#607d8b;font-size:0.85rem;">Accesso in corso...</span>
     </div>
-    <div id="loginError" style="display:none;margin-top:16px;padding:12px 14px;background:#ffebee;border-radius:8px;color:#c62828;font-size:0.83rem;text-align:left;white-space:pre-line;"></div>
-    <div style="margin-top:14px;padding:10px 12px;background:#fff8e1;border-radius:8px;font-size:0.74rem;color:#795548;text-align:left;line-height:1.4;">
-      <i class="bi bi-info-circle" style="color:#f57c00;"></i>
-      <strong>Su iPad/iPhone:</strong> se il browser chiede di consentire i popup dopo il click, tocca <strong>"Consenti"</strong> e poi clicca di nuovo "Accedi con Google".
-    </div>
-    <p style="margin-top:14px;font-size:0.75rem;color:#b0bec5;">Accesso riservato al personale autorizzato</p>
+    <p style="margin-top:20px;font-size:0.75rem;color:#b0bec5;">Accesso riservato al personale autorizzato</p>
   </div>
 </div>
 
@@ -1505,18 +1506,34 @@
       return true;
     }
 
+    // ── Mappa errori OAuth → messaggi utente italiani ─────────────────────────
+    function _msgErroreOAuth(code) {
+      switch (code) {
+        case 'access_denied':           return 'Hai annullato l\'accesso. Premi di nuovo "Accedi con Google" per riprovare.';
+        case 'login_required':
+        case 'interaction_required':    return 'È necessario effettuare nuovamente l\'accesso.';
+        case 'user_logged_out':         return 'L\'account Google è stato disconnesso. Effettua nuovamente l\'accesso.';
+        case 'consent_required':        return 'Servono i permessi all\'app. Premi "Accedi con Google" e accetta i permessi richiesti.';
+        case 'popup_closed_by_user':    return 'Hai chiuso la finestra di Google. Riprova.';
+        case 'popup_blocked_by_browser':return 'Il browser ha bloccato la finestra Google. Consenti i popup per questo sito e riprova.';
+        default:                        return 'Errore di accesso: ' + code;
+      }
+    }
+
     // ── Callback unica per tutti i flussi OAuth ───────────────────────────────
     function _onGoogleToken(resp) {
       if (resp.error) {
-        // 'login_required' / 'interaction_required' → login silenzioso fallito → mostra UI
+        // Errori "soft" (login silenzioso fallito al primo caricamento) → niente toast,
+        // mostra solo il login overlay pulito. L'utente deve cliccare il pulsante.
         if (resp.error === 'login_required' || resp.error === 'interaction_required' ||
             resp.error === 'user_logged_out') {
           _mostraLoginOverlay();
+          _abilitaBottone();
           return;
         }
-        _mostraErroreLogin(resp.error === 'access_denied'
-          ? 'Accesso rifiutato. Riprova.'
-          : 'Errore Google: ' + resp.error);
+        // Errori "hard" (durante interazione esplicita) → mostra toast con motivo
+        _mostraLoginOverlay();
+        _mostraErroreLogin(_msgErroreOAuth(resp.error));
         _abilitaBottone();
         return;
       }
@@ -1538,45 +1555,47 @@
             token: resp.access_token,
             expiry: Date.now() + 3500000  // ~58 minuti
           }));
+          _nascondiErroreLogin();
           _avviaApp();
         } else {
-          _mostraErroreLogin('Account non autorizzato (' + info.email + ').\nUsare: ' + _emailConsentita);
+          // Account non autorizzato → torna al login overlay + toast
+          _mostraLoginOverlay();
+          _mostraErroreLogin(
+            'Account non autorizzato: ' + (info.email || '?') +
+            (_emailConsentita ? '\nUsa l\'account: ' + _emailConsentita : '')
+          );
           _abilitaBottone();
         }
       })
       .catch(function() {
-        _mostraErroreLogin('Errore di verifica. Controlla la connessione e riprova.');
+        _mostraLoginOverlay();
+        _mostraErroreLogin('Impossibile verificare l\'account. Controlla la connessione e riprova.');
         _abilitaBottone();
       });
     }
 
-    // ── Login al click del pulsante: prompt:'login' + hint email reparto ──────
+    // ── Login al click del pulsante: chooser account ─────────────────────────
+    // prompt:'select_account' → Google mostra il selettore degli account
+    // configurati nel browser (utente sceglie quello giusto o aggiunge un nuovo
+    // account). Niente popup di consent a vuoto su iPad: il pulsante porta
+    // direttamente alla pagina Google account chooser.
     window._avviaLoginGoogle = function() {
-      var err = document.getElementById('loginError');
-      if (err) err.style.display = 'none';
+      _nascondiErroreLogin();
       if (!_tokenClient && !_inizializzaGoogleClient()) {
-        _mostraErroreLogin('Client Google non disponibile. Ricarica la pagina.');
+        _mostraErroreLogin('Client Google non ancora pronto. Attendi 2 secondi e riprova.');
         return;
       }
       _disabilitaBottone();
-      // prompt:'login' → forza inserimento credenziali (email + password)
-      // login_hint → pre-compila l'email dell'account reparto
       _tokenClient.requestAccessToken({
-        prompt: 'login',
+        prompt: 'select_account',
         login_hint: _emailConsentita || ''
       });
     };
 
-    // ── Login silenzioso al caricamento ──────────────────────────────────────
-    function _tentaLoginSilenzioso() {
-      if (!_tokenClient && !_inizializzaGoogleClient()) { _mostraLoginOverlay(); return; }
-      try {
-        // prompt:'none' → nessun popup; se Google ha già la sessione restituisce token
-        _tokenClient.requestAccessToken({ prompt: 'none', login_hint: _emailConsentita || '' });
-      } catch(e) {
-        _mostraLoginOverlay();
-      }
-    }
+    // NB: il login silenzioso prompt:'none' è stato rimosso a favore di un
+    // flusso utente esplicito (sempre login overlay → click pulsante → chooser
+    // account). Il token di sessione persiste in localStorage per ~58 minuti,
+    // quindi un reload entro quel tempo non richiede nuovo login.
 
     function _avviaApp() {
       var ov = document.getElementById('loginOverlay');
@@ -1602,8 +1621,14 @@
     }
 
     function _mostraErroreLogin(msg) {
+      var err  = document.getElementById('loginError');
+      var text = document.getElementById('loginErrorText');
+      if (text) text.textContent = msg;
+      if (err)  err.style.display = 'block';
+    }
+    function _nascondiErroreLogin() {
       var err = document.getElementById('loginError');
-      if (err) { err.textContent = msg; err.style.display = 'block'; }
+      if (err) err.style.display = 'none';
     }
 
     function _disabilitaBottone() {
@@ -1633,26 +1658,34 @@
       }).catch(function() {});
 
       // 1. Controlla sessione in localStorage (persiste oltre chiusura browser)
+      var sessioneScaduta = false;
       try {
         var sess = JSON.parse(localStorage.getItem('appSession') || 'null');
-        if (sess && sess.expiry > Date.now() && sess.token) {
-          window._googleAccessToken = sess.token;
-          window._googleDriveToken  = sess.token;
-          var ov = document.getElementById('loginOverlay');
-          if (ov) ov.style.display = 'none';
-          if (typeof window._avviaFlussoApp === 'function') window._avviaFlussoApp();
-          return;
+        if (sess && sess.token) {
+          if (sess.expiry > Date.now()) {
+            // Sessione valida → entra direttamente
+            window._googleAccessToken = sess.token;
+            window._googleDriveToken  = sess.token;
+            var ov = document.getElementById('loginOverlay');
+            if (ov) ov.style.display = 'none';
+            if (typeof window._avviaFlussoApp === 'function') window._avviaFlussoApp();
+            return;
+          }
+          // Sessione presente ma scaduta → flag per mostrare toast informativo
+          sessioneScaduta = true;
+          try { localStorage.removeItem('appSession'); } catch(e){}
         }
       } catch(e) {}
 
-      // 2. Nessuna sessione valida → tenta login silenzioso (0 popup se Google ricorda)
-      // Aspetta GIS pronto prima di tentare
-      var silentTimer = setInterval(function() {
-        if (_tokenClient) {
-          clearInterval(silentTimer);
-          _tentaLoginSilenzioso();
-        }
-      }, 100);
+      // 2. Nessuna sessione valida → mostra login overlay
+      // (è già visibile di default, ma assicuriamoci)
+      _mostraLoginOverlay();
+      if (sessioneScaduta) {
+        _mostraErroreLogin('La sessione è scaduta. Effettua di nuovo l\'accesso.');
+      }
+      // NB: NESSUN tentativo di login silenzioso. Il login parte solo al click
+      // del pulsante (richiesto dall'UX desiderata: utente vede sempre la
+      // schermata di login e poi sceglie l'account).
     });
 
   })();
