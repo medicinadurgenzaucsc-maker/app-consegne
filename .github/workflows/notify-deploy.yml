@@ -1,0 +1,48 @@
+name: Notify deploy to Supabase
+
+# Si triggera quando GitHub Pages termina un build deploy.
+# A quel punto il bundle nuovo è già live su GitHub Pages,
+# quindi notifichiamo Supabase per avvisare i client connessi.
+#
+# Anche `workflow_dispatch` per poter ri-eseguire manualmente.
+
+on:
+  page_build:
+  workflow_dispatch:
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    # Skippa se il build di Pages è fallito
+    if: github.event_name == 'workflow_dispatch' || github.event.build.error.message == null
+    steps:
+      - name: PATCH Supabase app_version
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SERVICE_KEY:  ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          # Su page_build l'SHA del deploy è in github.event.build.commit.
+          # Su workflow_dispatch usiamo github.sha (commit corrente del branch).
+          SHA="${{ github.event.build.commit || github.sha }}"
+          SHORT="${SHA:0:7}"
+          TS=$(date +%s%3N)
+
+          # Payload JSON sicuro (no caratteri speciali da escapare)
+          PAYLOAD=$(printf '{"sha":"%s","deployed_at":%s,"message":"deploy %s"}' "$SHA" "$TS" "$SHORT")
+
+          echo "Notifico deploy SHA=$SHORT ts=$TS"
+          HTTP=$(curl -fsS -o /tmp/resp.txt -w "%{http_code}" -X PATCH \
+            "${SUPABASE_URL}/rest/v1/app_version?id=eq.1" \
+            -H "apikey: ${SERVICE_KEY}" \
+            -H "Authorization: Bearer ${SERVICE_KEY}" \
+            -H "Content-Type: application/json" \
+            -H "Prefer: return=minimal" \
+            -d "$PAYLOAD")
+
+          echo "HTTP $HTTP"
+          if [ "$HTTP" != "204" ] && [ "$HTTP" != "200" ]; then
+            echo "PATCH fallita:"
+            cat /tmp/resp.txt
+            exit 1
+          fi
+          echo "Supabase notificato correttamente."
