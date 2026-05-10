@@ -1580,6 +1580,7 @@ function _emergenzaPollingAttivo() {
 
 // ══════════════════════════════════════════════════════════════
 // VERSION CHECK — badge "Aggiornamento disponibile"
+// [E2E test 2026-05-10 — verifica deploy → Realtime → badge]
 //
 // Flow:
 //   push master → GitHub Pages deploy → Action page_build →
