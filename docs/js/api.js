@@ -1324,6 +1324,14 @@ function _inizializzaRealtime() {
       function(payload) { _onLockChange('UPDATE', payload); })
     .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'locks' },
       function(payload) { _onLockChange('DELETE', payload); })
+    // App version: nuovo deploy notificato dalla Action page_build →
+    // PATCH a Supabase → Realtime → tutti i client mostrano il badge.
+    .on('postgres_changes',
+      { event: 'UPDATE', schema: 'public', table: 'app_version', filter: 'id=eq.1' },
+      function(payload) {
+        var newSha = (payload && payload.new && payload.new.sha) || '';
+        if (typeof _onAppVersionChange === 'function') _onAppVersionChange(newSha);
+      })
     .subscribe(function(status) {
       console.log('[Realtime]', status);
     });
@@ -1568,5 +1576,123 @@ function _emergenzaFermaPolling() {
 function _emergenzaPollingAttivo() {
   return !!_emergenzaPollingId;
 }
+
+
+// ══════════════════════════════════════════════════════════════
+// VERSION CHECK — badge "Aggiornamento disponibile"
+//
+// Flow:
+//   push master → GitHub Pages deploy → Action page_build →
+//   PATCH app_version → Realtime UPDATE → _onAppVersionChange() →
+//   badge visibile → click → cleanup cache+SW → hard reload.
+//
+// "_localSha" rappresenta lo SHA del deploy che il client ha
+// caricato. Salvato in localStorage così sopravvive ai reload:
+//   - Al click sul badge lo CANCELLIAMO prima del reload, così
+//     il prossimo load registra lo SHA nuovo.
+//   - Senza cancellazione, dopo reload _localSha sarebbe ancora
+//     il vecchio e il badge ricomparirebbe subito.
+//
+// Edge case: tab aperta DURANTE il deploy (CDN lag): il client
+// fetcha bundle vecchio + ottiene SHA nuovo da Supabase. Mostra
+// SHA nuovo in menu ma il codice è vecchio. Senza un build step
+// che inietta lo SHA nel bundle è inevitabile. Frequenza bassa
+// (~30s di finestra per deploy).
+// ══════════════════════════════════════════════════════════════
+var _localSha = (typeof localStorage !== 'undefined') ? localStorage.getItem('_appDeploySha') : null;
+var _badgeAggiornamentoMostrato = false;
+
+function _versionCheckInit() {
+  // Carica SHA corrente di Supabase all'avvio
+  _q(_sb.from('app_version').select('sha').eq('id', 1).maybeSingle())
+    .then(function(row) {
+      var remoteSha = (row && row.sha) || '';
+      if (!_localSha && remoteSha) {
+        // Prima volta: registra lo SHA del deploy corrente
+        _localSha = remoteSha;
+        try { localStorage.setItem('_appDeploySha', _localSha); } catch(e){}
+      } else if (_localSha && remoteSha && _localSha !== remoteSha) {
+        // C'è stato un deploy mentre la tab era chiusa / offline
+        _mostraBadgeAggiornamento();
+      }
+      _aggiornaVoceMenuVersione();
+    })
+    .catch(function(e) {
+      console.warn('[VersionCheck] init error:', e);
+      _aggiornaVoceMenuVersione(); // mostra "(sconosciuta)" se fallisce
+    });
+}
+
+// Chiamato dal listener Realtime postgres_changes su app_version
+function _onAppVersionChange(newSha) {
+  if (!newSha) return;
+  if (!_localSha) {
+    // primissimo evento ricevuto senza init completato: usalo come baseline
+    _localSha = newSha;
+    try { localStorage.setItem('_appDeploySha', _localSha); } catch(e){}
+    _aggiornaVoceMenuVersione();
+    return;
+  }
+  if (newSha !== _localSha) {
+    _mostraBadgeAggiornamento();
+  }
+}
+
+function _aggiornaVoceMenuVersione() {
+  var el = document.getElementById('navVersionShaText');
+  if (!el) return;
+  if (_localSha) {
+    el.textContent = _localSha.substring(0, 7);
+    el.title = 'Commit SHA: ' + _localSha;
+  } else {
+    el.textContent = '(sconosciuta)';
+    el.title = 'Nessun deploy registrato';
+  }
+}
+
+function _mostraBadgeAggiornamento() {
+  if (_badgeAggiornamentoMostrato) return;
+  _badgeAggiornamentoMostrato = true;
+  var b = document.getElementById('btnAggiornamentoDisponibile');
+  if (b) b.style.display = 'inline-flex';
+}
+
+// Click handler del badge — cleanup totale + hard reload
+function _applicaAggiornamentoVersione() {
+  // Disabilita doppio click
+  var b = document.getElementById('btnAggiornamentoDisponibile');
+  if (b) {
+    b.disabled = true;
+    b.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Aggiornamento...';
+  }
+
+  // Sequenza cleanup → hard reload
+  Promise.resolve()
+    .then(function() {
+      if (window.caches) {
+        return caches.keys().then(function(keys) {
+          return Promise.all(keys.map(function(k) { return caches.delete(k); }));
+        });
+      }
+    })
+    .catch(function(){})
+    .then(function() {
+      if ('serviceWorker' in navigator) {
+        return navigator.serviceWorker.getRegistrations().then(function(regs) {
+          return Promise.all(regs.map(function(r) { return r.unregister(); }));
+        });
+      }
+    })
+    .catch(function(){})
+    .then(function() {
+      // Rimuovi lo SHA salvato: al prossimo load _versionCheckInit
+      // registra lo SHA nuovo come baseline.
+      try { localStorage.removeItem('_appDeploySha'); } catch(e){}
+      // Hard reload con cache-bust via query string
+      var url = window.location.pathname + '?_r=' + Date.now() + window.location.hash;
+      window.location.replace(url);
+    });
+}
+window._applicaAggiornamentoVersione = _applicaAggiornamentoVersione;
 
 
