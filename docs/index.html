@@ -1068,9 +1068,6 @@
             <li><hr class="dropdown-divider"></li>
             <li><a class="dropdown-item" href="javascript:void(0)" data-emerg-disable="1" onclick="apriModalImportaConsegne()"><i class="bi bi-file-earmark-arrow-down text-warning me-2"></i>Importa da file consegne</a></li>
             <li style="display:none"><a class="dropdown-item" href="javascript:void(0)" id="btnToggleSync" onclick="toggleSync()"><i class="bi bi-pause-circle text-warning me-2" id="iconToggleSync"></i><span id="labelToggleSync">Metti in pausa il sync</span></a></li>
-            <!-- TEMPORANEA: verifica versione deploy (rimuovere dopo i test delta-update) -->
-            <li><hr class="dropdown-divider"></li>
-            <li><a class="dropdown-item" href="javascript:void(0)" onclick="_mostraVersioneDeploy()" style="font-family:monospace;font-size:0.8rem;"><i class="bi bi-tag me-2 text-muted"></i><span class="text-muted">Versione:</span> <strong id="navVersionTag">delta-v4-payload-debug</strong></a></li>
           </ul>
         </li>
       </ul>
@@ -3565,81 +3562,6 @@
 
     // Aggiorna aspetto pulsante immediatamente
     _aggiornaBottoneEmergenza();
-
-    // ── TEMPORANEA: tag versione deploy + confronto con master remoto ──
-    // Aggiornare manualmente _APP_DEPLOY_TAG ad ogni commit di test.
-    // Rimuovere dopo i test del delta-update.
-    window._APP_DEPLOY_TAG = 'delta-v4-payload-debug';
-    window._mostraVersioneDeploy = function() {
-      var tagLocal = window._APP_DEPLOY_TAG || '?';
-      var c = window._diagCounters || {deltaUpdate:0,deltaDelete:0,deltaFallback:0,fullSync:0,lastEvent:'-',lastEventAt:'-'};
-      var totEventi = c.deltaUpdate + c.deltaDelete + c.deltaFallback + c.fullSync;
-      var pctDelta = totEventi > 0 ? Math.round(((c.deltaUpdate+c.deltaDelete)/totEventi)*100) : 0;
-      Swal.fire({
-        title: 'Versione & Diagnostica',
-        width: 540,
-        html: '<div style="font-family:monospace;font-size:0.82rem;text-align:left;line-height:1.7;">' +
-              '<div><strong>Locale (in pagina):</strong> <span style="color:#1976d2;">' + tagLocal + '</span></div>' +
-              '<div id="vTagRemote"><strong>Remoto (master):</strong> <span class="text-muted">caricamento...</span></div>' +
-              '<div id="vTagDiff" class="mt-2"></div>' +
-              '</div>' +
-              '<hr class="my-3">' +
-              '<div style="font-family:monospace;font-size:0.78rem;text-align:left;line-height:1.7;background:#f5f5f5;padding:10px 12px;border-radius:6px;">' +
-                '<div class="fw-bold mb-2 text-dark" style="font-size:0.82rem;">📊 Eventi Realtime ricevuti</div>' +
-                '<div>✅ Delta UPDATE: <strong style="color:#388e3c;">' + c.deltaUpdate + '</strong> (card singola)</div>' +
-                '<div>🗑️ Delta DELETE: <strong style="color:#388e3c;">' + c.deltaDelete + '</strong> (rimozione card)</div>' +
-                '<div>🔄 Full sync (fallback/altro): <strong style="color:#f57c00;">' + (c.fullSync + c.deltaFallback) + '</strong></div>' +
-                '<div class="mt-2"><strong>% delta su totale:</strong> ' +
-                  '<span style="color:' + (pctDelta>=80?'#388e3c':pctDelta>=50?'#f57c00':'#c62828') + ';font-weight:bold;">' +
-                  pctDelta + '%</span> ' +
-                  (totEventi===0 ? '<small class="text-muted">(ancora 0 eventi)</small>' : '') +
-                '</div>' +
-                '<div class="mt-2 text-muted"><strong>Ultimo evento:</strong> ' + c.lastEvent +
-                ' <small>(' + c.lastEventAt + ')</small></div>' +
-                (c.lastPayload ?
-                  '<div class="mt-1 text-muted" style="font-size:0.72rem;"><strong>Ultimo payload Realtime:</strong> ' +
-                  'evType=<code>' + c.lastPayload.evType + '</code>, letto=<code>' + c.lastPayload.letto + '</code> ' +
-                  '<small>(' + c.lastPayload.ts + ')</small></div>'
-                  : '') +
-              '</div>' +
-              '<div class="mt-3" style="font-size:0.72rem;color:#666;">' +
-              '💡 <strong>Test rapido</strong>: lascia aperta una card su un altro PC, modificala e salvala. ' +
-              'Riapri questo modal: il contatore "Delta UPDATE" deve essere aumentato di 1 (NON il full sync).</div>',
-        confirmButtonText: 'Chiudi',
-        confirmButtonColor: '#37474f',
-        didOpen: function() {
-          // Fetch da version.json sullo stesso dominio (GitHub Pages),
-          // così niente firewall corporate o blocchi GitHub API.
-          // Cache-bust con timestamp per evitare cache aggressiva (Safari).
-          fetch('version.json?_t=' + Date.now(), { cache: 'no-store' })
-            .then(function(r) {
-              if (!r.ok) throw new Error('HTTP ' + r.status);
-              return r.json();
-            })
-            .then(function(d) {
-              var verRemota = (d && d.version) ? d.version : '?';
-              var rEl = document.getElementById('vTagRemote');
-              var dEl = document.getElementById('vTagDiff');
-              if (rEl) {
-                rEl.innerHTML = '<strong>Remoto (server):</strong> <span style="color:#388e3c;">' + verRemota + '</span>';
-              }
-              if (dEl) {
-                if (verRemota === tagLocal) {
-                  dEl.innerHTML = '<span class="text-success"><i class="bi bi-check-circle-fill"></i> Versione allineata. La pagina è quella corrente.</span>';
-                } else {
-                  dEl.innerHTML = '<span class="text-warning"><i class="bi bi-exclamation-triangle-fill"></i> ' +
-                                  'La pagina caricata è <strong>' + tagLocal + '</strong> ma il server serve <strong>' + verRemota + '</strong>.<br>' +
-                                  'Cancella cache Safari (Impostazioni → Safari → Cancella dati siti) e ricarica.</span>';
-                }
-              }
-            })
-            .catch(function(e) {
-              var rEl = document.getElementById('vTagRemote');
-              if (rEl) rEl.innerHTML = '<strong>Remoto:</strong> <span class="text-danger">errore (' + (e.message||'rete') + ')</span>';
-            });
-        }
-      });
-    };
 
     // NOTA: la diagnostica silent al caricamento è invocata da app.js come
     // ultima fase di _avviaCaricamentoDati (subito prima di _setProgress(100)).
