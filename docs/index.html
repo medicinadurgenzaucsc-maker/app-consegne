@@ -1029,6 +1029,16 @@
         <li class="nav-item"><a class="nav-link active" href="javascript:void(0)" onclick="apriRubrica();"><i class="bi bi-telephone-fill me-1"></i>Numeri Telefono</a></li>
       </ul>
       <ul class="navbar-nav ms-auto align-items-center">
+        <!-- Badge "aggiornamento disponibile" — appare quando Supabase.app_version cambia -->
+        <li class="nav-item me-2" id="liAggiornamentoDisponibile">
+          <button id="btnAggiornamentoDisponibile"
+                  class="btn btn-warning btn-sm fw-bold py-0 px-2"
+                  onclick="_applicaAggiornamentoVersione()"
+                  title="Nuovo deploy disponibile — clicca per ricaricare con la versione aggiornata"
+                  style="display:none;font-size:0.75rem;align-items:center;">
+            <i class="bi bi-arrow-clockwise me-1"></i>Aggiornamento disponibile
+          </button>
+        </li>
         <li class="nav-item me-2" id="navItemEmergenza">
           <button id="btnEmergenzaPC"
                   class="btn btn-danger btn-sm fw-bold py-0 px-2"
@@ -1068,6 +1078,14 @@
             <li><hr class="dropdown-divider"></li>
             <li><a class="dropdown-item" href="javascript:void(0)" data-emerg-disable="1" onclick="apriModalImportaConsegne()"><i class="bi bi-file-earmark-arrow-down text-warning me-2"></i>Importa da file consegne</a></li>
             <li style="display:none"><a class="dropdown-item" href="javascript:void(0)" id="btnToggleSync" onclick="toggleSync()"><i class="bi bi-pause-circle text-warning me-2" id="iconToggleSync"></i><span id="labelToggleSync">Metti in pausa il sync</span></a></li>
+            <!-- Voce informativa: SHA del deploy corrente (aggiornata da _versionCheckInit) -->
+            <li><hr class="dropdown-divider"></li>
+            <li>
+              <span class="dropdown-item-text d-block px-3" style="font-family:monospace;font-size:0.75rem;color:#546e7a;line-height:1.3;">
+                <i class="bi bi-git me-1"></i>Versione Commit SHA:<br>
+                <strong id="navVersionShaText" class="ms-1" style="color:#263238;">(sconosciuta)</strong>
+              </span>
+            </li>
           </ul>
         </li>
       </ul>
