@@ -893,12 +893,20 @@
 </script>
 
 <!-- ══════ Overlay "Aggiornamento in corso" — copre tutto durante il version update ══════
+     Z-INDEX 99999: STA SOTTO al loginOverlay (z-index 100000) di proposito.
+     Se serve fare login (sessione scaduta dopo cleanup), il loginOverlay è
+     visibile sopra → l'utente può cliccare "Accedi con Google" senza
+     deadlock. Quando il login completa, _avviaApp() lo ripristina sopra
+     l'app finché _avviaCaricamentoDati finisce.
+
      Mostrato:
        1. Subito dopo click sul badge "Update" (prima del cleanup cache/SW)
-       2. All'avvio se l'URL contiene ?_r= (siamo arrivati da un hard reload)
-     Nasconde la finestra di "caos visivo" (login Google grezzo, librerie non
-     ancora caricate, eccetera) tra il click del badge e l'app fully loaded. -->
-<div id="versionUpdateOverlay" style="display:none;position:fixed;inset:0;z-index:100001;background:linear-gradient(135deg,#1c2226 0%,#37474f 100%);align-items:center;justify-content:center;flex-direction:column;color:#fff;font-family:Arial,sans-serif;text-align:center;padding:30px;">
+       2. All'avvio se l'URL contiene ?_r= (siamo arrivati da hard reload)
+       3. Da _avviaApp() dopo login completato in flusso version-update
+     Nascosto:
+       - Da _chiudiOverlay al termine di _avviaCaricamentoDati
+       - Forzatamente se loginOverlay diventa visibile (deadlock prevention) -->
+<div id="versionUpdateOverlay" style="display:none;position:fixed;inset:0;z-index:99999;background:linear-gradient(135deg,#1c2226 0%,#37474f 100%);align-items:center;justify-content:center;flex-direction:column;color:#fff;font-family:Arial,sans-serif;text-align:center;padding:30px;">
   <div style="width:64px;height:64px;border:5px solid rgba(255,255,255,0.18);border-top-color:#ffa726;border-radius:50%;animation:_lockSpin 0.9s linear infinite;margin-bottom:24px;"></div>
   <div style="font-size:1.2rem;font-weight:600;letter-spacing:0.02em;margin-bottom:8px;">Aggiornamento in corso</div>
   <div style="font-size:0.88rem;opacity:0.78;max-width:340px;line-height:1.45;">Sto scaricando la nuova versione dell'app.<br>Attendi qualche secondo, non chiudere la pagina.</div>
@@ -906,10 +914,14 @@
 <script>
 // Se siamo arrivati qui da un hard reload con ?_r=, mostra subito l'overlay
 // così l'utente non vede mai i pulsanti "grezzi" della pagina prima del caricamento.
+// NB: z-index 99999 → se il loginOverlay (z-index 100000) deve apparire,
+// lo farà SOPRA all'overlay versione → l'utente vede il login chiaramente.
 (function() {
   if (window.location.search.indexOf('_r=') !== -1) {
     var o = document.getElementById('versionUpdateOverlay');
     if (o) o.style.display = 'flex';
+    // Marca che siamo in version update reload (consumato da _avviaApp dopo login)
+    window._inVersionUpdateReload = true;
   }
 })();
 </script>
@@ -940,7 +952,11 @@
       <span style="color:#607d8b;font-size:0.85rem;">Accesso in corso...</span>
     </div>
     <div id="loginError" style="display:none;margin-top:16px;padding:12px 14px;background:#ffebee;border-radius:8px;color:#c62828;font-size:0.83rem;text-align:left;white-space:pre-line;"></div>
-    <p style="margin-top:20px;font-size:0.75rem;color:#b0bec5;">Accesso riservato al personale autorizzato</p>
+    <div style="margin-top:14px;padding:10px 12px;background:#fff8e1;border-radius:8px;font-size:0.74rem;color:#795548;text-align:left;line-height:1.4;">
+      <i class="bi bi-info-circle" style="color:#f57c00;"></i>
+      <strong>Su iPad/iPhone:</strong> se il browser chiede di consentire i popup dopo il click, tocca <strong>"Consenti"</strong> e poi clicca di nuovo "Accedi con Google".
+    </div>
+    <p style="margin-top:14px;font-size:0.75rem;color:#b0bec5;">Accesso riservato al personale autorizzato</p>
   </div>
 </div>
 
@@ -1565,12 +1581,24 @@
     function _avviaApp() {
       var ov = document.getElementById('loginOverlay');
       if (ov) { ov.style.transition = 'opacity 0.4s'; ov.style.opacity = '0'; setTimeout(function() { ov.style.display = 'none'; }, 420); }
+      // Se eravamo in version update reload e il login ha temporaneamente
+      // nascosto il versionUpdateOverlay (deadlock prevention), ripristinalo
+      // ora che l'utente è loggato. Sarà chiuso da _avviaCaricamentoDati.
+      if (window._inVersionUpdateReload) {
+        var vo = document.getElementById('versionUpdateOverlay');
+        if (vo) { vo.style.opacity = '1'; vo.style.display = 'flex'; }
+      }
       if (typeof window._avviaFlussoApp === 'function') window._avviaFlussoApp();
     }
 
     function _mostraLoginOverlay() {
       var ov = document.getElementById('loginOverlay');
       if (ov) ov.style.display = 'flex';
+      // Deadlock prevention: se versionUpdateOverlay è visibile (z-index 99999
+      // sotto al loginOverlay), nascondilo temporaneamente. _avviaApp lo
+      // ripristinerà dopo login completato.
+      var vo = document.getElementById('versionUpdateOverlay');
+      if (vo && vo.style.display !== 'none') vo.style.display = 'none';
     }
 
     function _mostraErroreLogin(msg) {
