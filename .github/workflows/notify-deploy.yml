@@ -21,9 +21,11 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SERVICE_KEY:  ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
-          # Su page_build l'SHA del deploy è in github.event.build.commit.
-          # Su workflow_dispatch usiamo github.sha (commit corrente del branch).
-          SHA="${{ github.event.build.commit || github.sha }}"
+          # Usiamo github.sha (lo SHA del commit che ha triggerato il workflow
+          # run). NB: `github.event.build.commit` su page_build a volte punta
+          # al deploy precedente per race condition GitHub Pages — github.sha
+          # è invece sempre lo SHA HEAD del branch al momento del trigger.
+          SHA="${{ github.sha }}"
           SHORT="${SHA:0:7}"
           TS=$(date +%s%3N)
 
