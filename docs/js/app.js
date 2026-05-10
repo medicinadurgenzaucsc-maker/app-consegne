@@ -1240,6 +1240,7 @@
               _applicaAggiornamentoCompleto(html); _applicaLocks(locks || {});
               if (ind) ind.className = 'badge bg-success ms-2'; if (st) st.innerText = new Date().toLocaleTimeString('it-IT');
               _syncPaused = false; _aggiornaVoceSync(); _inizializzaRealtime();
+              if (typeof _versionCheckInit === 'function') _versionCheckInit();
               if (typeof callback === 'function') callback();
             })
             .catch(function() {
@@ -1247,6 +1248,7 @@
               _applicaAggiornamentoCompleto(html);
               if (ind) ind.className = 'badge bg-success ms-2'; if (st) st.innerText = new Date().toLocaleTimeString('it-IT');
               _syncPaused = false; _aggiornaVoceSync(); _inizializzaRealtime();
+              if (typeof _versionCheckInit === 'function') _versionCheckInit();
               if (typeof callback === 'function') callback();
             });
         })
