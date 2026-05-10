@@ -1662,10 +1662,13 @@ function _mostraBadgeAggiornamento() {
 function _applicaAggiornamentoVersione() {
   // Disabilita doppio click
   var b = document.getElementById('btnAggiornamentoDisponibile');
-  if (b) {
-    b.disabled = true;
-    b.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Aggiornamento...';
-  }
+  if (b) b.disabled = true;
+
+  // Mostra subito l'overlay full-screen "Aggiornamento in corso..."
+  // così l'utente non vede il caos visivo del reload (login Google,
+  // librerie non caricate, ecc.).
+  var ov = document.getElementById('versionUpdateOverlay');
+  if (ov) ov.style.display = 'flex';
 
   // Sequenza cleanup → hard reload
   Promise.resolve()

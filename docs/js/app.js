@@ -103,6 +103,14 @@
                 ov.style.opacity = '0';
                 setTimeout(function() { ov.style.display = 'none'; }, 420);
               }
+              // Se eravamo in version update reload (?_r=), nascondi anche
+              // l'overlay versione che copriva tutto il caos visivo del reload.
+              var vo = document.getElementById('versionUpdateOverlay');
+              if (vo && vo.style.display !== 'none') {
+                vo.style.transition = 'opacity 0.4s';
+                vo.style.opacity = '0';
+                setTimeout(function() { vo.style.display = 'none'; }, 420);
+              }
             }, 300);
           }
 

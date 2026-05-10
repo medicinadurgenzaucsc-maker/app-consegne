@@ -892,6 +892,28 @@
 })();
 </script>
 
+<!-- ══════ Overlay "Aggiornamento in corso" — copre tutto durante il version update ══════
+     Mostrato:
+       1. Subito dopo click sul badge "Update" (prima del cleanup cache/SW)
+       2. All'avvio se l'URL contiene ?_r= (siamo arrivati da un hard reload)
+     Nasconde la finestra di "caos visivo" (login Google grezzo, librerie non
+     ancora caricate, eccetera) tra il click del badge e l'app fully loaded. -->
+<div id="versionUpdateOverlay" style="display:none;position:fixed;inset:0;z-index:100001;background:linear-gradient(135deg,#1c2226 0%,#37474f 100%);align-items:center;justify-content:center;flex-direction:column;color:#fff;font-family:Arial,sans-serif;text-align:center;padding:30px;">
+  <div style="width:64px;height:64px;border:5px solid rgba(255,255,255,0.18);border-top-color:#ffa726;border-radius:50%;animation:_lockSpin 0.9s linear infinite;margin-bottom:24px;"></div>
+  <div style="font-size:1.2rem;font-weight:600;letter-spacing:0.02em;margin-bottom:8px;">Aggiornamento in corso</div>
+  <div style="font-size:0.88rem;opacity:0.78;max-width:340px;line-height:1.45;">Sto scaricando la nuova versione dell'app.<br>Attendi qualche secondo, non chiudere la pagina.</div>
+</div>
+<script>
+// Se siamo arrivati qui da un hard reload con ?_r=, mostra subito l'overlay
+// così l'utente non vede mai i pulsanti "grezzi" della pagina prima del caricamento.
+(function() {
+  if (window.location.search.indexOf('_r=') !== -1) {
+    var o = document.getElementById('versionUpdateOverlay');
+    if (o) o.style.display = 'flex';
+  }
+})();
+</script>
+
 <!-- ── Login overlay — mostrato prima di qualsiasi operazione ── -->
 <div id="loginOverlay" style="position:fixed;inset:0;z-index:100000;background:linear-gradient(135deg,#263238 0%,#37474f 100%);display:flex;align-items:center;justify-content:center;font-family:Arial,sans-serif;">
   <div style="background:#fff;border-radius:18px;padding:44px 48px;max-width:400px;width:92%;box-shadow:0 24px 64px rgba(0,0,0,0.45);text-align:center;">
@@ -1023,8 +1045,8 @@
             <li><a class="dropdown-item" id="btnToggleViewAlt" href="javascript:void(0)" onclick="toggleViewAlt()"><i class="bi bi-eye me-2"></i>Visualizzazione Alternativa</a></li>
           </ul>
         </li>
-        <li class="nav-item"><a class="nav-link active" href="javascript:void(0)" data-emerg-disable="1" onclick="stampaConsegne();"><i class="bi bi-printer me-1"></i>Stampa Consegne</a></li>
-        <li class="nav-item"><a class="nav-link active" href="javascript:void(0)" data-emerg-disable="1" onclick="apriArchivio();"><i class="bi bi-archive-fill me-1"></i>Archivio Consegne</a></li>
+        <li class="nav-item"><a class="nav-link active" href="javascript:void(0)" data-emerg-disable="1" onclick="stampaConsegne();"><i class="bi bi-printer me-1"></i>Stampa</a></li>
+        <li class="nav-item"><a class="nav-link active" href="javascript:void(0)" data-emerg-disable="1" onclick="apriArchivio();"><i class="bi bi-archive-fill me-1"></i>Archivio</a></li>
         <li class="nav-item"><a class="nav-link active" href="javascript:void(0)" onclick="apriLinkUtili();"><i class="bi bi-link-45deg me-1"></i>Link Utili</a></li>
         <li class="nav-item"><a class="nav-link active" href="javascript:void(0)" onclick="apriRubrica();"><i class="bi bi-telephone-fill me-1"></i>Numeri Telefono</a></li>
       </ul>
@@ -1032,11 +1054,13 @@
         <!-- Badge "aggiornamento disponibile" — appare quando Supabase.app_version cambia -->
         <li class="nav-item me-2" id="liAggiornamentoDisponibile">
           <button id="btnAggiornamentoDisponibile"
-                  class="btn btn-warning btn-sm fw-bold py-0 px-2"
+                  class="btn btn-warning fw-bold rounded-pill"
                   onclick="_applicaAggiornamentoVersione()"
-                  title="Nuovo deploy disponibile — clicca per ricaricare con la versione aggiornata"
-                  style="display:none;font-size:0.75rem;align-items:center;">
-            <i class="bi bi-arrow-clockwise me-1"></i>Aggiornamento disponibile
+                  title="Nuovo deploy disponibile — clicca per ricaricare"
+                  style="display:none;align-items:center;gap:6px;padding:3px 12px;font-size:0.78rem;line-height:1;">
+            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"
+                  style="width:0.85rem;height:0.85rem;border-width:2px;animation-duration:1.2s;"></span>
+            <span>Update</span>
           </button>
         </li>
         <li class="nav-item me-2" id="navItemEmergenza">
