@@ -1583,6 +1583,7 @@ function _emergenzaPollingAttivo() {
 // [E2E test 2026-05-10 — verifica deploy → Realtime → badge]
 // [E2E test 2026-05-11 — verifica login flow ripulito]
 // [E2E test 2026-05-11 — verifica comparsa badge arancione]
+// [E2E test 2026-05-11 — verifica replica identity FULL]
 //
 // Flow:
 //   push master → GitHub Pages deploy → Action page_build →
