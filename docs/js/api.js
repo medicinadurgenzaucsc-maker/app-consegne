@@ -199,9 +199,9 @@ function _renderAltCard(p) {
     '<span class="sesso-symbol" data-field="Sesso" data-sesso="' + _aEsc(p.Sesso || '') + '"></span>' +
     '</div>' +
     '<div class="text-center tipo-badge-wrap" style="font-size:0.75rem;">' + badgeHtml + '</div>' +
-    '<div class="editable-area plain-text alt-nome" contenteditable="true" data-field="Nome">' + (p.Nome || '') + '</div>' +
+    '<div class="editable-area plain-text alt-nome" contenteditable="true" data-field="Nome" data-placeholder="Cognome Nome...">' + (p.Nome || '') + '</div>' +
     '<div class="alt-allergie-label"><i class="bi bi-exclamation-triangle-fill"></i> Allergie</div>' +
-    '<div class="editable-area rich-text alt-allergie-val" contenteditable="true" data-field="Allergie">' + (p.Allergie || '') + '</div>' +
+    '<div class="editable-area rich-text alt-allergie-val" contenteditable="true" data-field="Allergie" data-placeholder="Allergia ad antibiotici...">' + (p.Allergie || '') + '</div>' +
     '<div class="alt-info-row"><span class="alt-info-label">Data di Nascita</span>' +
     '<input type="text" class="data-nascita-text alt-info-val" placeholder="gg/mm/aaaa"' +
     ' oninput="formattaDataNascita(this)" onblur="formattaDataNascitaBlur(this)" readonly' +
@@ -221,33 +221,33 @@ function _renderAltCard(p) {
     '<div class="alt-info-row"><span class="alt-info-label">C.S.</span>' +
     '<div class="editable-area plain-text alt-info-val" contenteditable="true" data-field="CodiceSanitario">' + (p.CodiceSanitario || '') + '</div></div>' +
     '<div class="alt-info-row"><span class="alt-info-label">Ossigeno</span>' +
-    '<div class="editable-area plain-text alt-info-val" contenteditable="true" data-field="Ossigeno">' + (p.Ossigeno || '') + '</div></div>' +
+    '<div class="editable-area plain-text alt-info-val" contenteditable="true" data-field="Ossigeno" data-placeholder="es. CN 4lt/min">' + (p.Ossigeno || '') + '</div></div>' +
     '</div></div>' +
     '<div class="alt-col alt-col-diag">' +
     '<div class="alt-diag-top">' +
     '<div class="alt-col-header">Diagnosi / Motivo Ricovero</div>' +
-    '<div class="editable-area plain-text alt-editable" contenteditable="true" data-field="Diagnosi">' + (p.Diagnosi || '') + '</div>' +
+    '<div class="editable-area plain-text alt-editable" contenteditable="true" data-field="Diagnosi" data-placeholder="Diagnosi e motivo del ricovero...">' + (p.Diagnosi || '') + '</div>' +
     '</div>' +
     '<div class="alt-diag-bottom">' +
     '<div class="alt-col-header-split">Piano Terapeutico</div>' +
-    '<div class="editable-area rich-text alt-editable" contenteditable="true" data-field="PianoTerapeutico">' + (p.PianoTerapeutico || '') + '</div>' +
+    '<div class="editable-area rich-text alt-editable" contenteditable="true" data-field="PianoTerapeutico" data-placeholder="Piano terapeutico...">' + (p.PianoTerapeutico || '') + '</div>' +
     '</div>' +
     '<div class="alt-diag-fourth">' +
     '<div class="alt-col-header-split">Esami Colturali</div>' +
-    '<div class="editable-area rich-text alt-editable" contenteditable="true" data-field="EsamiColturali">' + (p.EsamiColturali || '') + '</div>' +
+    '<div class="editable-area rich-text alt-editable" contenteditable="true" data-field="EsamiColturali" data-placeholder="Esami colturali...">' + (p.EsamiColturali || '') + '</div>' +
     '</div>' +
     '<div class="alt-diag-third">' +
     '<div class="alt-col-header-split">Da Fare / Richieste</div>' +
-    '<div class="editable-area rich-text alt-editable" contenteditable="true" data-field="DaFare">' + (p.DaFare || '') + '</div>' +
+    '<div class="editable-area rich-text alt-editable" contenteditable="true" data-field="DaFare" data-placeholder="Da Fare / Richieste...">' + (p.DaFare || '') + '</div>' +
     '</div>' +
     '</div>' +
     '<div class="alt-col alt-col-diaria">' +
     '<div class="alt-col-header">Diaria ed Epicrisi</div>' +
-    '<div class="editable-area rich-text alt-editable" contenteditable="true" data-field="Diaria">' + (p.Diaria || '') + '</div>' +
+    '<div class="editable-area rich-text alt-editable" contenteditable="true" data-field="Diaria" data-placeholder="Diaria ed epicrisi: APR, APP, storia prima del ricovero...">' + (p.Diaria || '') + '</div>' +
     '</div>' +
     '<div class="alt-col alt-col-terapia">' +
     '<div class="alt-col-header">Note e Terapia</div>' +
-    '<div class="editable-area rich-text alt-editable" contenteditable="true" data-field="NoteTerapia">' + (p.NoteTerapia || '') + '</div>' +
+    '<div class="editable-area rich-text alt-editable" contenteditable="true" data-field="NoteTerapia" data-placeholder="Note e Terapia: Terapia EV, Orale, Aerosol...">' + (p.NoteTerapia || '') + '</div>' +
     '</div>' +
     '<div class="alt-row-spacer"></div>' +
     '</div>';
@@ -271,6 +271,7 @@ function _renderNoteCardAlt(p) {
     '</div>' +
     '<div class="alt-col" style="flex:1;border-right:none;">' +
     '<div class="editable-area rich-text alt-editable" contenteditable="true" data-field="Diaria"' +
+    ' data-placeholder="Note del reparto (visibili a tutti)..."' +
     ' style="min-height:300px;padding:10px;font-size:0.9rem;">' + (p.Diaria || '') + '</div>' +
     '</div>' +
     '<div class="alt-row-spacer"></div>' +

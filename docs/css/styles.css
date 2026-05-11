@@ -609,6 +609,28 @@ span.valore-giorni.alt-info-val { font-weight: normal; }
   flex-direction: column;
 }
 
+/* ===== PLACEHOLDER per campi contenteditable vuoti =====
+   I <div contenteditable> non hanno l'attributo `placeholder` nativo.
+   Uso `:empty::before` con `attr(data-placeholder)` per mostrare un
+   testo grigio quando il campo è completamente vuoto. Scompare
+   automaticamente al primo carattere digitato.
+   - pointer-events:none → il click passa al contenteditable
+   - color/font-style → look visibilmente "esempio" non testo reale */
+.editable-area[data-placeholder]:empty::before {
+  content: attr(data-placeholder);
+  color: #b0b0b0;
+  font-style: italic;
+  font-weight: normal;
+  pointer-events: none;
+  display: block;
+  user-select: none;
+}
+/* Quando il campo è focused ma ancora vuoto, mantieni il placeholder
+   ma più sbiadito (l'utente sta per scrivere). */
+.editable-area[data-placeholder]:focus:empty::before {
+  opacity: 0.45;
+}
+
 .alt-diag-third {
   flex: 0 0 auto;
   display: flex;
