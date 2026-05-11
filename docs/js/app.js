@@ -517,8 +517,19 @@
     function ordinaLetti(criterio, isSilent = false) { const container = document.getElementById('cardsContainer'); if (!container) return; const cards = Array.from(container.querySelectorAll('.patient-card')); if (cards.length === 0) return; cards.sort((a, b) => { const getLettoVal = (el) => el.getAttribute('data-bed'); if(getLettoVal(a)==='NOTE') return 1; if(getLettoVal(b)==='NOTE') return -1; const cmpLetto = (bedA, bedB) => { let numA = parseInt(bedA, 10); let numB = parseInt(bedB, 10); if(!isNaN(numA) && !isNaN(numB)) return numA - numB; return String(bedA).localeCompare(String(bedB)); }; if (criterio === 'numero') return cmpLetto(getLettoVal(a), getLettoVal(b)); if (criterio === 'nome') { let nA=(a.querySelector('[data-field="Nome"]')?.innerText||'').trim().toLowerCase(), nB=(b.querySelector('[data-field="Nome"]')?.innerText||'').trim().toLowerCase(); if(!nA&&!nB) return cmpLetto(getLettoVal(a), getLettoVal(b)); if(!nA) return 1; if(!nB) return -1; let res = nA.localeCompare(nB); return res!==0 ? res : cmpLetto(getLettoVal(a), getLettoVal(b)); } if (criterio === 'tipologia') { let tA=(a.getAttribute('data-tipologia')||'').trim().toLowerCase(), tB=(b.getAttribute('data-tipologia')||'').trim().toLowerCase(); if(!tA&&!tB) return cmpLetto(getLettoVal(a), getLettoVal(b)); if(!tA) return 1; if(!tB) return -1; let res = tA.localeCompare(tB); return res!==0 ? res : cmpLetto(getLettoVal(a), getLettoVal(b)); } }); cards.forEach(card => container.appendChild(card)); localStorage.setItem('ordinamentoPreferito', criterio); if (typeof _sincronizzaOrdineAlt === 'function') _sincronizzaOrdineAlt(); }
     function applicaOrdinamentoSalvato() { const saved = localStorage.getItem('ordinamentoPreferito'); if (saved) ordinaLetti(saved, true); else ordinaLetti('tipologia', true); }
 
-    // Restituisce entrambi i badge (main + alt) per un letto
+    // Restituisce i badge di stato per un letto.
+    // - Se la card è in focus mode su questo letto → ritorna SOLO il badge
+    //   dedicato #focusStatusBadge (fixed top-left della pagina, fuori dalla
+    //   card, sempre visibile anche scrollando). Riusato da tutti i flussi
+    //   di stato salvataggio (countdown, "Salvataggio in corso...", "Salvato
+    //   alle", retry, errori).
+    // - Altrimenti → ritorna i badge tradizionali dentro la card (main + alt).
     function _getBadges(letto) {
+      if (typeof _focusCard !== 'undefined' && _focusCard &&
+          _focusCard.getAttribute('data-bed') === letto) {
+        var fsb = document.getElementById('focusStatusBadge');
+        if (fsb) return [fsb];
+      }
       var b1 = document.getElementById('status-' + letto);
       var b2 = document.getElementById('status-alt-' + letto);
       return [b1, b2].filter(function(b) { return b; });

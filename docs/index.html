@@ -456,6 +456,20 @@
       document.documentElement.style.overflow = 'hidden';
       card.classList.add('focus-mode');
 
+      // Crea il badge di stato salvataggio dedicato al focus mode
+      // (top-left fisso del viewport, fuori dalla card). _getBadges in
+      // app.js restituirà questo elemento per il letto in focus mode.
+      if (!document.getElementById('focusStatusBadge')) {
+        var fsb = document.createElement('span');
+        fsb.id = 'focusStatusBadge';
+        // Classi compatibili con quelle che il codice JS riassegna dinamicamente.
+        // position-* e top-/start-* di Bootstrap vengono overridden dal CSS
+        // #focusStatusBadge { ... !important }.
+        fsb.className = 'badge status-badge bg-secondary';
+        fsb.style.opacity = '0'; // nascosto finché non c'è un evento
+        document.body.appendChild(fsb);
+      }
+
       card.querySelectorAll('[contenteditable="true"]').forEach(function(el) {
         el.setAttribute('data-origCe', 'true');
         el.contentEditable = 'false';
@@ -628,6 +642,10 @@
 
       // Rimuovi il floppy emergenza (se presente) prima di smontare la card
       if (typeof window._emergRimuoviFloppy === 'function') window._emergRimuoviFloppy(_focusCard);
+
+      // Rimuovi il badge dedicato del focus mode (riapparirà alla prossima apertura)
+      var fsb = document.getElementById('focusStatusBadge');
+      if (fsb && fsb.parentNode) fsb.parentNode.removeChild(fsb);
 
       // Salva subito se ci sono modifiche non ancora salvate
       // Usa _focusCard direttamente (non querySelector che restituisce sempre la card main view)
@@ -2396,6 +2414,19 @@
       });
       box.appendChild(btn);
 
+      // Se la card è in focus mode, posiziona il floppy in viewport coordinates
+      // così resta visibile anche scrollando il contenuto della card.
+      if (card.classList.contains('focus-mode')) {
+        _emergRiposizionaFloppyFixed(card, btn);
+        // Riposiziona al resize finestra (raro ma possibile su tablet che ruota)
+        if (!card._emergFloppyResizeHandler) {
+          card._emergFloppyResizeHandler = function() {
+            _emergRiposizionaFloppyFixed(card, btn);
+          };
+          window.addEventListener('resize', card._emergFloppyResizeHandler);
+        }
+      }
+
       // Stato iniziale basato su _dirtyLetti
       _emergAggiornaStatoFloppy(letto, btn);
 
@@ -2403,8 +2434,25 @@
       _emergAvviaPollFloppy();
     }
 
+    // Calcola e applica le coordinate fixed del floppy basandosi sulla
+    // posizione viewport attuale della card. Chiamato all'apertura del
+    // focus mode e ad ogni resize finestra.
+    function _emergRiposizionaFloppyFixed(card, btn) {
+      if (!card || !btn) return;
+      var rect = card.getBoundingClientRect();
+      btn.style.position = 'fixed';
+      btn.style.top      = (rect.top + 8) + 'px';
+      btn.style.right    = (window.innerWidth - rect.right + 10) + 'px';
+      btn.style.zIndex   = '1080';
+    }
+
     function _emergRimuoviFloppy(card) {
       if (!card) return;
+      // Pulisci il resize handler eventualmente registrato in focus mode
+      if (card._emergFloppyResizeHandler) {
+        window.removeEventListener('resize', card._emergFloppyResizeHandler);
+        delete card._emergFloppyResizeHandler;
+      }
       var btn = card.querySelector('.emerg-save-btn');
       if (btn && btn.parentNode) btn.parentNode.removeChild(btn);
       // Se non ci sono più floppy in giro, ferma il polling

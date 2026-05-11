@@ -356,6 +356,35 @@ body { padding-top: 70px; background-color: #d4e6f1 !important; }
 /* Hide floppy when card NOT in focus mode */
 .patient-card:not(.focus-mode) .emerg-save-btn { display: none !important; }
 
+/* Quando in focus mode il floppy è fixed in viewport (vedi JS _emergCreaFloppy
+   che calcola top/right da card.getBoundingClientRect). Le coordinate sono
+   applicate inline; qui forziamo solo position:fixed per sicurezza. */
+.patient-card.focus-mode .emerg-save-btn {
+  position: fixed !important;
+  z-index: 1080 !important;
+}
+
+/* ===== Badge salvataggio dedicato in focus mode =====
+   Quando una card è aperta in focus mode, il badge di stato salvataggio
+   ("Salvataggio automatico in Ns", "Salvato alle hh:mm", ecc.) viene
+   mostrato qui — fuori dalla card, in alto-sinistra del viewport, sopra
+   tutto. Specificità ID-based + !important per battere le classi Bootstrap
+   (position-absolute, top-0, start-0) che il codice JS riassegna ad ogni
+   transizione di stato. */
+#focusStatusBadge {
+  position: fixed !important;
+  top: 12px !important;
+  left: 12px !important;
+  right: auto !important;
+  bottom: auto !important;
+  z-index: 1080 !important;
+  margin: 0 !important;
+  font-size: 0.78rem !important;
+  padding: 6px 10px !important;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.25) !important;
+  pointer-events: none; /* puramente informativo */
+}
+
 
 /* ================================================================
    VISUALIZZAZIONE ALTERNATIVA (da ViewAlt.html)
