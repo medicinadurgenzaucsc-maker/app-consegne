@@ -611,12 +611,17 @@ span.valore-giorni.alt-info-val { font-weight: normal; }
 
 /* ===== PLACEHOLDER per campi contenteditable vuoti =====
    I <div contenteditable> non hanno l'attributo `placeholder` nativo.
-   Uso `:empty::before` con `attr(data-placeholder)` per mostrare un
-   testo grigio quando il campo è completamente vuoto. Scompare
-   automaticamente al primo carattere digitato.
-   - pointer-events:none → il click passa al contenteditable
-   - color/font-style → look visibilmente "esempio" non testo reale */
-.editable-area[data-placeholder]:empty::before {
+   Tecnica usata: doppio matching, perché il selettore CSS :empty NON
+   matcha quando il browser auto-inserisce <br>, &nbsp; o whitespace
+   (succede regolarmente dopo focus o cancellazione manuale).
+
+   1. `:empty::before` cattura il caso ideale (innerHTML="")
+   2. `.is-empty::before` cattura il caso reale (gestito da JS che
+      pulisce <br>/&nbsp;/whitespace e applica la classe)
+
+   Vedi _placeholderCheck() in api.js per la logica JS. */
+.editable-area[data-placeholder]:empty::before,
+.editable-area[data-placeholder].is-empty::before {
   content: attr(data-placeholder);
   color: #b0b0b0;
   font-style: italic;
@@ -627,7 +632,8 @@ span.valore-giorni.alt-info-val { font-weight: normal; }
 }
 /* Quando il campo è focused ma ancora vuoto, mantieni il placeholder
    ma più sbiadito (l'utente sta per scrivere). */
-.editable-area[data-placeholder]:focus:empty::before {
+.editable-area[data-placeholder]:focus:empty::before,
+.editable-area[data-placeholder].is-empty:focus::before {
   opacity: 0.45;
 }
 

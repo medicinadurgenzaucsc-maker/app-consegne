@@ -1299,6 +1299,8 @@ function _aggiornaCardDaPaziente(card, p) {
       dst.focus();
       _ripristinaCaretPos(dst, caretPos);
     }
+    // Aggiorna stato placeholder (mostra/nasconde la classe .is-empty)
+    if (typeof _placeholderCheck === 'function') _placeholderCheck(dst);
   });
 
   // Date (data ricovero + giorni calcolati, data nascita + età ricalcolata in UI)
@@ -1585,5 +1587,58 @@ function _applicaAggiornamentoVersione() {
     });
 }
 window._applicaAggiornamentoVersione = _applicaAggiornamentoVersione;
+
+
+// ══════════════════════════════════════════════════════════════
+// PLACEHOLDER per <div contenteditable> vuoti
+//
+// CSS :empty non basta: il browser auto-inserisce <br>, &nbsp; o
+// whitespace dopo focus/cancellazione → :empty smette di matchare
+// anche se visivamente il campo è vuoto.
+//
+// _placeholderCheck applica/rimuove la classe .is-empty in base a
+// una logica più tollerante (pulisce <br>, &nbsp;, whitespace prima
+// di valutare "vuoto"). La CSS regola .is-empty[data-placeholder]::before
+// mostra il placeholder grigio.
+// ══════════════════════════════════════════════════════════════
+function _placeholderCheck(el) {
+  if (!el || !el.classList || !el.hasAttribute('data-placeholder')) return;
+  var html = (el.innerHTML || '')
+    .replace(/<br\s*\/?\s*>/gi, '')
+    .replace(/&nbsp;/gi, '')
+    .replace(/<div>\s*<\/div>/gi, '')
+    .replace(/\s+/g, '');
+  var vuoto = (html === '');
+  // Doppia validazione: anche textContent.trim() deve essere vuoto
+  if (vuoto) {
+    var text = (el.textContent || '').replace(/ /g, '').trim();
+    vuoto = (text === '');
+  }
+  el.classList.toggle('is-empty', vuoto);
+}
+window._placeholderCheck = _placeholderCheck;
+
+function _aggiornaTuttiPlaceholders(root) {
+  var ctx = root || document;
+  ctx.querySelectorAll('.editable-area[data-placeholder]').forEach(_placeholderCheck);
+}
+window._aggiornaTuttiPlaceholders = _aggiornaTuttiPlaceholders;
+
+// Listener globale: ogni input/focus/blur su un contenteditable aggiorna
+// la classe .is-empty per il singolo elemento (no scan completo).
+document.addEventListener('input', function(e) {
+  var t = e.target;
+  if (t && t.classList && t.classList.contains('editable-area') &&
+      t.hasAttribute && t.hasAttribute('data-placeholder')) {
+    _placeholderCheck(t);
+  }
+}, true);
+document.addEventListener('blur', function(e) {
+  var t = e.target;
+  if (t && t.classList && t.classList.contains('editable-area') &&
+      t.hasAttribute && t.hasAttribute('data-placeholder')) {
+    _placeholderCheck(t);
+  }
+}, true);
 
 

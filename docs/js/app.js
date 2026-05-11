@@ -1237,6 +1237,9 @@
       // ── 3b. RIAPPLICA COLORI CUSTOM BADGE (il renderer usa stringToColor) ──
       if (typeof window._aggiornaBadgePrincipali === 'function') window._aggiornaBadgePrincipali();
 
+      // ── 3c. SCAN PLACEHOLDER (aggiunge/rimuove .is-empty su tutti i campi) ──
+      if (typeof window._aggiornaTuttiPlaceholders === 'function') window._aggiornaTuttiPlaceholders();
+
       // ── 4. MESSAGGIO "NESSUN LETTO" ───────────────────────────────────────
       var _nessunLetto = document.querySelectorAll('.patient-card[data-bed]').length === 0;
       var noLettiMsg = document.getElementById('noLettiMsg'); if (noLettiMsg) noLettiMsg.style.display = _nessunLetto ? '' : 'none';

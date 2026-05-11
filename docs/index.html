@@ -226,6 +226,8 @@
               dst.focus();
               _ripristinaCaretPos(dst, caretPos);
             }
+            // Aggiorna stato placeholder per questo campo
+            if (typeof window._placeholderCheck === 'function') window._placeholderCheck(dst);
           });
           var srcDate=nuova.querySelector('.data-ricovero-text'); var dstDate=attuale.querySelector('.data-ricovero-text'); if(srcDate&&dstDate)dstDate.value=srcDate.value;
           var srcGG=nuova.querySelector('.valore-giorni'); var dstGG=attuale.querySelector('.valore-giorni'); if(srcGG&&dstGG)dstGG.innerText=srcGG.innerText;
