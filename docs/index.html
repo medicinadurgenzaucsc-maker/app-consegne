@@ -271,7 +271,7 @@
 
     var _TOOLBAR_ID = 'focusModeToolbar';
 
-    function _creaToolbarHTML() {
+    function _creaToolbarHTML(campo) {
       var colors = [
         ['#ffff00','Giallo'],['#00ff00','Verde'],['#00ffff','Azzurro'],['#ff69b4','Rosa'],
         ['#ff9900','Arancione'],['#ff0000','Rosso'],['#9900ff','Viola'],['#0000ff','Blu'],
@@ -282,7 +282,24 @@
       for (var i = 0; i < colors.length; i++) {
         sw += '<button class="tb-color-swatch" data-color="' + colors[i][0] + '" style="background:' + colors[i][0] + '" title="' + colors[i][1] + '"></button>';
       }
-      return '<div class="focus-toolbar">'
+
+      // Pulsanti aggiuntivi per campo specifico (a destra dell'evidenziatore):
+      // - Diaria: "+" verde che inserisce data oggi (-DD/MM: in grassetto)
+      // - Esami Colturali, Da Fare: checkbox che inserisce un check item con data
+      var extra = '';
+      if (campo === 'Diaria') {
+        extra = '<span class="tb-sep"></span>'
+              + '<button class="tb-btn tb-data-diaria" data-cmd="insertDataDiaria" title="Aggiungi data odierna">'
+              +   '<i class="bi bi-plus-circle-fill" style="color:#fff;background:#2e7d32;border-radius:50%;font-size:1.1rem;line-height:1;"></i>'
+              + '</button>';
+      } else if (campo === 'EsamiColturali' || campo === 'DaFare') {
+        extra = '<span class="tb-sep"></span>'
+              + '<button class="tb-btn tb-data-check" data-cmd="insertChecklistItem" title="Aggiungi item con checkbox">'
+              +   '<i class="bi bi-check2-square" style="color:#2e7d32;font-size:1.1rem;line-height:1;"></i>'
+              + '</button>';
+      }
+
+      return '<div class="focus-toolbar" data-campo="' + (campo || '') + '">'
         + '<button class="tb-btn" data-cmd="bold" title="Grassetto"><i class="bi bi-type-bold"></i></button>'
         + '<button class="tb-btn" data-cmd="italic" title="Corsivo"><i class="bi bi-type-italic"></i></button>'
         + '<button class="tb-btn" data-cmd="underline" title="Sottolineato"><i class="bi bi-type-underline"></i></button>'
@@ -307,6 +324,7 @@
             + '<button class="tb-btn tb-no-color" data-color="transparent">&#10005; Rimuovi evidenziazione</button>'
           + '</div>'
         + '</div>'
+        + extra
       + '</div>';
     }
 
@@ -395,6 +413,144 @@
       if (!e.target.closest('.tb-palette-wrap')) {
         document.querySelectorAll('.tb-palette[data-tb-submenu]').forEach(function(el) { el.classList.remove('open'); });
       }
+    });
+
+    // ── Listener delegate per i pulsanti speciali Diaria/Checklist ────────────
+    // I pulsanti "+" (Diaria) e "checkbox" (EsamiColturali, DaFare) usano
+    // data-cmd su <button> dentro .focus-toolbar. Il mousedown listener
+    // esistente salva la selezione corrente; al click eseguiamo l'inserimento.
+    document.addEventListener('click', function(e) {
+      var btn = e.target.closest && e.target.closest('[data-cmd="insertDataDiaria"], [data-cmd="insertChecklistItem"]');
+      if (!btn) return;
+      e.preventDefault();
+      e.stopPropagation();
+      var tb = btn.closest('.focus-toolbar');
+      if (!tb) return;
+      var campo = tb.getAttribute('data-campo');
+      // Trova l'editable-area associata (sibling immediato della toolbar)
+      var area = tb.nextElementSibling;
+      while (area && (!area.classList || !area.classList.contains('editable-area'))) {
+        area = area.nextElementSibling;
+      }
+      if (!area) return;
+      var cmd = btn.getAttribute('data-cmd');
+      if (cmd === 'insertDataDiaria')       _insertDataDiaria(area);
+      else if (cmd === 'insertChecklistItem') _insertChecklistItem(area);
+    });
+
+    // Formato data odierna "DD/MM"
+    function _oggiDDMM() {
+      var d = new Date();
+      return String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0');
+    }
+
+    // Inserisce HTML al cursore se è dentro `area`; altrimenti in fondo all'area.
+    // Sposta il cursore subito dopo l'inserto.
+    function _insertHtmlInArea(area, html) {
+      area.focus();
+      var sel = window.getSelection();
+      var inside = false;
+      if (sel && sel.rangeCount > 0) {
+        var r = sel.getRangeAt(0);
+        if (r.commonAncestorContainer && area.contains(r.commonAncestorContainer)) inside = true;
+      }
+      if (inside && _tbSavedRange && area.contains(_tbSavedRange.commonAncestorContainer)) {
+        // Usa selezione salvata da mousedown (preferita)
+        sel.removeAllRanges();
+        sel.addRange(_tbSavedRange);
+      } else if (!inside) {
+        // Cursore fuori dall'area → metti in fondo
+        var range = document.createRange();
+        range.selectNodeContents(area);
+        range.collapse(false);
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+      // Inserisce HTML usando execCommand (deprecated ma ampiamente supportato
+      // e compatibile con undo/redo del browser).
+      document.execCommand('insertHTML', false, html);
+      // Dispatch input per triggerare salvataggio + placeholder
+      area.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+
+    // Diaria: inserisce "-DD/MM: " (grassetto) al cursore o in fondo
+    function _insertDataDiaria(area) {
+      var dataStr = _oggiDDMM();
+      _insertHtmlInArea(area, '<strong>-' + dataStr + ':</strong>&nbsp;');
+    }
+
+    // EsamiColturali / DaFare: inserisce un item checklist con data odierna
+    // Struttura: <div class="cl-item">
+    //              <span class="cl-check" contenteditable="false">☐</span>
+    //              <strong>DD/MM:</strong>&nbsp;
+    //            </div>
+    // Lo span .cl-check è contenteditable=false così il caret non ci entra
+    // ed è cliccabile come target del toggle (vedi listener sotto).
+    function _insertChecklistItem(area) {
+      var dataStr = _oggiDDMM();
+      var html = '<div class="cl-item">' +
+                 '- <span class="cl-check" contenteditable="false" role="button" aria-checked="false">☐</span> ' +
+                 '<strong>' + dataStr + ':</strong>&nbsp;' +
+                 '</div>';
+      _insertHtmlInArea(area, html);
+    }
+
+    // ── Toggle checkbox listener ──────────────────────────────────────────────
+    // Click su .cl-check dentro un'editable-area:
+    //   ☐ → ☑ + aggiunge sotto .cl-esito con cursore lì
+    //   ☑ → ☐ + se .cl-esito è vuota la rimuove, altrimenti barra l'intero item
+    document.addEventListener('click', function(e) {
+      var chk = e.target.closest && e.target.closest('.cl-check');
+      if (!chk) return;
+      var area = chk.closest('.editable-area');
+      if (!area) return;
+      e.preventDefault();
+      e.stopPropagation();
+      var item = chk.closest('.cl-item');
+      if (!item) return;
+      var flagged = (chk.textContent || '').indexOf('☑') !== -1;
+      if (!flagged) {
+        // ☐ → ☑
+        chk.textContent = '☑';
+        chk.setAttribute('aria-checked', 'true');
+        // Aggiungi riga esito se non esiste
+        var esito = item.querySelector('.cl-esito');
+        if (!esito) {
+          esito = document.createElement('div');
+          esito.className = 'cl-esito';
+          esito.innerHTML = '<span contenteditable="false" class="cl-esito-arrow">↳&nbsp;</span>';
+          item.appendChild(esito);
+        }
+        // Sposta cursore alla fine di .cl-esito
+        area.focus();
+        var sel = window.getSelection();
+        var range = document.createRange();
+        range.selectNodeContents(esito);
+        range.collapse(false);
+        sel.removeAllRanges();
+        sel.addRange(range);
+      } else {
+        // ☑ → ☐
+        chk.textContent = '☐';
+        chk.setAttribute('aria-checked', 'false');
+        var esito = item.querySelector('.cl-esito');
+        if (esito) {
+          // Controlla se la riga esito ha testo SIGNIFICATIVO (oltre alla freccia)
+          var clone = esito.cloneNode(true);
+          var arrow = clone.querySelector('.cl-esito-arrow');
+          if (arrow) arrow.remove();
+          var testoEsito = (clone.textContent || '').replace(/\s+/g, '').trim();
+          if (testoEsito === '') {
+            // Vuota → rimuovi
+            esito.remove();
+            item.classList.remove('cl-sbarrato');
+          } else {
+            // Ha testo → sbarra tutto l'item come archivio storico
+            item.classList.add('cl-sbarrato');
+          }
+        }
+      }
+      area.dispatchEvent(new Event('input', { bubbles: true }));
     });
 
     var _focusCard          = null;
@@ -533,8 +689,9 @@
         _abilitaCampi();
         _equalizzaColonneAlt(); // equalizza subito dopo che i campi sono abilitati
         card.querySelectorAll('[data-field]').forEach(function(el) {
-          if (_TOOLBAR_FIELDS[el.getAttribute('data-field')] && el.parentNode) {
-            var tbW = document.createElement('div'); tbW.innerHTML = _creaToolbarHTML();
+          var campo = el.getAttribute('data-field');
+          if (_TOOLBAR_FIELDS[campo] && el.parentNode) {
+            var tbW = document.createElement('div'); tbW.innerHTML = _creaToolbarHTML(campo);
             el.parentNode.insertBefore(tbW.firstChild, el);
           }
         });

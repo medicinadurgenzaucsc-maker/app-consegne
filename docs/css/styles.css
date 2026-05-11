@@ -635,6 +635,47 @@ span.valore-giorni.alt-info-val { font-weight: normal; }
   opacity: 0.45;
 }
 
+/* ===== Checklist items in Esami Colturali / Da Fare ===== */
+/* Struttura:
+   <div class="cl-item">
+     - <span class="cl-check">☐|☑</span> <strong>DD/MM:</strong>&nbsp;testo...
+     <div class="cl-esito">↳ esito...</div>   ← solo se flaggata
+   </div> */
+.cl-check {
+  display: inline-block;
+  font-size: 1.05em;
+  cursor: pointer;
+  user-select: none;
+  line-height: 1;
+  padding: 0 2px;
+  border-radius: 3px;
+  vertical-align: middle;
+}
+.cl-check:hover { background: rgba(46,125,50,0.10); }
+.cl-esito {
+  margin-left: 1.6em;
+  padding-left: 0;
+  font-size: 0.92em;
+  color: #455a64;
+}
+.cl-esito-arrow {
+  user-select: none;
+  color: #607d8b;
+  margin-right: 2px;
+}
+/* Item sbarrato (deflag con esito non vuoto): archivio storico */
+.cl-item.cl-sbarrato {
+  text-decoration: line-through;
+  color: #8b9398;
+}
+.cl-item.cl-sbarrato .cl-check { text-decoration: none; }
+
+/* ===== Bottoni speciali toolbar (Diaria + / Checklist) ===== */
+.focus-toolbar .tb-data-diaria,
+.focus-toolbar .tb-data-check {
+  padding: 2px 6px;
+}
+
 .alt-diag-third {
   flex: 0 0 auto;
   display: flex;
