@@ -2390,6 +2390,20 @@
     function _emergCreaFloppy(card) {
       if (!card) return;
       var letto = card.getAttribute('data-bed');
+      // Safety: pulisci eventuali floppy orfani nel body (da chiusure
+      // anomale del focus mode) PRIMA del check duplicati. Evita il
+      // fenomeno "floppy fantasma" sopra alla scheda al riapertura.
+      Array.prototype.forEach.call(
+        document.querySelectorAll('body > .emerg-save-btn'),
+        function(orfano) {
+          var lettoOrfano = orfano.getAttribute('data-letto');
+          // Se l'orfano appartiene a una card NON in focus mode → rimuovi
+          var cardOrfana = lettoOrfano ? document.querySelector('.patient-card.focus-mode[data-bed="' + lettoOrfano + '"]') : null;
+          if (!cardOrfana) {
+            if (orfano.parentNode) orfano.parentNode.removeChild(orfano);
+          }
+        }
+      );
       // Evita duplicati (può essere dentro la card o nel body se focus mode)
       if (document.querySelector('.emerg-save-btn[data-letto="' + letto + '"]')) return;
 
@@ -2409,6 +2423,13 @@
       btn.setAttribute('data-letto', letto); // identificativo per ricerca
       btn.setAttribute('title', 'Salva ora');
       btn.innerHTML = _emergFloppyHTML('idle');
+      // CRITICO: preventDefault sul mousedown impedisce al button di rubare
+      // focus dall'editable area attualmente in focus. Senza, l'editable
+      // perde focus → focusout listener su document chiude il focus mode
+      // dopo 100ms (perché _focusCard.contains(activeElement) === false
+      // visto che il floppy è in document.body).
+      btn.addEventListener('mousedown', function(ev) { ev.preventDefault(); });
+      btn.addEventListener('touchstart', function(ev) { ev.preventDefault(); }, { passive: false });
       btn.addEventListener('click', function(ev) {
         ev.stopPropagation();
         ev.preventDefault();
@@ -3435,47 +3456,45 @@
       if (r.realtimeStatus && !r.realtimeStatus.ok) problemi.push('Canale Realtime: '+r.realtimeStatus.stato);
 
       // ── VALUTAZIONE RISCHIO BUG SALVATAGGIO ─────────────────
-      // Calcola un punteggio specifico per il rischio "consegne non si salvano"
+      // Solo cause REALI che impattano davvero il save delle consegne e che
+      // tipicamente si risolvono con riavvio PC / browser / attivazione
+      // emergenza. Rimossi: cpuPerf 100-200ms (rumore), timer 50-200ms (drift
+      // normale), heap 70-80% (recuperabile con GC), fps (sintomo non causa),
+      // session (token Google NON serve per save Supabase), rest 1500ms+
+      // (retry esponenziale gestisce), db lenta, json/domParser (rumore).
       var rischioSalvataggio = 0;
       var motiviRischio = [];
 
-      // CPU lenta → typing lag → debounce 60s continuamente resettato → save mai parte
-      if (r.cpuPerf && r.cpuPerf.ms > 200) { rischioSalvataggio += 30; motiviRischio.push('CPU molto lenta ('+r.cpuPerf.ms+'ms): la digitazione potrebbe essere a scatti e il debounce di 60s del salvataggio resettato continuamente'); }
-      else if (r.cpuPerf && r.cpuPerf.ms > 100) { rischioSalvataggio += 10; motiviRischio.push('CPU lenta ('+r.cpuPerf.ms+'ms)'); }
-
-      // Timer impreciso → setTimeout di salvataggio non scatta mai
-      if (r.timer && r.timer.drift > 200) { rischioSalvataggio += 35; motiviRischio.push('Timer molto impreciso (drift '+r.timer.drift+'ms): il setTimeout di salvataggio non scatterà più ai 60s previsti'); }
-      else if (r.timer && r.timer.drift > 50) { rischioSalvataggio += 15; motiviRischio.push('Timer impreciso (drift '+r.timer.drift+'ms)'); }
-
-      // Memoria satura → GC pauses → typing freeze → save mai parte
-      if (r.heap && r.heap.pct > 80) { rischioSalvataggio += 30; motiviRischio.push('Memoria al '+r.heap.pct+'%: pause del garbage collector bloccano la digitazione'); }
-      else if (r.heap && (r.heap.pct > 70 || r.heap.usedMB > 300)) { rischioSalvataggio += 10; motiviRischio.push('Memoria alta ('+r.heap.usedMB+' MB)'); }
-
-      // FPS basso → UI bloccata
-      if (r.fps && r.fps.fps < 30) { rischioSalvataggio += 20; motiviRischio.push('Rendering a '+r.fps.fps+' FPS: UI bloccata, evento "input" potrebbe non scattare regolarmente'); }
-      else if (r.fps && r.fps.fps < 45) { rischioSalvataggio += 5; }
-
-      // localStorage rotto → token sessione perso → 401 al salvataggio
-      if (r.storage && !r.storage.ok) { rischioSalvataggio += 40; motiviRischio.push('localStorage non funzionante: la sessione utente non viene salvata, le richieste di salvataggio falliranno con errore di autenticazione'); }
-
-      // Sessione scaduta/assente → 401 al salvataggio
-      if (r.session && !r.session.ok) { rischioSalvataggio += 25; motiviRischio.push('Token Google assente: tentativi di salvataggio possono fallire'); }
-
-      // REST lenta → POST salvataggio in timeout
-      if (r.rest && !r.rest.ok) { rischioSalvataggio += 30; motiviRischio.push('REST Supabase irraggiungibile/lenta ('+r.rest.ms+'ms): il POST di salvataggio andrà in timeout'); }
-      else if (r.rest && r.rest.ms > 1500) { rischioSalvataggio += 15; motiviRischio.push('REST Supabase lenta ('+r.rest.ms+'ms): salvataggio rallentato'); }
-
-      // DB lenta
-      if (r.db && r.db.ms > 3000) { rischioSalvataggio += 15; motiviRischio.push('DB query molto lenta ('+r.db.ms+'ms)'); }
-
-      // Rete instabile → jitter alto → save sporadicamente fallisce
-      if (r.restPing && r.restPing.jitter > 2000) { rischioSalvataggio += 20; motiviRischio.push('Rete molto instabile (jitter '+r.restPing.jitter+'ms): salvataggi sporadici possono fallire'); }
-
-      // JSON serialization lenta → typing stutter durante autosave
-      if (r.json && r.json.ms > 500) { rischioSalvataggio += 10; motiviRischio.push('Serializzazione dati lenta ('+r.json.ms+'ms)'); }
-
-      // DOMParser lento → re-render durante typing causa perdita digitazione
-      if (r.domParser && r.domParser.ms > 400) { rischioSalvataggio += 10; motiviRischio.push('DOMParser lento ('+r.domParser.ms+'ms): re-render dopo Realtime sync può sovrascrivere il testo digitato'); }
+      // CPU stra-lenta → GC pauses + typing impreciso, debounce 60s reset
+      if (r.cpuPerf && r.cpuPerf.ms > 200) {
+        rischioSalvataggio += 40;
+        motiviRischio.push('CPU molto lenta ('+r.cpuPerf.ms+'ms): GC pauses bloccano la digitazione e il timer di salvataggio non scatta');
+      }
+      // Timer setTimeout molto impreciso → debounce 60s non scatta
+      if (r.timer && r.timer.drift > 200) {
+        rischioSalvataggio += 40;
+        motiviRischio.push('Timer molto impreciso (drift '+r.timer.drift+'ms): il timer di salvataggio non scatterà ai 60s previsti');
+      }
+      // Memoria critica → GC pauses lunghe → save impreciso
+      if (r.heap && r.heap.pct > 80) {
+        rischioSalvataggio += 35;
+        motiviRischio.push('Memoria al '+r.heap.pct+'%: pause del garbage collector bloccano la digitazione');
+      }
+      // localStorage rotto → sessione non persistibile (impatto critico generale)
+      if (r.storage && !r.storage.ok) {
+        rischioSalvataggio += 50;
+        motiviRischio.push('localStorage non funzionante: la sessione utente non può essere salvata');
+      }
+      // REST Supabase irraggiungibile → save HTTP impossibile
+      if (r.rest && !r.rest.ok) {
+        rischioSalvataggio += 50;
+        motiviRischio.push('REST Supabase irraggiungibile: il POST di salvataggio non parte');
+      }
+      // Rete molto instabile → save retry frequenti
+      if (r.restPing && r.restPing.jitter > 2000) {
+        rischioSalvataggio += 20;
+        motiviRischio.push('Rete molto instabile (jitter '+r.restPing.jitter+'ms): salvataggi sporadici falliscono');
+      }
 
       // Determina livello rischio
       var livelloRischio, coloreRischio;
@@ -3692,24 +3711,37 @@
       if (_silentDiag) {
         _silentDiag = false; // reset per future esecuzioni manuali
         _silentDoneCallback = null;
-        // Diagnostica AUTOMATICA al caricamento: il modal si apre SOLO se serve
-        // davvero consigliare all'utente di attivare la Modalità Emergenza,
-        // cioè quando c'è rischio concreto che le consegne non si salvino.
+        // Diagnostica AUTOMATICA al caricamento: il modal si apre SOLO se
+        // c'è una causa REALE per cui serve riavvio PC, riavvio browser o
+        // attivazione modalità emergenza.
         //
-        // Si apre se:
-        //   (a) rischioSalvataggio >= 25 (livello MEDIO o ALTO) — fattori
-        //       multipli o seri che impattano il save
-        //   (b) WebSocket bloccato — Realtime non funziona, l'emergenza
-        //       (polling 5s) è la soluzione specifica
+        // Si apre se (criteri OR):
+        //   (a) rischioSalvataggio >= 10 (qualsiasi livello sopra a NESSUNO
+        //       nel calcolo "pulito" — solo cause vere, no rumore)
+        //   (b) un CRITICO VERO è fallito: offline, REST Supabase down,
+        //       localStorage rotto, cookie disabilitati, API JS/librerie
+        //       mancanti (cose che impediscono di lavorare)
+        //   (c) WebSocket bloccato — Realtime perso, emergenza serve
         //
-        // NON si apre per:
-        //   - livello NESSUNO o BASSO senza WS bloccato (lievi rallentamenti
-        //     che NON impediscono il save)
-        //   - problemi minori isolati che non inficiano il salvataggio
+        // NON si apre per (filtrato esplicitamente):
+        //   - Token Google scaduto (non impatta save Supabase, usa anon key)
+        //   - Browser obsoleto (avviso utile, non urgente per il save)
+        //   - REST lenta 1500ms+ (retry esponenziale gestisce)
+        //   - DB lenta (sistema retry copre)
+        //   - heap 70-80%, fps <45, drift <200ms (rumore PC normale)
+        //   - CDN jsdelivr down (librerie già caricate al runtime)
+        //   - Realtime channel non joined (emergenza polling lo compensa)
         //
         // NB: la diagnostica MANUALE (click su "PC Lento") mostra sempre il
-        // report completo, perché _silentDiag è false in quel flusso.
-        var ciSonoProblemi = (rischioSalvataggio >= 25) || (r.ws && !r.ws.ok);
+        // report completo con TUTTI i test, perché _silentDiag = false.
+        var criticiVeri =
+          (r.online   && !r.online.ok)   ||
+          (r.rest     && !r.rest.ok)     ||
+          (r.storage  && !r.storage.ok)  ||
+          (r.cookies  && !r.cookies.ok)  ||
+          (r.js       && !r.js.ok)       ||
+          (r.lib      && !r.lib.ok);
+        var ciSonoProblemi = (rischioSalvataggio >= 10) || criticiVeri || (r.ws && !r.ws.ok);
         if (!ciSonoProblemi) {
           // Tutto OK: silenziosamente, nessun modal. Notifica completamento.
           console.log('[Diagnostica startup] Tutti i test superati. Nessun problema.');
