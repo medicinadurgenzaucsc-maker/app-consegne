@@ -385,6 +385,12 @@ body { padding-top: 70px; background-color: #d4e6f1 !important; }
   pointer-events: none; /* puramente informativo */
 }
 
+/* SweetAlert2 di default usa z-index ~1060, mentre la card in focus mode
+   è 1070 → toast e modal Swal venivano coperti dalla card. Forziamo Swal
+   sempre topmost (sopra anche loginOverlay 100000 e versionUpdateOverlay
+   99999) così conferme, toast e diagnostica sono SEMPRE visibili. */
+.swal2-container { z-index: 200000 !important; }
+
 
 /* ================================================================
    VISUALIZZAZIONE ALTERNATIVA (da ViewAlt.html)
