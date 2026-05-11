@@ -2389,21 +2389,24 @@
 
     function _emergCreaFloppy(card) {
       if (!card) return;
-      // Evita duplicati
-      if (card.querySelector('.emerg-save-btn')) return;
-      // Container: vista standard usa .bed-number-box; vista alternativa usa
-      // .alt-col-info (stesso parent della matita esistente).
+      var letto = card.getAttribute('data-bed');
+      // Evita duplicati (può essere dentro la card o nel body se focus mode)
+      if (document.querySelector('.emerg-save-btn[data-letto="' + letto + '"]')) return;
+
+      // Container di default: dentro la card (vista standard .bed-number-box o
+      // alternativa .alt-col-info). Sostituito da document.body se in focus
+      // mode (vedi sotto).
       var box = card.querySelector('.bed-number-box') || card.querySelector('.alt-col-info');
       if (!box) {
         console.warn('[Floppy] Container non trovato sulla card', card);
         return;
       }
-      var letto = card.getAttribute('data-bed');
 
       var btn = document.createElement('button');
       btn.className = 'emerg-save-btn';
       btn.setAttribute('type', 'button');
       btn.setAttribute('data-state', 'idle');
+      btn.setAttribute('data-letto', letto); // identificativo per ricerca
       btn.setAttribute('title', 'Salva ora');
       btn.innerHTML = _emergFloppyHTML('idle');
       btn.addEventListener('click', function(ev) {
@@ -2411,11 +2414,13 @@
         ev.preventDefault();
         _emergSalvaManuale(letto, card, btn);
       });
-      box.appendChild(btn);
 
-      // Se la card è in focus mode, posiziona il floppy in viewport coordinates
-      // così resta visibile anche scrollando il contenuto della card.
+      // In focus mode il parent .focus-mode ha `transform: translateZ(0)`
+      // che, per spec CSS, intrappola position:fixed rendendolo relativo
+      // alla card invece che al viewport. Quindi attacchiamo il floppy
+      // direttamente a document.body per averlo davvero fisso sul viewport.
       if (card.classList.contains('focus-mode')) {
+        document.body.appendChild(btn);
         _emergRiposizionaFloppyFixed(card, btn);
         // Riposiziona al resize finestra (raro ma possibile su tablet che ruota)
         if (!card._emergFloppyResizeHandler) {
@@ -2424,6 +2429,8 @@
           };
           window.addEventListener('resize', card._emergFloppyResizeHandler);
         }
+      } else {
+        box.appendChild(btn);
       }
 
       // Stato iniziale basato su _dirtyLetti
@@ -2452,7 +2459,12 @@
         window.removeEventListener('resize', card._emergFloppyResizeHandler);
         delete card._emergFloppyResizeHandler;
       }
-      var btn = card.querySelector('.emerg-save-btn');
+      // Cerca il floppy di questa card sia dentro card che in document.body
+      // (era stato spostato lì se card in focus mode con transform parent).
+      var letto = card.getAttribute('data-bed');
+      var btn = letto
+        ? document.querySelector('.emerg-save-btn[data-letto="' + letto + '"]')
+        : card.querySelector('.emerg-save-btn');
       if (btn && btn.parentNode) btn.parentNode.removeChild(btn);
       // Se non ci sono più floppy in giro, ferma il polling
       if (!document.querySelector('.emerg-save-btn')) {
@@ -2471,9 +2483,8 @@
     function _emergAggiornaStatoFloppy(letto, btnOpt) {
       var btn = btnOpt;
       if (!btn) {
-        var card = document.querySelector('.patient-card.focus-mode[data-bed="'+letto+'"]');
-        if (!card) return;
-        btn = card.querySelector('.emerg-save-btn');
+        // Cerca per data-letto (può essere in body o dentro card)
+        btn = document.querySelector('.emerg-save-btn[data-letto="' + letto + '"]');
         if (!btn) return;
       }
       // Non sovrascrivere stati transienti (saved/error mostrati per X secondi)
@@ -2495,9 +2506,10 @@
       if (_emergFloppyPollId) return;
       _emergFloppyPollId = setInterval(function() {
         document.querySelectorAll('.emerg-save-btn').forEach(function(btn) {
-          var card = btn.closest('.patient-card');
-          if (!card) return;
-          var letto = card.getAttribute('data-bed');
+          // Usa data-letto invece di closest('.patient-card'): se il floppy
+          // è in document.body (focus mode con transform parent), closest
+          // ritornerebbe null.
+          var letto = btn.getAttribute('data-letto');
           if (letto) _emergAggiornaStatoFloppy(letto, btn);
         });
       }, 1000);
@@ -2593,12 +2605,11 @@
         stato === 'error' ? 'Errore — il sistema sta riprovando automaticamente' : '');
       if (_emergFloppyTransientId) clearTimeout(_emergFloppyTransientId);
       _emergFloppyTransientId = setTimeout(function() {
-        // Reset a stato attuale (idle/dirty in base a _dirtyLetti)
-        var card = btn.closest('.patient-card');
-        if (!card) return;
-        var letto = card.getAttribute('data-bed');
+        // Reset a stato attuale (idle/dirty in base a _dirtyLetti).
+        // Usa data-letto invece di closest('.patient-card') — vedi commento
+        // in _emergAvviaPollFloppy.
+        var letto = btn.getAttribute('data-letto');
         if (!letto) return;
-        // Forza il reset (rimuovo lo stato transiente per permettere a _emergAggiornaStatoFloppy)
         btn.setAttribute('data-state', 'idle');
         _emergAggiornaStatoFloppy(letto, btn);
       }, ms);
