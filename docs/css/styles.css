@@ -610,17 +610,16 @@ span.valore-giorni.alt-info-val { font-weight: normal; }
 }
 
 /* ===== PLACEHOLDER per campi contenteditable vuoti =====
-   Mostrato SOLO quando la card è in focus mode (richiesta utente).
-   Fuori dal focus mode i campi vuoti restano vuoti senza testo
-   suggerito — evita rumore visivo nell'elenco principale.
+   Visibili sia nell'elenco principale che in focus mode (servono
+   come esempio costante di cosa scrivere nei vari campi).
 
    Tecnica: doppio matching, perché il selettore CSS :empty NON
    matcha quando il browser auto-inserisce <br>/&nbsp;/whitespace
    nei contenteditable (succede dopo focus o cancellazione).
      1. `:empty::before` — caso ideale (innerHTML="")
      2. `.is-empty::before` — caso reale via _placeholderCheck() JS */
-.patient-card.focus-mode .editable-area[data-placeholder]:empty::before,
-.patient-card.focus-mode .editable-area[data-placeholder].is-empty::before {
+.editable-area[data-placeholder]:empty::before,
+.editable-area[data-placeholder].is-empty::before {
   content: attr(data-placeholder);
   color: #b0b0b0;
   font-style: italic;
@@ -631,8 +630,8 @@ span.valore-giorni.alt-info-val { font-weight: normal; }
 }
 /* Quando il campo è focused (cursore dentro) ma ancora vuoto,
    placeholder sbiadito → l'utente sta per scrivere. */
-.patient-card.focus-mode .editable-area[data-placeholder]:focus:empty::before,
-.patient-card.focus-mode .editable-area[data-placeholder].is-empty:focus::before {
+.editable-area[data-placeholder]:focus:empty::before,
+.editable-area[data-placeholder].is-empty:focus::before {
   opacity: 0.45;
 }
 
