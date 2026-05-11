@@ -582,7 +582,20 @@
 
       // ── FASE 2: scrivi lock sul DB (1 upsert) ────────────────────────────
       // Realtime propagherà l'evento a tutti gli altri client istantaneamente.
-      _sbAcquistaLock(letto, _mioToken)
+      //
+      // Promise.race con timeout 10s: se il lock acquisition non risponde,
+      // forziamo un risultato `{success:false, blocked:false, timeout:true}`
+      // che fa scattare il branch di errore (campi riabilitati + close).
+      // Questo previene il bug "scheda apparentemente aperta ma non scrivibile":
+      // succedeva quando la promise restava in pending → lockCheckOverlay
+      // mai rimosso + contenteditable=false mai ripristinato.
+      var _lockTimeout = new Promise(function(resolve) {
+        setTimeout(function() {
+          resolve({ success: false, blocked: false, timeout: true,
+                    message: 'Timeout acquisizione blocco. Riprova.' });
+        }, 10000);
+      });
+      Promise.race([_sbAcquistaLock(letto, _mioToken), _lockTimeout])
         .then(function(res) {
           var lockOvEl = document.getElementById('lockCheckOverlay');
           if (lockOvEl) lockOvEl.parentNode.removeChild(lockOvEl);
@@ -605,6 +618,20 @@
             _abilitaCampi();
             _disattivaFocusMode(false);
             _mostraAvvisoLock(letto);
+          } else {
+            // CRITICAL FIX: caso `success:false && blocked:false` (errore server
+            // generico o timeout). Prima questo branch mancava → la card
+            // restava in focus mode con campi contenteditable=false →
+            // l'utente vedeva la scheda ma non poteva scrivere.
+            _syncPaused = false;
+            _abilitaCampi();
+            _disattivaFocusMode(false);
+            Swal.fire({
+              icon: 'error',
+              title: res.timeout ? 'Timeout apertura scheda' : 'Errore apertura scheda',
+              text: res.message || 'Impossibile acquisire il blocco. Riprova.',
+              confirmButtonColor: '#d33'
+            });
           }
         })
         .catch(function() {
