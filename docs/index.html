@@ -465,41 +465,48 @@
         '<path d="M7 12l3 3 7-7" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>' +
       '</svg>';
 
-    // Inserisce HTML SEMPRE al cursore se è dentro `area`; se NO,
-    // appende in fondo all'area (su nuova riga per blocchi non-inline).
-    // Ritorna la modalità usata: 'cursor' | 'append'.
+    // Inserisce HTML al cursore SE l'utente aveva il caret dentro `area`
+    // PRIMA di cliccare il pulsante toolbar; altrimenti appende in fondo
+    // all'area (con <br> prefisso se nuovaRigaSeFuoriCursore=true).
+    //
+    // ATTENZIONE: NON possiamo basarci sulla selezione "corrente" perché
+    // `area.focus()` su un contenteditable senza selezione attiva crea
+    // automaticamente un range all'inizio. Quindi l'unica fonte di verità
+    // è _tbSavedRange (salvato dal mousedown listener PRIMA che il focus
+    // venga spostato sul pulsante). Se _tbSavedRange è dentro l'area
+    // → usalo. Se è in un'altra area o null → l'utente non era qui →
+    // vai in fondo.
     function _insertHtmlInArea(area, html, opzioni) {
       opzioni = opzioni || {};
-      area.focus();
       var sel = window.getSelection();
-      var inside = false;
-      if (sel && sel.rangeCount > 0) {
-        var r = sel.getRangeAt(0);
-        if (r.commonAncestorContainer && area.contains(r.commonAncestorContainer)) inside = true;
-      }
-      // Preferisci la selezione salvata dal mousedown listener
+      var rangeDaUsare = null;
+      // _tbSavedRange è la SOLA fonte affidabile: salvato al mousedown
+      // sulla toolbar, prima che il click sposti il focus.
       if (_tbSavedRange && area.contains(_tbSavedRange.commonAncestorContainer)) {
-        sel.removeAllRanges();
-        sel.addRange(_tbSavedRange);
-        inside = true;
+        rangeDaUsare = _tbSavedRange;
       }
-      if (!inside) {
-        // Cursore fuori dall'area → appendi in fondo + (se richiesto) vai a capo
+      area.focus();
+      if (rangeDaUsare) {
+        // Cursore era nell'area → ripristina selezione esatta
+        sel.removeAllRanges();
+        sel.addRange(rangeDaUsare);
+      } else {
+        // Cursore fuori dall'area (o area vuota) → in fondo
         var newRange = document.createRange();
         newRange.selectNodeContents(area);
         newRange.collapse(false);
         sel.removeAllRanges();
         sel.addRange(newRange);
+        // <br> prefisso solo per inserti inline (es. data Diaria) → forza
+        // l'andata a capo. Per i block (.cl-item) non serve perché il <div>
+        // crea automaticamente la nuova riga.
         if (opzioni.nuovaRigaSeFuoriCursore) {
-          // Se la fine non è già preceduta da blocco/br → aggiungi <br>
-          // (semplificazione: lasciamo il browser inserire il break necessario
-          // tramite il prefisso <br> nel HTML stesso).
           html = '<br>' + html;
         }
       }
       document.execCommand('insertHTML', false, html);
       area.dispatchEvent(new Event('input', { bubbles: true }));
-      return inside ? 'cursor' : 'append';
+      return rangeDaUsare ? 'cursor' : 'append';
     }
 
     // Piazza il caret alla FINE di un nodo DOM. Per nodi block (div) il
