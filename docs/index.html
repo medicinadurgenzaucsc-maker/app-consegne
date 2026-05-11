@@ -215,7 +215,7 @@
         var letto = nuova.getAttribute('data-bed');
         if (_lettoLockAtt === letto) return;
         document.querySelectorAll('.patient-card[data-bed="' + letto + '"]').forEach(function(attuale) {
-          ['Nome','Diagnosi','Eta','NoteTerapia','Diaria','DaFare','PianoTerapeutico','Allergie','CodiceSanitario','Ossigeno'].forEach(function(campo) {
+          ['Nome','Diagnosi','Eta','NoteTerapia','Diaria','DaFare','PianoTerapeutico','EsamiColturali','Allergie','CodiceSanitario','Ossigeno'].forEach(function(campo) {
             var src = nuova.querySelector('[data-field="' + campo + '"]');
             var dst = attuale.querySelector('[data-field="' + campo + '"]');
             if (!src || !dst) return;
@@ -1076,8 +1076,6 @@
             <li><a class="dropdown-item" href="javascript:void(0)" onclick="ordinaLetti('numero');"><i class="bi bi-sort-numeric-down me-2 text-secondary"></i>Numero Letto</a></li>
             <li><a class="dropdown-item" href="javascript:void(0)" onclick="ordinaLetti('nome');"><i class="bi bi-sort-alpha-down me-2 text-secondary"></i>Ordine Alfabetico</a></li>
             <li><a class="dropdown-item" href="javascript:void(0)" onclick="ordinaLetti('tipologia');"><i class="bi bi-tags-fill me-2 text-secondary"></i>Tipologia Letto</a></li>
-            <li><hr class="dropdown-divider"></li>
-            <li><a class="dropdown-item" id="btnToggleViewAlt" href="javascript:void(0)" onclick="toggleViewAlt()"><i class="bi bi-eye me-2"></i>Visualizzazione Alternativa</a></li>
           </ul>
         </li>
         <li class="nav-item"><a class="nav-link active" href="javascript:void(0)" data-emerg-disable="1" onclick="stampaConsegne();"><i class="bi bi-printer me-1"></i>Stampa</a></li>
@@ -1307,18 +1305,10 @@
   </div>
 </div>
 
-<!-- ELENCO PAZIENTI EDITABILE (popolato dinamicamente via api.js) -->
+<!-- ELENCO PAZIENTI EDITABILE (popolato dinamicamente via api.js — solo vista alt) -->
 <div class="container-fluid" id="cardsContainer">
   <div id="noLettiMsg" class="container text-center mt-5" style="display:none;">
     <i class="bi bi-inboxes text-muted" style="font-size: 4rem;"></i>
-    <h4 class="mt-3 text-secondary">Nessun Letto configurato.</h4>
-  </div>
-</div>
-
-<!-- ===== VISUALIZZAZIONE ALTERNATIVA (popolata dinamicamente via api.js) ===== -->
-<div class="container-fluid" id="cardsContainerAlt">
-  <div id="noLettiMsgAlt" class="container text-center mt-5" style="display:none;">
-    <i class="bi bi-inboxes text-muted" style="font-size:4rem;"></i>
     <h4 class="mt-3 text-secondary">Nessun Letto configurato.</h4>
   </div>
 </div>
@@ -2873,7 +2863,6 @@
         } catch(e) { _diagLog('  (errore lettura localStorage)', 'warn'); }
         // Conteggi DOM
         _diagLog('Card DOM (cardsContainer): '+document.querySelectorAll('#cardsContainer .patient-card').length, 'info');
-        _diagLog('Card DOM (cardsContainerAlt): '+document.querySelectorAll('#cardsContainerAlt .patient-card').length, 'info');
         _diagLog('Card lockate (overlay): '+document.querySelectorAll('.lock-overlay').length, 'info');
       } catch(e) {
         _diagLog('Errore raccolta dati grezzi: '+e.message, 'err');

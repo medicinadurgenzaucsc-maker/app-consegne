@@ -149,12 +149,6 @@ body { padding-top: 70px; background-color: #d4e6f1 !important; }
 .date-input-error { border-bottom: 2px solid #d32f2f !important; background-color: #fff5f5 !important; }
 .date-error-msg { display: block; font-size: 0.65rem; color: #d32f2f; margin-top: 1px; line-height: 1.2; padding-left: 2px; }
 
-/* Voce "Visualizzazione Alternativa" — hover/focus mantengono i colori attivi */
-#btnToggleViewAlt.attiva:hover,
-#btnToggleViewAlt.attiva:focus { background-color: #343a40 !important; color: #fff !important; }
-#btnToggleViewAlt.attiva:hover i,
-#btnToggleViewAlt.attiva:focus i { color: #fff !important; }
-
 /* ===== LOCK COLLABORATIVO ===== */
 .patient-card { position: relative; }
 .card-locked {
@@ -433,12 +427,9 @@ body { padding-top: 70px; background-color: #d4e6f1 !important; }
 
 
 /* ================================================================
-   VISUALIZZAZIONE ALTERNATIVA (da ViewAlt.html)
+   VISUALIZZAZIONE ALT (unica vista attiva — la standard è stata
+   rimossa il 2026-05-11, vedi docs/_legacy/standard-view.md)
    ================================================================ */
-#cardsContainerAlt { display: none; }
-#cardsContainerAlt.attiva { display: block; }
-#cardsContainer.nascosto { display: none; }
-
 .alt-row {
   display: flex;
   flex-wrap: wrap;          /* permette allo spacer di andare a capo */
@@ -599,12 +590,20 @@ span.valore-giorni.alt-info-val { font-weight: normal; }
 
 .alt-diag-top .alt-editable,
 .alt-diag-bottom .alt-editable,
+.alt-diag-fourth .alt-editable,
 .alt-diag-third .alt-editable {
   flex-grow: 0;
   min-height: 40px;
 }
 
 .alt-diag-bottom {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Esami Colturali — tra Piano Terapeutico e Da Fare/Richieste */
+.alt-diag-fourth {
   flex: 0 0 auto;
   display: flex;
   flex-direction: column;
@@ -641,8 +640,3 @@ span.valore-giorni.alt-info-val { font-weight: normal; }
   font-size: 1.0rem;
 }
 
-/* Bottone toggle attivo */
-#btnToggleViewAlt.attiva {
-  background-color: rgba(255,255,255,0.18) !important;
-  border-radius: 6px;
-}

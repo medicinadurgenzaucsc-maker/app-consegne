@@ -285,7 +285,8 @@
       // Piccolo delay per lasciar completare l'animazione di chiusura Bootstrap
       setTimeout(function() {
         _apriModalScala(function(saltaVuoti, orientamento, tipologie, scala) {
-          var url = PRINT_URL + '?layout=' + (_viewAltAttiva ? 'alt' : 'main') +
+          // Solo layout 'alt' (vista standard rimossa)
+          var url = PRINT_URL + '?layout=alt' +
                     '&saltaVuoti=' + (saltaVuoti ? '1' : '0') +
                     '&orientamento=' + orientamento +
                     '&ordinamento=' + encodeURIComponent(localStorage.getItem('ordinamentoPreferito') || 'tipologia') +
@@ -384,8 +385,8 @@
     function stampaConsegne() {
       if (typeof _emergGuard === 'function' && _emergGuard()) return;
       _apriModalScala(function(saltaVuoti, orientamento, tipologie, scala, includiNote) {
-        var layout = _viewAltAttiva ? 'alt' : 'main';
-        var url = PRINT_URL + '?layout=' + layout +
+        // Solo layout 'alt' (vista standard rimossa)
+        var url = PRINT_URL + '?layout=alt' +
                   '&saltaVuoti=' + (saltaVuoti ? '1' : '0') +
                   '&orientamento=' + orientamento +
                   '&ordinamento=' + encodeURIComponent(localStorage.getItem('ordinamentoPreferito') || 'tipologia') +
@@ -514,30 +515,26 @@
     }
 
     function showToast(title, msg, type) { const toastContainer = document.getElementById('toastContainer'); let bgColor = type === "danger" ? "bg-danger" : (type === "success" ? "bg-success" : "bg-warning text-dark"); let icon = type === "danger" ? "bi-exclamation-triangle" : (type === "success" ? "bi-check-circle" : "bi-exclamation-circle"); const toastHTML = `<div class="toast align-items-center text-white border-0 mb-2 ${bgColor}" role="alert" aria-live="assertive" aria-atomic="true"><div class="d-flex"><div class="toast-body"><i class="bi ${icon} me-2 fs-5 align-middle"></i><strong>${title}</strong><br><span class="${type==='warning'?'text-dark':'text-white'}">${msg}</span></div><button type="button" class="btn-close ${type==='warning'?'':'btn-close-white'} me-2 m-auto" data-bs-dismiss="toast"></button></div></div>`; const div = document.createElement('div'); div.innerHTML = toastHTML; const toastElement = div.firstElementChild; toastContainer.appendChild(toastElement); const bsToast = new bootstrap.Toast(toastElement, { delay: 4000 }); bsToast.show(); toastElement.addEventListener('hidden.bs.toast', () => { toastElement.remove(); }); }
-    function ordinaLetti(criterio, isSilent = false) { const container = document.getElementById('cardsContainer'); if (!container) return; const cards = Array.from(container.querySelectorAll('.patient-card')); if (cards.length === 0) return; cards.sort((a, b) => { const getLettoVal = (el) => el.getAttribute('data-bed'); if(getLettoVal(a)==='NOTE') return 1; if(getLettoVal(b)==='NOTE') return -1; const cmpLetto = (bedA, bedB) => { let numA = parseInt(bedA, 10); let numB = parseInt(bedB, 10); if(!isNaN(numA) && !isNaN(numB)) return numA - numB; return String(bedA).localeCompare(String(bedB)); }; if (criterio === 'numero') return cmpLetto(getLettoVal(a), getLettoVal(b)); if (criterio === 'nome') { let nA=(a.querySelector('[data-field="Nome"]')?.innerText||'').trim().toLowerCase(), nB=(b.querySelector('[data-field="Nome"]')?.innerText||'').trim().toLowerCase(); if(!nA&&!nB) return cmpLetto(getLettoVal(a), getLettoVal(b)); if(!nA) return 1; if(!nB) return -1; let res = nA.localeCompare(nB); return res!==0 ? res : cmpLetto(getLettoVal(a), getLettoVal(b)); } if (criterio === 'tipologia') { let tA=(a.getAttribute('data-tipologia')||'').trim().toLowerCase(), tB=(b.getAttribute('data-tipologia')||'').trim().toLowerCase(); if(!tA&&!tB) return cmpLetto(getLettoVal(a), getLettoVal(b)); if(!tA) return 1; if(!tB) return -1; let res = tA.localeCompare(tB); return res!==0 ? res : cmpLetto(getLettoVal(a), getLettoVal(b)); } }); cards.forEach(card => container.appendChild(card)); localStorage.setItem('ordinamentoPreferito', criterio); if (typeof _sincronizzaOrdineAlt === 'function') _sincronizzaOrdineAlt(); }
+    function ordinaLetti(criterio, isSilent = false) { const container = document.getElementById('cardsContainer'); if (!container) return; const cards = Array.from(container.querySelectorAll('.patient-card')); if (cards.length === 0) return; cards.sort((a, b) => { const getLettoVal = (el) => el.getAttribute('data-bed'); if(getLettoVal(a)==='NOTE') return 1; if(getLettoVal(b)==='NOTE') return -1; const cmpLetto = (bedA, bedB) => { let numA = parseInt(bedA, 10); let numB = parseInt(bedB, 10); if(!isNaN(numA) && !isNaN(numB)) return numA - numB; return String(bedA).localeCompare(String(bedB)); }; if (criterio === 'numero') return cmpLetto(getLettoVal(a), getLettoVal(b)); if (criterio === 'nome') { let nA=(a.querySelector('[data-field="Nome"]')?.innerText||'').trim().toLowerCase(), nB=(b.querySelector('[data-field="Nome"]')?.innerText||'').trim().toLowerCase(); if(!nA&&!nB) return cmpLetto(getLettoVal(a), getLettoVal(b)); if(!nA) return 1; if(!nB) return -1; let res = nA.localeCompare(nB); return res!==0 ? res : cmpLetto(getLettoVal(a), getLettoVal(b)); } if (criterio === 'tipologia') { let tA=(a.getAttribute('data-tipologia')||'').trim().toLowerCase(), tB=(b.getAttribute('data-tipologia')||'').trim().toLowerCase(); if(!tA&&!tB) return cmpLetto(getLettoVal(a), getLettoVal(b)); if(!tA) return 1; if(!tB) return -1; let res = tA.localeCompare(tB); return res!==0 ? res : cmpLetto(getLettoVal(a), getLettoVal(b)); } }); cards.forEach(card => container.appendChild(card)); localStorage.setItem('ordinamentoPreferito', criterio); }
     function applicaOrdinamentoSalvato() { const saved = localStorage.getItem('ordinamentoPreferito'); if (saved) ordinaLetti(saved, true); else ordinaLetti('tipologia', true); }
 
-    // Restituisce i badge di stato per un letto.
-    // - Se la card è in focus mode su questo letto → ritorna SOLO il badge
-    //   dedicato #focusStatusBadge (fixed top-left della pagina, fuori dalla
-    //   card, sempre visibile anche scrollando). Riusato da tutti i flussi
-    //   di stato salvataggio (countdown, "Salvataggio in corso...", "Salvato
-    //   alle", retry, errori).
-    // - Altrimenti → ritorna i badge tradizionali dentro la card (main + alt).
+    // Restituisce il badge di stato per un letto.
+    // - Se la card è in focus mode su questo letto → #focusStatusBadge
+    //   (fixed top-left del viewport, sempre visibile anche scrollando).
+    // - Altrimenti → il badge dentro la card (vista alt: id "status-alt-{letto}").
+    // La vista standard è stata rimossa, quindi non cerchiamo più "status-{letto}".
     function _getBadges(letto) {
       if (typeof _focusCard !== 'undefined' && _focusCard &&
           _focusCard.getAttribute('data-bed') === letto) {
         var fsb = document.getElementById('focusStatusBadge');
         if (fsb) return [fsb];
       }
-      var b1 = document.getElementById('status-' + letto);
-      var b2 = document.getElementById('status-alt-' + letto);
-      return [b1, b2].filter(function(b) { return b; });
+      var b = document.getElementById('status-alt-' + letto);
+      return b ? [b] : [];
     }
-    // Compatibilità: restituisce il badge della vista attiva (usato per lettura stato)
+    // Compatibilità: restituisce il badge della vista (usato per lettura stato)
     function _getStatusBadge(letto) {
-      if (_viewAltAttiva) return document.getElementById('status-alt-' + letto);
-      return document.getElementById('status-' + letto);
+      return document.getElementById('status-alt-' + letto);
     }
 
     let timerSalvataggioLetto = {}; const RITARDO_SALVATAGGIO = 60000; let timerDissolvenza = {};
@@ -1149,8 +1146,8 @@
     function _popolaDropdownPazienti() {
       var menu = document.getElementById('menuListaPazienti');
       if (!menu) return;
-      var containerId = _viewAltAttiva ? 'cardsContainerAlt' : 'cardsContainer';
-      var cards = Array.from(document.querySelectorAll('#' + containerId + ' .patient-card'));
+      // Vista unica (alt) — container id rimane "cardsContainer"
+      var cards = Array.from(document.querySelectorAll('#cardsContainer .patient-card'));
       if (cards.length === 0) { menu.innerHTML = '<li><span class="dropdown-item text-muted fst-italic">Nessun paziente.</span></li>'; return; }
       var html = '';
       cards.forEach(function(card) {
@@ -1169,8 +1166,7 @@
         var a = e.target.closest('[data-scroll-letto]'); if (!a) return;
         var letto = a.getAttribute('data-scroll-letto');
         var tog = document.getElementById('dropdownListaPazienti'); if (tog) { var dd = bootstrap.Dropdown.getInstance(tog); if (dd) dd.hide(); }
-        var containerId = _viewAltAttiva ? 'cardsContainerAlt' : 'cardsContainer';
-        var card = document.querySelector('#' + containerId + ' .patient-card[data-bed="' + letto + '"]'); if (!card) return;
+        var card = document.querySelector('#cardsContainer .patient-card[data-bed="' + letto + '"]'); if (!card) return;
         setTimeout(function() {
           var top = card.getBoundingClientRect().top + window.pageYOffset - 80;
           window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
@@ -1208,11 +1204,10 @@
       });
 
       // ── 2. AGGIUNTE ───────────────────────────────────────────────────────
+      // Solo vista alt (la standard è stata rimossa) — un solo container
       var aggiunti = false;
-      var nuovoContainer    = nuovoDoc.getElementById('cardsContainer');
-      var nuovoContainerAlt = nuovoDoc.getElementById('cardsContainerAlt');
-      var attualeContainer    = document.querySelector('#cardsContainer');
-      var attualeContainerAlt = document.querySelector('#cardsContainerAlt');
+      var nuovoContainer   = nuovoDoc.getElementById('cardsContainer');
+      var attualeContainer = document.querySelector('#cardsContainer');
 
       lettiNuovi.forEach(function(letto) {
         if (lettiAttuali.has(letto)) return;
@@ -1222,14 +1217,16 @@
           var nuovaCard = nuovoContainer.querySelector('.patient-card[data-bed="' + letto + '"]');
           if (nuovaCard) attualeContainer.appendChild(nuovaCard.cloneNode(true));
         }
-        if (nuovoContainerAlt && attualeContainerAlt) {
-          var nuovaRiga = nuovoContainerAlt.querySelector('.patient-card[data-bed="' + letto + '"]');
-          if (nuovaRiga) attualeContainerAlt.appendChild(nuovaRiga.cloneNode(true));
+        // Badge tipologia: solo "badge-tipo-alt-" (era anche "badge-tipo-")
+        var badge = document.getElementById('badge-tipo-alt-' + letto);
+        if (badge) {
+          var val = (badge.innerText || '').trim();
+          if (val && val !== 'STANDARD') {
+            badge.style.backgroundColor = (typeof window._getColoreTipo === 'function')
+              ? window._getColoreTipo(val)
+              : stringToColor(val);
+          }
         }
-        ['badge-tipo-' + letto, 'badge-tipo-alt-' + letto].forEach(function(id) {
-          var badge = document.getElementById(id);
-          if (badge) { var val = (badge.innerText || '').trim(); if (val && val !== 'STANDARD') badge.style.backgroundColor = (typeof window._getColoreTipo === 'function') ? window._getColoreTipo(val) : stringToColor(val); }
-        });
       });
 
       if (aggiunti) { applicaOrdinamentoSalvato(); _inizializzaDataNascita(); }
@@ -1243,7 +1240,6 @@
       // ── 4. MESSAGGIO "NESSUN LETTO" ───────────────────────────────────────
       var _nessunLetto = document.querySelectorAll('.patient-card[data-bed]').length === 0;
       var noLettiMsg = document.getElementById('noLettiMsg'); if (noLettiMsg) noLettiMsg.style.display = _nessunLetto ? '' : 'none';
-      var noLettiMsgAlt = document.getElementById('noLettiMsgAlt'); if (noLettiMsgAlt) noLettiMsgAlt.style.display = _nessunLetto ? '' : 'none';
     }
 
     function _sincronizzaEPoiFai(callback, onProgress) {
@@ -1300,49 +1296,15 @@
       eseguiSalvataggioLettoCompleto(letto, card);
     }
 
-    // ============================================================
-    // TOGGLE VISUALIZZAZIONE ALTERNATIVA — localStorage
-    // (GitHub Pages: nessun reload, toggle locale)
-    // ============================================================
-    var _viewAltAttiva = false;
+    // NB: La vista standard è stata rimossa il 2026-05-11 in favore della
+    // sola vista alternativa (compatta a riga). Le funzioni _inizializzaView,
+    // toggleViewAlt, _sincronizzaOrdineAlt e la variabile _viewAltAttiva
+    // sono state rimosse. Codice preservato in docs/_legacy/standard-view.md.
+    // Il container resta con id "cardsContainer" per compat selettori.
 
+    // Inizializzazione "view" (no-op, mantenuto per non rompere chiamanti)
     function _inizializzaView() {
-      var saved = localStorage.getItem('viewAlt');
-      // Default: visualizzazione alternativa (null = prima volta, non ancora salvata)
-      _viewAltAttiva = saved === null ? true : (saved === '1');
-      var main = document.getElementById('cardsContainer');
-      var alt  = document.getElementById('cardsContainerAlt');
-      var btn  = document.querySelector('#btnToggleViewAlt');
-      if (_viewAltAttiva) {
-        if (main) main.classList.add('nascosto');
-        if (alt)  alt.classList.add('attiva');
-        if (btn)  { btn.classList.add('attiva'); btn.style.setProperty('background-color', '#212529', 'important'); btn.style.setProperty('color', '#fff', 'important'); btn.style.setProperty('border-radius', '4px', 'important'); }
-      } else {
-        if (main) main.classList.remove('nascosto');
-        if (alt)  alt.classList.remove('attiva');
-        if (btn)  { btn.classList.remove('attiva'); btn.style.removeProperty('background-color'); btn.style.removeProperty('color'); btn.style.removeProperty('border-radius'); }
-      }
       applicaOrdinamentoSalvato();
-    }
-
-    // GitHub Pages: toggle diretto senza reload
-    function toggleViewAlt() {
-      var nuovoStato = localStorage.getItem('viewAlt') === '1' ? '0' : '1';
-      localStorage.setItem('viewAlt', nuovoStato);
-      _inizializzaView();
-    }
-
-    // Sincronizza ordine alt con ordine main (usato da ordinaLetti)
-    function _sincronizzaOrdineAlt() {
-      var main = document.getElementById('cardsContainer');
-      var alt  = document.getElementById('cardsContainerAlt');
-      if (!main || !alt) return;
-      var ordine = Array.from(main.querySelectorAll('.patient-card[data-bed]'))
-                        .map(function(c) { return c.getAttribute('data-bed'); });
-      ordine.forEach(function(letto) {
-        var row = alt.querySelector('.patient-card[data-bed="' + letto + '"]');
-        if (row) alt.appendChild(row);
-      });
     }
 
     function ricaricaImmediata() {

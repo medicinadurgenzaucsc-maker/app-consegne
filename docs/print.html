@@ -132,7 +132,7 @@
     .alt-editable   { padding: 4px 5px; font-size: 0.75rem; word-wrap: break-word; }
     .alt-diagnosi   { font-weight: bold; font-size: 0.82rem; }
     .alt-diag-top   { display: flex; flex-direction: column; }
-    .alt-diag-bottom, .alt-diag-third { display: flex; flex-direction: column; }
+    .alt-diag-bottom, .alt-diag-fourth, .alt-diag-third { display: flex; flex-direction: column; }
 
     /* ── Scheda NOTE ── */
     .note-card .bed-number-box { background: #eceff1 !important; }
@@ -371,6 +371,10 @@
         '<div class="alt-diag-bottom">' +
           '<div class="alt-col-header-split">Piano Terapeutico</div>' +
           '<div class="alt-editable">' + (p.PianoTerapeutico || '') + '</div>' +
+        '</div>' +
+        '<div class="alt-diag-fourth">' +
+          '<div class="alt-col-header-split">Esami Colturali</div>' +
+          '<div class="alt-editable">' + (p.EsamiColturali || '') + '</div>' +
         '</div>' +
         '<div class="alt-diag-third">' +
           '<div class="alt-col-header-split">Da Fare / Richieste</div>' +
