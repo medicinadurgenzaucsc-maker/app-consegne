@@ -283,19 +283,28 @@
         sw += '<button class="tb-color-swatch" data-color="' + colors[i][0] + '" style="background:' + colors[i][0] + '" title="' + colors[i][1] + '"></button>';
       }
 
-      // Pulsanti aggiuntivi per campo specifico (a destra dell'evidenziatore):
-      // - Diaria: "+" verde che inserisce data oggi (-DD/MM: in grassetto)
-      // - Esami Colturali, Da Fare: checkbox che inserisce un check item con data
+      // Pulsanti aggiuntivi per campo specifico (a destra dell'evidenziatore).
+      // SVG inline per look più curato e indipendente da Bootstrap Icons.
+      // - Diaria: cerchio verde con + bianco al centro
+      // - Esami Colturali, Da Fare: quadrato verde con check bianco
+      var svgPlus = '<svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">' +
+                    '<circle cx="12" cy="12" r="11" fill="#2e7d32"/>' +
+                    '<path d="M12 6.5v11 M6.5 12h11" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/>' +
+                    '</svg>';
+      var svgCheckSquare = '<svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">' +
+                           '<rect x="3" y="3" width="18" height="18" rx="3" fill="#2e7d32"/>' +
+                           '<path d="M7 12l3 3 7-7" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>' +
+                           '</svg>';
       var extra = '';
       if (campo === 'Diaria') {
         extra = '<span class="tb-sep"></span>'
               + '<button class="tb-btn tb-data-diaria" data-cmd="insertDataDiaria" title="Aggiungi data odierna">'
-              +   '<i class="bi bi-plus-circle-fill" style="color:#fff;background:#2e7d32;border-radius:50%;font-size:1.1rem;line-height:1;"></i>'
+              +   svgPlus
               + '</button>';
       } else if (campo === 'EsamiColturali' || campo === 'DaFare') {
         extra = '<span class="tb-sep"></span>'
               + '<button class="tb-btn tb-data-check" data-cmd="insertChecklistItem" title="Aggiungi item con checkbox">'
-              +   '<i class="bi bi-check2-square" style="color:#2e7d32;font-size:1.1rem;line-height:1;"></i>'
+              +   svgCheckSquare
               + '</button>';
       }
 
@@ -444,9 +453,23 @@
       return String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0');
     }
 
-    // Inserisce HTML al cursore se è dentro `area`; altrimenti in fondo all'area.
-    // Sposta il cursore subito dopo l'inserto.
-    function _insertHtmlInArea(area, html) {
+    // SVG checkbox stati — più carini delle emoji ☐/☑ e renderizzati
+    // identicamente su qualsiasi browser (no font tweaks fra OS).
+    var _SVG_CHECK_OFF =
+      '<svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-3px;">' +
+        '<rect x="3" y="3" width="18" height="18" rx="3" fill="#fff" stroke="#90a4ae" stroke-width="2"/>' +
+      '</svg>';
+    var _SVG_CHECK_ON =
+      '<svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-3px;">' +
+        '<rect x="3" y="3" width="18" height="18" rx="3" fill="#2e7d32"/>' +
+        '<path d="M7 12l3 3 7-7" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>' +
+      '</svg>';
+
+    // Inserisce HTML SEMPRE al cursore se è dentro `area`; se NO,
+    // appende in fondo all'area (su nuova riga per blocchi non-inline).
+    // Ritorna la modalità usata: 'cursor' | 'append'.
+    function _insertHtmlInArea(area, html, opzioni) {
+      opzioni = opzioni || {};
       area.focus();
       var sel = window.getSelection();
       var inside = false;
@@ -454,51 +477,85 @@
         var r = sel.getRangeAt(0);
         if (r.commonAncestorContainer && area.contains(r.commonAncestorContainer)) inside = true;
       }
-      if (inside && _tbSavedRange && area.contains(_tbSavedRange.commonAncestorContainer)) {
-        // Usa selezione salvata da mousedown (preferita)
+      // Preferisci la selezione salvata dal mousedown listener
+      if (_tbSavedRange && area.contains(_tbSavedRange.commonAncestorContainer)) {
         sel.removeAllRanges();
         sel.addRange(_tbSavedRange);
-      } else if (!inside) {
-        // Cursore fuori dall'area → metti in fondo
-        var range = document.createRange();
-        range.selectNodeContents(area);
-        range.collapse(false);
-        sel.removeAllRanges();
-        sel.addRange(range);
+        inside = true;
       }
-      // Inserisce HTML usando execCommand (deprecated ma ampiamente supportato
-      // e compatibile con undo/redo del browser).
+      if (!inside) {
+        // Cursore fuori dall'area → appendi in fondo + (se richiesto) vai a capo
+        var newRange = document.createRange();
+        newRange.selectNodeContents(area);
+        newRange.collapse(false);
+        sel.removeAllRanges();
+        sel.addRange(newRange);
+        if (opzioni.nuovaRigaSeFuoriCursore) {
+          // Se la fine non è già preceduta da blocco/br → aggiungi <br>
+          // (semplificazione: lasciamo il browser inserire il break necessario
+          // tramite il prefisso <br> nel HTML stesso).
+          html = '<br>' + html;
+        }
+      }
       document.execCommand('insertHTML', false, html);
-      // Dispatch input per triggerare salvataggio + placeholder
       area.dispatchEvent(new Event('input', { bubbles: true }));
+      return inside ? 'cursor' : 'append';
     }
 
-    // Diaria: inserisce "-DD/MM: " (grassetto) al cursore o in fondo
+    // Piazza il caret alla FINE di un nodo DOM (dopo l'ultimo carattere
+    // o l'ultimo figlio editabile).
+    function _piazzaCaretFineNodo(area, nodo) {
+      if (!nodo) return;
+      area.focus();
+      var range = document.createRange();
+      range.selectNodeContents(nodo);
+      range.collapse(false);
+      var sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+
+    // Diaria: inserisce "-DD/MM: " (grassetto) al cursore o in fondo su nuova riga
     function _insertDataDiaria(area) {
       var dataStr = _oggiDDMM();
-      _insertHtmlInArea(area, '<strong>-' + dataStr + ':</strong>&nbsp;');
+      var html = '<strong>-' + dataStr + ':</strong>&nbsp;';
+      _insertHtmlInArea(area, html, { nuovaRigaSeFuoriCursore: true });
+      // Caret naturalmente dopo &nbsp; → nessun riposizionamento necessario
     }
 
     // EsamiColturali / DaFare: inserisce un item checklist con data odierna
-    // Struttura: <div class="cl-item">
-    //              <span class="cl-check" contenteditable="false">☐</span>
-    //              <strong>DD/MM:</strong>&nbsp;
-    //            </div>
+    // Struttura HTML inserita:
+    //   <div class="cl-item">
+    //     - <span class="cl-check" contenteditable=false>SVG_OFF</span>
+    //     <strong>DD/MM:</strong>&nbsp;
+    //   </div>
     // Lo span .cl-check è contenteditable=false così il caret non ci entra
     // ed è cliccabile come target del toggle (vedi listener sotto).
+    // Dopo insertHTML piazziamo il caret alla FINE del .cl-item appena
+    // creato → cursore subito dopo "DD/MM: ", pronto a scrivere.
     function _insertChecklistItem(area) {
       var dataStr = _oggiDDMM();
       var html = '<div class="cl-item">' +
-                 '- <span class="cl-check" contenteditable="false" role="button" aria-checked="false">☐</span> ' +
+                 '- <span class="cl-check" contenteditable="false" role="button" aria-checked="false">' +
+                   _SVG_CHECK_OFF +
+                 '</span> ' +
                  '<strong>' + dataStr + ':</strong>&nbsp;' +
                  '</div>';
-      _insertHtmlInArea(area, html);
+      _insertHtmlInArea(area, html, { nuovaRigaSeFuoriCursore: false });
+      // Trova l'ultimo .cl-item nell'area (l'appena inserito) e
+      // piazza caret alla sua fine.
+      var items = area.querySelectorAll('.cl-item');
+      var ultimo = items[items.length - 1];
+      if (ultimo) _piazzaCaretFineNodo(area, ultimo);
     }
 
     // ── Toggle checkbox listener ──────────────────────────────────────────────
     // Click su .cl-check dentro un'editable-area:
-    //   ☐ → ☑ + aggiunge sotto .cl-esito con cursore lì
-    //   ☑ → ☐ + se .cl-esito è vuota la rimuove, altrimenti barra l'intero item
+    //   OFF → ON: appare sotto la freccia esito con la DATA odierna
+    //             (↳ <strong>DD/MM:</strong>&nbsp;) e caret pronto a scrivere.
+    //   ON → OFF: se l'esito è vuoto (solo arrow+data senza testo) → rimuovi
+    //             la riga. Se ha testo aggiunto dall'utente → applica
+    //             classe .cl-sbarrato all'intero item (archivio storico).
     document.addEventListener('click', function(e) {
       var chk = e.target.closest && e.target.closest('.cl-check');
       if (!chk) return;
@@ -508,44 +565,38 @@
       e.stopPropagation();
       var item = chk.closest('.cl-item');
       if (!item) return;
-      var flagged = (chk.textContent || '').indexOf('☑') !== -1;
+      // Detect stato: aria-checked (nuova versione SVG) OR emoji ☑ (legacy)
+      var flagged = chk.getAttribute('aria-checked') === 'true' ||
+                    (chk.textContent || '').indexOf('☑') !== -1;
       if (!flagged) {
-        // ☐ → ☑
-        chk.textContent = '☑';
+        // OFF → ON
+        chk.innerHTML = _SVG_CHECK_ON;
         chk.setAttribute('aria-checked', 'true');
-        // Aggiungi riga esito se non esiste
         var esito = item.querySelector('.cl-esito');
         if (!esito) {
+          var dataStr = _oggiDDMM();
           esito = document.createElement('div');
           esito.className = 'cl-esito';
-          esito.innerHTML = '<span contenteditable="false" class="cl-esito-arrow">↳&nbsp;</span>';
+          esito.innerHTML = '<span contenteditable="false" class="cl-esito-arrow">↳&nbsp;</span>' +
+                            '<strong>' + dataStr + ':</strong>&nbsp;';
           item.appendChild(esito);
         }
-        // Sposta cursore alla fine di .cl-esito
-        area.focus();
-        var sel = window.getSelection();
-        var range = document.createRange();
-        range.selectNodeContents(esito);
-        range.collapse(false);
-        sel.removeAllRanges();
-        sel.addRange(range);
+        _piazzaCaretFineNodo(area, esito);
       } else {
-        // ☑ → ☐
-        chk.textContent = '☐';
+        // ON → OFF
+        chk.innerHTML = _SVG_CHECK_OFF;
         chk.setAttribute('aria-checked', 'false');
-        var esito = item.querySelector('.cl-esito');
-        if (esito) {
-          // Controlla se la riga esito ha testo SIGNIFICATIVO (oltre alla freccia)
-          var clone = esito.cloneNode(true);
-          var arrow = clone.querySelector('.cl-esito-arrow');
-          if (arrow) arrow.remove();
+        var esitoEl = item.querySelector('.cl-esito');
+        if (esitoEl) {
+          // Controlla se ha testo SIGNIFICATIVO oltre alla freccia e alla data
+          var clone = esitoEl.cloneNode(true);
+          var arr = clone.querySelector('.cl-esito-arrow'); if (arr) arr.remove();
+          var stro = clone.querySelector('strong');         if (stro) stro.remove();
           var testoEsito = (clone.textContent || '').replace(/\s+/g, '').trim();
           if (testoEsito === '') {
-            // Vuota → rimuovi
-            esito.remove();
+            esitoEl.remove();
             item.classList.remove('cl-sbarrato');
           } else {
-            // Ha testo → sbarra tutto l'item come archivio storico
             item.classList.add('cl-sbarrato');
           }
         }
