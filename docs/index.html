@@ -550,12 +550,22 @@
     }
 
     // ── Toggle checkbox listener ──────────────────────────────────────────────
-    // Click su .cl-check dentro un'editable-area:
-    //   OFF → ON: appare sotto la freccia esito con la DATA odierna
-    //             (↳ <strong>DD/MM:</strong>&nbsp;) e caret pronto a scrivere.
-    //   ON → OFF: se l'esito è vuoto (solo arrow+data senza testo) → rimuovi
-    //             la riga. Se ha testo aggiunto dall'utente → applica
-    //             classe .cl-sbarrato all'intero item (archivio storico).
+    // Tre stati possibili di un .cl-item:
+    //   1) ☐ vuoto    — no .cl-esito sotto
+    //   2) ☑ flaggato — .cl-esito sotto con dati attivi
+    //   3) ☐ sbarrato — .cl-esito sotto con classe .cl-esito-sbarrato
+    //                   (archivio storico, l'utente ha tolto il flag ma vuole
+    //                    mantenere l'esito visibile barrato)
+    //
+    // Transizioni al click su .cl-check:
+    //   1 → 2 (era ☐, esito assente): crea esito + flag ON, caret a fine esito
+    //   2 → 3 (era ☑, esito ha testo): flag OFF + .cl-esito-sbarrato
+    //   2 → 1 (era ☑, esito vuoto):    flag OFF + rimuovi esito
+    //   3 → 2 (era ☐ sbarrato):        flag ON + rimuovi .cl-esito-sbarrato,
+    //                                  caret a fine esito
+    //
+    // NB: la BARRATURA viene applicata SOLO all'esito (.cl-esito-sbarrato),
+    // NON all'intero item (il nome dell'esame resta leggibile).
     document.addEventListener('click', function(e) {
       var chk = e.target.closest && e.target.closest('.cl-check');
       if (!chk) return;
@@ -565,44 +575,87 @@
       e.stopPropagation();
       var item = chk.closest('.cl-item');
       if (!item) return;
-      // Detect stato: aria-checked (nuova versione SVG) OR emoji ☑ (legacy)
+      // Detect stato flag: aria-checked (SVG) OR emoji ☑ (legacy)
       var flagged = chk.getAttribute('aria-checked') === 'true' ||
                     (chk.textContent || '').indexOf('☑') !== -1;
+      var esitoEl = item.querySelector('.cl-esito');
+
       if (!flagged) {
-        // OFF → ON
+        // Click su ☐ → andiamo verso ☑
         chk.innerHTML = _SVG_CHECK_ON;
         chk.setAttribute('aria-checked', 'true');
-        var esito = item.querySelector('.cl-esito');
-        if (!esito) {
+        if (esitoEl) {
+          // 3 → 2: c'era un esito barrato (archivio). Togliamo le barre.
+          esitoEl.classList.remove('cl-esito-sbarrato');
+          // Compat: rimuovi anche eventuale vecchia classe sull'item
+          item.classList.remove('cl-sbarrato');
+        } else {
+          // 1 → 2: nessun esito esistente, ne creiamo uno nuovo
           var dataStr = _oggiDDMM();
-          esito = document.createElement('div');
-          esito.className = 'cl-esito';
-          esito.innerHTML = '<span contenteditable="false" class="cl-esito-arrow">↳&nbsp;</span>' +
-                            '<strong>' + dataStr + ':</strong>&nbsp;';
-          item.appendChild(esito);
+          esitoEl = document.createElement('div');
+          esitoEl.className = 'cl-esito';
+          esitoEl.innerHTML = '<span contenteditable="false" class="cl-esito-arrow">↳&nbsp;</span>' +
+                              '<strong>' + dataStr + ':</strong>&nbsp;';
+          item.appendChild(esitoEl);
         }
-        _piazzaCaretFineNodo(area, esito);
+        _piazzaCaretFineNodo(area, esitoEl);
       } else {
-        // ON → OFF
+        // Click su ☑ → andiamo verso ☐
         chk.innerHTML = _SVG_CHECK_OFF;
         chk.setAttribute('aria-checked', 'false');
-        var esitoEl = item.querySelector('.cl-esito');
         if (esitoEl) {
-          // Controlla se ha testo SIGNIFICATIVO oltre alla freccia e alla data
+          // Controlla testo significativo (ignora arrow + data in grassetto)
           var clone = esitoEl.cloneNode(true);
           var arr = clone.querySelector('.cl-esito-arrow'); if (arr) arr.remove();
           var stro = clone.querySelector('strong');         if (stro) stro.remove();
           var testoEsito = (clone.textContent || '').replace(/\s+/g, '').trim();
           if (testoEsito === '') {
+            // 2 → 1: esito vuoto, rimuovi tutto
             esitoEl.remove();
-            item.classList.remove('cl-sbarrato');
+            item.classList.remove('cl-sbarrato'); // compat legacy
           } else {
-            item.classList.add('cl-sbarrato');
+            // 2 → 3: barra SOLO l'esito (no item completo)
+            esitoEl.classList.add('cl-esito-sbarrato');
+            item.classList.remove('cl-sbarrato'); // compat: rimuovi vecchia classe
           }
         }
       }
       area.dispatchEvent(new Event('input', { bubbles: true }));
     });
+
+    // ── Auto-deflag se l'utente cancella TUTTO il contenuto dell'esito ────────
+    // Quando l'utente cancella manualmente freccia + data + testo dall'esito
+    // (rimanendo .cl-esito completamente vuoto), il sistema toglie automaticamente
+    // il flag (riporta ☑ a ☐) e rimuove la riga esito vuota.
+    // NB: durante il flag automatico l'esito viene popolato subito con
+    // "↳ DD/MM:&nbsp;" quindi NON è mai vuoto a quel momento — il check
+    // qui non interferisce.
+    document.addEventListener('input', function(e) {
+      var area = e.target.closest && e.target.closest('.editable-area');
+      if (!area) return;
+      area.querySelectorAll('.cl-item').forEach(function(item) {
+        var esito = item.querySelector('.cl-esito');
+        if (!esito) return;
+        // Esito completamente vuoto = no testo, no markup significativo
+        var html = (esito.innerHTML || '')
+          .replace(/<br\s*\/?\s*>/gi, '')
+          .replace(/&nbsp;/gi, '')
+          .replace(/<span[^>]*class=["']cl-esito-arrow["'][^>]*>[^<]*<\/span>/gi, '')
+          .replace(/\s+/g, '');
+        var text = (esito.textContent || '').replace(/\s+/g, '').trim();
+        // È vuoto SE l'innerHTML pulito è vuoto E il testo visibile è vuoto.
+        // (Con l'esito appena creato l'innerHTML contiene span+strong+data → non vuoto)
+        if (html === '' && text === '') {
+          esito.remove();
+          var chk = item.querySelector('.cl-check');
+          if (chk) {
+            chk.innerHTML = _SVG_CHECK_OFF;
+            chk.setAttribute('aria-checked', 'false');
+          }
+          item.classList.remove('cl-sbarrato');
+        }
+      });
+    }, true);
 
     var _focusCard          = null;
     var _focusOrigStyle     = null;

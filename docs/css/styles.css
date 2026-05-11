@@ -663,12 +663,19 @@ span.valore-giorni.alt-info-val { font-weight: normal; }
   color: #607d8b;
   margin-right: 2px;
 }
-/* Item sbarrato (deflag con esito non vuoto): archivio storico */
-.cl-item.cl-sbarrato {
+/* Esito sbarrato (deflag con esito non vuoto): solo l'esito è barrato,
+   il nome dell'esame resta leggibile sopra. Riflag rimuove la classe. */
+.cl-esito.cl-esito-sbarrato {
   text-decoration: line-through;
   color: #8b9398;
 }
-.cl-item.cl-sbarrato .cl-check { text-decoration: none; }
+.cl-esito.cl-esito-sbarrato .cl-esito-arrow { text-decoration: none; }
+.cl-esito.cl-esito-sbarrato strong { text-decoration: line-through; }
+
+/* Compat legacy: vecchia classe .cl-item.cl-sbarrato (barrava tutto l'item) —
+   se presente da check pre-aggiornamento, rendiamo no-op (l'item non barra più).
+   Le nuove operazioni rimuovono questa classe automaticamente. */
+.cl-item.cl-sbarrato { text-decoration: none; color: inherit; }
 
 /* ===== Bottoni speciali toolbar (Diaria + / Checklist) ===== */
 .focus-toolbar .tb-data-diaria,
