@@ -651,6 +651,42 @@
       area.dispatchEvent(new Event('input', { bubbles: true }));
     });
 
+    // ── Enter dentro .cl-item / .cl-esito → esce dal contesto checklist ──────
+    // Quando l'utente preme Enter (senza Shift) mentre il caret è dentro
+    // un .cl-item o .cl-esito, vogliamo USCIRE completamente dall'item:
+    // la nuova riga è "testo libero", non continuazione del nome esame né
+    // dell'esito. Inoltre evita che il nuovo block erediti la classe
+    // .cl-esito-sbarrato (text-decoration:line-through) se siamo nel
+    // contesto sbarrato.
+    //
+    // Comportamento: il nuovo <div> diventa SIBLING del .cl-item completo,
+    // quindi figlio diretto dell'.editable-area → fuori da qualsiasi
+    // contesto formattato.
+    document.addEventListener('keydown', function(e) {
+      if (e.key !== 'Enter' || e.shiftKey) return;
+      var sel = window.getSelection();
+      if (!sel || sel.rangeCount === 0) return;
+      var startNode = sel.getRangeAt(0).startContainer;
+      if (startNode.nodeType === Node.TEXT_NODE) startNode = startNode.parentElement;
+      if (!startNode || !startNode.closest) return;
+      var clItem = startNode.closest('.cl-item');
+      if (!clItem) return;
+      var area = clItem.closest('.editable-area');
+      if (!area) return;
+      e.preventDefault();
+      // Nuovo div vuoto editabile come sibling del .cl-item completo
+      var newDiv = document.createElement('div');
+      newDiv.innerHTML = '<br>';
+      clItem.parentNode.insertBefore(newDiv, clItem.nextSibling);
+      // Caret nel nuovo div
+      var newRange = document.createRange();
+      newRange.setStart(newDiv, 0);
+      newRange.setEnd(newDiv, 0);
+      sel.removeAllRanges();
+      sel.addRange(newRange);
+      area.dispatchEvent(new Event('input', { bubbles: true }));
+    }, true);
+
     // ── Auto-deflag se l'utente cancella TUTTO il contenuto dell'esito ────────
     // Quando l'utente cancella manualmente freccia + data + testo dall'esito
     // (rimanendo .cl-esito completamente vuoto), il sistema toglie automaticamente
