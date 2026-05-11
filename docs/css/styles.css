@@ -391,6 +391,41 @@ body { padding-top: 70px; background-color: #d4e6f1 !important; }
    99999) così conferme, toast e diagnostica sono SEMPRE visibili. */
 .swal2-container { z-index: 200000 !important; }
 
+/* ===== Badge "Update" — colore arancione vivo + animazione lampeggio =====
+   Sostituisce il default btn-warning (giallo-arancione) di Bootstrap con
+   un gradient arancione vivo e una pulsazione continua per attirare
+   l'attenzione del medico. */
+@keyframes _updateBadgePulse {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 2px 8px rgba(230,81,0,0.4);
+    background: linear-gradient(135deg, #ff6f00, #e65100);
+  }
+  50% {
+    transform: scale(1.06);
+    box-shadow: 0 6px 20px rgba(230,81,0,0.85);
+    background: linear-gradient(135deg, #ff8f00, #ff6f00);
+  }
+}
+#btnAggiornamentoDisponibile {
+  background: linear-gradient(135deg, #ff6f00, #e65100) !important;
+  color: #fff !important;
+  animation: _updateBadgePulse 1.1s ease-in-out infinite;
+  transition: filter 0.15s;
+}
+#btnAggiornamentoDisponibile:hover {
+  filter: brightness(1.1);
+  animation-play-state: paused; /* sospende il lampeggio durante l'hover */
+}
+#btnAggiornamentoDisponibile:disabled {
+  animation: none;
+  opacity: 0.65;
+  cursor: wait;
+}
+#btnAggiornamentoDisponibile #iconUpdateBadge {
+  color: #fffde7; /* leggero contrasto giallo chiaro sul triangolo */
+}
+
 
 /* ================================================================
    VISUALIZZAZIONE ALTERNATIVA (da ViewAlt.html)

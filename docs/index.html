@@ -1089,12 +1089,11 @@
         <!-- Badge "aggiornamento disponibile" — appare quando Supabase.app_version cambia -->
         <li class="nav-item me-2" id="liAggiornamentoDisponibile">
           <button id="btnAggiornamentoDisponibile"
-                  class="btn btn-warning fw-bold rounded-pill"
+                  class="fw-bold rounded-pill"
                   onclick="_applicaAggiornamentoVersione()"
                   title="Nuovo deploy disponibile — clicca per ricaricare"
-                  style="display:none;align-items:center;gap:6px;padding:3px 12px;font-size:0.78rem;line-height:1;">
-            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"
-                  style="width:0.85rem;height:0.85rem;border-width:2px;animation-duration:1.2s;"></span>
+                  style="display:none;align-items:center;gap:6px;padding:4px 14px;font-size:0.78rem;line-height:1;border:none;color:#fff;">
+            <i class="bi bi-exclamation-triangle-fill" id="iconUpdateBadge" style="font-size:0.92rem;line-height:1;"></i>
             <span>Update</span>
           </button>
         </li>
