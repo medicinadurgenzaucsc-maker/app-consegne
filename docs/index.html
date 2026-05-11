@@ -502,25 +502,55 @@
       return inside ? 'cursor' : 'append';
     }
 
-    // Piazza il caret alla FINE di un nodo DOM (dopo l'ultimo carattere
-    // o l'ultimo figlio editabile).
+    // Piazza il caret alla FINE di un nodo DOM. Per nodi block (div) il
+    // browser tende a piazzare il caret "tra il div e quello che segue"
+    // visualizzando il cursore all'inizio della riga dopo. Per evitarlo
+    // posizioniamo il caret sull'ULTIMO text node nel sottoalbero del
+    // nodo, alla fine del suo testo (caret dentro la riga del div).
     function _piazzaCaretFineNodo(area, nodo) {
       if (!nodo) return;
       area.focus();
       var range = document.createRange();
-      range.selectNodeContents(nodo);
-      range.collapse(false);
+      var walker = document.createTreeWalker(nodo, NodeFilter.SHOW_TEXT, null, false);
+      var lastText = null, n;
+      while ((n = walker.nextNode())) lastText = n;
+      if (lastText) {
+        range.setStart(lastText, lastText.nodeValue.length);
+        range.setEnd(lastText, lastText.nodeValue.length);
+      } else {
+        range.selectNodeContents(nodo);
+        range.collapse(false);
+      }
       var sel = window.getSelection();
       sel.removeAllRanges();
       sel.addRange(range);
     }
 
+    // Sposta il caret al MARKER (#__caret_target__) e rimuove il marker.
+    // Tecnica più robusta di _piazzaCaretFineNodo perché il marker è un
+    // elemento DOM esplicito creato esattamente dove vogliamo il caret.
+    function _spostaCaretAlMarker(area) {
+      var marker = area.querySelector('#__caret_target__');
+      if (!marker) return;
+      area.focus();
+      var range = document.createRange();
+      range.setStartBefore(marker);
+      range.setEndBefore(marker);
+      var sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      // Rimuovi il marker: il range punta a "prima del nodo marker", quando
+      // rimuovo il marker il punto rimane semanticamente dove era.
+      if (marker.parentNode) marker.parentNode.removeChild(marker);
+    }
+
     // Diaria: inserisce "-DD/MM: " (grassetto) al cursore o in fondo su nuova riga
     function _insertDataDiaria(area) {
       var dataStr = _oggiDDMM();
-      var html = '<strong>-' + dataStr + ':</strong>&nbsp;';
+      // Marker subito dopo &nbsp; → caret precise lì dopo insertHTML
+      var html = '<strong>-' + dataStr + ':</strong>&nbsp;<span id="__caret_target__"></span>';
       _insertHtmlInArea(area, html, { nuovaRigaSeFuoriCursore: true });
-      // Caret naturalmente dopo &nbsp; → nessun riposizionamento necessario
+      _spostaCaretAlMarker(area);
     }
 
     // EsamiColturali / DaFare: inserisce un item checklist con data odierna
@@ -528,11 +558,10 @@
     //   <div class="cl-item">
     //     - <span class="cl-check" contenteditable=false>SVG_OFF</span>
     //     <strong>DD/MM:</strong>&nbsp;
+    //     <span id="__caret_target__"></span>  ← marker per posizionamento caret
     //   </div>
-    // Lo span .cl-check è contenteditable=false così il caret non ci entra
-    // ed è cliccabile come target del toggle (vedi listener sotto).
-    // Dopo insertHTML piazziamo il caret alla FINE del .cl-item appena
-    // creato → cursore subito dopo "DD/MM: ", pronto a scrivere.
+    // Il marker viene rimosso da _spostaCaretAlMarker; il caret resta nel
+    // punto giusto subito dopo "DD/MM: ", DENTRO il div block.
     function _insertChecklistItem(area) {
       var dataStr = _oggiDDMM();
       var html = '<div class="cl-item">' +
@@ -540,13 +569,10 @@
                    _SVG_CHECK_OFF +
                  '</span> ' +
                  '<strong>' + dataStr + ':</strong>&nbsp;' +
+                 '<span id="__caret_target__"></span>' +
                  '</div>';
       _insertHtmlInArea(area, html, { nuovaRigaSeFuoriCursore: false });
-      // Trova l'ultimo .cl-item nell'area (l'appena inserito) e
-      // piazza caret alla sua fine.
-      var items = area.querySelectorAll('.cl-item');
-      var ultimo = items[items.length - 1];
-      if (ultimo) _piazzaCaretFineNodo(area, ultimo);
+      _spostaCaretAlMarker(area);
     }
 
     // ── Toggle checkbox listener ──────────────────────────────────────────────
@@ -587,18 +613,20 @@
         if (esitoEl) {
           // 3 → 2: c'era un esito barrato (archivio). Togliamo le barre.
           esitoEl.classList.remove('cl-esito-sbarrato');
-          // Compat: rimuovi anche eventuale vecchia classe sull'item
-          item.classList.remove('cl-sbarrato');
+          item.classList.remove('cl-sbarrato'); // compat legacy
+          // Caret a fine esito (subito dopo il testo esistente)
+          _piazzaCaretFineNodo(area, esitoEl);
         } else {
-          // 1 → 2: nessun esito esistente, ne creiamo uno nuovo
+          // 1 → 2: nessun esito esistente, ne creiamo uno nuovo con marker
           var dataStr = _oggiDDMM();
           esitoEl = document.createElement('div');
           esitoEl.className = 'cl-esito';
           esitoEl.innerHTML = '<span contenteditable="false" class="cl-esito-arrow">↳&nbsp;</span>' +
-                              '<strong>' + dataStr + ':</strong>&nbsp;';
+                              '<strong>' + dataStr + ':</strong>&nbsp;' +
+                              '<span id="__caret_target__"></span>';
           item.appendChild(esitoEl);
+          _spostaCaretAlMarker(area);
         }
-        _piazzaCaretFineNodo(area, esitoEl);
       } else {
         // Click su ☑ → andiamo verso ☐
         chk.innerHTML = _SVG_CHECK_OFF;
