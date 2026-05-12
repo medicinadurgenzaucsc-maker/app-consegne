@@ -534,21 +534,31 @@
     }
 
     // Sposta il caret al MARKER (#__caret_target__) e rimuove il marker.
-    // Tecnica più robusta di _piazzaCaretFineNodo perché il marker è un
-    // elemento DOM esplicito creato esattamente dove vogliamo il caret.
+    // Strategia robusta: calcola PRIMA indice del marker nel parent,
+    // poi rimuove il marker, POI crea range a quell'indice. Evita
+    // l'invalidazione del range tipica di setStartBefore + removeChild.
     function _spostaCaretAlMarker(area) {
       var marker = area.querySelector('#__caret_target__');
       if (!marker) return;
+      var parent = marker.parentNode;
+      if (!parent) return;
+      // Indice del marker tra i siblings (NON childNodes per evitare text nodes
+      // ambigui — usiamo posizione globale)
+      var children = parent.childNodes;
+      var index = -1;
+      for (var i = 0; i < children.length; i++) {
+        if (children[i] === marker) { index = i; break; }
+      }
+      if (index < 0) return;
+      parent.removeChild(marker);
+      // Focus DOPO la rimozione del marker, su area non già focused
       area.focus();
       var range = document.createRange();
-      range.setStartBefore(marker);
-      range.setEndBefore(marker);
+      range.setStart(parent, index);
+      range.setEnd(parent, index);
       var sel = window.getSelection();
       sel.removeAllRanges();
       sel.addRange(range);
-      // Rimuovi il marker: il range punta a "prima del nodo marker", quando
-      // rimuovo il marker il punto rimane semanticamente dove era.
-      if (marker.parentNode) marker.parentNode.removeChild(marker);
     }
 
     // Diaria: inserisce "-DD/MM: " (grassetto) al cursore o in fondo su nuova riga
