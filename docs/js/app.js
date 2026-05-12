@@ -813,6 +813,8 @@
       aree.forEach(area => { const campo = area.getAttribute('data-field'); if(campo) datiPaziente[campo] = area.classList.contains('plain-text') ? area.innerText : area.innerHTML; });
       const sessoEl = card.querySelector('.sesso-symbol[data-field="Sesso"]');
       if (sessoEl) datiPaziente['Sesso'] = sessoEl.getAttribute('data-sesso') || '';
+      const dimRowEl = card.querySelector('.dim-row[data-field="Dimissibile"]');
+      if (dimRowEl) datiPaziente['Dimissibile'] = dimRowEl.getAttribute('data-value') || '';
       const dataRicInput = card.querySelector('.data-ricovero-text');
       if(dataRicInput) { var drP = dataRicInput.value.split('/'); datiPaziente['DataRicovero'] = (drP.length===3&&drP[2].length===4) ? drP[2]+'-'+drP[1].padStart(2,'0')+'-'+drP[0].padStart(2,'0') : ''; }
       const nascitaInput = card.querySelector('.data-nascita-text');
@@ -1032,12 +1034,22 @@
         _opServer({ barMsg: 'Svuotamento letto in corso...', successTitle: 'Letto svuotato', successText: 'I dati del letto ' + numLetto + ' sono stati cancellati.', errorTitle: 'Errore',
           afterSync: function() {
             document.querySelectorAll('.patient-card[data-bed="' + numLetto + '"]').forEach(function(card) {
-              ['Nome','Diagnosi','Eta','NoteTerapia','Diaria','DaFare','PianoTerapeutico','Allergie','CodiceSanitario','Ossigeno'].forEach(function(campo) {
+              ['Nome','Diagnosi','Eta','NoteTerapia','Diaria','DaFare','PianoTerapeutico','EsamiColturali','Allergie','CodiceSanitario','Ossigeno'].forEach(function(campo) {
                 var el = card.querySelector('[data-field="' + campo + '"]'); if (el) el.innerHTML = '';
               });
               var dateEl = card.querySelector('.data-ricovero-text'); if (dateEl) dateEl.value = '';
               var nascEl = card.querySelector('.data-nascita-text'); if (nascEl) nascEl.value = '';
               var ggEl = card.querySelector('.valore-giorni'); if (ggEl) ggEl.innerText = '-';
+              // Reset campo Dimissibile
+              var dimRow = card.querySelector('.dim-row[data-field="Dimissibile"]');
+              if (dimRow) {
+                dimRow.setAttribute('data-value', '');
+                var cb = dimRow.querySelector('.dim-checkbox'); if (cb) cb.checked = false;
+                var info = dimRow.querySelector('.dim-data-info, .dim-data-info-empty');
+                if (info) { info.className = 'dim-data-info-empty text-muted'; info.innerHTML = ''; }
+              }
+              var dimIcon = card.querySelector('.tipo-badge-wrap .dim-icon-badge');
+              if (dimIcon) dimIcon.remove();
             });
           },
           serverFn: function(onOk, onErr) { _sbDimettiLetto(numLetto).then(function(res) { if (res.success) onOk(); else onErr(res.message); }).catch(function(err) { onErr(err.message || 'Operazione fallita.'); }); }
@@ -1159,7 +1171,13 @@
         var nomeTxt = nome ? nome : '<em class="text-muted">Vuoto</em>';
         var tipoColore = tipo ? ((typeof window._getColoreTipo === 'function') ? window._getColoreTipo(tipo) : stringToColor(tipo)) : '';
         var tipoBadge = tipo ? ' <span class="badge text-white" style="font-size:0.6rem;background:' + tipoColore + ';">' + tipo + '</span>' : '';
-        html += '<li><a class="dropdown-item d-flex align-items-center gap-2 py-1" href="javascript:void(0)" data-scroll-letto="' + letto + '"><span class="badge text-white" style="min-width:36px;font-size:0.8rem;background:' + sessoBg + ';">L.' + letto + '</span><span>' + nomeTxt + tipoBadge + '</span></a></li>';
+        // Icona dimissione se il paziente ha valore dimissibile
+        var dimRow = card.querySelector('.dim-row');
+        var dimVal = dimRow ? (dimRow.getAttribute('data-value') || '').trim() : '';
+        var dimIcon = dimVal
+          ? ' <i class="bi bi-box-arrow-right text-warning ms-1" title="In dimissione - ' + dimVal + '" style="font-size:0.85rem;"></i>'
+          : '';
+        html += '<li><a class="dropdown-item d-flex align-items-center gap-2 py-1" href="javascript:void(0)" data-scroll-letto="' + letto + '"><span class="badge text-white" style="min-width:36px;font-size:0.8rem;background:' + sessoBg + ';">L.' + letto + '</span><span>' + nomeTxt + tipoBadge + dimIcon + '</span></a></li>';
       });
       menu.innerHTML = html;
       menu.onclick = function(e) {

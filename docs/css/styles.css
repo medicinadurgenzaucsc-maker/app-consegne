@@ -572,6 +572,79 @@ body { padding-top: 70px; background-color: #d4e6f1 !important; }
 /* Giorni di ricovero: mantiene colore rosso ma non grassetto */
 span.valore-giorni.alt-info-val { font-weight: normal; }
 
+/* ═════════════════════════════════════════════════════════════
+   DIMISSIBILE — checkbox + scritta data dimissione
+   Si visualizza come una riga compatta sotto Ossigeno.
+   ═════════════════════════════════════════════════════════════ */
+.dim-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px dashed #d6dee2;
+}
+.dim-checkbox-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  user-select: none;
+  margin: 0;
+}
+.dim-checkbox {
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+  accent-color: #f4a300;
+  margin: 0;
+  flex-shrink: 0;
+}
+.dim-checkbox-label {
+  font-size: clamp(0.6rem, 1.1vw, 0.85rem);
+  font-weight: bold;
+  color: #333;
+  line-height: 1.1;
+}
+.dim-data-info {
+  font-size: clamp(0.55rem, 1vw, 0.78rem);
+  color: #b8860b;
+  font-weight: 600;
+  font-style: italic;
+}
+.dim-data-info-empty { display: none; }
+/* Quando NON c'è valore, la checkbox spunta ha colore neutro */
+.dim-row[data-value=""] .dim-checkbox { accent-color: #aab; }
+
+/* Icona "in dimissione" accanto al badge tipologia */
+.dim-icon-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  background: #fff3cd;
+  color: #b8860b;
+  border-radius: 50%;
+  border: 1.5px solid #f4a300;
+  font-size: 0.7rem;
+  line-height: 1;
+  vertical-align: middle;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+  cursor: help;
+}
+.dim-icon-badge i { font-size: 0.7rem; }
+
+/* Fuori focus mode la checkbox sembra disabilitata visivamente */
+.patient-card:not(.focus-mode) .dim-checkbox {
+  cursor: not-allowed;
+  opacity: 0.85;
+}
+.patient-card:not(.focus-mode) .dim-checkbox-wrap {
+  cursor: not-allowed;
+}
+
 /* Colonne 2-5: crescono per riempire */
 .alt-col-diag .alt-editable,
 .alt-col-diaria .alt-editable,

@@ -48,6 +48,7 @@ var _campi = {
   'CodiceSanitario':     'codice_sanitario',
   'Ossigeno':            'ossigeno',
   'Sesso':               'sesso',
+  'Dimissibile':         'dimissibile',
   'UltimoAggiornamento': 'ultimo_aggiornamento'
 };
 var _colonne = {};
@@ -188,6 +189,14 @@ function _renderAltCard(p) {
       ' ondblclick="_apriModalTipologia(\'' + _aEsc(letto) + '\')"' +
       ' title="Doppio click per cambiare tipologia">STANDARD</span>';
 
+  // Icona "in dimissione" accanto al badge tipologia
+  var dimVal = (p.Dimissibile || '').trim();
+  var dimIconHtml = dimVal
+    ? '<span class="dim-icon-badge ms-1" title="Paziente in dimissione' +
+      (dimVal ? ' — ' + _aEsc(dimVal) : '') + '">' +
+      '<i class="bi bi-box-arrow-right"></i></span>'
+    : '';
+
   return '<div class="alt-row patient-card" data-bed="' + _aEsc(letto) + '" data-tipologia="' + _aEsc(tipo) + '">' +
     '<div class="alt-col alt-col-info">' +
     '<button class="focus-pencil-btn" title="Modifica scheda"' +
@@ -198,7 +207,7 @@ function _renderAltCard(p) {
     '<div class="alt-bed-number">' + _aEsc(letto) + '</div>' +
     '<span class="sesso-symbol" data-field="Sesso" data-sesso="' + _aEsc(p.Sesso || '') + '"></span>' +
     '</div>' +
-    '<div class="text-center tipo-badge-wrap" style="font-size:0.75rem;">' + badgeHtml + '</div>' +
+    '<div class="text-center tipo-badge-wrap" style="font-size:0.75rem;">' + badgeHtml + dimIconHtml + '</div>' +
     '<div class="editable-area plain-text alt-nome" contenteditable="true" data-field="Nome" data-placeholder="Cognome Nome...">' + (p.Nome || '') + '</div>' +
     '<div class="alt-allergie-label"><i class="bi bi-exclamation-triangle-fill"></i> Allergie</div>' +
     '<div class="editable-area rich-text alt-allergie-val" contenteditable="true" data-field="Allergie" data-placeholder="Allergia ad antibiotici...">' + (p.Allergie || '') + '</div>' +
@@ -222,6 +231,15 @@ function _renderAltCard(p) {
     '<div class="editable-area plain-text alt-info-val" contenteditable="true" data-field="CodiceSanitario">' + (p.CodiceSanitario || '') + '</div></div>' +
     '<div class="alt-info-row"><span class="alt-info-label">Ossigeno</span>' +
     '<div class="editable-area plain-text alt-info-val" contenteditable="true" data-field="Ossigeno" data-placeholder="es. CN 4lt/min">' + (p.Ossigeno || '') + '</div></div>' +
+    '<div class="alt-info-row dim-row" data-field="Dimissibile" data-value="' + _aEsc(dimVal) + '">' +
+    '<label class="dim-checkbox-wrap" title="' + (dimVal ? 'Click per modificare/rimuovere' : 'Click per impostare data dimissione') + '">' +
+    '<input type="checkbox" class="dim-checkbox"' + (dimVal ? ' checked' : '') + ' aria-label="Dimissibile">' +
+    '<span class="dim-checkbox-label">Dimissibile</span>' +
+    '</label>' +
+    (dimVal
+      ? '<span class="dim-data-info"><i class="bi bi-box-arrow-right me-1"></i>Dimissione il ' + _aEsc(dimVal) + '</span>'
+      : '<span class="dim-data-info-empty text-muted"></span>') +
+    '</div>' +
     '</div></div>' +
     '<div class="alt-col alt-col-diag">' +
     '<div class="alt-diag-top">' +
@@ -446,7 +464,7 @@ function _sbSpostaPaziente(lettoOrigine, lettoDestinazione) {
 
 function _sbGetRiepilogo() {
   return _sbGetPazienti().then(function(pazienti) {
-    var uomini = 0, donne = 0, indefinito = 0, vuoti = 0;
+    var uomini = 0, donne = 0, indefinito = 0, vuoti = 0, inDimissione = 0;
     var tipologie = {};
     pazienti.forEach(function(p) {
       if (p.Letto === 'NOTE') return; // non contare NOTE come letto
@@ -458,8 +476,9 @@ function _sbGetRiepilogo() {
       else indefinito++;
       var tip = (p.TipologiaLetto || 'STANDARD').toUpperCase();
       tipologie[tip] = (tipologie[tip] || 0) + 1;
+      if ((p.Dimissibile || '').trim() !== '') inDimissione++;
     });
-    return { uomini: uomini, donne: donne, indefinito: indefinito, tipologie: tipologie, vuoti: vuoti };
+    return { uomini: uomini, donne: donne, indefinito: indefinito, tipologie: tipologie, vuoti: vuoti, inDimissione: inDimissione };
   });
 }
 
@@ -1035,6 +1054,7 @@ function _driveRenderCard(p) {
   if (p.Eta)             meta += 'Et&agrave;: <b>' + p.Eta + '</b> &nbsp; ';
   if (p.DataRicovero)    meta += 'Ricovero: <b>' + p.DataRicovero + '</b> &nbsp; ';
   if (p.CodiceSanitario) meta += 'C.S.: <b>' + p.CodiceSanitario + '</b>';
+  if (p.Dimissibile)     meta += ' &nbsp; <span style="color:#b8860b;font-weight:bold;">&#x21AA; Dimissione: ' + p.Dimissibile + '</span>';
 
   var B  = '1.5pt solid #333333';
   var Bi = '1pt solid #888888';
@@ -1339,6 +1359,47 @@ function _aggiornaCardDaPaziente(card, p) {
       if (badge.style.backgroundColor !== col) badge.style.backgroundColor = col;
     } else {
       if (badge.style.backgroundColor) badge.style.backgroundColor = '';
+    }
+  }
+
+  // Dimissibile: checkbox + scritta + icona accanto al badge tipologia
+  var dimNew = (p.Dimissibile || '').trim();
+  var dimRow = card.querySelector('.dim-row');
+  if (dimRow) {
+    var attualeDim = dimRow.getAttribute('data-value') || '';
+    if (attualeDim !== dimNew) {
+      dimRow.setAttribute('data-value', dimNew);
+      var cb = dimRow.querySelector('.dim-checkbox');
+      if (cb) cb.checked = !!dimNew;
+      var info = dimRow.querySelector('.dim-data-info, .dim-data-info-empty');
+      if (info) {
+        if (dimNew) {
+          info.className = 'dim-data-info';
+          info.innerHTML = '<i class="bi bi-box-arrow-right me-1"></i>Dimissione il ' +
+            String(dimNew).replace(/[&<>"']/g, function(c) {
+              return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c];
+            });
+        } else {
+          info.className = 'dim-data-info-empty text-muted';
+          info.innerHTML = '';
+        }
+      }
+    }
+  }
+  // Icona "in dimissione" accanto al badge tipologia
+  var tipoWrap = card.querySelector('.tipo-badge-wrap');
+  if (tipoWrap) {
+    var iconaEsistente = tipoWrap.querySelector('.dim-icon-badge');
+    if (dimNew && !iconaEsistente) {
+      var span = document.createElement('span');
+      span.className = 'dim-icon-badge ms-1';
+      span.title = 'Paziente in dimissione — ' + dimNew;
+      span.innerHTML = '<i class="bi bi-box-arrow-right"></i>';
+      tipoWrap.appendChild(span);
+    } else if (!dimNew && iconaEsistente) {
+      iconaEsistente.remove();
+    } else if (dimNew && iconaEsistente) {
+      iconaEsistente.title = 'Paziente in dimissione — ' + dimNew;
     }
   }
 }
