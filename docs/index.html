@@ -1630,6 +1630,8 @@
             <li><a class="dropdown-item" href="javascript:void(0)" data-emerg-disable="1" onclick="_apriRipristina()"><i class="bi bi-arrow-counterclockwise text-danger me-2"></i>Ripristina da Backup</a></li>
             <li><hr class="dropdown-divider"></li>
             <li><a class="dropdown-item" href="javascript:void(0)" data-emerg-disable="1" onclick="apriModalImportaConsegne()"><i class="bi bi-file-earmark-arrow-down text-warning me-2"></i>Importa da file consegne</a></li>
+            <li><hr class="dropdown-divider"></li>
+            <li><a class="dropdown-item" href="javascript:void(0)" data-emerg-disable="1" onclick="apriRiassumiAI()"><i class="bi bi-stars text-primary me-2"></i>Riassumi AI</a></li>
             <li style="display:none"><a class="dropdown-item" href="javascript:void(0)" id="btnToggleSync" onclick="toggleSync()"><i class="bi bi-pause-circle text-warning me-2" id="iconToggleSync"></i><span id="labelToggleSync">Metti in pausa il sync</span></a></li>
             <!-- Voce informativa: SHA del deploy corrente (aggiornata da _versionCheckInit) -->
             <li><hr class="dropdown-divider"></li>
@@ -4307,6 +4309,287 @@
     document.addEventListener('visibilitychange', function() {
       if (document.visibilityState === 'visible') _maybeDiagOraria();
     });
+
+  })();
+  </script>
+
+  <!-- ══════════════════════════════════════════════════════════════
+       RIASSUMI AI — Edge Function Groq Llama 3.3 70B
+       Pseudonimizzazione lato server, re-identificazione, no log.
+       ══════════════════════════════════════════════════════════════ -->
+  <script>
+  (function() {
+    var RATE_LIMIT_MAX = 20;       // max riassunti per finestra
+    var RATE_LIMIT_WIN_MS = 60*60*1000; // finestra: 1 ora
+    var RATE_KEY = '_riassumiAITs';
+
+    // ── Rate limit lato client (localStorage) ─────────────────────
+    function _checkRateLimit() {
+      try {
+        var arr = JSON.parse(localStorage.getItem(RATE_KEY) || '[]');
+        var now = Date.now();
+        arr = arr.filter(function(t){ return now - t < RATE_LIMIT_WIN_MS; });
+        localStorage.setItem(RATE_KEY, JSON.stringify(arr));
+        return { ok: arr.length < RATE_LIMIT_MAX, used: arr.length, max: RATE_LIMIT_MAX };
+      } catch(e) { return { ok: true, used: 0, max: RATE_LIMIT_MAX }; }
+    }
+    function _logRateLimit() {
+      try {
+        var arr = JSON.parse(localStorage.getItem(RATE_KEY) || '[]');
+        arr.push(Date.now());
+        localStorage.setItem(RATE_KEY, JSON.stringify(arr));
+      } catch(e) {}
+    }
+
+    // ── Recupera lista letti+nomi dal DB per il select ────────────
+    function _caricaLetti() {
+      return _q(_sb.from('consegne').select('letto,nome,eta,data_ricovero,tipologia_letto')
+        .order('letto', { ascending: true }));
+    }
+
+    // ── Ordinamento naturale dei letti (1,2,...,10,11) ────────────
+    function _sortLetti(rows) {
+      return (rows || []).slice().sort(function(a, b) {
+        var na = parseInt(a.letto, 10), nb = parseInt(b.letto, 10);
+        if (!isNaN(na) && !isNaN(nb)) return na - nb;
+        return String(a.letto).localeCompare(String(b.letto));
+      });
+    }
+
+    // ── Escape HTML per nomi nei <option> ─────────────────────────
+    function _esc(s) {
+      return String(s||'').replace(/[&<>"']/g, function(c) {
+        return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c];
+      });
+    }
+
+    // ── Apri modal scelta letto (entry point dal menu) ────────────
+    window.apriRiassumiAI = function() {
+      var rl = _checkRateLimit();
+      if (!rl.ok) {
+        Swal.fire({
+          icon: 'warning',
+          title: 'Limite orario raggiunto',
+          html: 'Hai generato <strong>'+rl.used+'/'+rl.max+'</strong> riassunti nell\'ultima ora.<br>'+
+                '<small class="text-muted">Riprova fra un po\'.</small>',
+          confirmButtonColor: '#37474f'
+        });
+        return;
+      }
+
+      Swal.fire({
+        title: '<i class="bi bi-stars text-primary me-2"></i>Riassumi AI',
+        html: '<div id="riassumiSelectWrap" class="text-start"><div class="text-center py-4">'+
+              '<div class="spinner-border text-secondary" style="width:2rem;height:2rem;"></div>'+
+              '<div class="mt-2 text-muted small">Caricamento pazienti…</div></div></div>',
+        showCancelButton: true,
+        confirmButtonText: '<i class="bi bi-play-fill me-1"></i>Genera',
+        confirmButtonColor: '#1565c0',
+        cancelButtonText: 'Annulla',
+        focusConfirm: false,
+        didOpen: function() {
+          var confirmBtn = Swal.getConfirmButton();
+          if (confirmBtn) confirmBtn.disabled = true;
+          _caricaLetti().then(function(rows) {
+            var sorted = _sortLetti(rows);
+            if (!sorted.length) {
+              document.getElementById('riassumiSelectWrap').innerHTML =
+                '<div class="alert alert-warning mb-0">Nessun paziente disponibile.</div>';
+              return;
+            }
+            var opts = sorted.map(function(p) {
+              var label = 'Letto '+p.letto+' — '+ (p.nome || '(senza nome)') +
+                          (p.eta ? ' ('+p.eta+' anni)' : '') +
+                          (p.data_ricovero ? ' — ric. '+p.data_ricovero : '');
+              return '<option value="'+_esc(p.letto)+'">'+_esc(label)+'</option>';
+            }).join('');
+            document.getElementById('riassumiSelectWrap').innerHTML =
+              '<label class="form-label fw-bold mb-1">Seleziona il paziente:</label>'+
+              '<select id="riassumiLettoSel" class="form-select form-select-sm">'+opts+'</select>'+
+              '<div class="alert alert-info mt-3 py-2 mb-0" style="font-size:0.78rem;">'+
+              '<i class="bi bi-shield-check me-1"></i>Nome, cognome, codice fiscale, codice sanitario, '+
+              'data di nascita e numeri di telefono verranno <strong>pseudonimizzati</strong> '+
+              'prima dell\'invio all\'AI. Il risultato finale è ri-identificato localmente.'+
+              '</div>';
+            if (confirmBtn) confirmBtn.disabled = false;
+          }).catch(function(e) {
+            document.getElementById('riassumiSelectWrap').innerHTML =
+              '<div class="alert alert-danger mb-0"><i class="bi bi-exclamation-triangle me-1"></i>'+
+              'Errore caricamento: '+_esc(e.message||e)+'</div>';
+          });
+        },
+        preConfirm: function() {
+          var sel = document.getElementById('riassumiLettoSel');
+          if (!sel || !sel.value) {
+            Swal.showValidationMessage('Seleziona un letto');
+            return false;
+          }
+          return sel.value;
+        }
+      }).then(function(res) {
+        if (res.isConfirmed && res.value) _generaRiassunto(res.value);
+      });
+    };
+
+    // ── Genera riassunto: chiama Edge Function, mostra output ────
+    function _generaRiassunto(letto) {
+      var t0 = Date.now();
+      Swal.fire({
+        title: '<i class="bi bi-cpu text-primary me-2"></i>Generazione in corso…',
+        html: '<div class="text-center py-3">'+
+              '<div class="spinner-border text-primary" style="width:3rem;height:3rem;"></div>'+
+              '<div class="mt-3 text-muted">Sto consultando l\'AI per il letto <strong>'+_esc(letto)+'</strong></div>'+
+              '<div class="mt-1 small text-muted" id="riassumiTimer">0s</div></div>',
+        allowOutsideClick: false,
+        allowEscapeKey: false,
+        showConfirmButton: false,
+        didOpen: function() {
+          // Timer live
+          var el = document.getElementById('riassumiTimer');
+          var iv = setInterval(function() {
+            if (!document.getElementById('riassumiTimer')) { clearInterval(iv); return; }
+            el.innerText = Math.round((Date.now()-t0)/1000)+'s';
+          }, 500);
+        }
+      });
+
+      _sb.functions.invoke('riassumi-paziente', { body: { letto: String(letto) } })
+        .then(function(res) {
+          if (res.error) throw new Error(res.error.message || 'Errore Edge Function');
+          var data = res.data || {};
+          if (!data.ok) throw new Error(data.error || 'Risposta non valida');
+          _logRateLimit();
+          _mostraRiassunto(data.testo, data.paziente);
+        })
+        .catch(function(e) {
+          Swal.fire({
+            icon: 'error',
+            title: 'Errore generazione',
+            html: '<div class="text-start small">'+_esc(e.message||e)+'</div>',
+            confirmButtonColor: '#37474f'
+          });
+        });
+    }
+
+    // ── Modal output 80% width, scrollabile ───────────────────────
+    function _mostraRiassunto(testo, paziente) {
+      var titolo = paziente && paziente.nome
+        ? ('Letto '+paziente.letto+' — '+paziente.nome)
+        : 'Riassunto paziente';
+      var dataGen = new Date().toLocaleString('it-IT');
+
+      // Conserviamo testo+meta in window per copia/PDF
+      window._riassumiCorrente = { testo: testo, paziente: paziente, dataGen: dataGen };
+
+      // Converti newline a <br> e mantieni grassetto sui titoli sezione MAIUSCOLI
+      var html = _esc(testo)
+        .replace(/^([A-ZÀÈÉÌÒÙ][A-ZÀÈÉÌÒÙ\s\/]{5,})$/gm, '<strong>$1</strong>')
+        .replace(/\n/g, '<br>');
+
+      Swal.fire({
+        title: '<i class="bi bi-file-medical text-primary me-2"></i>'+_esc(titolo),
+        html:
+          '<div class="alert alert-warning text-start py-2 mb-2" style="font-size:0.8rem;">'+
+          '<i class="bi bi-exclamation-triangle-fill me-1"></i>'+
+          'Riassunto Generato automaticamente, controllare e verificare prima dell\'invio. '+
+          'Il contenuto generato non verrà salvato.'+
+          '</div>'+
+          '<div id="riassumiBody" style="text-align:left;max-height:60vh;overflow-y:auto;'+
+          'background:#fafafa;border:1px solid #cfd8dc;border-radius:6px;'+
+          'padding:14px 16px;font-size:0.92rem;line-height:1.55;color:#263238;'+
+          'font-family: \'Segoe UI\', Tahoma, sans-serif;">'+ html +'</div>'+
+          '<div class="text-end mt-2"><small class="text-muted">'+
+          '<i class="bi bi-clock me-1"></i>Generato il '+_esc(dataGen)+
+          '</small></div>',
+        width: '80%',
+        showConfirmButton: true,
+        confirmButtonText: '<i class="bi bi-x-lg me-1"></i>Chiudi',
+        confirmButtonColor: '#37474f',
+        showDenyButton: true,
+        denyButtonText: '<i class="bi bi-clipboard me-1"></i>Copia',
+        denyButtonColor: '#546e7a',
+        showCancelButton: true,
+        cancelButtonText: '<i class="bi bi-printer me-1"></i>Scarica PDF',
+        cancelButtonColor: '#1565c0',
+        reverseButtons: true,
+        focusConfirm: true
+      }).then(function(res) {
+        if (res.isDenied) { _copiaRiassunto(); }
+        else if (res.isDismissed && res.dismiss === 'cancel') { _stampaPDF(); }
+        else { /* chiusura: oblio */ window._riassumiCorrente = null; }
+      });
+    }
+
+    // ── Copia negli appunti ───────────────────────────────────────
+    function _copiaRiassunto() {
+      var r = window._riassumiCorrente;
+      if (!r) return;
+      var header = (r.paziente && r.paziente.nome
+        ? 'EPICRISI — Letto '+r.paziente.letto+' — '+r.paziente.nome+'\n'
+        : 'EPICRISI\n') +
+        'Generato: '+r.dataGen+'\n' +
+        '────────────────────────────────────────\n\n';
+      var full = header + r.testo + '\n\n────────────────────────────────────────\n' +
+                 'Riassunto generato da AI — verificare prima dell\'uso clinico.';
+      navigator.clipboard.writeText(full).then(function() {
+        Swal.fire({
+          icon: 'success', title: 'Copiato negli appunti',
+          timer: 1500, showConfirmButton: false, timerProgressBar: true
+        }).then(function(){ _mostraRiassunto(r.testo, r.paziente); });
+      }).catch(function() {
+        // Fallback: textarea selezionato
+        var ta = document.createElement('textarea');
+        ta.value = full; document.body.appendChild(ta);
+        ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+        Swal.fire({ icon:'success', title:'Copiato negli appunti',
+          timer: 1500, showConfirmButton: false }).then(function(){
+          _mostraRiassunto(r.testo, r.paziente);
+        });
+      });
+    }
+
+    // ── Stampa/Salva come PDF (apre finestra print-friendly) ─────
+    function _stampaPDF() {
+      var r = window._riassumiCorrente;
+      if (!r) return;
+      var p = r.paziente || {};
+      var html = '<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8">'+
+        '<title>Epicrisi '+_esc(p.nome||'')+'</title>'+
+        '<style>'+
+        'body{font-family:Georgia,serif;max-width:780px;margin:30px auto;padding:0 24px;color:#222;line-height:1.55;}'+
+        'h1{font-size:1.3rem;margin:0 0 4px;border-bottom:2px solid #37474f;padding-bottom:6px;}'+
+        '.meta{font-size:0.82rem;color:#546e7a;margin-bottom:18px;}'+
+        '.disc{background:#fff3cd;border-left:3px solid #ffc107;padding:8px 12px;font-size:0.8rem;color:#664d03;margin-bottom:18px;}'+
+        '.body{white-space:pre-wrap;font-size:0.93rem;}'+
+        '.body strong{display:block;margin-top:10px;}'+
+        '.footer{margin-top:30px;border-top:1px solid #b0bec5;padding-top:8px;font-size:0.72rem;color:#90a4ae;text-align:center;}'+
+        '@media print { body{margin:0;} }'+
+        '</style></head><body>'+
+        '<h1>EPICRISI — Letto '+_esc(p.letto||'?')+'</h1>'+
+        '<div class="meta">'+
+          'Paziente: <strong>'+_esc(p.nome||'—')+'</strong>'+
+          (p.eta ? ' &nbsp;·&nbsp; Età: '+_esc(p.eta)+' anni' : '')+
+          (p.data_ricovero ? ' &nbsp;·&nbsp; Ricovero: '+_esc(p.data_ricovero) : '')+
+          '<br>Generato il '+_esc(r.dataGen)+
+        '</div>'+
+        '<div class="disc"><strong>⚠ AVVISO:</strong> Riassunto Generato automaticamente. '+
+        'Controllare e verificare prima dell\'invio. Il contenuto generato non viene salvato.</div>'+
+        '<div class="body">'+_esc(r.testo)
+          .replace(/^([A-ZÀÈÉÌÒÙ][A-ZÀÈÉÌÒÙ\s\/]{5,})$/gm, '<strong>$1</strong>')+
+        '</div>'+
+        '<div class="footer">Documento non firmato — uso interno</div>'+
+        '<script>window.onload=function(){setTimeout(function(){window.print();},300);};<\/script>'+
+        '</body></html>';
+      var w = window.open('', '_blank');
+      if (!w) {
+        Swal.fire({ icon:'warning', title:'Popup bloccato',
+          text:'Abilita i popup per stampare il PDF.', confirmButtonColor:'#37474f' });
+        return;
+      }
+      w.document.open(); w.document.write(html); w.document.close();
+      // Riapri il modal dopo
+      setTimeout(function(){ _mostraRiassunto(r.testo, r.paziente); }, 500);
+    }
 
   })();
   </script>
