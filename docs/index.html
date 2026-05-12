@@ -575,18 +575,17 @@
     // EsamiColturali / DaFare: inserisce un item checklist con data odierna.
     // Struttura:
     //   <div class="cl-item">
-    //     - <span class="cl-check" contenteditable=false>SVG_OFF</span>
-    //     <strong>DD/MM:</strong>&nbsp;
+    //     <strong>- <span class="cl-check" contenteditable=false>SVG</span> DD/MM:</strong>&nbsp;
     //   </div>
-    // L'ultimo text node del fragment è "&nbsp;" → _insertHtmlInArea
-    // posiziona il caret esattamente lì (dopo i due punti).
+    // L'intero prefisso (trattino + checkbox + data + ":") è dentro <strong>
+    // → tutto in grassetto. Il "&nbsp;" finale è FUORI dallo strong → testo
+    // successivo (nome esame) non è in grassetto.
     function _insertChecklistItem(area) {
       var dataStr = _oggiDDMM();
       var html = '<div class="cl-item">' +
-                 '- <span class="cl-check" contenteditable="false" role="button" aria-checked="false">' +
+                 '<strong>- <span class="cl-check" contenteditable="false" role="button" aria-checked="false">' +
                    _SVG_CHECK_OFF +
-                 '</span> ' +
-                 '<strong>' + dataStr + ':</strong>&nbsp;' +
+                 '</span> ' + dataStr + ':</strong>&nbsp;' +
                  '</div>';
       _insertHtmlInArea(area, html, { nuovaRigaSeFuoriCursore: false });
     }
@@ -646,11 +645,13 @@
           // 1 → 2: nessun esito esistente, ne creiamo uno nuovo.
           // Caret a fine esito tramite _piazzaCaretFineNodo (ultimo text
           // node del .cl-esito = "&nbsp;" dopo data).
+          // Tutto il prefisso "↳ DD/MM:" dentro <strong> (in grassetto);
+          // il "&nbsp;" finale fuori (testo esito non bold).
           var dataStr = _oggiDDMM();
           esitoEl = document.createElement('div');
           esitoEl.className = 'cl-esito';
-          esitoEl.innerHTML = '<span contenteditable="false" class="cl-esito-arrow">↳&nbsp;</span>' +
-                              '<strong>' + dataStr + ':</strong>&nbsp;';
+          esitoEl.innerHTML = '<strong><span contenteditable="false" class="cl-esito-arrow">↳&nbsp;</span>' +
+                              dataStr + ':</strong>&nbsp;';
           item.appendChild(esitoEl);
           _piazzaCaretFineNodo(area, esitoEl);
         }
