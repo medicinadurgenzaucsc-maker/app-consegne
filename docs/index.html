@@ -613,6 +613,16 @@
       if (!chk) return;
       var area = chk.closest('.editable-area');
       if (!area) return;
+      // GUARD: il toggle è permesso SOLO se la card è in focus mode
+      // (= utente ha il lock e può modificare). Click fuori dal focus
+      // mode → impedisci anche di flaggare per errore.
+      var card = chk.closest('.patient-card');
+      if (!card || !card.classList.contains('focus-mode')) {
+        // Blocca anche eventuale selezione/click default sulla checkbox
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
       e.preventDefault();
       e.stopPropagation();
       var item = chk.closest('.cl-item');
