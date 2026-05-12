@@ -1325,6 +1325,48 @@
     // Aggiorna data-value sulla riga, checkbox, scritta info e icona
     // accanto al badge tipologia. Il save dei campi della card avviene
     // poi tramite il sistema standard (eseguiSalvataggioLettoCompleto).
+    //
+    // Triplo guard contro toggle fuori focus mode:
+    //   1) mousedown su tutto .dim-checkbox-wrap → preventDefault prima
+    //      che il toggle nativo avvenga (intercetta anche click su label)
+    //   2) touchstart equivalente per mobile
+    //   3) change come fallback: se il toggle è comunque avvenuto,
+    //      ripristina lo stato reale dal data-value della riga
+
+    // Barrier 1: mousedown blocca il toggle nativo PRIMA che avvenga
+    document.addEventListener('mousedown', function(e) {
+      var wrap = e.target.closest && e.target.closest('.dim-checkbox-wrap');
+      if (!wrap) return;
+      var card = wrap.closest('.patient-card');
+      if (!card || !card.classList.contains('focus-mode')) {
+        e.preventDefault();
+      }
+    });
+
+    // Barrier 2: touch equivalent per mobile/tablet
+    document.addEventListener('touchstart', function(e) {
+      var wrap = e.target.closest && e.target.closest('.dim-checkbox-wrap');
+      if (!wrap) return;
+      var card = wrap.closest('.patient-card');
+      if (!card || !card.classList.contains('focus-mode')) {
+        e.preventDefault();
+      }
+    }, { passive: false });
+
+    // Barrier 3: change fallback (se per qualche motivo il toggle è
+    // avvenuto fuori focus mode, ripristina il valore reale)
+    document.addEventListener('change', function(e) {
+      var cb = e.target.closest && e.target.closest('.dim-checkbox');
+      if (!cb) return;
+      var card = cb.closest('.patient-card');
+      if (!card || !card.classList.contains('focus-mode')) {
+        var dimRow = cb.closest('.dim-row');
+        var valoreReale = dimRow ? !!((dimRow.getAttribute('data-value') || '').trim()) : false;
+        cb.checked = valoreReale;
+        e.stopImmediatePropagation();
+      }
+    }, true);
+
     document.addEventListener('click', function(e) {
       var cb = e.target.closest && e.target.closest('.dim-checkbox');
       if (!cb) return;
@@ -1334,6 +1376,7 @@
       // Guard: cliccabile SOLO in focus mode
       if (!card || !card.classList.contains('focus-mode')) {
         e.preventDefault();
+        e.stopImmediatePropagation();
         Swal.fire({
           icon: 'info', title: 'Modifica bloccata',
           text: 'Per impostare la dimissione attiva prima la modalità modifica (icona matita).',
