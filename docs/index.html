@@ -1607,6 +1607,13 @@
       setTimeout(function() {
         if (document.hidden) return;
         if (document.getElementById('lockCheckOverlay')) return;
+        // Ignora se un modal SweetAlert è aperto / in fade-in / in fade-out.
+        // Il SweetAlert vive nel <body> (fuori dalla card), quindi il focus che
+        // si sposta su un suo input/bottone va trattato come "ancora dentro la
+        // sessione di editing" — non si deve chiudere il focus mode.
+        if (document.querySelector('.swal2-container')) return;
+        if (document.body && document.body.classList.contains('swal2-shown')) return;
+        if (Date.now() - _swalChiusoTs < 400) return;
         if (_lastMousedownInCard) return;
         var active = document.activeElement;
         if (_focusCard && !_focusCard.contains(active)) {
@@ -1614,6 +1621,30 @@
         }
       }, 100);
     });
+
+    // Grace period dopo la chiusura di un SweetAlert: per ~400ms il listener
+    // focusout sopra ignora i blur fuori dalla card. Protegge dal caso in cui
+    // SweetAlert ha già rimosso il proprio container dal DOM ma il focus non
+    // è ancora rientrato dentro la patient-card. MutationObserver sul body
+    // intercetta la rimozione del .swal2-container.
+    // NB: lo script è in <head>, quindi body non esiste ancora — aspettiamo
+    // DOMContentLoaded prima di attaccare l'observer.
+    var _swalChiusoTs = 0;
+    (function setupSwalCloseObserver() {
+      if (!document.body) {
+        document.addEventListener('DOMContentLoaded', setupSwalCloseObserver);
+        return;
+      }
+      new MutationObserver(function(mutations) {
+        mutations.forEach(function(m) {
+          m.removedNodes && m.removedNodes.forEach(function(n) {
+            if (n.nodeType === 1 && n.classList && n.classList.contains('swal2-container')) {
+              _swalChiusoTs = Date.now();
+            }
+          });
+        });
+      }).observe(document.body, { childList: true });
+    })();
 
   </script>
 
