@@ -166,6 +166,13 @@
       });
     }
     function _mostraMatite() {
+      // Cleanup difensivo: rimuove eventuali valori non-stringa finiti
+      // erroneamente nel Set (es. oggetti DOM passati come letto da chiamate
+      // sbagliate). Senza questo, _letti_salvataggioAttivi.size resterebbe
+      // sempre > 0 e le matite non ricomparirebbero mai.
+      Array.from(_letti_salvataggioAttivi).forEach(function(v) {
+        if (typeof v !== 'string') _letti_salvataggioAttivi.delete(v);
+      });
       if (_letti_salvataggioAttivi.size === 0) {
         document.querySelectorAll('.focus-pencil-btn').forEach(function(b) {
           b.style.visibility = ''; b.style.pointerEvents = '';
@@ -1472,9 +1479,13 @@
             iconaEsist.title = 'Paziente in dimissione — ' + v;
           }
         }
-        // Trigger save standard via dirty marker
+        // Trigger save standard via dirty marker.
+        // attivaSalvataggioRitardato VUOLE due argomenti (letto, card) —
+        // passare solo card lascia un oggetto orfano in _letti_salvataggioAttivi
+        // che non viene mai eliminato, nascondendo le matite per sempre.
         if (typeof attivaSalvataggioRitardato === 'function') {
-          attivaSalvataggioRitardato(card);
+          var lettoBed = card.getAttribute('data-bed');
+          attivaSalvataggioRitardato(lettoBed, card);
         }
       }
 
