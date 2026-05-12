@@ -3249,14 +3249,16 @@
     // Callback opzionale chiamato a fine diagnostica silent (sia OK sia con problemi).
     // In caso di problemi, viene chiamato DOPO l'apertura del modal di report.
     var _silentDoneCallback = null;
-    window._eseguiDiagnosticaSilent = function(onDone) {
+    var _silentDiagOpzioni  = null;  // { autoAttivaEmergenza, noModal }
+    window._eseguiDiagnosticaSilent = function(onDone, opzioni) {
       if (_silentDiag) { if (onDone) onDone(); return; }
       // Skip se è in corso una diagnostica manuale (modal con #diagLog aperto)
       if (document.getElementById('diagLog')) { if (onDone) onDone(); return; }
       _silentDiag = true;
       _silentDoneCallback = onDone || null;
+      _silentDiagOpzioni  = opzioni || null;
       _runAllTests();
-      // _silentDiag e callback verranno gestiti in _mostraReport (alla fine)
+      // _silentDiag, callback, opzioni vengono gestiti in _mostraReport
     };
 
     // ── Header sistema (per il tecnico IT) ────────────────────
@@ -4193,33 +4195,22 @@
       // ── Branch silent: in modalità silenziosa, mostra il report SOLO se
       // ci sono problemi degni di nota; altrimenti reset e nessuna interruzione.
       var eraSilent = _silentDiag;
-      var cb = _silentDoneCallback;
+      var cb        = _silentDoneCallback;
+      var opzioni   = _silentDiagOpzioni || {};
       if (_silentDiag) {
-        _silentDiag = false; // reset per future esecuzioni manuali
+        _silentDiag = false;
         _silentDoneCallback = null;
-        // Diagnostica AUTOMATICA al caricamento: il modal si apre SOLO se
-        // c'è una causa REALE per cui serve riavvio PC, riavvio browser o
-        // attivazione modalità emergenza.
-        //
+        _silentDiagOpzioni  = null;
         // Si apre se (criteri OR):
-        //   (a) rischioSalvataggio >= 10 (qualsiasi livello sopra a NESSUNO
-        //       nel calcolo "pulito" — solo cause vere, no rumore)
+        //   (a) rischioSalvataggio >= 10 (qualsiasi livello sopra a NESSUNO,
+        //       calcolo "pulito" — solo cause vere, no rumore)
         //   (b) un CRITICO VERO è fallito: offline, REST Supabase down,
         //       localStorage rotto, cookie disabilitati, API JS/librerie
-        //       mancanti (cose che impediscono di lavorare)
+        //       mancanti
         //   (c) WebSocket bloccato — Realtime perso, emergenza serve
         //
-        // NON si apre per (filtrato esplicitamente):
-        //   - Token Google scaduto (non impatta save Supabase, usa anon key)
-        //   - Browser obsoleto (avviso utile, non urgente per il save)
-        //   - REST lenta 1500ms+ (retry esponenziale gestisce)
-        //   - DB lenta (sistema retry copre)
-        //   - heap 70-80%, fps <45, drift <200ms (rumore PC normale)
-        //   - CDN jsdelivr down (librerie già caricate al runtime)
-        //   - Realtime channel non joined (emergenza polling lo compensa)
-        //
-        // NB: la diagnostica MANUALE (click su "PC Lento") mostra sempre il
-        // report completo con TUTTI i test, perché _silentDiag = false.
+        // NON si apre per: Token Google scaduto, Browser obsoleto, REST
+        // 1500ms+, DB lenta, heap 70-80%, fps <45, CDN, Realtime non joined.
         var criticiVeri =
           (r.online   && !r.online.ok)   ||
           (r.rest     && !r.rest.ok)     ||
@@ -4228,9 +4219,28 @@
           (r.js       && !r.js.ok)       ||
           (r.lib      && !r.lib.ok);
         var ciSonoProblemi = (rischioSalvataggio >= 10) || criticiVeri || (r.ws && !r.ws.ok);
+
+        // Auto-attivazione modalità emergenza (per diagnostica oraria)
+        // Se opzioni.autoAttivaEmergenza E ci sono problemi E l'emergenza
+        // NON è già attiva → attivala SILENZIOSAMENTE (no modal, solo
+        // pulsante navbar che diventa giallo "Polling ON").
+        if (opzioni.autoAttivaEmergenza && ciSonoProblemi &&
+            typeof _emergenzaPollingAttivo === 'function' &&
+            !_emergenzaPollingAttivo() &&
+            typeof _emergenzaAvviaPolling === 'function') {
+          console.log('[Diag oraria] Problemi rilevati, attivazione emergenza silenziosa');
+          _emergenzaAvviaPolling();
+          _aggiornaBottoneEmergenza();
+        }
+
         if (!ciSonoProblemi) {
-          // Tutto OK: silenziosamente, nessun modal. Notifica completamento.
-          console.log('[Diagnostica startup] Tutti i test superati. Nessun problema.');
+          console.log('[Diagnostica silent] Tutti i test superati. Nessun problema.');
+          if (cb) try { cb(); } catch(e){}
+          return;
+        }
+        // Se opzioni.noModal → niente modal anche con problemi (diag oraria)
+        if (opzioni.noModal) {
+          console.log('[Diagnostica silent] Problemi rilevati (noModal): ', problemi);
           if (cb) try { cb(); } catch(e){}
           return;
         }
@@ -4249,6 +4259,54 @@
     // NOTA: la diagnostica silent al caricamento è invocata da app.js come
     // ultima fase di _avviaCaricamentoDati (subito prima di _setProgress(100)).
     // Vedi window._eseguiDiagnosticaSilent definita sopra.
+
+    // ══════════════════════════════════════════════════════════════
+    // DIAGNOSTICA ORARIA AUTOMATICA
+    // ──────────────────────────────────────────────────────────────
+    // Ogni ora esegue una diagnostica silenziosa in background:
+    //  - NESSUN modal mostrato (anche se trova problemi)
+    //  - Se rileva problemi → attiva SILENZIOSAMENTE la modalità
+    //    emergenza (polling 5s), salvo che sia già attiva
+    //  - Il pulsante navbar diventa giallo "Polling ON" (segnale
+    //    visibile per il medico, ma non interrompe il lavoro)
+    //
+    // Resilienza:
+    //  - setInterval può essere throttled in tab inattive (Safari,
+    //    Firefox aggressivi); usiamo check ogni 5 minuti
+    //  - visibilitychange: al ritorno tab in foreground, verifica
+    //    se è passata un'ora dall'ultima diagnostica → riavvia
+    // ══════════════════════════════════════════════════════════════
+    var ORA_MS = 60 * 60 * 1000;
+    var CHECK_MS = 5 * 60 * 1000;  // check periodico ogni 5 min
+    var _ultimaDiagOraria = Date.now();  // inizializzata al boot
+                                          // (boot diag già coperta da app.js)
+
+    function _maybeDiagOraria() {
+      // Skip se diagnostica manuale aperta (modal con #diagLog visibile)
+      if (document.getElementById('diagLog')) return;
+      // Skip se è già in corso una diagnostica silent
+      if (_silentDiag) return;
+      var now = Date.now();
+      if (now - _ultimaDiagOraria < ORA_MS) return;
+      _ultimaDiagOraria = now;
+      console.log('[Diag oraria] Avvio diagnostica silenziosa…');
+      try {
+        window._eseguiDiagnosticaSilent(null, {
+          autoAttivaEmergenza: true,
+          noModal: true
+        });
+      } catch(e) {
+        console.warn('[Diag oraria] Errore:', e);
+      }
+    }
+
+    // Check periodico ogni 5 minuti (resiliente al throttling)
+    setInterval(_maybeDiagOraria, CHECK_MS);
+
+    // Check al ritorno tab in foreground (Safari throttling resilience)
+    document.addEventListener('visibilitychange', function() {
+      if (document.visibilityState === 'visible') _maybeDiagOraria();
+    });
 
   })();
   </script>
