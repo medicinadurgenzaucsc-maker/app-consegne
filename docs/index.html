@@ -469,42 +469,63 @@
     // PRIMA di cliccare il pulsante toolbar; altrimenti appende in fondo
     // all'area (con <br> prefisso se nuovaRigaSeFuoriCursore=true).
     //
-    // ATTENZIONE: NON possiamo basarci sulla selezione "corrente" perché
-    // `area.focus()` su un contenteditable senza selezione attiva crea
-    // automaticamente un range all'inizio. Quindi l'unica fonte di verità
-    // è _tbSavedRange (salvato dal mousedown listener PRIMA che il focus
-    // venga spostato sul pulsante). Se _tbSavedRange è dentro l'area
-    // → usalo. Se è in un'altra area o null → l'utente non era qui →
-    // vai in fondo.
+    // STRATEGIA: usiamo Range.insertNode con DocumentFragment invece di
+    // execCommand('insertHTML') perché:
+    // - execCommand può sanitizzare HTML (rimuove id, attributi, ecc.)
+    // - execCommand piazza il caret in modo inconsistente sui block (div)
+    // - Con insertNode abbiamo controllo totale: PRIMA dell'inserimento
+    //   memorizziamo riferimento al lastText del fragment, DOPO l'inserto
+    //   (nodo è ora nel DOM, riferimento ancora valido) ci piazziamo
+    //   il caret alla fine. Caret deterministicamente dopo l'ultimo
+    //   carattere dell'HTML inserito.
+    //
+    // Trade-off: perso l'integrazione undo/redo del browser (Ctrl+Z non
+    // ripristina questi inserti). Accettabile per il workflow medico.
+    //
+    // _tbSavedRange è la SOLA fonte affidabile per la posizione di
+    // inserimento: salvato dal mousedown listener PRIMA che il click
+    // sposti il focus. Se è dentro l'area → usalo. Altrimenti → in fondo.
     function _insertHtmlInArea(area, html, opzioni) {
       opzioni = opzioni || {};
       var sel = window.getSelection();
       var rangeDaUsare = null;
-      // _tbSavedRange è la SOLA fonte affidabile: salvato al mousedown
-      // sulla toolbar, prima che il click sposti il focus.
       if (_tbSavedRange && area.contains(_tbSavedRange.commonAncestorContainer)) {
         rangeDaUsare = _tbSavedRange;
       }
       area.focus();
       if (rangeDaUsare) {
-        // Cursore era nell'area → ripristina selezione esatta
         sel.removeAllRanges();
         sel.addRange(rangeDaUsare);
       } else {
-        // Cursore fuori dall'area (o area vuota) → in fondo
         var newRange = document.createRange();
         newRange.selectNodeContents(area);
         newRange.collapse(false);
         sel.removeAllRanges();
         sel.addRange(newRange);
-        // <br> prefisso solo per inserti inline (es. data Diaria) → forza
-        // l'andata a capo. Per i block (.cl-item) non serve perché il <div>
-        // crea automaticamente la nuova riga.
         if (opzioni.nuovaRigaSeFuoriCursore) {
           html = '<br>' + html;
         }
       }
-      document.execCommand('insertHTML', false, html);
+      // Parsing HTML in un DocumentFragment via <template>
+      var template = document.createElement('template');
+      template.innerHTML = html;
+      var fragment = template.content;
+      // Cerca il LAST text node del fragment PRIMA di inserire
+      var walker = document.createTreeWalker(fragment, NodeFilter.SHOW_TEXT, null, false);
+      var lastText = null, n;
+      while ((n = walker.nextNode())) lastText = n;
+      // Inserisci il fragment al range corrente
+      var range = sel.getRangeAt(0);
+      range.deleteContents();
+      range.insertNode(fragment);
+      // Caret alla fine del lastText (che ora è nel DOM)
+      if (lastText && lastText.parentNode) {
+        var caretRange = document.createRange();
+        caretRange.setStart(lastText, lastText.nodeValue.length);
+        caretRange.setEnd(lastText, lastText.nodeValue.length);
+        sel.removeAllRanges();
+        sel.addRange(caretRange);
+      }
       area.dispatchEvent(new Event('input', { bubbles: true }));
       return rangeDaUsare ? 'cursor' : 'append';
     }
@@ -533,52 +554,26 @@
       sel.addRange(range);
     }
 
-    // Sposta il caret al MARKER (#__caret_target__) e rimuove il marker.
-    // Strategia robusta: calcola PRIMA indice del marker nel parent,
-    // poi rimuove il marker, POI crea range a quell'indice. Evita
-    // l'invalidazione del range tipica di setStartBefore + removeChild.
-    function _spostaCaretAlMarker(area) {
-      var marker = area.querySelector('#__caret_target__');
-      if (!marker) return;
-      var parent = marker.parentNode;
-      if (!parent) return;
-      // Indice del marker tra i siblings (NON childNodes per evitare text nodes
-      // ambigui — usiamo posizione globale)
-      var children = parent.childNodes;
-      var index = -1;
-      for (var i = 0; i < children.length; i++) {
-        if (children[i] === marker) { index = i; break; }
-      }
-      if (index < 0) return;
-      parent.removeChild(marker);
-      // Focus DOPO la rimozione del marker, su area non già focused
-      area.focus();
-      var range = document.createRange();
-      range.setStart(parent, index);
-      range.setEnd(parent, index);
-      var sel = window.getSelection();
-      sel.removeAllRanges();
-      sel.addRange(range);
-    }
+    // NB: _spostaCaretAlMarker rimossa il 2026-05-11 — sostituita dal
+    // posizionamento automatico in _insertHtmlInArea (lastText del fragment).
 
-    // Diaria: inserisce "-DD/MM: " (grassetto) al cursore o in fondo su nuova riga
+    // Diaria: inserisce "-DD/MM: " (grassetto) al cursore o in fondo su nuova riga.
+    // _insertHtmlInArea ora posiziona automaticamente il caret alla fine
+    // dell'ultimo text node del fragment (= dopo "&nbsp;").
     function _insertDataDiaria(area) {
       var dataStr = _oggiDDMM();
-      // Marker subito dopo &nbsp; → caret precise lì dopo insertHTML
-      var html = '<strong>-' + dataStr + ':</strong>&nbsp;<span id="__caret_target__"></span>';
-      _insertHtmlInArea(area, html, { nuovaRigaSeFuoriCursore: true });
-      _spostaCaretAlMarker(area);
+      _insertHtmlInArea(area, '<strong>-' + dataStr + ':</strong>&nbsp;',
+                        { nuovaRigaSeFuoriCursore: true });
     }
 
-    // EsamiColturali / DaFare: inserisce un item checklist con data odierna
-    // Struttura HTML inserita:
+    // EsamiColturali / DaFare: inserisce un item checklist con data odierna.
+    // Struttura:
     //   <div class="cl-item">
     //     - <span class="cl-check" contenteditable=false>SVG_OFF</span>
     //     <strong>DD/MM:</strong>&nbsp;
-    //     <span id="__caret_target__"></span>  ← marker per posizionamento caret
     //   </div>
-    // Il marker viene rimosso da _spostaCaretAlMarker; il caret resta nel
-    // punto giusto subito dopo "DD/MM: ", DENTRO il div block.
+    // L'ultimo text node del fragment è "&nbsp;" → _insertHtmlInArea
+    // posiziona il caret esattamente lì (dopo i due punti).
     function _insertChecklistItem(area) {
       var dataStr = _oggiDDMM();
       var html = '<div class="cl-item">' +
@@ -586,10 +581,8 @@
                    _SVG_CHECK_OFF +
                  '</span> ' +
                  '<strong>' + dataStr + ':</strong>&nbsp;' +
-                 '<span id="__caret_target__"></span>' +
                  '</div>';
       _insertHtmlInArea(area, html, { nuovaRigaSeFuoriCursore: false });
-      _spostaCaretAlMarker(area);
     }
 
     // ── Toggle checkbox listener ──────────────────────────────────────────────
@@ -634,15 +627,16 @@
           // Caret a fine esito (subito dopo il testo esistente)
           _piazzaCaretFineNodo(area, esitoEl);
         } else {
-          // 1 → 2: nessun esito esistente, ne creiamo uno nuovo con marker
+          // 1 → 2: nessun esito esistente, ne creiamo uno nuovo.
+          // Caret a fine esito tramite _piazzaCaretFineNodo (ultimo text
+          // node del .cl-esito = "&nbsp;" dopo data).
           var dataStr = _oggiDDMM();
           esitoEl = document.createElement('div');
           esitoEl.className = 'cl-esito';
           esitoEl.innerHTML = '<span contenteditable="false" class="cl-esito-arrow">↳&nbsp;</span>' +
-                              '<strong>' + dataStr + ':</strong>&nbsp;' +
-                              '<span id="__caret_target__"></span>';
+                              '<strong>' + dataStr + ':</strong>&nbsp;';
           item.appendChild(esitoEl);
-          _spostaCaretAlMarker(area);
+          _piazzaCaretFineNodo(area, esitoEl);
         }
       } else {
         // Click su ☑ → andiamo verso ☐
