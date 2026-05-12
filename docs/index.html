@@ -4525,8 +4525,8 @@
       var r = window._riassumiCorrente;
       if (!r) return;
       var header = (r.paziente && r.paziente.nome
-        ? 'EPICRISI — Letto '+r.paziente.letto+' — '+r.paziente.nome+'\n'
-        : 'EPICRISI\n') +
+        ? 'DECORSO CLINICO — Letto '+r.paziente.letto+' — '+r.paziente.nome+'\n'
+        : 'DECORSO CLINICO\n') +
         'Generato: '+r.dataGen+'\n' +
         '────────────────────────────────────────\n\n';
       var full = header + r.testo + '\n\n────────────────────────────────────────\n' +
@@ -4554,7 +4554,7 @@
       if (!r) return;
       var p = r.paziente || {};
       var html = '<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8">'+
-        '<title>Epicrisi '+_esc(p.nome||'')+'</title>'+
+        '<title>Decorso Clinico '+_esc(p.nome||'')+'</title>'+
         '<style>'+
         'body{font-family:Georgia,serif;max-width:780px;margin:30px auto;padding:0 24px;color:#222;line-height:1.55;}'+
         'h1{font-size:1.3rem;margin:0 0 4px;border-bottom:2px solid #37474f;padding-bottom:6px;}'+
@@ -4565,7 +4565,7 @@
         '.footer{margin-top:30px;border-top:1px solid #b0bec5;padding-top:8px;font-size:0.72rem;color:#90a4ae;text-align:center;}'+
         '@media print { body{margin:0;} }'+
         '</style></head><body>'+
-        '<h1>EPICRISI — Letto '+_esc(p.letto||'?')+'</h1>'+
+        '<h1>DECORSO CLINICO — Letto '+_esc(p.letto||'?')+'</h1>'+
         '<div class="meta">'+
           'Paziente: <strong>'+_esc(p.nome||'—')+'</strong>'+
           (p.eta ? ' &nbsp;·&nbsp; Età: '+_esc(p.eta)+' anni' : '')+
