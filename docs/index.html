@@ -518,11 +518,17 @@
       var range = sel.getRangeAt(0);
       range.deleteContents();
       range.insertNode(fragment);
-      // Caret alla fine del lastText (che ora è nel DOM)
+      // Caret alla FINE del lastText (che ora è nel DOM).
+      // Range.insertNode ESPANDE il range originale per coprire il fragment
+      // appena inserito; Safari/iPad in particolare mostra ancora "ombra"
+      // di selezione anche dopo removeAllRanges. Soluzione: collapse(true)
+      // esplicito su un range nuovo + collapse anche del range originale
+      // per pulizia.
+      range.collapse(false); // pulisci range originale (estremo)
       if (lastText && lastText.parentNode) {
         var caretRange = document.createRange();
         caretRange.setStart(lastText, lastText.nodeValue.length);
-        caretRange.setEnd(lastText, lastText.nodeValue.length);
+        caretRange.collapse(true); // collassa al punto di start = caret puro
         sel.removeAllRanges();
         sel.addRange(caretRange);
       }
