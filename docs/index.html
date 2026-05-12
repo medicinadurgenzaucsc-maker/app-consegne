@@ -704,6 +704,109 @@
       area.dispatchEvent(new Event('input', { bubbles: true }));
     }, true);
 
+    // ══════════════════════════════════════════════════════════════════════
+    // RIORDINAMENTO CHECKLIST nei campi EsamiColturali e DaFare
+    //
+    // Quando: ALL'APERTURA del focus mode (per vedere i caret riordinati)
+    //         e PRIMA del save al chiudere il focus mode.
+    //         Non durante editing (per non spostare il caret dell'utente).
+    //
+    // Ordinamento finale:
+    //   1. .cl-item da completare (☐ vuoti) — ordinati per data DECRESCENTE
+    //   2. Riga vuota separatrice (solo se entrambi i gruppi presenti)
+    //   3. .cl-item completati (☑ flaggati + ☐ sbarrati archivio storico)
+    //      — ordinati per data DECRESCENTE
+    //   4. <hr class="cl-separator"> (solo se c'è resto testo)
+    //   5. Resto testo (paragrafi, brano libero — viene posto dopo gli items)
+    // ══════════════════════════════════════════════════════════════════════
+
+    // Estrae la data DD/MM dal primo <strong> dell'item e la converte in
+    // numero ordinabile (MM*100 + DD). Item senza data → 0 (in fondo).
+    function _parseDataItem(item) {
+      var strong = item.querySelector('strong');
+      if (!strong) return 0;
+      var m = (strong.textContent || '').match(/(\d{1,2})\/(\d{1,2})/);
+      if (!m) return 0;
+      return parseInt(m[2], 10) * 100 + parseInt(m[1], 10);
+    }
+
+    // Un .cl-item è "completato" se:
+    //   - ha checkbox flaggata (aria-checked=true o emoji ☑ legacy), OR
+    //   - ha un esito sbarrato (.cl-esito.cl-esito-sbarrato — archivio storico)
+    function _isItemCompletato(item) {
+      var chk = item.querySelector('.cl-check');
+      if (chk && chk.getAttribute('aria-checked') === 'true') return true;
+      if (chk && (chk.textContent || '').indexOf('☑') !== -1) return true;
+      if (item.querySelector('.cl-esito.cl-esito-sbarrato')) return true;
+      return false;
+    }
+
+    // Riordina i .cl-item dentro l'area secondo le regole sopra.
+    // Lascia inalterato il resto del contenuto (lo sposta in fondo dopo <hr>).
+    function _riordinaChecklistInArea(area) {
+      if (!area) return;
+      var items = Array.from(area.querySelectorAll('.cl-item'));
+      if (items.length === 0) return;
+
+      var daCompletare = [], completati = [];
+      items.forEach(function(it) {
+        if (_isItemCompletato(it)) completati.push(it);
+        else                       daCompletare.push(it);
+      });
+
+      function sortDecr(a, b) { return _parseDataItem(b) - _parseDataItem(a); }
+      daCompletare.sort(sortDecr);
+      completati.sort(sortDecr);
+
+      // Raccolta del resto contenuto (NON cl-item, NON <hr.cl-separator>, NON br/div vuoti)
+      var resto = [];
+      Array.from(area.childNodes).forEach(function(node) {
+        if (node.nodeType === Node.ELEMENT_NODE) {
+          if (node.classList && node.classList.contains('cl-item')) return;
+          if (node.tagName === 'HR' && node.classList.contains('cl-separator')) return;
+          // <div><br></div> vuoto = "spacer" → skip (li ricreiamo se serve)
+          if (node.tagName === 'DIV') {
+            var inner = (node.innerHTML || '').replace(/<br\s*\/?>/gi, '').replace(/&nbsp;/gi, '').replace(/\s+/g, '');
+            if (inner === '' && !node.classList.contains('cl-item')) return;
+          }
+          if (node.tagName === 'BR') return; // br isolati
+          resto.push(node);
+        } else if (node.nodeType === Node.TEXT_NODE) {
+          if ((node.nodeValue || '').replace(/ /g, ' ').trim() === '') return;
+          resto.push(node);
+        }
+      });
+
+      // Costruisci nuovo contenuto in DocumentFragment
+      var frag = document.createDocumentFragment();
+      daCompletare.forEach(function(it) { frag.appendChild(it); });
+      if (daCompletare.length > 0 && completati.length > 0) {
+        var sep = document.createElement('div');
+        sep.innerHTML = '<br>';
+        frag.appendChild(sep);
+      }
+      completati.forEach(function(it) { frag.appendChild(it); });
+      if (resto.length > 0) {
+        if (daCompletare.length + completati.length > 0) {
+          var hr = document.createElement('hr');
+          hr.className = 'cl-separator';
+          frag.appendChild(hr);
+        }
+        resto.forEach(function(n) { frag.appendChild(n); });
+      }
+
+      area.innerHTML = '';
+      area.appendChild(frag);
+    }
+
+    // Riordina entrambi i campi (EsamiColturali + DaFare) di una card
+    function _riordinaChecklistCard(card) {
+      if (!card) return;
+      var sel = '[data-field="EsamiColturali"], [data-field="DaFare"]';
+      card.querySelectorAll(sel).forEach(_riordinaChecklistInArea);
+    }
+    window._riordinaChecklistCard = _riordinaChecklistCard;
+
     // ── Auto-deflag se l'utente cancella TUTTO il contenuto dell'esito ────────
     // Quando l'utente cancella manualmente freccia + data + testo dall'esito
     // (rimanendo .cl-esito completamente vuoto), il sistema toglie automaticamente
@@ -872,6 +975,11 @@
       function _completaApertura() {
         if (!_focusCard) return;
         _abilitaCampi();
+        // Riordina i checklist (EsamiColturali + DaFare) ALL'APERTURA
+        // del focus mode così l'utente vede subito gli items ordinati.
+        if (typeof window._riordinaChecklistCard === 'function') {
+          window._riordinaChecklistCard(_focusCard);
+        }
         _equalizzaColonneAlt(); // equalizza subito dopo che i campi sono abilitati
         card.querySelectorAll('[data-field]').forEach(function(el) {
           var campo = el.getAttribute('data-field');
@@ -1017,6 +1125,13 @@
       // Rimuovi il badge dedicato del focus mode (riapparirà alla prossima apertura)
       var fsb = document.getElementById('focusStatusBadge');
       if (fsb && fsb.parentNode) fsb.parentNode.removeChild(fsb);
+
+      // Riordina checklist (EsamiColturali + DaFare) PRIMA del save, così
+      // l'innerHTML salvato è già ordinato (caret recenti in alto, completati
+      // dopo, resto testo in fondo dopo <hr>).
+      if (typeof window._riordinaChecklistCard === 'function') {
+        window._riordinaChecklistCard(_focusCard);
+      }
 
       // Salva subito se ci sono modifiche non ancora salvate
       // Usa _focusCard direttamente (non querySelector che restituisce sempre la card main view)

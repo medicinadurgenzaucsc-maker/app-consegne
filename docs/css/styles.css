@@ -683,6 +683,16 @@ span.valore-giorni.alt-info-val { font-weight: normal; }
   padding: 2px 6px;
 }
 
+/* ===== Separatore checklist ↔ resto testo (linea orizzontale) =====
+   Inserito automaticamente dal riordino quando il campo contiene
+   sia .cl-item che testo libero. Più sottile di una <hr> default. */
+hr.cl-separator {
+  border: 0;
+  border-top: 1px solid #b0bec5;
+  margin: 10px 0;
+  height: 0;
+}
+
 .alt-diag-third {
   flex: 0 0 auto;
   display: flex;
