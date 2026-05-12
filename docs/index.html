@@ -4404,6 +4404,12 @@
               return '<option value="'+_esc(p.letto)+'">'+_esc(label)+'</option>';
             }).join('');
             document.getElementById('riassumiSelectWrap').innerHTML =
+              '<div class="alert alert-warning py-2 mb-3 d-flex align-items-start" style="font-size:0.82rem;">'+
+              '<span class="badge bg-warning text-dark me-2 mt-1" style="font-size:0.72rem;letter-spacing:0.5px;">BETA</span>'+
+              '<div><strong>Funzione in versione Beta.</strong><br>'+
+              'Il decorso clinico generato può contenere imprecisioni od omissioni. '+
+              '<strong>Verificare sempre</strong> il contenuto prima di utilizzarlo nella lettera di dimissione.'+
+              '</div></div>'+
               '<label class="form-label fw-bold mb-1">Seleziona il paziente:</label>'+
               '<select id="riassumiLettoSel" class="form-select form-select-sm">'+opts+'</select>'+
               '<div class="alert alert-info mt-3 py-2 mb-0" style="font-size:0.78rem;">'+
