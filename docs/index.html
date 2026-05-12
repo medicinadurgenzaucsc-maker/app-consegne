@@ -1320,6 +1320,58 @@
       }
     });
 
+    // ─── Parser data flessibile per il flag "Dimissibile" ────────
+    // Accetta TUTTI questi formati e li normalizza a DD/MM/YYYY:
+    //   150526      → 15/05/2026 (ddmmyy)
+    //   15052026    → 15/05/2026 (ddmmyyyy)
+    //   15.05.26    → 15/05/2026
+    //   15.05.2026  → 15/05/2026
+    //   15/05/26    → 15/05/2026
+    //   15/05/2026  → 15/05/2026
+    //   15-05-26    → 15/05/2026
+    //   15-05-2026  → 15/05/2026
+    //   5/5/26      → 05/05/2026
+    //   "possibile" → "possibile"  (testo libero ammesso, lasciato intatto)
+    // Se l'input non è interpretabile come data valida, restituisce il
+    // testo originale invariato (così l'utente può scrivere libere come
+    // "possibile", "domani", "appena ricevuta TAC", ecc.).
+    function _parseDimData(input) {
+      if (input == null) return '';
+      var s = String(input).trim();
+      if (s === '') return '';
+      var d, m, y;
+      if (/^\d+$/.test(s)) {
+        // Solo cifre: 6 = ddmmyy, 8 = ddmmyyyy
+        if (s.length === 6) {
+          d = parseInt(s.slice(0, 2), 10);
+          m = parseInt(s.slice(2, 4), 10);
+          y = 2000 + parseInt(s.slice(4, 6), 10);
+        } else if (s.length === 8) {
+          d = parseInt(s.slice(0, 2), 10);
+          m = parseInt(s.slice(2, 4), 10);
+          y = parseInt(s.slice(4, 8), 10);
+        } else {
+          return s; // altre lunghezze: testo libero
+        }
+      } else {
+        // Con separatori: split su qualsiasi non-digit
+        var parts = s.split(/[^\d]+/).filter(function(p) { return p.length > 0; });
+        if (parts.length !== 3) return s;
+        d = parseInt(parts[0], 10);
+        m = parseInt(parts[1], 10);
+        y = parseInt(parts[2], 10);
+        if (y < 100) y += 2000;        // 26 → 2026
+        else if (y < 1000) return s;   // 3 cifre: impossibile
+      }
+      // Validazione range plausibile
+      if (isNaN(d) || isNaN(m) || isNaN(y) ||
+          d < 1 || d > 31 || m < 1 || m > 12 || y < 2000 || y > 2099) {
+        return s;
+      }
+      function pad(n) { return String(n).padStart(2, '0'); }
+      return pad(d) + '/' + pad(m) + '/' + y;
+    }
+
     // ─── Toggle checkbox "Dimissibile" ───────────────────────────
     // Solo dentro focus-mode; chiede data via SweetAlert (testo libero).
     // Aggiorna data-value sulla riga, checkbox, scritta info e icona
@@ -1431,7 +1483,12 @@
         Swal.fire({
           icon: 'question',
           title: '<i class="bi bi-box-arrow-right text-warning me-2"></i>Imposta data di dimissione',
-          html: '<input id="dimDataInput" class="swal2-input" placeholder="es. 15/05/2026 oppure \'possibile\'" style="max-width:340px;">',
+          html: '<input id="dimDataInput" class="swal2-input" autocomplete="off" '+
+                'placeholder="es. 15/05/2026, 150526, 15.05.26..." style="max-width:340px;">'+
+                '<div class="text-muted small mt-2" style="font-size:0.78rem;">'+
+                'Accetta qualsiasi formato data: <code>150526</code>, <code>15/05/26</code>, '+
+                '<code>15.05.2026</code>, <code>15-05-26</code>... oppure testo libero '+
+                '(es. "possibile").</div>',
           showCancelButton: true,
           confirmButtonText: 'Conferma',
           confirmButtonColor: '#198754',
@@ -1442,9 +1499,9 @@
             if (inp) inp.focus();
           },
           preConfirm: function() {
-            var v = (document.getElementById('dimDataInput').value || '').trim();
-            if (!v) { Swal.showValidationMessage('Inserisci una data o un valore'); return false; }
-            return v;
+            var raw = (document.getElementById('dimDataInput').value || '').trim();
+            if (!raw) { Swal.showValidationMessage('Inserisci una data o un valore'); return false; }
+            return _parseDimData(raw);
           }
         }).then(function(r) {
           if (r.isConfirmed && r.value) applicaValore(r.value);
@@ -1459,9 +1516,11 @@
                   return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c];
                 }) +
                 '</strong><br><br>' +
-                '<input id="dimDataInput" class="swal2-input" value="' +
+                '<input id="dimDataInput" class="swal2-input" autocomplete="off" value="' +
                 valoreAttuale.replace(/"/g,'&quot;') +
-                '" placeholder="gg/mm/aaaa o testo libero" style="max-width:340px;">',
+                '" placeholder="es. 15/05/2026, 150526, 15.05.26..." style="max-width:340px;">'+
+                '<div class="text-muted small mt-2" style="font-size:0.78rem;">'+
+                'Qualsiasi formato data o testo libero accettato.</div>',
           showCancelButton: true,
           showDenyButton: true,
           confirmButtonText: 'Aggiorna',
@@ -1475,9 +1534,9 @@
             if (inp) { inp.focus(); inp.select(); }
           },
           preConfirm: function() {
-            var v = (document.getElementById('dimDataInput').value || '').trim();
-            if (!v) { Swal.showValidationMessage('Inserisci una data o usa Rimuovi'); return false; }
-            return v;
+            var raw = (document.getElementById('dimDataInput').value || '').trim();
+            if (!raw) { Swal.showValidationMessage('Inserisci una data o usa Rimuovi'); return false; }
+            return _parseDimData(raw);
           }
         }).then(function(r) {
           if (r.isConfirmed && r.value) applicaValore(r.value);
