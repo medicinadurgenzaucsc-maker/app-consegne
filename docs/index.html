@@ -4890,6 +4890,91 @@
       }
     }
 
+    // ── Helpers compattazione ──────────────────────────────────────
+    // Confronta i dati di due snapshot. True se sono identici campo per campo.
+    function _stessiDati(d1, d2) {
+      if (!d1 || !d2) return false;
+      var k1 = Object.keys(d1), k2 = Object.keys(d2);
+      if (k1.length !== k2.length) return false;
+      for (var i = 0; i < k1.length; i++) {
+        var k = k1[i];
+        if (String(d1[k] || '') !== String(d2[k] || '')) return false;
+      }
+      return true;
+    }
+
+    // Ranking dei tipi: il più importante "prevale" in caso di dedup.
+    // save-failed e pre-ripristino sono i più critici (vanno preservati a tutti i costi).
+    function _rankTipo(t) {
+      return ({
+        'save-failed':    100,
+        'pre-ripristino':  90,
+        'interrupted':     80,
+        'save':            50,
+        'close':           30,
+        'live':            10
+      })[t] || 0;
+    }
+    function _tipoPiuImportante(a, b) {
+      return _rankTipo(a) >= _rankTipo(b) ? a : b;
+    }
+
+    // Cap intelligente: quando si supera MAX_STORICO_PER_LETTO, scarta
+    // dai più vecchi MA proteggi sempre gli snapshot critici (save-failed,
+    // pre-ripristino, interrupted) e l'ultimo close/save.
+    function _capStoricoIntelligente(s) {
+      if (s.storico.length <= MAX_STORICO_PER_LETTO) return;
+      var importanti = ['save-failed', 'pre-ripristino', 'interrupted'];
+      var protetti = s.storico.filter(function(snap) {
+        return importanti.indexOf(snap.tipo) !== -1;
+      });
+      var altri = s.storico.filter(function(snap) {
+        return importanti.indexOf(snap.tipo) === -1;
+      });
+      // Quanti "altri" possiamo tenere (i più recenti)
+      var keepAltri = Math.max(1, MAX_STORICO_PER_LETTO - protetti.length);
+      if (altri.length > keepAltri) {
+        altri = altri.slice(-keepAltri);
+      }
+      // Anche i protetti hanno un limite, per non esplodere se mai
+      if (protetti.length > MAX_STORICO_PER_LETTO) {
+        protetti = protetti.slice(-MAX_STORICO_PER_LETTO);
+      }
+      var combinato = protetti.concat(altri);
+      combinato.sort(function(a, b) {
+        return (a.tsClose || a.tsOpen || 0) - (b.tsClose || b.tsOpen || 0);
+      });
+      // Cap finale safety: se i protetti sono già più del cap, tieni i più recenti
+      if (combinato.length > MAX_STORICO_PER_LETTO) {
+        combinato = combinato.slice(-MAX_STORICO_PER_LETTO);
+      }
+      s.storico = combinato;
+    }
+
+    // Push con DEDUP: se l'ultimo snapshot ha dati identici, NON aggiunge
+    // un nuovo elemento — fa il MERGE aggiornando timestamp e tipo (col più
+    // importante). Questo evita esplosione di snapshot identici causati da:
+    //   - save automatico + close consecutivi senza edit (2 → 1)
+    //   - 3 save manuali consecutivi senza edit (3 → 1)
+    //   - retry esponenziali save-failed con stessi dati (4 → 1)
+    //   - force-save emergenza con dati invariati
+    function _pushStoricoConDedup(s, snap) {
+      if (!s || !snap) return false;
+      if (s.storico.length > 0) {
+        var ultimo = s.storico[s.storico.length - 1];
+        if (_stessiDati(ultimo.dati, snap.dati)) {
+          // MERGE: aggiorna timestamp e prendi il tipo più importante
+          ultimo.tsClose  = Math.max(ultimo.tsClose  || 0, snap.tsClose  || 0);
+          ultimo.tsUpdate = Math.max(ultimo.tsUpdate || 0, snap.tsUpdate || 0);
+          ultimo.tipo = _tipoPiuImportante(ultimo.tipo, snap.tipo);
+          return true; // dedup avvenuta
+        }
+      }
+      s.storico.push(snap);
+      _capStoricoIntelligente(s);
+      return false; // nuovo snapshot aggiunto
+    }
+
     // ── Apri snapshot (chiamato da _completaApertura) ──────────────
     window._snapshotApri = function(letto, card) {
       if (!letto || !card) return;
@@ -4899,7 +4984,7 @@
       if (s.current) {
         s.current.tsClose = Date.now();
         s.current.tipo = 'close';
-        s.storico.push(s.current);
+        _pushStoricoConDedup(s, s.current);
         s.current = null;
       }
       var ora = Date.now();
@@ -4924,7 +5009,7 @@
       _persist();
     };
 
-    // ── Chiudi snapshot live (save/save-failed/close) ──────────────
+    // ── Chiudi snapshot live (save/save-failed/close) con DEDUP ────
     window._snapshotChiudi = function(letto, tipo) {
       if (!letto) return;
       var s = window._snapshots[letto];
@@ -4932,14 +5017,11 @@
       s.current.tsClose = Date.now();
       s.current.tsUpdate = s.current.tsUpdate || s.current.tsClose;
       s.current.tipo = tipo || 'close';
-      s.storico.push(s.current);
+      var dedup = _pushStoricoConDedup(s, s.current);
       s.current = null;
-      if (s.storico.length > MAX_STORICO_PER_LETTO) {
-        s.storico = s.storico.slice(-MAX_STORICO_PER_LETTO);
-      }
       _persist();
       _aggiornaBadgeIcona(letto);
-      console.log('[Snapshot] CHIUSO letto ' + letto + ' tipo=' + tipo);
+      console.log('[Snapshot] CHIUSO letto ' + letto + ' tipo=' + tipo + (dedup ? ' (dedup)' : ''));
     };
 
     // ── Aggiorna badge count sull'icona toolbar ────────────────────
@@ -5202,10 +5284,7 @@
         dati: _raccogliDatiCard(card),
         tipo: 'pre-ripristino'
       };
-      s.storico.push(pre);
-      if (s.storico.length > MAX_STORICO_PER_LETTO) {
-        s.storico = s.storico.slice(-MAX_STORICO_PER_LETTO);
-      }
+      _pushStoricoConDedup(s, pre);
       // Applica i dati dello snapshot scelto
       _applicaDatiCard(card, snap.dati);
       // Aggiorna il current se siamo in focus mode (ora ha i dati ripristinati)
