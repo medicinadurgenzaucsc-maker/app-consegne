@@ -227,7 +227,7 @@
         var letto = nuova.getAttribute('data-bed');
         if (_lettoLockAtt === letto) return;
         document.querySelectorAll('.patient-card[data-bed="' + letto + '"]').forEach(function(attuale) {
-          ['Nome','Diagnosi','Eta','NoteTerapia','Diaria','DaFare','PianoTerapeutico','EsamiColturali','Allergie','CodiceSanitario','Ossigeno'].forEach(function(campo) {
+          ['Nome','Diagnosi','Eta','NoteTerapia','Diaria','DaFare','PianoTerapeutico','EsamiColturali','Allergie','CodiceSanitario','Ossigeno','Vitto'].forEach(function(campo) {
             var src = nuova.querySelector('[data-field="' + campo + '"]');
             var dst = attuale.querySelector('[data-field="' + campo + '"]');
             if (!src || !dst) return;

@@ -1078,7 +1078,7 @@
         _opServer({ barMsg: 'Svuotamento letto in corso...', successTitle: 'Letto svuotato', successText: 'I dati del letto ' + numLetto + ' sono stati cancellati.', errorTitle: 'Errore',
           afterSync: function() {
             document.querySelectorAll('.patient-card[data-bed="' + numLetto + '"]').forEach(function(card) {
-              ['Nome','Diagnosi','Eta','NoteTerapia','Diaria','DaFare','PianoTerapeutico','EsamiColturali','Allergie','CodiceSanitario','Ossigeno'].forEach(function(campo) {
+              ['Nome','Diagnosi','Eta','NoteTerapia','Diaria','DaFare','PianoTerapeutico','EsamiColturali','Allergie','CodiceSanitario','Ossigeno','Vitto'].forEach(function(campo) {
                 var el = card.querySelector('[data-field="' + campo + '"]'); if (el) el.innerHTML = '';
               });
               var dateEl = card.querySelector('.data-ricovero-text'); if (dateEl) dateEl.value = '';

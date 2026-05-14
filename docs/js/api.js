@@ -47,6 +47,7 @@ var _campi = {
   'Allergie':            'allergie',
   'CodiceSanitario':     'codice_sanitario',
   'Ossigeno':            'ossigeno',
+  'Vitto':               'vitto',
   'Sesso':               'sesso',
   'Dimissibile':         'dimissibile',
   'UltimoAggiornamento': 'ultimo_aggiornamento'
@@ -231,6 +232,8 @@ function _renderAltCard(p) {
     '<div class="editable-area plain-text alt-info-val" contenteditable="true" data-field="CodiceSanitario">' + (p.CodiceSanitario || '') + '</div></div>' +
     '<div class="alt-info-row"><span class="alt-info-label">Ossigeno</span>' +
     '<div class="editable-area plain-text alt-info-val" contenteditable="true" data-field="Ossigeno" data-placeholder="es. CN 4lt/min">' + (p.Ossigeno || '') + '</div></div>' +
+    '<div class="alt-info-row"><span class="alt-info-label">Vitto</span>' +
+    '<div class="editable-area plain-text alt-info-val" contenteditable="true" data-field="Vitto" data-placeholder="Vitto completo, diabetico, senza scorie...">' + (p.Vitto || '') + '</div></div>' +
     '<div class="alt-info-row dim-row" data-field="Dimissibile" data-value="' + _aEsc(dimVal) + '">' +
     '<label class="dim-checkbox-wrap" title="' + (dimVal ? 'Click per modificare/rimuovere' : 'Click per impostare data dimissione') + '">' +
     '<input type="checkbox" class="dim-checkbox"' + (dimVal ? ' checked' : '') + ' aria-label="Dimissibile">' +
@@ -1101,6 +1104,8 @@ function _driveRenderCard(p) {
         '<p style="' + CB + '">' + (p.Allergie || '') + '</p>' +
         '<p style="' + HB + 'border-top:' + Bi + ';">Ossigeno</p>' +
         '<p style="' + CB + '">' + (p.Ossigeno || '') + '</p>' +
+        '<p style="' + HB + 'border-top:' + Bi + ';">Vitto</p>' +
+        '<p style="' + CB + '">' + (p.Vitto || '') + '</p>' +
         '<p style="' + HB + 'border-top:' + B + ';">Note e Terapia</p>' +
         '<p style="' + CB + '">' + (p.NoteTerapia || '') + '</p>' +
       '</td>' +
@@ -1320,7 +1325,7 @@ function _aggiornaCardDaPaziente(card, p) {
 
   // Campi testuali (11 campi — include EsamiColturali aggiunto 2026-05-11)
   var campi = ['Nome','Diagnosi','Eta','NoteTerapia','Diaria','DaFare',
-               'PianoTerapeutico','EsamiColturali','Allergie','CodiceSanitario','Ossigeno'];
+               'PianoTerapeutico','EsamiColturali','Allergie','CodiceSanitario','Ossigeno','Vitto'];
   campi.forEach(function(campo) {
     var dst = card.querySelector('[data-field="' + campo + '"]');
     if (!dst) return;
