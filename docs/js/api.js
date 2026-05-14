@@ -247,8 +247,8 @@ function _renderAltCard(p) {
     '<div class="editable-area plain-text alt-editable" contenteditable="true" data-field="Diagnosi" data-placeholder="Diagnosi e motivo del ricovero...">' + (p.Diagnosi || '') + '</div>' +
     '</div>' +
     '<div class="alt-diag-bottom">' +
-    '<div class="alt-col-header-split">Piano Terapeutico</div>' +
-    '<div class="editable-area rich-text alt-editable" contenteditable="true" data-field="PianoTerapeutico" data-placeholder="Piano terapeutico...">' + (p.PianoTerapeutico || '') + '</div>' +
+    '<div class="alt-col-header-split">Piano di Cura</div>' +
+    '<div class="editable-area rich-text alt-editable" contenteditable="true" data-field="PianoTerapeutico" data-placeholder="Piano di cura...">' + (p.PianoTerapeutico || '') + '</div>' +
     '</div>' +
     '<div class="alt-diag-fourth">' +
     '<div class="alt-col-header-split">Esami Colturali</div>' +
@@ -1100,7 +1100,7 @@ function _driveRenderCard(p) {
     // ── Riga 3: piano terapeutico ────────────────────────────────────────────
     '<tr>' +
       '<td colspan="3" width="100%" style="border:' + B + ';vertical-align:top;padding:0;">' +
-        '<p style="' + HB + 'text-align:left;">Piano Terapeutico</p>' +
+        '<p style="' + HB + 'text-align:left;">Piano di Cura</p>' +
         '<p style="' + CB + '">' + (p.PianoTerapeutico || '') + '</p>' +
       '</td>' +
     '</tr>' +
