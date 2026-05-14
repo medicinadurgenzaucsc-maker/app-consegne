@@ -1,7 +1,9 @@
 // Service Worker — Consegne Reparto
 // Strategia: Network-first per le API GAS, Cache-first per gli asset statici
 
-var CACHE_NAME = 'consegne-v1';
+// Bump CACHE_NAME quando si aggiungono/cambiano asset nella precache,
+// così i client già connessi invalidano la vecchia cache e ricaricano.
+var CACHE_NAME = 'consegne-v2';
 
 // Asset statici da pre-cachare all'installazione
 var PRECACHE_ASSETS = [
@@ -9,6 +11,9 @@ var PRECACHE_ASSETS = [
   './index.html',
   './print.html',
   './favicon.png',
+  './apple-touch-icon.png',
+  './icon-192.png',
+  './icon-512.png',
   './manifest.json',
   './css/styles.css',
   './js/api.js',
