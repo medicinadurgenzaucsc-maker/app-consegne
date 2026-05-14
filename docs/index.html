@@ -1865,11 +1865,11 @@
         </li>
         <li class="nav-item me-2" id="navItemEmergenza">
           <button id="btnEmergenzaPC"
-                  class="btn btn-danger btn-sm fw-bold py-0 px-2"
+                  class="btn btn-success btn-sm fw-bold py-0 px-2"
                   onclick="_toggleModalitaEmergenza()"
-                  title="Diagnostica e modalità emergenza per PC lento"
+                  title="Sistema in funzione normale — clicca per aprire la diagnostica"
                   style="font-size:0.75rem;">
-            <i class="bi bi-exclamation-triangle-fill me-1"></i>PC Lento
+            <i class="bi bi-check-circle-fill me-1"></i>PC OK
           </button>
         </li>
         <li class="nav-item me-2">
@@ -1901,6 +1901,8 @@
             <li><a class="dropdown-item" href="javascript:void(0)" data-emerg-disable="1" onclick="_apriRipristina()"><i class="bi bi-arrow-counterclockwise text-danger me-2"></i>Ripristina da Backup</a></li>
             <li><hr class="dropdown-divider"></li>
             <li><a class="dropdown-item" href="javascript:void(0)" data-emerg-disable="1" onclick="apriModalImportaConsegne()"><i class="bi bi-file-earmark-arrow-down text-warning me-2"></i>Importa da file consegne</a></li>
+            <li><hr class="dropdown-divider"></li>
+            <li><a class="dropdown-item" href="javascript:void(0)" onclick="_toggleModalitaEmergenza()"><i class="bi bi-speedometer2 text-info me-2"></i>Diagnostica Prestazioni</a></li>
             <li style="display:none"><a class="dropdown-item" href="javascript:void(0)" id="btnToggleSync" onclick="toggleSync()"><i class="bi bi-pause-circle text-warning me-2" id="iconToggleSync"></i><span id="labelToggleSync">Metti in pausa il sync</span></a></li>
             <!-- Voce informativa: SHA del deploy corrente (aggiornata da _versionCheckInit) -->
             <li><hr class="dropdown-divider"></li>
@@ -3091,17 +3093,27 @@
   (function() {
 
     // ── Aggiorna aspetto pulsante ─────────────────────────────
+    // Due stati possibili:
+    //   - Emergenza ATTIVA → badge giallo "Polling ON" (avviso visibile
+    //     che il PC sta usando il polling 5s invece del Realtime)
+    //   - Emergenza NON attiva → badge verde "PC OK" (conferma stato
+    //     normale di funzionamento)
+    // Il badge rosso "PC Lento" è stato rimosso: la diagnostica si avvia
+    // dal menu rotellina ⚙️ → "Diagnostica Prestazioni" o dal click sul
+    // badge stesso.
     function _aggiornaBottoneEmergenza() {
       var btn = document.getElementById('btnEmergenzaPC');
       if (!btn) return;
       if (typeof _emergenzaPollingAttivo === 'function' && _emergenzaPollingAttivo()) {
         btn.className = 'btn btn-warning text-dark btn-sm fw-bold py-0 px-2';
         btn.style.fontSize = '0.75rem';
+        btn.title = 'Modalità Emergenza attiva — clicca per gestirla';
         btn.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i>Polling ON';
       } else {
-        btn.className = 'btn btn-danger btn-sm fw-bold py-0 px-2';
+        btn.className = 'btn btn-success btn-sm fw-bold py-0 px-2';
         btn.style.fontSize = '0.75rem';
-        btn.innerHTML = '<i class="bi bi-exclamation-triangle-fill me-1"></i>PC Lento';
+        btn.title = 'Sistema in funzione normale — clicca per aprire la diagnostica';
+        btn.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i>PC OK';
       }
       _emergUpdateUI();
     }

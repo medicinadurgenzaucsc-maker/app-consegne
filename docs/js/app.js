@@ -1217,8 +1217,20 @@
       });
 
       // ── 1. RIMOZIONI ──────────────────────────────────────────────────────
+      // GUARD CRITICO: NON rimuovere la card in focus mode anche se manca
+      // da lettiNuovi. Senza questo guard, una risposta parziale di
+      // _sbGetPazienti (race condition tipica della modalità emergenza con
+      // rete instabile) farebbe sparire la card che il medico sta editando,
+      // perdendo tutti i dati locali non ancora propagati al DOM via Realtime.
       document.querySelectorAll('.patient-card[data-bed]').forEach(function(card) {
-        if (!lettiNuovi.has(card.getAttribute('data-bed'))) card.remove();
+        var lettoCard = card.getAttribute('data-bed');
+        if (typeof _lettoLockAtt !== 'undefined' && _lettoLockAtt && _lettoLockAtt === lettoCard) {
+          if (!lettiNuovi.has(lettoCard)) {
+            console.warn('[Sync] Letto '+lettoCard+' in focus mode MA mancante dal DB sync — card preservata (probabile risposta parziale di _sbGetPazienti)');
+          }
+          return;
+        }
+        if (!lettiNuovi.has(lettoCard)) card.remove();
       });
 
       // ── 2. AGGIUNTE ───────────────────────────────────────────────────────

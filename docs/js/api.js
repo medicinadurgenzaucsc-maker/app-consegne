@@ -385,8 +385,25 @@ function _sbSalvaPaziente(letto, datiPaziente) {
   var row = _toDb(datiPaziente);
   row.ultimo_aggiornamento = _oraStr();
   row.updated_at = new Date().toISOString();
-  return _q(_sb.from('consegne').update(row).eq('letto', String(letto)))
-    .then(function() { return { success: true, ora: row.ultimo_aggiornamento }; });
+  // SAFETY: aggiunto .select() per ricevere indietro la/le riga/he aggiornata/e.
+  // Senza .select() Supabase risponde con array vuoto se non ha matchato nulla,
+  // ma _q lo considera comunque "success". Con .select() verifichiamo che almeno
+  // una riga sia stata effettivamente aggiornata. Questo intercetta casi come:
+  //  - lettoo eliminato da un altro PC tra il momento del lettura e quello del save
+  //  - cache CDN/proxy che restituisce 200 OK senza che la UPDATE sia avvenuta
+  //  - rete instabile in modalità emergenza con risposta corrotta
+  return _q(_sb.from('consegne').update(row).eq('letto', String(letto)).select())
+    .then(function(data) {
+      var rowsUpdated = Array.isArray(data) ? data.length : 0;
+      if (rowsUpdated === 0) {
+        // CRITICO: l'UPDATE è andato ma 0 righe modificate.
+        // Significa che il letto non esiste più nel DB o che la rete ha
+        // restituito una risposta corrotta. NON segnare success.
+        console.error('[Save] UPDATE letto '+letto+' restituito 0 righe — il letto non esiste nel DB o la rete è corrotta');
+        return { success: false, message: 'Salvataggio non confermato dal server (0 righe aggiornate). Dati locali NON sovrascritti.' };
+      }
+      return { success: true, ora: row.ultimo_aggiornamento, rowsUpdated: rowsUpdated };
+    });
 }
 
 // Importa una scheda letto dal parsing Google Doc.
