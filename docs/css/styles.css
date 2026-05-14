@@ -617,24 +617,54 @@ span.valore-giorni.alt-info-val { font-weight: normal; }
 /* Quando NON c'è valore, la checkbox spunta ha colore neutro */
 .dim-row[data-value=""] .dim-checkbox { accent-color: #aab; }
 
-/* Icona "in dimissione" accanto al badge tipologia */
+/* Icona "in dimissione" accanto al badge tipologia.
+   Le due frecce SVG (rosso scuro + grigio scuro) sono autoesplicative,
+   il cerchio di sfondo bianco le rende leggibili su qualsiasi colore. */
 .dim-icon-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
-  background: #fff3cd;
-  color: #b8860b;
+  width: 20px;
+  height: 20px;
+  background: #fff;
   border-radius: 50%;
-  border: 1.5px solid #f4a300;
-  font-size: 0.7rem;
+  border: 1.2px solid #b71c1c;
   line-height: 1;
   vertical-align: middle;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.15);
   cursor: help;
+  padding: 1px;
 }
-.dim-icon-badge i { font-size: 0.7rem; }
+.dim-icon-badge svg { display: block; }
+
+/* Icona dimissione sovrapposta sull'angolo in alto a sinistra del badge
+   L.X nel dropdown Lista Pazienti. Sporge fuori dal badge per essere
+   immediatamente visibile. */
+.dim-icon-corner {
+  position: absolute;
+  top: -6px;
+  left: -6px;
+  width: 16px;
+  height: 16px;
+  background: #fff;
+  border-radius: 50%;
+  border: 1px solid #b71c1c;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+  z-index: 2;
+}
+.dim-icon-corner svg { display: block; }
+
+/* Icona dimissione accanto al nome paziente nella Lista Pazienti */
+.dim-icon-list {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+}
+.dim-icon-list svg { display: block; }
 
 /* Fuori focus mode la checkbox sembra disabilitata visivamente */
 .patient-card:not(.focus-mode) .dim-checkbox {

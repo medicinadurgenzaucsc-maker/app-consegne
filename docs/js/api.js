@@ -170,6 +170,20 @@ function _parseDataNascita(raw) {
 // NB: _renderMainCard (vista standard) rimosso il 2026-05-11 — codice
 // preservato in docs/_legacy/standard-view.md per eventuale re-integrazione.
 
+// ── Icona "Dimissione" — due frecce orizzontali in direzioni opposte:
+// rosso scuro (#b71c1c) sopra che punta a destra (paziente che esce),
+// grigio scuro (#424242) sotto che punta a sinistra (letto che si libera).
+// Esposta come window.* per essere riutilizzata da app.js e dall'IIFE
+// snapshot in index.html senza duplicare il markup.
+function _dimIconSvg(size) {
+  var s = size || 13;
+  return '<svg width="' + s + '" height="' + s + '" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:middle;">' +
+    '<path d="M3 8h13 M12 4l4 4-4 4" stroke="#b71c1c" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>' +
+    '<path d="M21 16H8 M12 12l-4 4 4 4" stroke="#424242" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>' +
+  '</svg>';
+}
+window._dimIconSvg = _dimIconSvg;
+
 // ── RENDERER CARD (vista compatta a riga, unica vista attiva) ─
 function _renderAltCard(p) {
   var letto = String(p.Letto || '');
@@ -195,7 +209,7 @@ function _renderAltCard(p) {
   var dimIconHtml = dimVal
     ? '<span class="dim-icon-badge ms-1" title="Paziente in dimissione' +
       (dimVal ? ' — ' + _aEsc(dimVal) : '') + '">' +
-      '<i class="bi bi-box-arrow-right"></i></span>'
+      _dimIconSvg(14) + '</span>'
     : '';
 
   return '<div class="alt-row patient-card" data-bed="' + _aEsc(letto) + '" data-tipologia="' + _aEsc(tipo) + '">' +
@@ -240,7 +254,7 @@ function _renderAltCard(p) {
     '<span class="dim-checkbox-label">Dimissibile</span>' +
     '</label>' +
     (dimVal
-      ? '<span class="dim-data-info"><i class="bi bi-box-arrow-right me-1"></i>Dimissione il ' + _aEsc(dimVal) + '</span>'
+      ? '<span class="dim-data-info">' + _dimIconSvg(12) + ' Dimissione il ' + _aEsc(dimVal) + '</span>'
       : '<span class="dim-data-info-empty text-muted"></span>') +
     '</div>' +
     '</div></div>' +
@@ -1397,7 +1411,7 @@ function _aggiornaCardDaPaziente(card, p) {
       if (info) {
         if (dimNew) {
           info.className = 'dim-data-info';
-          info.innerHTML = '<i class="bi bi-box-arrow-right me-1"></i>Dimissione il ' +
+          info.innerHTML = _dimIconSvg(12) + ' Dimissione il ' +
             String(dimNew).replace(/[&<>"']/g, function(c) {
               return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c];
             });
@@ -1416,7 +1430,7 @@ function _aggiornaCardDaPaziente(card, p) {
       var span = document.createElement('span');
       span.className = 'dim-icon-badge ms-1';
       span.title = 'Paziente in dimissione — ' + dimNew;
-      span.innerHTML = '<i class="bi bi-box-arrow-right"></i>';
+      span.innerHTML = _dimIconSvg(14);
       tipoWrap.appendChild(span);
     } else if (!dimNew && iconaEsistente) {
       iconaEsistente.remove();

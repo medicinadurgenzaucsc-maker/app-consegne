@@ -1343,7 +1343,7 @@
                 + '<span class="badge bg-light text-dark border">' + r.vuoti + '</span>'
                 + '</div>';
           html += '<div class="d-flex align-items-center justify-content-between" style="padding-top:2px;">'
-                + '<span><i class="bi bi-box-arrow-right text-warning me-1"></i><span class="text-muted" style="font-size:0.8rem;">In dimissione</span></span>'
+                + '<span>' + (typeof window._dimIconSvg === 'function' ? window._dimIconSvg(13) : '<i class="bi bi-box-arrow-right text-warning me-1"></i>') + ' <span class="text-muted" style="font-size:0.8rem;">In dimissione</span></span>'
                 + '<span class="badge bg-warning text-dark border">' + (r.inDimissione || 0) + '</span>'
                 + '</div>';
           body.innerHTML = html;
@@ -1486,7 +1486,7 @@
         if (info) {
           if (v) {
             info.className = 'dim-data-info';
-            info.innerHTML = '<i class="bi bi-box-arrow-right me-1"></i>Dimissione il ' +
+            info.innerHTML = (typeof window._dimIconSvg === 'function' ? window._dimIconSvg(12) : '<i class="bi bi-box-arrow-right me-1"></i>') + ' Dimissione il ' +
               v.replace(/[&<>"']/g, function(c) {
                 return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c];
               });
@@ -1503,7 +1503,7 @@
             var span = document.createElement('span');
             span.className = 'dim-icon-badge ms-1';
             span.title = 'Paziente in dimissione — ' + v;
-            span.innerHTML = '<i class="bi bi-box-arrow-right"></i>';
+            span.innerHTML = typeof window._dimIconSvg === 'function' ? window._dimIconSvg(14) : '<i class="bi bi-box-arrow-right"></i>';
             tipoWrap.appendChild(span);
           } else if (!v && iconaEsist) {
             iconaEsist.remove();
@@ -1525,7 +1525,7 @@
         // Stato: NON dimissibile → chiede data e attiva
         Swal.fire({
           icon: 'question',
-          title: '<i class="bi bi-box-arrow-right text-warning me-2"></i>Imposta data di dimissione',
+          title: (typeof window._dimIconSvg === 'function' ? window._dimIconSvg(18) + ' ' : '<i class="bi bi-box-arrow-right text-warning me-2"></i>') + 'Imposta data di dimissione',
           html: '<input id="dimDataInput" class="swal2-input" autocomplete="off" '+
                 'placeholder="es. 15/05/2026, 150526, 15.05.26..." style="max-width:340px;">'+
                 '<div class="text-muted small mt-2" style="font-size:0.78rem;">'+
@@ -1553,7 +1553,7 @@
         // Stato: dimissibile valorizzato → propone modifica/rimozione
         Swal.fire({
           icon: 'question',
-          title: '<i class="bi bi-box-arrow-right text-warning me-2"></i>Modifica dimissione',
+          title: (typeof window._dimIconSvg === 'function' ? window._dimIconSvg(18) + ' ' : '<i class="bi bi-box-arrow-right text-warning me-2"></i>') + 'Modifica dimissione',
           html: 'Valore attuale: <strong>' +
                 valoreAttuale.replace(/[&<>"']/g, function(c) {
                   return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c];
@@ -4835,7 +4835,7 @@
           if (info) {
             if (v) {
               info.className = 'dim-data-info';
-              info.innerHTML = '<i class="bi bi-box-arrow-right me-1"></i>Dimissione il ' + _esc(v);
+              info.innerHTML = (typeof window._dimIconSvg === 'function' ? window._dimIconSvg(12) : '<i class="bi bi-box-arrow-right me-1"></i>') + ' Dimissione il ' + _esc(v);
             } else {
               info.className = 'dim-data-info-empty text-muted';
               info.innerHTML = '';
@@ -4848,7 +4848,7 @@
               var span = document.createElement('span');
               span.className = 'dim-icon-badge ms-1';
               span.title = 'Paziente in dimissione — ' + v;
-              span.innerHTML = '<i class="bi bi-box-arrow-right"></i>';
+              span.innerHTML = typeof window._dimIconSvg === 'function' ? window._dimIconSvg(14) : '<i class="bi bi-box-arrow-right"></i>';
               tipoWrap.appendChild(span);
             } else if (!v && iconaEs) {
               iconaEs.remove();

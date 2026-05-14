@@ -1225,13 +1225,23 @@
         var nomeTxt = nome ? nome : '<em class="text-muted">Vuoto</em>';
         var tipoColore = tipo ? ((typeof window._getColoreTipo === 'function') ? window._getColoreTipo(tipo) : stringToColor(tipo)) : '';
         var tipoBadge = tipo ? ' <span class="badge text-white" style="font-size:0.6rem;background:' + tipoColore + ';">' + tipo + '</span>' : '';
-        // Icona dimissione se il paziente ha valore dimissibile
+        // Icona dimissione se il paziente ha valore dimissibile.
+        // Compare in DUE posizioni:
+        //   1. Sovrapposta nell'angolo in alto a sinistra del badge L.X
+        //   2. Accanto al nome del paziente
         var dimRow = card.querySelector('.dim-row');
         var dimVal = dimRow ? (dimRow.getAttribute('data-value') || '').trim() : '';
-        var dimIcon = dimVal
-          ? ' <i class="bi bi-box-arrow-right text-warning ms-1" title="In dimissione - ' + dimVal + '" style="font-size:0.85rem;"></i>'
+        var dimSvg = (typeof window._dimIconSvg === 'function') ? window._dimIconSvg(11) : '';
+        var dimIconAccantoNome = dimVal
+          ? ' <span class="dim-icon-list ms-1" title="In dimissione — ' + dimVal + '">' + dimSvg + '</span>'
           : '';
-        html += '<li><a class="dropdown-item d-flex align-items-center gap-2 py-1" href="javascript:void(0)" data-scroll-letto="' + letto + '"><span class="badge text-white" style="min-width:36px;font-size:0.8rem;background:' + sessoBg + ';">L.' + letto + '</span><span>' + nomeTxt + tipoBadge + dimIcon + '</span></a></li>';
+        var dimIconAngolo = dimVal
+          ? '<span class="dim-icon-corner" title="In dimissione — ' + dimVal + '">' + dimSvg + '</span>'
+          : '';
+        html += '<li><a class="dropdown-item d-flex align-items-center gap-2 py-1" href="javascript:void(0)" data-scroll-letto="' + letto + '">'+
+                '<span class="badge text-white position-relative" style="min-width:36px;font-size:0.8rem;background:' + sessoBg + ';">' + dimIconAngolo + 'L.' + letto + '</span>'+
+                '<span>' + nomeTxt + tipoBadge + dimIconAccantoNome + '</span>'+
+                '</a></li>';
       });
       menu.innerHTML = html;
       menu.onclick = function(e) {
