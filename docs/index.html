@@ -4700,7 +4700,7 @@
   (function() {
     var STORAGE_KEY = '_snapshots_v1';
     var DEBOUNCE_MS = 3000;            // aggiornamento ogni 3s di pausa
-    var MAX_STORICO_PER_LETTO = 10;    // storico cap (FIFO)
+    var MAX_STORICO_PER_LETTO = 30;    // storico cap (FIFO)
     var LS_QUOTA_BYTES = 4 * 1024 * 1024; // soft limit 4MB per il blob
 
     // ── Inizializzazione: carica da localStorage all'avvio ──────────
