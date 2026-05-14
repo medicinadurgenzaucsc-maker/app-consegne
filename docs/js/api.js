@@ -463,7 +463,8 @@ function _sbDimettiLetto(numeroLetto) {
     nome:'', eta:'', data_nascita:'', data_ricovero:'', diagnosi:'',
     note_terapia:'', diaria:'', da_fare:'', piano_terapeutico:'',
     esami_colturali:'',
-    allergie:'', codice_sanitario:'', ossigeno:'', sesso:'',
+    allergie:'', codice_sanitario:'', ossigeno:'', vitto:'',
+    dimissibile:'', sesso:'',
     ultimo_aggiornamento: _oraStr(), updated_at: new Date().toISOString()
   };
   return _q(_sb.from('consegne').update(campiVuoti).eq('letto', String(numeroLetto)))
@@ -479,7 +480,7 @@ function _sbSpostaPaziente(lettoOrigine, lettoDestinazione) {
 
       var campiPaziente = ['nome','eta','data_nascita','data_ricovero','diagnosi',
         'note_terapia','diaria','da_fare','piano_terapeutico','esami_colturali',
-        'allergie','codice_sanitario','ossigeno','sesso'];
+        'allergie','codice_sanitario','ossigeno','vitto','dimissibile','sesso'];
 
       var nuovoOrig = {}, nuovoDest = {};
       campiPaziente.forEach(function(c) {
