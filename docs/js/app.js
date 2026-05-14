@@ -142,9 +142,43 @@
       // _lockRenewal rimosso: rinnovaLockBackup è un no-op nella versione Supabase
       var _lockRenewal = setInterval(function() {}, 5000);
 
-      // Il backup viene eseguito solo al caricamento pagina (vedi sotto).
-      // Non servono setInterval: il CAS in _sbArchiviaGiornoCorrente
-      // impedisce che due utenti eseguano il backup contemporaneamente.
+      // ═══════════════════════════════════════════════════════════════════════
+      // BACKUP AUTOMATICO ORARIO
+      // ──────────────────────────────────────────────────────────────────────
+      // Prima il backup veniva eseguito SOLO al caricamento della pagina:
+      // chi apriva al mattino e lasciava aperto tutto il giorno NON faceva
+      // mai backup. Se nessun altro client si collegava, i dati restavano
+      // senza backup per ore (anche giorni).
+      //
+      // Adesso, OLTRE al backup al caricamento, c'è un timer che chiama
+      // _sbArchiviaGiornoCorrente() periodicamente:
+      //
+      //   - Tick interno ogni 5 minuti (resiliente al tab throttling)
+      //   - _sbArchiviaGiornoCorrente() ha già il guard interno:
+      //     se ultimo backup < BACKUP_INTERVALLO_MS (1h) → skip silente
+      //   - CAS atomico impedisce double-backup tra client
+      //   - visibilitychange: al ritorno tab in foreground forza il check
+      //
+      // Cosi' anche un PC che resta sempre aperto fa il backup ogni ora.
+      // ═══════════════════════════════════════════════════════════════════════
+      var BACKUP_CHECK_TICK_MS = 5 * 60 * 1000; // tick ogni 5 min
+      function _backupOrarioAutomatico() {
+        // Skip se diagnostica silenziosa in corso (evita interferenze)
+        if (typeof _silentDiag !== 'undefined' && _silentDiag) return;
+        if (typeof _sbArchiviaGiornoCorrente !== 'function') return;
+        _sbArchiviaGiornoCorrente().then(function(res) {
+          // Logga solo quando un backup è effettivamente partito
+          if (res && res.inCorso) {
+            console.log('[Backup orario] Backup in corso da questo client');
+          }
+        }).catch(function(e) {
+          console.warn('[Backup orario] Errore:', e && e.message);
+        });
+      }
+      setInterval(_backupOrarioAutomatico, BACKUP_CHECK_TICK_MS);
+      document.addEventListener('visibilitychange', function() {
+        if (document.visibilityState === 'visible') _backupOrarioAutomatico();
+      });
 
       // Dopo 3s senza risposta → questo client sta eseguendo il backup
       var _msgBackupTimer = setTimeout(function() {

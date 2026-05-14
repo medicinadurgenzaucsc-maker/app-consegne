@@ -621,7 +621,7 @@ function _sbSalvaGiorniConservazione(giorni) {
   )).then(function() { return { success: true, giorni: giorni }; });
 }
 
-var BACKUP_INTERVALLO_MS = 6 * 60 * 60 * 1000; // 6 ore
+var BACKUP_INTERVALLO_MS = 1 * 60 * 60 * 1000; // 1 ora (era 6h)
 
 function _sbArchiviaGiornoCorrente() {
   var dataStr = _oggiStr();
