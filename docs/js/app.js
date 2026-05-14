@@ -908,6 +908,16 @@
           _saveRetryCount[letto] = 0;
           if (_saveRetryTimer[letto]) { clearTimeout(_saveRetryTimer[letto]); _saveRetryTimer[letto] = null; }
         }
+        // ── Snapshot recovery: chiudi lo snapshot corrente (save/save-failed)
+        // e RIAPRINE uno nuovo solo se siamo ancora in focus mode su questo letto.
+        if (typeof window._snapshotChiudi === 'function') {
+          try { window._snapshotChiudi(letto, success ? 'save' : 'save-failed'); } catch(e) {}
+        }
+        if (typeof window._snapshotApri === 'function' &&
+            typeof _focusCard !== 'undefined' && _focusCard &&
+            _focusCard.getAttribute('data-bed') === letto) {
+          try { window._snapshotApri(letto, _focusCard); } catch(e) {}
+        }
         // Su fallimento: il letto RESTA in _dirtyLetti per consentire il retry
         // (sia in modalità normale tramite _pianificaRetry, sia in emergenza tramite force-save scan).
         _letti_salvataggioAttivi.delete(letto);
@@ -1178,6 +1188,16 @@
       var cmd = btn.getAttribute('data-cmd'); var fsize = btn.getAttribute('data-fsize'); var color = btn.getAttribute('data-color'); var fmult = btn.getAttribute('data-fmult');
       if (cmd === 'palette') { var p = tb.querySelector('[data-tb-submenu="palette"]'); if (p) p.classList.toggle('open'); return; }
       if (cmd === 'fsmenu')  { var p = tb.querySelector('[data-tb-submenu="fsmenu"]');  if (p) p.classList.toggle('open'); return; }
+      if (cmd === 'apriSnapshot') {
+        // Click sull'icona ⟲ nella toolbar Diaria/Epicrisi: apri il modal
+        // di recupero snapshot per il letto della card corrente.
+        var card = tb.closest('.patient-card');
+        var letto = card ? card.getAttribute('data-bed') : null;
+        if (letto && typeof window._snapshotApriModale === 'function') {
+          window._snapshotApriModale(letto);
+        }
+        return;
+      }
       _tbRestoreSelection();
       if (fmult !== null) { _tbApplyFontMultiplier(parseFloat(fmult)); var p = tb.querySelector('[data-tb-submenu="fsmenu"]'); if (p) p.classList.remove('open'); return; }
       if (cmd) { document.execCommand(cmd, false, null); }

@@ -645,6 +645,101 @@ span.valore-giorni.alt-info-val { font-weight: normal; }
   cursor: not-allowed;
 }
 
+/* ═════════════════════════════════════════════════════════════
+   SNAPSHOT RECOVERY — toolbar button + badge + modal
+   ═════════════════════════════════════════════════════════════ */
+.tb-btn.tb-snapshot-recovery {
+  position: relative;
+}
+.tb-snapshot-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  background: #d32f2f;
+  color: #fff;
+  font-size: 0.6rem;
+  font-weight: bold;
+  min-width: 16px;
+  height: 16px;
+  border-radius: 8px;
+  padding: 0 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.3);
+}
+
+/* Modal recupero snapshot */
+.modale-recupero-popup {
+  max-width: 1100px !important;
+}
+.modal-recupero-snap {
+  text-align: left;
+  font-size: 0.85rem;
+  color: #263238;
+  max-height: 65vh;
+  overflow-y: auto;
+}
+.snap-preview { padding: 4px 6px; }
+.snap-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+  padding: 6px 10px;
+  background: #eceff1;
+  border-radius: 6px;
+}
+.snap-tipo {
+  font-weight: bold;
+  font-size: 0.85rem;
+  color: #37474f;
+}
+.snap-paginazione {
+  font-size: 0.75rem;
+  color: #607d8b;
+  font-style: italic;
+}
+.snap-orari {
+  font-size: 0.74rem;
+  color: #607d8b;
+  margin-bottom: 6px;
+  padding: 0 10px;
+}
+.snap-hr {
+  margin: 6px 0;
+  border-color: #cfd8dc;
+}
+.snap-sez {
+  margin-bottom: 8px;
+  padding: 6px 10px;
+  background: #fafafa;
+  border-left: 3px solid #0288d1;
+  border-radius: 0 4px 4px 0;
+}
+.snap-sez-titolo {
+  font-weight: bold;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #0288d1;
+  margin-bottom: 3px;
+}
+.snap-sez-corpo {
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: #263238;
+  white-space: normal;
+  word-wrap: break-word;
+}
+.snap-nav-buttons {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid #cfd8dc;
+  text-align: center;
+}
+
 /* Colonne 2-5: crescono per riempire */
 .alt-col-diag .alt-editable,
 .alt-col-diaria .alt-editable,

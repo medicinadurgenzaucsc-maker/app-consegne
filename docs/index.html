@@ -89,6 +89,11 @@
         _timerRilascio = null;
       }, 20000);
     }
+    // Espone _rinnovaDebounce e _lettoLockAtt al sistema snapshot (IIFE separato)
+    window._rinnovaDebounce = _rinnovaDebounce;
+    Object.defineProperty(window, '_lettoLockAttSafe', {
+      get: function() { return _lettoLockAtt; }
+    });
 
     function _mostraAvvisoLock(letto) {
       Swal.fire({
@@ -302,11 +307,23 @@
                            '<rect x="3" y="3" width="18" height="18" rx="3" fill="#2e7d32"/>' +
                            '<path d="M7 12l3 3 7-7" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>' +
                            '</svg>';
+      // Snapshot recovery: cerchio blu con orologio + freccia history
+      var svgSnapshot = '<svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">' +
+                        '<circle cx="12" cy="12" r="11" fill="#0288d1"/>' +
+                        '<path d="M12 7v5l3 2" stroke="#fff" stroke-width="2.2" stroke-linecap="round" fill="none"/>' +
+                        '<path d="M5.5 8.5a7 7 0 1 1-1 5.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round" fill="none"/>' +
+                        '<polygon points="3,7.5 7,7.5 5,11" fill="#fff"/>' +
+                        '</svg>';
       var extra = '';
       if (campo === 'Diaria') {
         extra = '<span class="tb-sep"></span>'
               + '<button class="tb-btn tb-data-diaria" data-cmd="insertDataDiaria" title="Aggiungi data odierna">'
               +   svgPlus
+              + '</button>'
+              // Snapshot recovery — accanto al "+" verde (solo Diaria/Epicrisi)
+              + '<button class="tb-btn tb-snapshot-recovery" data-cmd="apriSnapshot" title="Recupera dati da snapshot precedente">'
+              +   svgSnapshot
+              +   '<span class="tb-snapshot-badge" data-snap-badge style="display:none;"></span>'
               + '</button>';
       } else if (campo === 'EsamiColturali' || campo === 'DaFare') {
         extra = '<span class="tb-sep"></span>'
@@ -1046,6 +1063,14 @@
         // Floppy intelligente: indicatore stato save + click per forzare save manuale.
         // Visibile in qualsiasi modalità (normale o emergenza).
         if (typeof window._emergCreaFloppy === 'function') window._emergCreaFloppy(card);
+
+        // ── Snapshot recovery: apri uno snapshot per questa sessione di editing.
+        // Si attiva SOLO dopo che il lock è stato acquisito e i dati DB sono
+        // visibili nella card (qui dentro _completaApertura). Lo snapshot
+        // viene aggiornato ogni 3s di inattività durante la digitazione.
+        if (typeof window._snapshotApri === 'function') {
+          try { window._snapshotApri(letto, card); } catch(e) { console.warn('[Snapshot] apri:', e); }
+        }
       }
 
       // ── FASE 2: scrivi lock sul DB (1 upsert) ────────────────────────────
@@ -1156,6 +1181,13 @@
       if (_lettoUscita && typeof _dirtyLetti !== 'undefined' && _dirtyLetti.has(_lettoUscita)) {
         clearTimeout(timerSalvataggioLetto[_lettoUscita]);
         eseguiSalvataggioLettoCompleto(_lettoUscita, _focusCard);
+      }
+
+      // ── Snapshot recovery: chiudi lo snapshot corrente con tipo "close".
+      // Non riapriamo perché l'utente sta uscendo dal focus mode. Lo snapshot
+      // resta accessibile nello storico per il prossimo recupero.
+      if (typeof window._snapshotChiudi === 'function') {
+        try { window._snapshotChiudi(_lettoUscita, 'close'); } catch(e) { console.warn('[Snapshot] chiudi:', e); }
       }
 
       // Rilascia il lock immediatamente — Realtime propagherà la rimozione a tutti i client
@@ -4654,6 +4686,521 @@
     document.addEventListener('visibilitychange', function() {
       if (document.visibilityState === 'visible') _maybeDiagAuto();
     });
+
+  })();
+  </script>
+
+  <!-- ══════════════════════════════════════════════════════════════
+       SNAPSHOT RECOVERY — sistema di backup in-memory degli edit
+       in focus mode. Salva uno snapshot "live" per ogni sessione di
+       editing, aggiornato ogni 3s di pausa. Chiusura su save/exit.
+       Storico cap 10 per letto, persistenza in localStorage.
+       ══════════════════════════════════════════════════════════════ -->
+  <script>
+  (function() {
+    var STORAGE_KEY = '_snapshots_v1';
+    var DEBOUNCE_MS = 3000;            // aggiornamento ogni 3s di pausa
+    var MAX_STORICO_PER_LETTO = 10;    // storico cap (FIFO)
+    var LS_QUOTA_BYTES = 4 * 1024 * 1024; // soft limit 4MB per il blob
+
+    // ── Inizializzazione: carica da localStorage all'avvio ──────────
+    window._snapshots = {};
+    try {
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) window._snapshots = JSON.parse(raw) || {};
+    } catch(e) { window._snapshots = {}; }
+
+    // All'avvio, eventuali snapshot "current" rimasti orfani da sessioni
+    // precedenti (crash, refresh accidentale) vengono CHIUSI come "interrupted"
+    // e spostati nello storico — così l'utente li può recuperare.
+    Object.keys(window._snapshots).forEach(function(letto) {
+      var s = window._snapshots[letto];
+      if (s && s.current) {
+        s.current.tsClose = s.current.tsUpdate || s.current.tsOpen || Date.now();
+        s.current.tipo = 'interrupted';
+        if (!s.storico) s.storico = [];
+        s.storico.push(s.current);
+        s.current = null;
+        if (s.storico.length > MAX_STORICO_PER_LETTO) {
+          s.storico = s.storico.slice(-MAX_STORICO_PER_LETTO);
+        }
+      }
+    });
+
+    function _esc(s) {
+      return String(s||'').replace(/[&<>"']/g, function(c) {
+        return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c];
+      });
+    }
+    function _stripHtml(s) {
+      if (!s) return '';
+      return String(s)
+        .replace(/<br\s*\/?>/gi, ' ')
+        .replace(/<\/p>/gi, ' ')
+        .replace(/<\/div>/gi, ' ')
+        .replace(/<\/li>/gi, ' — ')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/&nbsp;/g, ' ')
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+    function _fmtTs(ts) {
+      if (!ts) return '—';
+      var d = new Date(ts);
+      function pad(n) { return String(n).padStart(2,'0'); }
+      return pad(d.getDate())+'/'+pad(d.getMonth()+1)+'/'+d.getFullYear()+' '+
+             pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds());
+    }
+    function _tipoLabel(tipo) {
+      return ({
+        'live': '🟢 Live (in editing)',
+        'save': '💾 Salvato',
+        'save-failed': '⚠️ Save fallito',
+        'close': '✓ Chiusura focus mode',
+        'pre-ripristino': '🛟 Pre-ripristino (snapshot di sicurezza)',
+        'interrupted': '⚠️ Sessione interrotta (refresh/crash)'
+      }[tipo] || tipo);
+    }
+
+    // ── Persistenza localStorage (con fallback se quota piena) ──────
+    function _persist() {
+      try {
+        var blob = JSON.stringify(window._snapshots);
+        if (blob.length > LS_QUOTA_BYTES) {
+          // Cleanup aggressivo: dimezza lo storico di ogni letto
+          Object.keys(window._snapshots).forEach(function(l) {
+            var s = window._snapshots[l];
+            if (s.storico && s.storico.length > 3) s.storico = s.storico.slice(-3);
+          });
+          blob = JSON.stringify(window._snapshots);
+        }
+        localStorage.setItem(STORAGE_KEY, blob);
+      } catch(e) {
+        // Quota exceeded: rimuovi i letti senza editing recente
+        try {
+          var ora = Date.now();
+          Object.keys(window._snapshots).forEach(function(l) {
+            var s = window._snapshots[l];
+            var ultimoTs = s.current ? (s.current.tsUpdate || s.current.tsOpen) :
+                           (s.storico && s.storico.length ? s.storico[s.storico.length-1].tsClose : 0);
+            if (ora - ultimoTs > 24*60*60*1000) delete window._snapshots[l];
+          });
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(window._snapshots));
+        } catch(e2) { /* niente da fare */ }
+      }
+    }
+
+    // ── Raccolta dati dalla card (replica di eseguiSalvataggioLettoCompleto) ──
+    function _raccogliDatiCard(card) {
+      var dati = {};
+      card.querySelectorAll('.editable-area').forEach(function(area) {
+        var campo = area.getAttribute('data-field');
+        if (!campo) return;
+        dati[campo] = area.classList.contains('plain-text') ? area.innerText : area.innerHTML;
+      });
+      var sessoEl = card.querySelector('.sesso-symbol[data-field="Sesso"]');
+      if (sessoEl) dati['Sesso'] = sessoEl.getAttribute('data-sesso') || '';
+      var dimRow = card.querySelector('.dim-row[data-field="Dimissibile"]');
+      if (dimRow) dati['Dimissibile'] = dimRow.getAttribute('data-value') || '';
+      var dr = card.querySelector('.data-ricovero-text');
+      if (dr) dati['DataRicovero_vis'] = dr.value || ''; // formato dd/mm/yyyy visibile
+      var dn = card.querySelector('.data-nascita-text');
+      if (dn) dati['DataNascita_vis'] = dn.value || '';
+      return dati;
+    }
+
+    // ── Applicazione dati alla card (per ripristino) ────────────────
+    function _applicaDatiCard(card, dati) {
+      Object.keys(dati || {}).forEach(function(campo) {
+        if (campo === 'Sesso') {
+          var sessoEl = card.querySelector('.sesso-symbol[data-field="Sesso"]');
+          if (sessoEl) {
+            sessoEl.setAttribute('data-sesso', dati[campo] || '');
+            if (typeof window._aggiornaSimboloSesso === 'function') window._aggiornaSimboloSesso(sessoEl);
+          }
+          return;
+        }
+        if (campo === 'Dimissibile') {
+          var dimRow = card.querySelector('.dim-row[data-field="Dimissibile"]');
+          if (!dimRow) return;
+          var v = dati[campo] || '';
+          dimRow.setAttribute('data-value', v);
+          var cb = dimRow.querySelector('.dim-checkbox');
+          if (cb) cb.checked = !!v;
+          var info = dimRow.querySelector('.dim-data-info, .dim-data-info-empty');
+          if (info) {
+            if (v) {
+              info.className = 'dim-data-info';
+              info.innerHTML = '<i class="bi bi-box-arrow-right me-1"></i>Dimissione il ' + _esc(v);
+            } else {
+              info.className = 'dim-data-info-empty text-muted';
+              info.innerHTML = '';
+            }
+          }
+          var tipoWrap = card.querySelector('.tipo-badge-wrap');
+          if (tipoWrap) {
+            var iconaEs = tipoWrap.querySelector('.dim-icon-badge');
+            if (v && !iconaEs) {
+              var span = document.createElement('span');
+              span.className = 'dim-icon-badge ms-1';
+              span.title = 'Paziente in dimissione — ' + v;
+              span.innerHTML = '<i class="bi bi-box-arrow-right"></i>';
+              tipoWrap.appendChild(span);
+            } else if (!v && iconaEs) {
+              iconaEs.remove();
+            } else if (v && iconaEs) {
+              iconaEs.title = 'Paziente in dimissione — ' + v;
+            }
+          }
+          return;
+        }
+        if (campo === 'DataRicovero_vis') {
+          var dr = card.querySelector('.data-ricovero-text');
+          if (dr) dr.value = dati[campo] || '';
+          return;
+        }
+        if (campo === 'DataNascita_vis') {
+          var dn = card.querySelector('.data-nascita-text');
+          if (dn) dn.value = dati[campo] || '';
+          return;
+        }
+        var dst = card.querySelector('[data-field="' + campo + '"]');
+        if (!dst) return;
+        var val = dati[campo] != null ? String(dati[campo]) : '';
+        if (dst.classList.contains('plain-text')) {
+          if (dst.innerText !== val) dst.innerText = val;
+        } else {
+          if (dst.innerHTML !== val) dst.innerHTML = val;
+        }
+        if (typeof window._placeholderCheck === 'function') window._placeholderCheck(dst);
+      });
+      // Ricalcola giorni di ricovero se necessario
+      if (typeof window._aggiornaTuttiGiorniRicovero === 'function') {
+        window._aggiornaTuttiGiorniRicovero();
+      } else {
+        // Fallback: trigger blur su data ricovero per ricalcolare
+        var dr2 = card.querySelector('.data-ricovero-text');
+        if (dr2 && typeof formattaDataRicoveroBlur === 'function') {
+          try { formattaDataRicoveroBlur(dr2); } catch(e){}
+        }
+      }
+    }
+
+    // ── Apri snapshot (chiamato da _completaApertura) ──────────────
+    window._snapshotApri = function(letto, card) {
+      if (!letto || !card) return;
+      if (!window._snapshots[letto]) window._snapshots[letto] = { current: null, storico: [] };
+      var s = window._snapshots[letto];
+      // Se esiste già un current, chiuderlo prima (situazione anomala)
+      if (s.current) {
+        s.current.tsClose = Date.now();
+        s.current.tipo = 'close';
+        s.storico.push(s.current);
+        s.current = null;
+      }
+      var ora = Date.now();
+      s.current = {
+        tsOpen: ora,
+        tsUpdate: ora,
+        dati: _raccogliDatiCard(card),
+        tipo: 'live'
+      };
+      _persist();
+      _aggiornaBadgeIcona(letto);
+      console.log('[Snapshot] APERTO per letto ' + letto);
+    };
+
+    // ── Aggiorna snapshot live (chiamato dal debounce 3s) ──────────
+    window._snapshotAggiorna = function(letto, card) {
+      if (!letto || !card) return;
+      var s = window._snapshots[letto];
+      if (!s || !s.current) return;
+      s.current.tsUpdate = Date.now();
+      s.current.dati = _raccogliDatiCard(card);
+      _persist();
+    };
+
+    // ── Chiudi snapshot live (save/save-failed/close) ──────────────
+    window._snapshotChiudi = function(letto, tipo) {
+      if (!letto) return;
+      var s = window._snapshots[letto];
+      if (!s || !s.current) return;
+      s.current.tsClose = Date.now();
+      s.current.tsUpdate = s.current.tsUpdate || s.current.tsClose;
+      s.current.tipo = tipo || 'close';
+      s.storico.push(s.current);
+      s.current = null;
+      if (s.storico.length > MAX_STORICO_PER_LETTO) {
+        s.storico = s.storico.slice(-MAX_STORICO_PER_LETTO);
+      }
+      _persist();
+      _aggiornaBadgeIcona(letto);
+      console.log('[Snapshot] CHIUSO letto ' + letto + ' tipo=' + tipo);
+    };
+
+    // ── Aggiorna badge count sull'icona toolbar ────────────────────
+    function _aggiornaBadgeIcona(letto) {
+      var s = window._snapshots[letto];
+      var n = s ? (s.storico ? s.storico.length : 0) + (s.current ? 1 : 0) : 0;
+      var card = document.querySelector('.patient-card[data-bed="'+letto+'"]');
+      if (!card) return;
+      var badges = card.querySelectorAll('[data-snap-badge]');
+      badges.forEach(function(b) {
+        if (n > 0) {
+          b.style.display = 'inline-flex';
+          b.innerText = n;
+        } else {
+          b.style.display = 'none';
+        }
+      });
+    }
+
+    // ── Debounce input listener: aggiorna lo snapshot ogni 3s di pausa
+    var _debounceTimer = null;
+    document.addEventListener('input', function(e) {
+      var card = e.target.closest && e.target.closest('.patient-card.focus-mode');
+      if (!card) return;
+      var letto = card.getAttribute('data-bed');
+      if (!letto) return;
+      clearTimeout(_debounceTimer);
+      _debounceTimer = setTimeout(function() {
+        window._snapshotAggiorna(letto, card);
+      }, DEBOUNCE_MS);
+    });
+    // Snapshot immediato anche al PASTE (evento rischioso)
+    document.addEventListener('paste', function(e) {
+      var card = e.target.closest && e.target.closest('.patient-card.focus-mode');
+      if (!card) return;
+      var letto = card.getAttribute('data-bed');
+      if (!letto) return;
+      setTimeout(function() { window._snapshotAggiorna(letto, card); }, 200);
+    });
+
+    // ── Render preview compatto di un singolo snapshot ─────────────
+    function _renderPreviewSnapshot(snap, indice, totale) {
+      var d = snap.dati || {};
+      var nomePaz = _stripHtml(d.Nome || '');
+      var sesso = d.Sesso || '';
+      var eta = _stripHtml(d.Eta || '—');
+      var allergie = _stripHtml(d.Allergie || '—');
+      var nascita = d.DataNascita_vis || '—';
+      var ricovero = d.DataRicovero_vis || '—';
+      var cs = _stripHtml(d.CodiceSanitario || '—');
+      var ossigeno = _stripHtml(d.Ossigeno || '—');
+
+      var diag = _stripHtml(d.Diagnosi || '');
+      var piano = _stripHtml(d.PianoTerapeutico || '');
+      var esami = _stripHtml(d.EsamiColturali || '');
+      var dafare = _stripHtml(d.DaFare || '');
+      var note = _stripHtml(d.NoteTerapia || '');
+      var diaria = _stripHtml(d.Diaria || '');
+
+      var headerInfo = snap.tipo === 'live'
+        ? 'Aperto: ' + _fmtTs(snap.tsOpen) + ' &middot; Ultimo update: ' + _fmtTs(snap.tsUpdate)
+        : 'Aperto: ' + _fmtTs(snap.tsOpen) + ' &middot; Chiuso: ' + _fmtTs(snap.tsClose);
+
+      function _sez(titolo, contenuto) {
+        return '<div class="snap-sez">' +
+          '<div class="snap-sez-titolo">' + _esc(titolo) + '</div>' +
+          '<div class="snap-sez-corpo">' + _esc(contenuto || '—') + '</div>' +
+        '</div>';
+      }
+
+      return '<div class="snap-preview">' +
+        '<div class="snap-meta">' +
+          '<div class="snap-tipo">' + _tipoLabel(snap.tipo) + '</div>' +
+          '<div class="snap-paginazione">Snapshot ' + (indice+1) + ' di ' + totale + '</div>' +
+        '</div>' +
+        '<div class="snap-orari">' + headerInfo + '</div>' +
+        '<hr class="snap-hr">' +
+        _sez('Anagrafica',
+          (nomePaz || '—') + ' — ' +
+          (sesso === 'M' ? 'M' : sesso === 'F' ? 'F' : '?') +
+          ', ' + eta + ' anni — Allergie: ' + allergie +
+          ' — Nascita: ' + nascita +
+          ' — Ricovero: ' + ricovero +
+          ' — CS: ' + cs +
+          ' — Ossigeno: ' + ossigeno) +
+        _sez('Diagnosi', diag) +
+        _sez('Piano di Cura', piano) +
+        _sez('Esami Colturali', esami) +
+        _sez('Da Fare / Richieste', dafare) +
+        _sez('Note e Terapia', note) +
+        _sez('Diaria / Epicrisi', diaria) +
+      '</div>';
+    }
+
+    // ── Apri modal recupero ─────────────────────────────────────────
+    var _modaleSnapStato = { letto: null, indice: 0, lista: [] };
+
+    window._snapshotApriModale = function(letto) {
+      if (!letto) return;
+      var s = window._snapshots[letto];
+      if (!s) s = { current: null, storico: [] };
+
+      // Lista: dal più recente al più vecchio.
+      // Include il "current" se esiste, poi lo storico al contrario.
+      // Filtro: nasconde gli "open" duplicati se i dati sono identici al prossimo.
+      var lista = [];
+      if (s.current) lista.push(s.current);
+      var stor = (s.storico || []).slice().reverse();
+      stor.forEach(function(snap) {
+        if (snap.tipo === 'open') {
+          // Salta gli 'open' se i dati sono uguali al successivo (no edit)
+          var ult = lista[lista.length - 1];
+          if (ult && JSON.stringify(ult.dati) === JSON.stringify(snap.dati)) return;
+        }
+        lista.push(snap);
+      });
+
+      if (lista.length === 0) {
+        Swal.fire({
+          icon: 'info',
+          title: 'Nessuno snapshot disponibile',
+          text: 'Non ci sono ancora dati salvati in cache per questo letto.',
+          confirmButtonColor: '#37474f'
+        });
+        return;
+      }
+
+      _modaleSnapStato.letto = letto;
+      _modaleSnapStato.indice = 0;
+      _modaleSnapStato.lista = lista;
+
+      _mostraModaleSnap();
+    };
+
+    function _mostraModaleSnap() {
+      var st = _modaleSnapStato;
+      var snap = st.lista[st.indice];
+      var totale = st.lista.length;
+      var preview = _renderPreviewSnapshot(snap, st.indice, totale);
+
+      Swal.fire({
+        title: '<i class="bi bi-clock-history text-info me-2"></i>Recupero dati — Letto ' + _esc(st.letto),
+        html:
+          '<div class="modal-recupero-snap">' +
+            preview +
+            '<div class="snap-nav-buttons">' +
+              '<button class="btn btn-sm btn-outline-secondary" id="snapPrev"' +
+                (st.indice >= totale - 1 ? ' disabled' : '') + '>' +
+                '<i class="bi bi-arrow-left me-1"></i>Più vecchio' +
+              '</button>' +
+              '<button class="btn btn-sm btn-outline-secondary ms-2" id="snapNext"' +
+                (st.indice <= 0 ? ' disabled' : '') + '>' +
+                'Più recente<i class="bi bi-arrow-right ms-1"></i>' +
+              '</button>' +
+            '</div>' +
+          '</div>',
+        width: '85%',
+        showConfirmButton: true,
+        confirmButtonText: '<i class="bi bi-arrow-counterclockwise me-1"></i>Ripristina questo snapshot',
+        confirmButtonColor: '#198754',
+        showCancelButton: true,
+        cancelButtonText: 'Annulla',
+        cancelButtonColor: '#37474f',
+        focusConfirm: false,
+        customClass: { popup: 'modale-recupero-popup' },
+        didOpen: function(popup) {
+          var prev = document.getElementById('snapPrev');
+          var next = document.getElementById('snapNext');
+          if (prev) prev.addEventListener('click', function() {
+            if (st.indice < st.lista.length - 1) { st.indice++; Swal.close(); setTimeout(_mostraModaleSnap, 100); }
+          });
+          if (next) next.addEventListener('click', function() {
+            if (st.indice > 0) { st.indice--; Swal.close(); setTimeout(_mostraModaleSnap, 100); }
+          });
+          // Reset timer inattività focus mode al click nel popup:
+          // così il modal "Recupero dati" non fa scadere il timer di
+          // chiusura automatica di focus mode (5 min).
+          popup.addEventListener('click', function() {
+            var letto = window._lettoLockAttSafe;
+            if (letto && typeof window._rinnovaDebounce === 'function') {
+              window._rinnovaDebounce(letto);
+            }
+          });
+        }
+      }).then(function(res) {
+        if (res.isConfirmed) _confermaRipristino();
+      });
+    }
+
+    function _confermaRipristino() {
+      var st = _modaleSnapStato;
+      var snap = st.lista[st.indice];
+      if (!snap) return;
+      Swal.fire({
+        icon: 'warning',
+        title: 'Sei sicuro?',
+        html: 'Il contenuto attuale della scheda verrà sostituito con lo snapshot del<br>' +
+              '<strong>' + _fmtTs(snap.tsUpdate || snap.tsClose || snap.tsOpen) + '</strong> ' +
+              '(' + _tipoLabel(snap.tipo) + ').<br><br>' +
+              '<small class="text-muted">Prima del ripristino verrà creato uno <strong>snapshot di sicurezza</strong> dello stato attuale (recuperabile).</small>',
+        showCancelButton: true,
+        confirmButtonText: '<i class="bi bi-arrow-counterclockwise me-1"></i>Sì, ripristina',
+        confirmButtonColor: '#198754',
+        cancelButtonText: 'Annulla',
+        cancelButtonColor: '#37474f',
+        reverseButtons: true
+      }).then(function(r) {
+        if (!r.isConfirmed) {
+          // Riapri il modal recupero con lo stato attuale
+          setTimeout(_mostraModaleSnap, 100);
+          return;
+        }
+        _eseguiRipristino(snap, st.letto);
+      });
+    }
+
+    function _eseguiRipristino(snap, letto) {
+      var card = document.querySelector('.patient-card[data-bed="'+letto+'"]');
+      if (!card) {
+        Swal.fire({ icon: 'error', title: 'Card non trovata' });
+        return;
+      }
+      // Snapshot di sicurezza PRE-RIPRISTINO
+      var s = window._snapshots[letto];
+      if (!s) { s = window._snapshots[letto] = { current: null, storico: [] }; }
+      var pre = {
+        tsOpen: s.current ? s.current.tsOpen : Date.now(),
+        tsUpdate: Date.now(),
+        tsClose: Date.now(),
+        dati: _raccogliDatiCard(card),
+        tipo: 'pre-ripristino'
+      };
+      s.storico.push(pre);
+      if (s.storico.length > MAX_STORICO_PER_LETTO) {
+        s.storico = s.storico.slice(-MAX_STORICO_PER_LETTO);
+      }
+      // Applica i dati dello snapshot scelto
+      _applicaDatiCard(card, snap.dati);
+      // Aggiorna il current se siamo in focus mode (ora ha i dati ripristinati)
+      if (s.current) {
+        s.current.dati = _raccogliDatiCard(card);
+        s.current.tsUpdate = Date.now();
+      }
+      // Triggera dirty marker per save
+      if (typeof attivaSalvataggioRitardato === 'function') {
+        attivaSalvataggioRitardato(letto, card);
+      }
+      _persist();
+      _aggiornaBadgeIcona(letto);
+      Swal.fire({
+        icon: 'success',
+        title: 'Snapshot ripristinato',
+        html: 'Dati del <strong>' + _fmtTs(snap.tsUpdate || snap.tsClose || snap.tsOpen) +
+              '</strong> applicati alla scheda.<br>' +
+              '<small class="text-muted">Lo snapshot precedente è stato salvato come "pre-ripristino".</small>',
+        timer: 3500, showConfirmButton: false, timerProgressBar: true
+      });
+    }
+
+    // Espone l'helper per chi vuole forzare aggiornamento badge da fuori
+    window._snapshotAggiornaBadge = _aggiornaBadgeIcona;
 
   })();
   </script>
