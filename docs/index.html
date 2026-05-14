@@ -4700,7 +4700,7 @@
   (function() {
     var STORAGE_KEY = '_snapshots_v1';
     var DEBOUNCE_MS = 3000;            // aggiornamento ogni 3s di pausa
-    var MAX_STORICO_PER_LETTO = 30;    // storico cap (FIFO)
+    var MAX_STORICO_PER_LETTO = 13;    // storico cap (FIFO)
     var LS_QUOTA_BYTES = 4 * 1024 * 1024; // soft limit 4MB per il blob
 
     // ── Inizializzazione: carica da localStorage all'avvio ──────────
@@ -5074,28 +5074,65 @@
       _mostraModaleSnap();
     };
 
-    function _mostraModaleSnap() {
+    // Costruisce l'HTML body del modal (preview + nav buttons)
+    function _buildBodyHtml() {
       var st = _modaleSnapStato;
       var snap = st.lista[st.indice];
       var totale = st.lista.length;
       var preview = _renderPreviewSnapshot(snap, st.indice, totale);
+      return '<div class="modal-recupero-snap">' +
+        preview +
+        '<div class="snap-nav-buttons">' +
+          '<button type="button" class="btn btn-sm btn-outline-secondary" id="snapPrev"' +
+            (st.indice >= totale - 1 ? ' disabled' : '') + '>' +
+            '<i class="bi bi-arrow-left me-1"></i>Più vecchio' +
+          '</button>' +
+          '<button type="button" class="btn btn-sm btn-outline-secondary ms-2" id="snapNext"' +
+            (st.indice <= 0 ? ' disabled' : '') + '>' +
+            'Più recente<i class="bi bi-arrow-right ms-1"></i>' +
+          '</button>' +
+        '</div>' +
+      '</div>';
+    }
 
+    // Attacca (o ri-attacca) i listener ai bottoni prev/next del modal
+    function _attaccaListenerNavSnap() {
+      var prev = document.getElementById('snapPrev');
+      var next = document.getElementById('snapNext');
+      if (prev) prev.onclick = function() {
+        var st = _modaleSnapStato;
+        if (st.indice < st.lista.length - 1) {
+          st.indice++;
+          _aggiornaContenutoModaleSnap();
+        }
+      };
+      if (next) next.onclick = function() {
+        var st = _modaleSnapStato;
+        if (st.indice > 0) {
+          st.indice--;
+          _aggiornaContenutoModaleSnap();
+        }
+      };
+    }
+
+    // Aggiorna il contenuto del modal IN-PLACE (senza chiusura/riapertura).
+    // Sostituisce solo l'HTML del body del SweetAlert e ri-attacca i listener
+    // ai nuovi bottoni. Niente fade out/in: la navigazione tra snapshot
+    // diventa fluida e istantanea.
+    function _aggiornaContenutoModaleSnap() {
+      var container = document.querySelector('.swal2-html-container');
+      if (!container) return;
+      container.innerHTML = _buildBodyHtml();
+      _attaccaListenerNavSnap();
+      // Scroll del contenuto al top per orientare l'utente sul nuovo snapshot
+      var scrollWrap = container.querySelector('.modal-recupero-snap');
+      if (scrollWrap) scrollWrap.scrollTop = 0;
+    }
+
+    function _mostraModaleSnap() {
       Swal.fire({
-        title: '<i class="bi bi-clock-history text-info me-2"></i>Recupero dati — Letto ' + _esc(st.letto),
-        html:
-          '<div class="modal-recupero-snap">' +
-            preview +
-            '<div class="snap-nav-buttons">' +
-              '<button class="btn btn-sm btn-outline-secondary" id="snapPrev"' +
-                (st.indice >= totale - 1 ? ' disabled' : '') + '>' +
-                '<i class="bi bi-arrow-left me-1"></i>Più vecchio' +
-              '</button>' +
-              '<button class="btn btn-sm btn-outline-secondary ms-2" id="snapNext"' +
-                (st.indice <= 0 ? ' disabled' : '') + '>' +
-                'Più recente<i class="bi bi-arrow-right ms-1"></i>' +
-              '</button>' +
-            '</div>' +
-          '</div>',
+        title: '<i class="bi bi-clock-history text-info me-2"></i>Recupero dati — Letto ' + _esc(_modaleSnapStato.letto),
+        html: _buildBodyHtml(),
         width: '85%',
         showConfirmButton: true,
         confirmButtonText: '<i class="bi bi-arrow-counterclockwise me-1"></i>Ripristina questo snapshot',
@@ -5106,14 +5143,7 @@
         focusConfirm: false,
         customClass: { popup: 'modale-recupero-popup' },
         didOpen: function(popup) {
-          var prev = document.getElementById('snapPrev');
-          var next = document.getElementById('snapNext');
-          if (prev) prev.addEventListener('click', function() {
-            if (st.indice < st.lista.length - 1) { st.indice++; Swal.close(); setTimeout(_mostraModaleSnap, 100); }
-          });
-          if (next) next.addEventListener('click', function() {
-            if (st.indice > 0) { st.indice--; Swal.close(); setTimeout(_mostraModaleSnap, 100); }
-          });
+          _attaccaListenerNavSnap();
           // Reset timer inattività focus mode al click nel popup:
           // così il modal "Recupero dati" non fa scadere il timer di
           // chiusura automatica di focus mode (5 min).
