@@ -3446,6 +3446,7 @@
         }).then(function(r) {
           if (!r.isConfirmed) return;
           _emergenzaFermaPolling();
+          window._emergSourceAuto = false;
           _aggiornaBottoneEmergenza();
           Swal.fire({ icon: 'info', title: 'Modalità emergenza disattivata',
             timer: 2000, showConfirmButton: false, timerProgressBar: true });
@@ -4463,6 +4464,10 @@
             return;
           }
           if (res.isConfirmed && mostraAttivaBtn) {
+            // Attivazione MANUALE: marca la fonte come "non auto" per
+            // impedire all'auto-disattivazione di spegnerla senza il
+            // consenso dell'utente.
+            window._emergSourceAuto = false;
             _emergenzaAvviaPolling();
             _aggiornaBottoneEmergenza();
             Swal.fire({
@@ -4503,16 +4508,38 @@
           (r.lib      && !r.lib.ok);
         var ciSonoProblemi = (rischioSalvataggio >= 10) || criticiVeri || (r.ws && !r.ws.ok);
 
-        // Auto-attivazione modalità emergenza (per diagnostica oraria)
+        // ── Auto-attivazione modalità emergenza ──────────────────────
         // Se opzioni.autoAttivaEmergenza E ci sono problemi E l'emergenza
         // NON è già attiva → attivala SILENZIOSAMENTE (no modal, solo
         // pulsante navbar che diventa giallo "Polling ON").
+        // Imposta il flag globale _emergSourceAuto per ricordare che è
+        // stata attivata in automatico → potrà essere disattivata
+        // automaticamente al successivo check pulito.
         if (opzioni.autoAttivaEmergenza && ciSonoProblemi &&
             typeof _emergenzaPollingAttivo === 'function' &&
             !_emergenzaPollingAttivo() &&
             typeof _emergenzaAvviaPolling === 'function') {
-          console.log('[Diag oraria] Problemi rilevati, attivazione emergenza silenziosa');
+          console.log('[Diag auto] Problemi rilevati, attivazione emergenza silenziosa');
+          window._emergSourceAuto = true;
           _emergenzaAvviaPolling();
+          _aggiornaBottoneEmergenza();
+        }
+
+        // ── Auto-DISATTIVAZIONE modalità emergenza ───────────────────
+        // Se opzioni.autoDisattivaEmergenza E NESSUN problema E l'emergenza
+        // era stata attivata in modo automatico (_emergSourceAuto === true)
+        // → la disattiviamo silenziosamente. La rete è tornata, possiamo
+        // tornare al Realtime standard.
+        // Se l'utente l'ha attivata manualmente (_emergSourceAuto === false)
+        // NON la disattiviamo, rispettando la sua scelta.
+        if (opzioni.autoDisattivaEmergenza && !ciSonoProblemi &&
+            typeof _emergenzaPollingAttivo === 'function' &&
+            _emergenzaPollingAttivo() &&
+            window._emergSourceAuto === true &&
+            typeof _emergenzaFermaPolling === 'function') {
+          console.log('[Diag auto] Nessun problema, disattivazione emergenza silenziosa (era auto-attivata)');
+          _emergenzaFermaPolling();
+          window._emergSourceAuto = false;
           _aggiornaBottoneEmergenza();
         }
 
@@ -4544,51 +4571,66 @@
     // Vedi window._eseguiDiagnosticaSilent definita sopra.
 
     // ══════════════════════════════════════════════════════════════
-    // DIAGNOSTICA ORARIA AUTOMATICA
+    // DIAGNOSTICA AUTOMATICA — frequenza adattiva
     // ──────────────────────────────────────────────────────────────
-    // Ogni ora esegue una diagnostica silenziosa in background:
-    //  - NESSUN modal mostrato (anche se trova problemi)
-    //  - Se rileva problemi → attiva SILENZIOSAMENTE la modalità
-    //    emergenza (polling 5s), salvo che sia già attiva
-    //  - Il pulsante navbar diventa giallo "Polling ON" (segnale
-    //    visibile per il medico, ma non interrompe il lavoro)
+    // Esegue una diagnostica silenziosa in background a frequenza variabile:
+    //  - Quando NON in emergenza → ogni 60 minuti (rilassato)
+    //  - Quando IN emergenza      → ogni  5 minuti (aggressivo)
+    //
+    // Logica:
+    //  - Se rileva problemi   → attiva SILENZIOSAMENTE la modalità
+    //                            emergenza (polling 5s) E marca la fonte
+    //                            come "auto"
+    //  - Se NON rileva problemi E emergenza era stata attivata in modo
+    //                            "auto" → la DISATTIVA SILENZIOSAMENTE
+    //                            (la rete è tornata, torniamo al Realtime)
+    //  - Se l'emergenza è stata attivata manualmente dall'utente, la
+    //                            rispettiamo: non la disattiviamo mai
+    //                            automaticamente
     //
     // Resilienza:
     //  - setInterval può essere throttled in tab inattive (Safari,
-    //    Firefox aggressivi); usiamo check ogni 5 minuti
-    //  - visibilitychange: al ritorno tab in foreground, verifica
-    //    se è passata un'ora dall'ultima diagnostica → riavvia
+    //    Firefox aggressivi); usiamo check ogni minuto
+    //  - visibilitychange: al ritorno tab in foreground, ri-verifica
     // ══════════════════════════════════════════════════════════════
-    var ORA_MS = 60 * 60 * 1000;
-    var CHECK_MS = 5 * 60 * 1000;  // check periodico ogni 5 min
-    var _ultimaDiagOraria = Date.now();  // inizializzata al boot
-                                          // (boot diag già coperta da app.js)
+    var INTERVALLO_NORMALE_MS    = 60 * 60 * 1000; // 60 min se tutto OK
+    var INTERVALLO_EMERGENZA_MS  =  5 * 60 * 1000; // 5 min se in emergenza
+    var CHECK_TICK_MS            =      60 * 1000; // tick di check ogni 1 min
+    var _ultimaDiagAuto = Date.now();              // (boot diag già coperta da app.js)
 
-    function _maybeDiagOraria() {
+    function _maybeDiagAuto() {
       // Skip se diagnostica manuale aperta (modal con #diagLog visibile)
       if (document.getElementById('diagLog')) return;
       // Skip se è già in corso una diagnostica silent
       if (_silentDiag) return;
+
+      var emergAttiva = (typeof _emergenzaPollingAttivo === 'function' && _emergenzaPollingAttivo());
+      var soglia = emergAttiva ? INTERVALLO_EMERGENZA_MS : INTERVALLO_NORMALE_MS;
       var now = Date.now();
-      if (now - _ultimaDiagOraria < ORA_MS) return;
-      _ultimaDiagOraria = now;
-      console.log('[Diag oraria] Avvio diagnostica silenziosa…');
+      if (now - _ultimaDiagAuto < soglia) return;
+      _ultimaDiagAuto = now;
+      console.log('[Diag auto] Avvio diagnostica silenziosa (emergenza: ' + (emergAttiva ? 'ON' : 'OFF') + ')…');
       try {
         window._eseguiDiagnosticaSilent(null, {
-          autoAttivaEmergenza: true,
+          autoAttivaEmergenza: true,    // attiva se trova problemi
+          autoDisattivaEmergenza: true, // disattiva se NON trova problemi
+                                         // e l'emergenza era stata attivata
+                                         // automaticamente
           noModal: true
         });
       } catch(e) {
-        console.warn('[Diag oraria] Errore:', e);
+        console.warn('[Diag auto] Errore:', e);
       }
     }
 
-    // Check periodico ogni 5 minuti (resiliente al throttling)
-    setInterval(_maybeDiagOraria, CHECK_MS);
+    // Check periodico ogni 1 minuto (resiliente al throttling)
+    // L'esecuzione vera della diagnostica avviene solo se è passata la
+    // soglia (60 min normale / 5 min in emergenza).
+    setInterval(_maybeDiagAuto, CHECK_TICK_MS);
 
     // Check al ritorno tab in foreground (Safari throttling resilience)
     document.addEventListener('visibilitychange', function() {
-      if (document.visibilityState === 'visible') _maybeDiagOraria();
+      if (document.visibilityState === 'visible') _maybeDiagAuto();
     });
 
   })();
