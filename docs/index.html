@@ -3533,12 +3533,33 @@
     // Callback opzionale chiamato a fine diagnostica silent (sia OK sia con problemi).
     // In caso di problemi, viene chiamato DOPO l'apertura del modal di report.
     var _silentDoneCallback = null;
-    var _silentDiagOpzioni  = null;  // { autoAttivaEmergenza, noModal }
+    var _silentDiagOpzioni  = null;  // { autoAttivaEmergenza, autoDisattivaEmergenza, noModal }
+    var _silentDiagStartedAt = 0;    // timestamp inizio per recovery da hang
+    var SILENT_DIAG_MAX_MS = 60000;  // 60s soft timeout: se _silentDiag resta
+                                      // a true da più di così, è "stagnante"
+                                      // (probabilmente una promise hangs) →
+                                      // reset di sicurezza per non bloccare
+                                      // le diagnostiche successive
     window._eseguiDiagnosticaSilent = function(onDone, opzioni) {
+      // Recovery da stato stagnante: se _silentDiag è a true da più di
+      // SILENT_DIAG_MAX_MS, qualcosa è andato storto nella diagnostica
+      // precedente (es. timeout overlay scattato ma flag non resettata).
+      // Forziamo il reset per consentire al successivo check di partire.
+      if (_silentDiag && _silentDiagStartedAt &&
+          (Date.now() - _silentDiagStartedAt) > SILENT_DIAG_MAX_MS) {
+        console.warn('[Diag silent] Flag stagnante da ' +
+          Math.round((Date.now() - _silentDiagStartedAt)/1000) +
+          's, reset di sicurezza');
+        _silentDiag = false;
+        _silentDoneCallback = null;
+        _silentDiagOpzioni  = null;
+        _silentDiagStartedAt = 0;
+      }
       if (_silentDiag) { if (onDone) onDone(); return; }
       // Skip se è in corso una diagnostica manuale (modal con #diagLog aperto)
       if (document.getElementById('diagLog')) { if (onDone) onDone(); return; }
       _silentDiag = true;
+      _silentDiagStartedAt = Date.now();
       _silentDoneCallback = onDone || null;
       _silentDiagOpzioni  = opzioni || null;
       _runAllTests();
@@ -4487,6 +4508,7 @@
       var opzioni   = _silentDiagOpzioni || {};
       if (_silentDiag) {
         _silentDiag = false;
+        _silentDiagStartedAt = 0;
         _silentDoneCallback = null;
         _silentDiagOpzioni  = null;
         // Si apre se (criteri OR):
