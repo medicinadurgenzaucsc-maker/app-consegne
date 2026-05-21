@@ -330,12 +330,10 @@
               +   svgSnapshot
               +   '<span class="tb-snapshot-badge" data-snap-badge style="display:none;"></span>'
               + '</button>';
-      } else if (campo === 'EsamiColturali' || campo === 'DaFare') {
-        extra = '<span class="tb-sep"></span>'
-              + '<button class="tb-btn tb-data-check" data-cmd="insertChecklistItem" title="Aggiungi item con checkbox">'
-              +   svgCheckSquare
-              + '</button>';
       }
+      // Esami Colturali e Da Fare: pulsante checkbox RIMOSSO su richiesta utente.
+      // Il sistema dei caret + ordinamento automatico è disattivato.
+      // I dati esistenti con checkbox continuano a funzionare per retro-compatibilità.
 
       return '<div class="focus-toolbar" data-campo="' + (campo || '') + '">'
         + '<button class="tb-btn" data-cmd="bold" title="Grassetto"><i class="bi bi-type-bold"></i></button>'
@@ -1015,11 +1013,8 @@
       function _completaApertura() {
         if (!_focusCard) return;
         _abilitaCampi();
-        // Riordina i checklist (EsamiColturali + DaFare) ALL'APERTURA
-        // del focus mode così l'utente vede subito gli items ordinati.
-        if (typeof window._riordinaChecklistCard === 'function') {
-          window._riordinaChecklistCard(_focusCard);
-        }
+        // NB: riordino checklist automatico DISATTIVATO su richiesta utente.
+        // Eventuali checkbox legacy nei dati restano nell'ordine originale.
         _equalizzaColonneAlt(); // equalizza subito dopo che i campi sono abilitati
         card.querySelectorAll('[data-field]').forEach(function(el) {
           var campo = el.getAttribute('data-field');
@@ -1174,12 +1169,9 @@
       var fsb = document.getElementById('focusStatusBadge');
       if (fsb && fsb.parentNode) fsb.parentNode.removeChild(fsb);
 
-      // Riordina checklist (EsamiColturali + DaFare) PRIMA del save, così
-      // l'innerHTML salvato è già ordinato (caret recenti in alto, completati
-      // dopo, resto testo in fondo dopo <hr>).
-      if (typeof window._riordinaChecklistCard === 'function') {
-        window._riordinaChecklistCard(_focusCard);
-      }
+      // NB: riordino checklist automatico al save DISATTIVATO su richiesta utente.
+      // Il contenuto dei campi EsamiColturali e DaFare viene salvato esattamente
+      // come l'utente lo ha lasciato.
 
       // Salva subito se ci sono modifiche non ancora salvate
       // Usa _focusCard direttamente (non querySelector che restituisce sempre la card main view)
