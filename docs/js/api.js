@@ -106,6 +106,103 @@ function _aEsc(s) {
     .replace(/>/g, '&gt;');
 }
 
+// ══════════════════════════════════════════════════════════════
+// SISTEMA LOG — registra eventi diagnostici nella tabella `logs`
+// Visibili al medico/IT dal menu rotellina → "Log".
+// Identifica il PC con un device_id persistente (localStorage) +
+// un device_name opzionale (nickname configurabile dall'utente).
+// ══════════════════════════════════════════════════════════════
+function _getDeviceId() {
+  try {
+    var id = localStorage.getItem('_deviceId');
+    if (!id) {
+      id = 'dev_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 10);
+      localStorage.setItem('_deviceId', id);
+    }
+    return id;
+  } catch(e) { return 'dev_unknown'; }
+}
+function _getDeviceName() {
+  try { return localStorage.getItem('_deviceName') || ''; } catch(e) { return ''; }
+}
+function _setDeviceName(name) {
+  try { localStorage.setItem('_deviceName', String(name||'').slice(0, 80)); } catch(e) {}
+}
+function _parseUA(ua) {
+  if (!ua) return 'Sconosciuto';
+  var browser = '?', os = '?';
+  var m;
+  if ((m = ua.match(/Edg\/(\d+)/)))           browser = 'Edge ' + m[1];
+  else if ((m = ua.match(/Chrome\/(\d+)/)))   browser = 'Chrome ' + m[1];
+  else if ((m = ua.match(/Firefox\/(\d+)/)))  browser = 'Firefox ' + m[1];
+  else if (/Safari\//.test(ua))               browser = 'Safari';
+  if (/Windows NT/.test(ua))                  os = 'Windows';
+  else if (/Mac OS X/.test(ua))               os = 'macOS';
+  else if (/iPhone|iPad/.test(ua))            os = 'iOS';
+  else if (/Android/.test(ua))                os = 'Android';
+  else if (/Linux/.test(ua))                  os = 'Linux';
+  return browser + ' / ' + os;
+}
+
+// Inserisci un log nella tabella `logs` (async, fire-and-forget).
+// livello: 'info' | 'warning' | 'error'
+// tipo:    stringa libera per raggruppare (es. 'proxy', 'save-failed')
+// messaggio:   breve, leggibile (es. "3 fetch fallite in 30s")
+// descrizione: dettagli verbose opzionali
+// url:         URL coinvolto opzionale
+function _log(livello, tipo, messaggio, descrizione, url) {
+  try {
+    var row = {
+      ts:          Date.now(),
+      livello:     livello || 'info',
+      tipo:        tipo || 'generic',
+      messaggio:   String(messaggio || '').slice(0, 500),
+      descrizione: descrizione ? String(descrizione).slice(0, 2000) : null,
+      device_id:   _getDeviceId(),
+      device_name: _getDeviceName() || null,
+      user_agent:  _parseUA(navigator.userAgent),
+      url:         url ? String(url).slice(0, 500) : null
+    };
+    if (typeof _sb === 'undefined' || !_sb) return; // Supabase non ancora caricato
+    _q(_sb.from('logs').insert(row)).catch(function(e) {
+      // Non re-loggare l'errore per evitare loop infiniti
+      try { console.warn('[Log] insert fallito:', e && e.message); } catch(_) {}
+    });
+  } catch(e) {
+    try { console.warn('[Log] errore interno:', e && e.message); } catch(_) {}
+  }
+}
+
+// Recupera gli ultimi N log ordinati dal più recente al più vecchio.
+// Limite default: 200. Filtri opzionali su livello.
+function _sbGetLogs(limit, livelloFiltro) {
+  var q = _sb.from('logs').select('*').order('ts', { ascending: false }).limit(limit || 200);
+  if (livelloFiltro) q = q.eq('livello', livelloFiltro);
+  return _q(q);
+}
+
+// Cleanup: elimina log più vecchi di N giorni (default 30).
+// Chiamato all'apertura del modal log per mantenere il DB snello.
+function _sbPuliciLogVecchi(giorni) {
+  var soglia = Date.now() - ((giorni || 30) * 86400000);
+  return _q(_sb.from('logs').delete().lt('ts', soglia));
+}
+
+// Cancella TUTTI i log (azione admin)
+function _sbCancellaTuttiLog() {
+  return _q(_sb.from('logs').delete().gte('id', 0));
+}
+
+// Espone le funzioni a window per uso globale
+window._log              = _log;
+window._getDeviceId      = _getDeviceId;
+window._getDeviceName    = _getDeviceName;
+window._setDeviceName    = _setDeviceName;
+window._parseUA          = _parseUA;
+window._sbGetLogs        = _sbGetLogs;
+window._sbPuliciLogVecchi = _sbPuliciLogVecchi;
+window._sbCancellaTuttiLog = _sbCancellaTuttiLog;
+
 
 // ── COLORE DA STRINGA ─────────────────────────────────────────
 function stringToColor(str) {
@@ -1501,6 +1598,13 @@ var _emergenzaForceSaveId = null;  // Force-save scan letti dirty (10s)
 function _emergenzaAvviaPolling() {
   if (_emergenzaPollingId) return;
   console.log('[Emergenza] Polling attivato (5s) + force-save (10s)');
+  if (typeof window._log === 'function') {
+    window._log('warning', 'emergenza-on',
+      'Modalità emergenza attivata (polling 5s + force-save 10s)',
+      'Il sistema è passato dal Realtime standard al polling periodico. ' +
+      'Causa: diagnostica ha rilevato problemi di connessione/WebSocket o ' +
+      'attivazione manuale. Verificare rete e proxy.');
+  }
 
   // POLLING LETTURE — invariato
   _emergenzaPollingId = setInterval(function() {
@@ -1555,6 +1659,11 @@ function _emergenzaFermaPolling() {
     _emergenzaForceSaveId = null;
   }
   console.log('[Emergenza] Polling + force-save disattivati');
+  if (typeof window._log === 'function') {
+    window._log('info', 'emergenza-off',
+      'Modalità emergenza disattivata (ritorno a Realtime standard)',
+      'Disattivazione manuale o automatica (diagnostica non rileva più problemi).');
+  }
 }
 
 function _emergenzaPollingAttivo() {

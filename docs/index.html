@@ -1940,6 +1940,8 @@
             <li><a class="dropdown-item" href="javascript:void(0)" data-emerg-disable="1" onclick="apriModalImportaConsegne()"><i class="bi bi-file-earmark-arrow-down text-warning me-2"></i>Importa da file consegne</a></li>
             <li><hr class="dropdown-divider"></li>
             <li><a class="dropdown-item" href="javascript:void(0)" onclick="_toggleModalitaEmergenza()"><i class="bi bi-speedometer2 text-info me-2"></i>Diagnostica Prestazioni</a></li>
+            <li><a class="dropdown-item" href="javascript:void(0)" onclick="apriModalLog()"><i class="bi bi-journal-text text-secondary me-2"></i>Log</a></li>
+            <li><a class="dropdown-item" href="javascript:void(0)" onclick="apriModalNomePC()"><i class="bi bi-pc-display text-secondary me-2"></i>Imposta nome PC</a></li>
             <li style="display:none"><a class="dropdown-item" href="javascript:void(0)" id="btnToggleSync" onclick="toggleSync()"><i class="bi bi-pause-circle text-warning me-2" id="iconToggleSync"></i><span id="labelToggleSync">Metti in pausa il sync</span></a></li>
             <!-- Voce informativa: SHA del deploy corrente (aggiornata da _versionCheckInit) -->
             <li><hr class="dropdown-divider"></li>
@@ -5320,20 +5322,19 @@
   </script>
 
   <!-- ══════════════════════════════════════════════════════════════
-       PROXY HELPER — rileva fallimenti di rete a raffica e suggerisce
-       all'utente che potrebbe essere il proxy aziendale che richiede
-       autenticazione (popup di Chrome di sistema, non controllabile
-       da JS). Toast SweetAlert non-modale, 1 alert max ogni 5 minuti.
+       PROXY/NETWORK HELPER — rileva fallimenti di rete a raffica e
+       LI REGISTRA nella tabella `logs` (visibile dal menu rotellina
+       → "Log"). NON mostra toast invadenti.
        ══════════════════════════════════════════════════════════════ -->
   <script>
   (function() {
-    // Patterning: 3 fetch falliti entro 30s -> mostra toast.
-    // Cooldown: 5 min tra un toast e l'altro (evita spam).
+    // Patterning: 3 fetch falliti entro 30s -> log warning.
+    // Cooldown: 5 min tra un log "proxy-pattern" e l'altro (no spam DB).
     var SOGLIA_FALLIMENTI = 3;
     var FINESTRA_MS       = 30000;     // 30 secondi
-    var COOLDOWN_MS       = 5 * 60000; // 5 minuti
-    var fallimenti = [];               // array di timestamp
-    var ultimoAlertTs = 0;
+    var COOLDOWN_LOG_MS   = 5 * 60000; // 5 minuti
+    var fallimenti = [];               // array di { ts, url, motivo }
+    var ultimoLogTs = 0;
 
     if (typeof window.fetch !== 'function') return;
     var fetchOrig = window.fetch.bind(window);
@@ -5343,7 +5344,7 @@
       var urlReq = args[0];
       var urlStr = (typeof urlReq === 'string') ? urlReq :
                    (urlReq && urlReq.url) ? urlReq.url : '';
-      // Skip: chiamate al SW stesso o data: URLs
+      // Skip: chiamate a estensioni o data: URLs
       if (urlStr && (urlStr.indexOf('chrome-extension://') === 0 ||
                      urlStr.indexOf('data:') === 0)) {
         return fetchOrig.apply(null, args);
@@ -5351,66 +5352,46 @@
       return fetchOrig.apply(null, args).then(function(res) {
         // HTTP 407 Proxy Auth Required (raro nei browser moderni)
         if (res && res.status === 407) {
-          _registraFallimento('407 ' + urlStr);
+          _registraFallimento('HTTP 407 Proxy Auth Required', urlStr);
         }
         return res;
       }).catch(function(err) {
         // Errore di rete (TypeError 'Failed to fetch', AbortError, ecc.)
-        _registraFallimento((err && err.message) || 'unknown');
+        _registraFallimento((err && err.message) || 'unknown', urlStr);
         throw err;
       });
     };
 
-    function _registraFallimento(motivo) {
+    function _registraFallimento(motivo, url) {
       var ora = Date.now();
-      fallimenti.push(ora);
+      fallimenti.push({ ts: ora, motivo: motivo, url: url });
       // Mantieni solo gli ultimi entro la finestra
-      fallimenti = fallimenti.filter(function(t) { return ora - t < FINESTRA_MS; });
-      console.log('[ProxyHelper] Fallimento fetch (' + motivo + '), totale nella finestra: ' + fallimenti.length);
+      fallimenti = fallimenti.filter(function(f) { return ora - f.ts < FINESTRA_MS; });
       if (fallimenti.length >= SOGLIA_FALLIMENTI &&
-          (ora - ultimoAlertTs) >= COOLDOWN_MS) {
-        ultimoAlertTs = ora;
-        _mostraAvvisoProxy();
-        // Reset contatore dopo aver avvisato (così se l'utente sistema
-        // il problema e tornano altri errori 5 min dopo, mostriamo di nuovo)
-        fallimenti = [];
+          (ora - ultimoLogTs) >= COOLDOWN_LOG_MS &&
+          typeof window._log === 'function') {
+        ultimoLogTs = ora;
+        // Costruisci descrizione con i dettagli dei fallimenti raccolti
+        var urls = fallimenti.map(function(f) { return f.url || '(?)'; });
+        var motivi = fallimenti.map(function(f) { return f.motivo; });
+        // Sintetizza host più frequente per il messaggio
+        var hosts = urls.map(function(u) {
+          try { return new URL(u).hostname; } catch(_) { return u; }
+        });
+        var conta = {};
+        hosts.forEach(function(h) { conta[h] = (conta[h]||0) + 1; });
+        var topHost = Object.keys(conta).sort(function(a,b){return conta[b]-conta[a];})[0] || '?';
+        window._log(
+          'warning',
+          'proxy-pattern',
+          fallimenti.length + ' chiamate fetch fallite in ' + Math.round(FINESTRA_MS/1000) + 's (host: ' + topHost + ')',
+          'Probabile causa: proxy aziendale che richiede di nuovo autenticazione, ' +
+          'oppure rete instabile. Sequenza errori: ' + motivi.join(' | ') +
+          '\nURL coinvolti: ' + urls.slice(0, 5).join(', '),
+          urls[urls.length - 1]
+        );
+        fallimenti = []; // reset dopo aver loggato (no doppi log nei prossimi 30s)
       }
-    }
-
-    function _mostraAvvisoProxy() {
-      // Se non c'è SweetAlert disponibile (es. boot iniziale), skip.
-      if (typeof Swal === 'undefined') return;
-      // Toast non-modale in basso a destra: non interrompe il lavoro.
-      Swal.fire({
-        toast: true,
-        position: 'bottom-end',
-        icon: 'warning',
-        title: 'Problema di rete aziendale',
-        html: '<div style="text-align:left;font-size:0.82rem;line-height:1.4;">'+
-              'Diverse chiamate al server sono fallite. Possibili cause:<br><br>'+
-              '<strong>1. Proxy aziendale</strong> (più probabile)<br>'+
-              'Se Chrome ti mostra un popup "Accedi", inserisci le '+
-              'credenziali del dominio Windows.<br><br>'+
-              '<strong>2. Connessione di rete instabile</strong><br>'+
-              'Se il problema persiste, contatta l\'IT del reparto.'+
-              '</div>',
-        showConfirmButton: true,
-        confirmButtonText: 'Ho capito',
-        confirmButtonColor: '#37474f',
-        timer: 15000,        // chiusura automatica dopo 15s
-        timerProgressBar: true,
-        showClass: { popup: 'swal2-noanimation' },
-        hideClass: { popup: '' },
-        customClass: { popup: 'proxy-helper-toast' },
-        didOpen: function() {
-          // Larghezza un po' più ampia del default per leggere bene
-          var popup = Swal.getPopup();
-          if (popup) {
-            popup.style.minWidth = '380px';
-            popup.style.maxWidth = '440px';
-          }
-        }
-      });
     }
 
     // Espone debug helper per ispezione manuale da console
@@ -5418,8 +5399,225 @@
       return {
         fallimentiNellaFinestra: fallimenti.length,
         soglia: SOGLIA_FALLIMENTI,
-        ultimoAlertSecFa: ultimoAlertTs ? Math.round((Date.now()-ultimoAlertTs)/1000) : null
+        ultimoLogSecFa: ultimoLogTs ? Math.round((Date.now()-ultimoLogTs)/1000) : null
       };
+    };
+  })();
+  </script>
+
+  <!-- ══════════════════════════════════════════════════════════════
+       MODAL LOG — visualizzazione log della tabella `logs` Supabase
+       Apertura dal menu rotellina → "Log".
+       Mostra ultimi 200 log con colori in base al livello,
+       informazioni sul PC, messaggio breve + descrizione espandibile.
+       ══════════════════════════════════════════════════════════════ -->
+  <script>
+  (function() {
+    function _esc(s) {
+      return String(s||'').replace(/[&<>"']/g, function(c) {
+        return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c];
+      });
+    }
+    function _fmtTs(ts) {
+      if (!ts) return '—';
+      var d = new Date(Number(ts));
+      function pad(n) { return String(n).padStart(2,'0'); }
+      return pad(d.getDate())+'/'+pad(d.getMonth()+1)+'/'+d.getFullYear()+' '+
+             pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds());
+    }
+    function _icoLivello(l) {
+      if (l === 'error')   return '<span class="badge bg-danger">❌ Error</span>';
+      if (l === 'warning') return '<span class="badge bg-warning text-dark">⚠ Warning</span>';
+      return '<span class="badge bg-info text-dark">ℹ Info</span>';
+    }
+    function _rigaTrClass(l) {
+      if (l === 'error')   return 'table-danger';
+      if (l === 'warning') return 'table-warning';
+      return '';
+    }
+
+    function _renderTabella(logs, filtroLiv) {
+      if (!logs || logs.length === 0) {
+        return '<div class="text-muted text-center py-5"><i class="bi bi-inbox fs-1 d-block mb-2"></i>Nessun log presente.</div>';
+      }
+      var html =
+        '<table class="table table-sm table-hover align-middle mb-0" style="font-size:0.78rem;">'+
+        '<thead class="table-light sticky-top" style="top:0;">'+
+          '<tr>'+
+            '<th style="width:130px;">Quando</th>'+
+            '<th style="width:90px;">Livello</th>'+
+            '<th style="width:120px;">Tipo</th>'+
+            '<th>Messaggio</th>'+
+            '<th style="width:180px;">Computer</th>'+
+          '</tr>'+
+        '</thead><tbody>';
+      logs.forEach(function(l, idx) {
+        var hasDesc = l.descrizione && l.descrizione.trim().length > 0;
+        var device = (l.device_name ? '<strong>' + _esc(l.device_name) + '</strong>' : _esc(l.device_id || '?')) +
+                     (l.user_agent ? '<br><span class="text-muted" style="font-size:0.7rem;">'+_esc(l.user_agent)+'</span>' : '');
+        html += '<tr class="' + _rigaTrClass(l.livello) + '"' +
+                (hasDesc ? ' style="cursor:pointer;" data-snap-toggle="' + idx + '"' : '') + '>'+
+          '<td style="font-family:monospace;font-size:0.74rem;">' + _esc(_fmtTs(l.ts)) + '</td>'+
+          '<td>' + _icoLivello(l.livello) + '</td>'+
+          '<td><code style="font-size:0.72rem;">' + _esc(l.tipo) + '</code></td>'+
+          '<td>' + _esc(l.messaggio) +
+            (hasDesc ? ' <i class="bi bi-chevron-down text-muted" style="font-size:0.7rem;"></i>' : '') +
+          '</td>'+
+          '<td style="font-size:0.74rem;">' + device + '</td>'+
+        '</tr>';
+        if (hasDesc) {
+          html += '<tr id="snap-desc-' + idx + '" style="display:none;" class="' + _rigaTrClass(l.livello) + '">'+
+            '<td colspan="5" style="font-size:0.74rem;color:#444;background:rgba(0,0,0,0.03);padding:8px 16px;">'+
+              '<pre style="white-space:pre-wrap;margin:0;font-family:inherit;font-size:0.74rem;">' + _esc(l.descrizione) + '</pre>'+
+              (l.url ? '<div class="mt-1"><small><strong>URL:</strong> <code style="font-size:0.7rem;">'+_esc(l.url)+'</code></small></div>' : '')+
+            '</td></tr>';
+        }
+      });
+      html += '</tbody></table>';
+      return html;
+    }
+
+    function _attaccaToggleDescrizioni() {
+      document.querySelectorAll('[data-snap-toggle]').forEach(function(tr) {
+        tr.onclick = function() {
+          var idx = tr.getAttribute('data-snap-toggle');
+          var desc = document.getElementById('snap-desc-' + idx);
+          if (desc) desc.style.display = desc.style.display === 'none' ? '' : 'none';
+        };
+      });
+    }
+
+    var _statoFiltro = ''; // '', 'error', 'warning', 'info'
+
+    function _caricaERenderizza() {
+      var body = document.getElementById('logsBody');
+      if (!body) return;
+      body.innerHTML = '<div class="text-center py-4"><div class="spinner-border text-secondary"></div><div class="mt-2 text-muted">Caricamento log…</div></div>';
+      // Cleanup automatico log vecchi (> 30 giorni)
+      if (typeof window._sbPuliciLogVecchi === 'function') {
+        window._sbPuliciLogVecchi(30).catch(function(){});
+      }
+      window._sbGetLogs(200, _statoFiltro || null).then(function(logs) {
+        body.innerHTML = _renderTabella(logs, _statoFiltro);
+        _attaccaToggleDescrizioni();
+        // Aggiorna contatore in header
+        var cnt = document.getElementById('logsCount');
+        if (cnt) cnt.innerText = (logs || []).length + ' record';
+      }).catch(function(e) {
+        body.innerHTML = '<div class="alert alert-danger m-3">Errore caricamento: ' + _esc(e.message||e) + '</div>';
+      });
+    }
+
+    window.apriModalLog = function() {
+      _statoFiltro = '';
+      Swal.fire({
+        title: '<i class="bi bi-journal-text me-2"></i>Log di sistema',
+        html:
+          '<div class="text-start mb-2 d-flex align-items-center gap-2 flex-wrap" style="font-size:0.82rem;">' +
+            '<span class="text-muted">Filtra:</span>' +
+            '<button class="btn btn-sm btn-outline-secondary" data-filtro="">Tutti</button>' +
+            '<button class="btn btn-sm btn-outline-danger" data-filtro="error">❌ Errori</button>' +
+            '<button class="btn btn-sm btn-outline-warning" data-filtro="warning">⚠ Warning</button>' +
+            '<button class="btn btn-sm btn-outline-info" data-filtro="info">ℹ Info</button>' +
+            '<span class="ms-auto text-muted" id="logsCount">…</span>' +
+            '<button class="btn btn-sm btn-outline-secondary" id="logsRefresh" title="Aggiorna"><i class="bi bi-arrow-clockwise"></i></button>' +
+          '</div>' +
+          '<div id="logsBody" style="max-height:60vh;overflow-y:auto;border:1px solid #cfd8dc;border-radius:4px;">' +
+            '<div class="text-center py-4"><div class="spinner-border text-secondary"></div></div>' +
+          '</div>' +
+          '<div class="text-muted small mt-2" style="font-size:0.72rem;">' +
+            '<i class="bi bi-info-circle me-1"></i>Click su una riga per espandere la descrizione. Log oltre 30 giorni vengono eliminati automaticamente.' +
+          '</div>',
+        width: '92%',
+        showConfirmButton: true,
+        confirmButtonText: 'Chiudi',
+        confirmButtonColor: '#37474f',
+        showDenyButton: true,
+        denyButtonText: '<i class="bi bi-trash me-1"></i>Cancella tutti',
+        denyButtonColor: '#dc3545',
+        focusConfirm: true,
+        customClass: { popup: 'modale-log-popup' },
+        didOpen: function(popup) {
+          _caricaERenderizza();
+          popup.querySelectorAll('[data-filtro]').forEach(function(btn) {
+            btn.onclick = function() {
+              _statoFiltro = btn.getAttribute('data-filtro');
+              // Evidenzia il bottone attivo
+              popup.querySelectorAll('[data-filtro]').forEach(function(b){
+                b.classList.toggle('active', b === btn);
+              });
+              _caricaERenderizza();
+            };
+          });
+          var refresh = popup.querySelector('#logsRefresh');
+          if (refresh) refresh.onclick = _caricaERenderizza;
+        }
+      }).then(function(res) {
+        if (res.isDenied) {
+          // Conferma cancellazione totale
+          Swal.fire({
+            icon: 'warning',
+            title: 'Cancellare TUTTI i log?',
+            text: 'L\'operazione è irreversibile. I record verranno eliminati dal database.',
+            showCancelButton: true,
+            confirmButtonText: 'Sì, cancella tutto',
+            confirmButtonColor: '#dc3545',
+            cancelButtonText: 'Annulla'
+          }).then(function(r) {
+            if (r.isConfirmed && typeof window._sbCancellaTuttiLog === 'function') {
+              window._sbCancellaTuttiLog().then(function() {
+                Swal.fire({ icon: 'success', title: 'Log cancellati',
+                  timer: 1500, showConfirmButton: false });
+              }).catch(function(e) {
+                Swal.fire({ icon: 'error', title: 'Errore cancellazione',
+                  text: e.message || 'Operazione fallita' });
+              });
+            }
+          });
+        }
+      });
+    };
+
+    // ── Modal "Imposta nome PC" ───────────────────────────────────
+    window.apriModalNomePC = function() {
+      var attuale = (typeof window._getDeviceName === 'function') ? window._getDeviceName() : '';
+      var deviceId = (typeof window._getDeviceId === 'function') ? window._getDeviceId() : '?';
+      Swal.fire({
+        title: '<i class="bi bi-pc-display me-2"></i>Nome di questo computer',
+        html:
+          '<div class="text-start mb-3" style="font-size:0.85rem;">' +
+            '<p class="mb-2">Imposta un nome leggibile per identificare questo PC nei log (es. "PC sala medici", "Postazione 3").</p>' +
+            '<div class="alert alert-info py-2 mb-2" style="font-size:0.78rem;">' +
+              '<strong>ID univoco di questo PC:</strong><br>' +
+              '<code style="font-size:0.78rem;">' + (deviceId || '?') + '</code>' +
+            '</div>' +
+          '</div>' +
+          '<input id="pcNomeInput" class="swal2-input" placeholder="es. PC sala medici" value="' +
+            (attuale || '').replace(/"/g,'&quot;') + '" maxlength="80">',
+        showCancelButton: true,
+        confirmButtonText: 'Salva',
+        confirmButtonColor: '#198754',
+        cancelButtonText: 'Annulla',
+        focusConfirm: false,
+        didOpen: function() {
+          var inp = document.getElementById('pcNomeInput');
+          if (inp) { inp.focus(); inp.select(); }
+        },
+        preConfirm: function() {
+          return (document.getElementById('pcNomeInput').value || '').trim();
+        }
+      }).then(function(r) {
+        if (r.isConfirmed && typeof window._setDeviceName === 'function') {
+          window._setDeviceName(r.value);
+          // Log informativo del cambio nome
+          if (typeof window._log === 'function') {
+            window._log('info', 'app', 'Nome PC aggiornato: "' + (r.value || '(vuoto)') + '"', null);
+          }
+          Swal.fire({ icon: 'success', title: 'Nome salvato',
+            text: r.value ? 'Questo PC verrà identificato come: ' + r.value : 'Nome rimosso',
+            timer: 2000, showConfirmButton: false });
+        }
+      });
     };
   })();
   </script>

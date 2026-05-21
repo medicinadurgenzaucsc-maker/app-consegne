@@ -876,6 +876,15 @@
           });
           // No timer dissolvenza: il badge resta visibile come allarme persistente
           _saveRetryCount[letto] = 0; // reset per prossima sessione
+          // LOG: tutti i retry esauriti — situazione critica, l'utente vede
+          // ancora il badge rosso ma il save non riprova più finche' non
+          // digita di nuovo
+          if (typeof window._log === 'function') {
+            window._log('error', 'save-failed-exhausted',
+              'Save letto ' + letto + ': retry esauriti dopo ' + RETRY_DELAYS.length + ' tentativi',
+              'Tutti i tentativi di salvataggio (5s, 15s, 45s) sono falliti. Il letto resta nello stato "dirty": il save ripartirà alla prossima digitazione o alla chiusura focus mode. Verificare connessione di rete e proxy.',
+              null);
+          }
           return;
         }
         var delay = RETRY_DELAYS[n];
@@ -954,6 +963,13 @@
             if (_saveRetryTimer[letto]) { clearTimeout(_saveRetryTimer[letto]); _saveRetryTimer[letto] = null; }
             // FIX #1: cancella anche un eventuale pending (otterrebbe lo stesso errore)
             _savePending[letto] = false;
+            // LOG: save fallito (problema critico, può causare perdita dati)
+            if (typeof window._log === 'function') {
+              window._log('error', 'save-failed',
+                'Save letto ' + letto + ' fallito',
+                (res && res.message) || 'Risposta non success dal server. Probabile causa: 0 righe aggiornate (letto eliminato), rete corrotta, o lock di un altro utente. Il letto NON è stato salvato.',
+                null);
+            }
             _dopoSalvataggio(false);
             return;
           }
