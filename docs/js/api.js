@@ -109,11 +109,20 @@ function _aEsc(s) {
 // ══════════════════════════════════════════════════════════════
 // SISTEMA LOG — registra eventi diagnostici nella tabella `logs`
 // Visibili al medico/IT dal menu rotellina → "Log".
-// Identifica il PC con un device_id persistente (localStorage) +
-// un device_name opzionale (nickname configurabile dall'utente).
+// Identifica il PC tramite:
+//   - device_id: UUID persistente in localStorage (univoco per PC+browser)
+//   - device_name: descrizione AUTOMATICA generata da browser+OS+schermo+
+//                  città timezone + lingua (non configurabile dall'utente
+//                  per non confondere — il browser NON può ottenere il
+//                  vero hostname Windows per motivi di privacy)
 // ══════════════════════════════════════════════════════════════
 function _getDeviceId() {
   try {
+    // Cleanup retro-compatibilità: rimuovi il vecchio _deviceName
+    // (ora il nome è generato automaticamente, non più configurabile)
+    if (localStorage.getItem('_deviceName') !== null) {
+      localStorage.removeItem('_deviceName');
+    }
     var id = localStorage.getItem('_deviceId');
     if (!id) {
       id = 'dev_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 10);
@@ -121,12 +130,6 @@ function _getDeviceId() {
     }
     return id;
   } catch(e) { return 'dev_unknown'; }
-}
-function _getDeviceName() {
-  try { return localStorage.getItem('_deviceName') || ''; } catch(e) { return ''; }
-}
-function _setDeviceName(name) {
-  try { localStorage.setItem('_deviceName', String(name||'').slice(0, 80)); } catch(e) {}
 }
 function _parseUA(ua) {
   if (!ua) return 'Sconosciuto';
@@ -142,6 +145,28 @@ function _parseUA(ua) {
   else if (/Android/.test(ua))                os = 'Android';
   else if (/Linux/.test(ua))                  os = 'Linux';
   return browser + ' / ' + os;
+}
+// Genera una descrizione AUTOMATICA del PC con tutte le info disponibili.
+// Es: "Edge 148 / Windows · 1920×1080 · Rome · it-IT"
+function _getDeviceName() {
+  try {
+    var ua = _parseUA(navigator.userAgent || '');
+    var risol = (window.screen && window.screen.width)
+      ? (window.screen.width + '×' + window.screen.height)
+      : '?';
+    var citta = '';
+    try {
+      var tz = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+      citta = (tz.indexOf('/') !== -1) ? tz.split('/').pop().replace(/_/g, ' ') : tz;
+    } catch(_) {}
+    var lang = navigator.language || '';
+    var parts = [ua, risol];
+    if (citta) parts.push(citta);
+    if (lang) parts.push(lang);
+    return parts.join(' · ');
+  } catch(e) {
+    return 'Sconosciuto';
+  }
 }
 
 // Inserisci un log nella tabella `logs` (async, fire-and-forget).
@@ -159,7 +184,7 @@ function _log(livello, tipo, messaggio, descrizione, url) {
       messaggio:   String(messaggio || '').slice(0, 500),
       descrizione: descrizione ? String(descrizione).slice(0, 2000) : null,
       device_id:   _getDeviceId(),
-      device_name: _getDeviceName() || null,
+      device_name: _getDeviceName(),  // auto: 'Edge 148 / Windows · 1920×1080 · Rome · it-IT'
       user_agent:  _parseUA(navigator.userAgent),
       url:         url ? String(url).slice(0, 500) : null
     };
@@ -206,8 +231,7 @@ function _sbCancellaTuttiLog() {
 // Espone le funzioni a window per uso globale
 window._log              = _log;
 window._getDeviceId      = _getDeviceId;
-window._getDeviceName    = _getDeviceName;
-window._setDeviceName    = _setDeviceName;
+window._getDeviceName    = _getDeviceName;  // auto, non configurabile
 window._parseUA          = _parseUA;
 window._sbGetLogs        = _sbGetLogs;
 window._sbPuliciLogVecchi = _sbPuliciLogVecchi;
