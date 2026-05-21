@@ -1929,7 +1929,7 @@
             <li><a class="dropdown-item" href="javascript:void(0)" data-emerg-disable="1" onclick="_avviaBackupManuale()"><i class="bi bi-cloud-arrow-up-fill text-success me-2"></i>Esegui Backup Manuale</a></li>
             <li><a class="dropdown-item" href="javascript:void(0)" data-emerg-disable="1" onclick="_apriRipristina()"><i class="bi bi-arrow-counterclockwise text-danger me-2"></i>Ripristina da Backup</a></li>
             <li><hr class="dropdown-divider"></li>
-            <li><a class="dropdown-item" href="javascript:void(0)" data-emerg-disable="1" onclick="apriModalImportaConsegne()"><i class="bi bi-file-earmark-arrow-down text-warning me-2"></i>Importa da file consegne</a></li>
+            <li><a class="dropdown-item" href="javascript:void(0)" data-emerg-disable="1" onclick="apriModalImportaConsegne()"><i class="bi bi-cloud-arrow-down text-warning me-2"></i>Importa da backup Drive</a></li>
             <li><hr class="dropdown-divider"></li>
             <li><a class="dropdown-item" href="javascript:void(0)" onclick="_toggleModalitaEmergenza()"><i class="bi bi-speedometer2 text-info me-2"></i>Diagnostica Prestazioni</a></li>
             <li><a class="dropdown-item" href="javascript:void(0)" onclick="apriModalLog()"><i class="bi bi-journal-text text-secondary me-2"></i>Log</a></li>
@@ -2238,38 +2238,95 @@
     </div>
   </div>
 
-  <!-- ===== MODAL IMPORTA DA FILE CONSEGNE ===== -->
+  <!-- ===== MODAL IMPORTA DA BACKUP DRIVE (safety net) ===== -->
+  <!-- Flusso a 4 step:
+       1. password (verifica)
+       2. lista file della cartella Drive 'BACKUP CONSEGNE EMERGENZA'
+       3. selezione letti dal file scelto (grid card cliccabili)
+       4. risultato import (importati / saltati / errori) -->
   <div class="modal fade" id="modalImportaConsegne" tabindex="-1" data-bs-backdrop="static">
-    <div class="modal-dialog modal-dialog-centered" style="max-width:480px">
+    <div class="modal-dialog modal-dialog-centered" id="modalImportaDlg" style="max-width:680px;">
       <div class="modal-content border-0 shadow-lg">
         <div class="modal-header" style="background:linear-gradient(135deg,#e65100,#bf360c);color:#fff;">
-          <h5 class="modal-title"><i class="bi bi-file-earmark-arrow-down me-2"></i>Importa da file consegne</h5>
+          <h5 class="modal-title"><i class="bi bi-cloud-arrow-down me-2"></i>Importa da backup Drive</h5>
           <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
         </div>
         <div class="modal-body p-4">
-          <div class="alert alert-warning d-flex align-items-start gap-2 mb-3" style="font-size:0.88rem;">
-            <i class="bi bi-exclamation-triangle-fill text-warning mt-1" style="flex-shrink:0;"></i>
-            <div><strong>Attenzione:</strong> i dati importati sovrascriveranno le consegne attualmente presenti per i letti trovati nel documento. L'operazione non è reversibile.</div>
+          <div class="alert alert-warning d-flex align-items-start gap-2 mb-3" style="font-size:0.85rem;">
+            <i class="bi bi-shield-exclamation text-warning mt-1" style="flex-shrink:0;"></i>
+            <div>
+              <strong>Funzione di emergenza:</strong> usala se Supabase è momentaneamente down
+              e devi ripopolare le consegne da un backup Drive recente.
+              I dati importati <strong>sovrascriveranno</strong> i letti corrispondenti.
+            </div>
           </div>
+
+          <!-- STEP 1: password -->
           <div id="importaStep1">
-            <label class="form-label fw-semibold">Link al Google Doc da importare</label>
-            <input type="url" id="inputImportaUrl" class="form-control" placeholder="https://docs.google.com/document/d/..." style="font-size:0.88rem;">
-            <div class="form-text text-muted mt-1">Incolla l'URL completo del documento Google. Il file deve essere accessibile con l'account con cui sei loggato.</div>
-            <label class="form-label fw-semibold mt-3">Password di autorizzazione</label>
-            <input type="password" id="inputImportaPwd" class="form-control" placeholder="Password richiesta per importare" style="font-size:0.88rem;" onkeydown="if(event.key==='Enter') eseguiImportaConsegne()">
-            <div class="form-text text-muted mt-1">Inserisci la password di sicurezza per procedere con l'importazione.</div>
+            <label class="form-label fw-semibold">Password di autorizzazione</label>
+            <input type="password" id="inputImportaPwd" class="form-control"
+                   placeholder="Stessa password del backup manuale"
+                   style="font-size:0.88rem;"
+                   onkeydown="if(event.key==='Enter') eseguiImportaConsegne()">
+            <div class="form-text text-muted mt-1">
+              Inserisci la password di sicurezza configurata in Supabase
+              (chiave <code>IMPORT_PWD</code> o <code>BACKUP_PWD</code>).
+            </div>
           </div>
+
+          <!-- STEP 2: spinner verifica/lista -->
           <div id="importaStep2" style="display:none;text-align:center;padding:20px 0;">
             <div class="spinner-border text-warning mb-3" style="width:2.5rem;height:2.5rem;" role="status"></div>
-            <div id="importaStepMsg" class="fw-semibold text-secondary" style="font-size:0.92rem;">Richiesta accesso documento...</div>
+            <div id="importaStepMsg" class="fw-semibold text-secondary" style="font-size:0.92rem;">Verifica…</div>
           </div>
+
+          <!-- STEP 3: lista file backup Drive -->
           <div id="importaStep3" style="display:none;">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+              <h6 class="mb-0 fw-bold"><i class="bi bi-folder2-open text-warning me-1"></i>File di backup disponibili</h6>
+              <button type="button" class="btn btn-sm btn-outline-secondary" id="btnRefreshFiles" title="Aggiorna lista">
+                <i class="bi bi-arrow-clockwise"></i>
+              </button>
+            </div>
+            <div id="importaListaFiles" class="list-group" style="max-height:55vh;overflow-y:auto;border:1px solid #cfd8dc;border-radius:6px;"></div>
+            <div class="form-text text-muted mt-2">
+              <i class="bi bi-info-circle me-1"></i>Click su un file per vedere i letti contenuti.
+            </div>
+          </div>
+
+          <!-- STEP 4: selezione letti dal file scelto -->
+          <div id="importaStep4" style="display:none;">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+              <button type="button" class="btn btn-sm btn-outline-secondary" id="btnBackToFiles">
+                <i class="bi bi-arrow-left me-1"></i>Indietro
+              </button>
+              <div class="text-end" style="font-size:0.85rem;">
+                <div class="fw-bold" id="importaFileSelLabel">Backup del —</div>
+                <div class="text-muted" id="importaConteggioSel" style="font-size:0.78rem;"></div>
+              </div>
+            </div>
+            <div class="form-check mb-2">
+              <input class="form-check-input" type="checkbox" id="importaTutto"
+                     onchange="_importaTuttoChange(this)">
+              <label class="form-check-label fw-semibold" for="importaTutto">Importa tutti i letti</label>
+            </div>
+            <div id="importaGridLetti" class="d-flex flex-wrap gap-2 justify-content-start"
+                 style="max-height:50vh;overflow-y:auto;padding:8px;background:#fafafa;border-radius:6px;"></div>
+          </div>
+
+          <!-- STEP 5: risultato -->
+          <div id="importaStep5" style="display:none;">
             <div id="importaRisultato"></div>
           </div>
         </div>
         <div class="modal-footer border-0 pt-0" id="importaFooter">
           <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annulla</button>
-          <button type="button" class="btn btn-warning text-white" id="btnConfermaImporta" onclick="eseguiImportaConsegne()"><i class="bi bi-file-earmark-arrow-down me-1"></i>Importa</button>
+          <button type="button" class="btn btn-warning text-white" id="btnConfermaImporta" onclick="eseguiImportaConsegne()">
+            <i class="bi bi-check2-circle me-1"></i>Verifica password
+          </button>
+          <button type="button" class="btn btn-danger" id="btnEseguiImporta" style="display:none;" onclick="_importaEsegui()">
+            <i class="bi bi-cloud-arrow-down me-1"></i>Importa selezionati
+          </button>
         </div>
       </div>
     </div>

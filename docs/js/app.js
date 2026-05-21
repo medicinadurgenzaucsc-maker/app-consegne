@@ -1446,68 +1446,389 @@
     var _docsTokenClient = null;
     var _googleDocsToken = null;
 
+    // ═══════════════════════════════════════════════════════════════════════
+    // IMPORTA DA BACKUP DRIVE — flusso safety net a 5 step
+    // ═══════════════════════════════════════════════════════════════════════
+    // Stato del flusso
+    var _imp_filesList = [];          // file Drive trovati
+    var _imp_fileSelected = null;     // { id, name, dataVis }
+    var _imp_pazientiParsed = [];     // schede letto estratte dal Doc
+
+    function _imp_resetUI() {
+      ['importaStep1','importaStep2','importaStep3','importaStep4','importaStep5'].forEach(function(id) {
+        var el = document.getElementById(id); if (el) el.style.display = 'none';
+      });
+      document.getElementById('importaStep1').style.display = '';
+      document.getElementById('btnConfermaImporta').style.display = '';
+      document.getElementById('btnEseguiImporta').style.display = 'none';
+      document.getElementById('importaFooter').style.display = '';
+      document.getElementById('inputImportaPwd').value = '';
+    }
+
+    function _imp_mostraSpinner(msg) {
+      ['importaStep1','importaStep3','importaStep4','importaStep5'].forEach(function(id) {
+        var el = document.getElementById(id); if (el) el.style.display = 'none';
+      });
+      document.getElementById('importaStep2').style.display = '';
+      document.getElementById('importaStepMsg').textContent = msg || 'Caricamento…';
+      document.getElementById('btnConfermaImporta').style.display = 'none';
+      document.getElementById('btnEseguiImporta').style.display = 'none';
+    }
+
     function apriModalImportaConsegne() {
       if (typeof _emergGuard === 'function' && _emergGuard()) return;
-      // Reset UI
-      document.getElementById('importaStep1').style.display = '';
-      document.getElementById('importaStep2').style.display = 'none';
-      document.getElementById('importaStep3').style.display = 'none';
-      document.getElementById('importaFooter').style.display = '';
-      document.getElementById('inputImportaUrl').value = '';
-      document.getElementById('inputImportaPwd').value = '';
+      _imp_resetUI();
+      _imp_filesList = [];
+      _imp_fileSelected = null;
+      _imp_pazientiParsed = [];
       var mi = bootstrap.Modal.getOrCreateInstance(document.getElementById('modalImportaConsegne'));
       mi.show();
     }
 
+    // STEP 1 → 2: verifica password e poi STEP 3 (lista file)
     function eseguiImportaConsegne() {
       if (typeof _emergGuard === 'function' && _emergGuard()) return;
-      var url = (document.getElementById('inputImportaUrl').value || '').trim();
       var pwd = (document.getElementById('inputImportaPwd').value || '').trim();
+      if (!pwd) { Swal.fire({ icon: 'warning', title: 'Password mancante',
+        text: 'Inserisci la password di autorizzazione.', confirmButtonColor: '#e65100' }); return; }
+      _imp_mostraSpinner('Verifica password…');
 
-      if (!url) { Swal.fire({ icon: 'warning', title: 'URL mancante', text: 'Inserisci il link al Google Doc.', confirmButtonColor: '#e65100' }); return; }
-      if (!pwd) { Swal.fire({ icon: 'warning', title: 'Password mancante', text: 'Inserisci la password di autorizzazione.', confirmButtonColor: '#e65100' }); return; }
-
-      // Estrai document ID dall'URL
-      var m = url.match(/\/d\/([a-zA-Z0-9_\-]+)/);
-      var docId = m ? m[1] : url;
-      if (!docId || docId.length < 10) { Swal.fire({ icon: 'warning', title: 'URL non valido', text: 'Non riesco a estrarre l\'ID documento dall\'URL fornito.', confirmButtonColor: '#e65100' }); return; }
-
-      // Nascondi footer, mostra spinner
-      document.getElementById('importaStep1').style.display = 'none';
-      document.getElementById('importaFooter').style.display = 'none';
-      document.getElementById('importaStep2').style.display = '';
-      document.getElementById('importaStepMsg').textContent = 'Verifica password...';
-
-      // ── Verifica password su Supabase prima di procedere ─────────────────────
-      _q(_sb.from('impostazioni').select('valore').eq('chiave', 'IMPORT_PWD').maybeSingle())
-        .then(function(row) {
-          var pwdCorretta = row ? row.valore : null;
-          if (!pwdCorretta || pwd !== pwdCorretta) {
-            _resetModalImporta();
-            Swal.fire({ icon: 'error', title: 'Password errata', text: 'La password inserita non è corretta. Impossibile procedere con l\'importazione.', confirmButtonColor: '#d33' });
+      // Verifica password contro chiavi IMPORT_PWD o BACKUP_PWD
+      // (entrambe vanno bene: stessa password del backup manuale)
+      _q(_sb.from('impostazioni').select('chiave,valore').in('chiave', ['IMPORT_PWD','BACKUP_PWD']))
+        .then(function(rows) {
+          var pwds = {};
+          (rows || []).forEach(function(r) { pwds[r.chiave] = r.valore; });
+          var ok = (pwds.IMPORT_PWD && pwd === pwds.IMPORT_PWD) ||
+                   (pwds.BACKUP_PWD && pwd === pwds.BACKUP_PWD);
+          if (!ok) {
+            _imp_resetUI();
+            Swal.fire({ icon: 'error', title: 'Password errata',
+              text: 'La password inserita non è corretta. Impossibile procedere.',
+              confirmButtonColor: '#d33' });
             return;
           }
-          // Password corretta → richiedi token Docs e procedi
-          document.getElementById('importaStep2').style.display = '';
-          document.getElementById('importaStepMsg').textContent = 'Richiesta accesso documento...';
-          if (_googleDocsToken) {
-            _eseguiParsingEImport(docId);
-          } else {
-            _richiediDocsToken(function(ok) {
-              if (!ok) {
-                _resetModalImporta();
-                Swal.fire({ icon: 'error', title: 'Accesso negato', text: 'Non è stato possibile ottenere l\'accesso al documento Google. Riprova.', confirmButtonColor: '#d33' });
-                return;
-              }
-              _eseguiParsingEImport(docId);
-            });
-          }
+          _imp_richiediTokenECaricaFiles();
         })
         .catch(function() {
-          _resetModalImporta();
-          Swal.fire({ icon: 'error', title: 'Errore verifica', text: 'Impossibile verificare la password. Controlla la connessione e riprova.', confirmButtonColor: '#d33' });
+          _imp_resetUI();
+          Swal.fire({ icon: 'error', title: 'Errore verifica',
+            text: 'Impossibile verificare la password. Connessione Supabase down? Se è un emergenza, usa "Ripristina da Backup" o consulta il backup Drive manualmente.',
+            confirmButtonColor: '#d33' });
         });
     }
+
+    function _imp_richiediTokenECaricaFiles() {
+      _imp_mostraSpinner('Richiesta accesso Google Drive…');
+      // Riusa il token Drive del backup se già acquisito,
+      // altrimenti richiede il consenso (popup Google una volta)
+      if (window._googleDriveToken) {
+        _imp_caricaListaFiles();
+      } else if (typeof _richiediDocsToken === 'function') {
+        // Riusa il token client già esistente (scope drive.file copre la cartella)
+        _richiediDocsToken(function(ok) {
+          if (!ok) {
+            _imp_resetUI();
+            Swal.fire({ icon: 'error', title: 'Accesso Drive negato',
+              text: 'Non è stato possibile ottenere il token di accesso a Drive. Ricarica la pagina e riprova.',
+              confirmButtonColor: '#d33' });
+            return;
+          }
+          // _googleDocsToken contiene anche scope drive.file → riusiamolo
+          if (!window._googleDriveToken && _googleDocsToken) window._googleDriveToken = _googleDocsToken;
+          _imp_caricaListaFiles();
+        });
+      } else {
+        _imp_resetUI();
+        Swal.fire({ icon: 'error', title: 'Token Drive non disponibile',
+          text: 'Non è stato possibile inizializzare il client Drive. Ricarica la pagina.',
+          confirmButtonColor: '#d33' });
+      }
+    }
+
+    // STEP 3: lista file della cartella backup
+    function _imp_caricaListaFiles() {
+      _imp_mostraSpinner('Lettura cartella backup su Drive…');
+      // Trova o crea la cartella di backup
+      if (typeof window._driveGetOrCreateFolder !== 'function' ||
+          typeof window._driveListaBackupFiles !== 'function') {
+        _imp_resetUI();
+        Swal.fire({ icon: 'error', title: 'Funzioni Drive mancanti',
+          text: 'Le funzioni di accesso Drive non sono caricate. Ricarica la pagina.',
+          confirmButtonColor: '#d33' });
+        return;
+      }
+      window._driveGetOrCreateFolder('BACKUP CONSEGNE EMERGENZA')
+        .then(function(folderId) {
+          return window._driveListaBackupFiles(folderId, 100);
+        })
+        .then(function(files) {
+          _imp_filesList = files || [];
+          _imp_mostraStep3();
+        })
+        .catch(function(e) {
+          _imp_resetUI();
+          Swal.fire({ icon: 'error', title: 'Errore lettura Drive',
+            text: 'Impossibile leggere la cartella di backup: ' + (e.message || e),
+            confirmButtonColor: '#d33' });
+        });
+    }
+
+    function _imp_mostraStep3() {
+      var lista = document.getElementById('importaListaFiles');
+      if (!_imp_filesList.length) {
+        lista.innerHTML = '<div class="p-4 text-center text-muted">' +
+          '<i class="bi bi-folder2-open fs-1 d-block mb-2"></i>' +
+          'Nessun file di backup trovato.<br>' +
+          '<small>La cartella Drive "BACKUP CONSEGNE EMERGENZA" è vuota o non accessibile.</small>' +
+          '</div>';
+      } else {
+        lista.innerHTML = _imp_filesList.map(function(f, idx) {
+          var dataVis = _imp_parseNomeFile(f.name) ||
+                        (f.createdTime ? _imp_fmtIso(f.createdTime) : '—');
+          return '<a href="javascript:void(0)" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center" ' +
+                 'data-imp-idx="' + idx + '" style="padding:14px 18px;">' +
+                 '<span><i class="bi bi-file-earmark-text text-warning me-2"></i>' +
+                 '<strong>Data file backup: ' + dataVis + '</strong>' +
+                 '<br><small class="text-muted">' + (f.name || '?') + '</small>' +
+                 '</span><i class="bi bi-chevron-right text-muted"></i></a>';
+        }).join('');
+        lista.querySelectorAll('[data-imp-idx]').forEach(function(a) {
+          a.onclick = function() {
+            var idx = parseInt(a.getAttribute('data-imp-idx'), 10);
+            _imp_selezionaFile(_imp_filesList[idx]);
+          };
+        });
+      }
+      ['importaStep1','importaStep2','importaStep4','importaStep5'].forEach(function(id) {
+        var el = document.getElementById(id); if (el) el.style.display = 'none';
+      });
+      document.getElementById('importaStep3').style.display = '';
+      document.getElementById('btnConfermaImporta').style.display = 'none';
+      document.getElementById('btnEseguiImporta').style.display = 'none';
+      document.getElementById('importaFooter').style.display = '';
+      // refresh button
+      var btnRef = document.getElementById('btnRefreshFiles');
+      if (btnRef) btnRef.onclick = _imp_caricaListaFiles;
+    }
+
+    // Parse nome file "Backup_DD-MM-YYYY_HH-MM" → "DD/MM/YYYY HH:MM"
+    function _imp_parseNomeFile(nome) {
+      if (!nome) return null;
+      var m = nome.match(/Backup_(\d{2})-(\d{2})-(\d{4})_(\d{2})-(\d{2})/);
+      if (!m) return null;
+      return m[1] + '/' + m[2] + '/' + m[3] + ' ' + m[4] + ':' + m[5];
+    }
+    function _imp_fmtIso(iso) {
+      try {
+        var d = new Date(iso);
+        function p(n){return String(n).padStart(2,'0');}
+        return p(d.getDate()) + '/' + p(d.getMonth()+1) + '/' + d.getFullYear() +
+               ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+      } catch(e) { return iso; }
+    }
+
+    // STEP 4: l'utente ha cliccato un file → parsing tabelle + render letti
+    function _imp_selezionaFile(file) {
+      if (!file) return;
+      _imp_fileSelected = {
+        id: file.id,
+        name: file.name,
+        dataVis: _imp_parseNomeFile(file.name) || _imp_fmtIso(file.createdTime)
+      };
+      _imp_mostraSpinner('Lettura documento "' + _imp_fileSelected.dataVis + '"…');
+      // Token Docs API (può essere lo stesso del Drive token se gli scope coprono entrambi)
+      var tok = _googleDocsToken || window._googleDriveToken;
+      if (!tok) {
+        _imp_resetUI();
+        Swal.fire({ icon: 'error', title: 'Token non disponibile',
+          text: 'Ricarica la pagina e riprova.', confirmButtonColor: '#d33' });
+        return;
+      }
+      fetch('https://docs.googleapis.com/v1/documents/' + file.id, {
+        headers: { 'Authorization': 'Bearer ' + tok }
+      }).then(function(r) {
+        if (!r.ok) {
+          return r.json().catch(function(){return {};}).then(function(b) {
+            var em = (b.error && b.error.message) || 'HTTP ' + r.status;
+            throw new Error(em);
+          });
+        }
+        return r.json();
+      }).then(function(doc) {
+        var schede = _imp_parseDocumento(doc);
+        _imp_pazientiParsed = schede || [];
+        if (!_imp_pazientiParsed.length) {
+          _imp_mostraStep3();
+          Swal.fire({ icon: 'warning', title: 'Nessuna scheda trovata',
+            text: 'Il documento non contiene tabelle di schede letto riconoscibili.',
+            confirmButtonColor: '#e65100' });
+          return;
+        }
+        _imp_mostraStep4();
+      }).catch(function(e) {
+        _imp_mostraStep3();
+        Swal.fire({ icon: 'error', title: 'Errore lettura documento',
+          text: e.message || String(e), confirmButtonColor: '#d33' });
+      });
+    }
+
+    // STEP 4: grid di letti selezionabili (stile identico a "Ripristina da Backup")
+    function _imp_mostraStep4() {
+      var grid = document.getElementById('importaGridLetti');
+      var pazienti = _imp_pazientiParsed.slice().sort(function(a, b) {
+        if (a.Letto === 'NOTE') return 1;
+        if (b.Letto === 'NOTE') return -1;
+        var nA = parseInt(a.Letto, 10), nB = parseInt(b.Letto, 10);
+        return (!isNaN(nA) && !isNaN(nB)) ? nA - nB : String(a.Letto).localeCompare(String(b.Letto));
+      });
+      grid.innerHTML = pazienti.map(function(p) {
+        var letto = String(p.Letto || '');
+        var tipo  = String(p.TipologiaLetto || '').trim().toUpperCase();
+        var nome  = String(p.Nome || '').toUpperCase();
+        var diag  = String(p.Diagnosi || '');
+        var colore = tipo
+          ? ((typeof window._getColoreTipo === 'function') ? window._getColoreTipo(tipo) : stringToColor(tipo))
+          : '#6c757d';
+        var badgeHtml = tipo
+          ? '<span class="badge text-white" style="background:' + colore + ';font-size:0.6rem;">' + tipo + '</span>'
+          : '<span class="badge bg-light text-secondary border" style="font-size:0.6rem;">STANDARD</span>';
+        var isNote = letto === 'NOTE';
+        return '<div class="importa-letto-card" data-letto="' + letto + '" onclick="_toggleImportaCard(this)"' +
+               ' style="width:160px;border:2px dashed #aaa;border-radius:8px;padding:10px;cursor:pointer;' +
+               'background:#fff;transition:all 0.15s;user-select:none;">' +
+               '<div class="d-flex align-items-center gap-2 mb-1">' +
+               '<span style="font-size:1.3rem;font-weight:bold;line-height:1;color:#37474f;">' +
+               (isNote ? '<i class="bi bi-stickies-fill" style="font-size:1rem;color:#546e7a;"></i>' : letto) +
+               '</span>' + badgeHtml + '</div>' +
+               '<div style="font-size:0.76rem;font-weight:700;color:#263238;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="' + nome + '">' +
+               (nome || '<span class="text-muted fst-italic">Vuoto</span>') + '</div>' +
+               '<div style="font-size:0.66rem;color:#607d8b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;" title="' + diag + '">' +
+               (diag || '') + '</div></div>';
+      }).join('');
+      document.getElementById('importaTutto').checked = false;
+      document.getElementById('importaFileSelLabel').textContent =
+        'Backup del ' + (_imp_fileSelected ? _imp_fileSelected.dataVis : '—');
+      _imp_aggiornaConteggio();
+
+      ['importaStep1','importaStep2','importaStep3','importaStep5'].forEach(function(id) {
+        var el = document.getElementById(id); if (el) el.style.display = 'none';
+      });
+      document.getElementById('importaStep4').style.display = '';
+      document.getElementById('btnConfermaImporta').style.display = 'none';
+      document.getElementById('btnEseguiImporta').style.display = '';
+
+      var btnBack = document.getElementById('btnBackToFiles');
+      if (btnBack) btnBack.onclick = _imp_mostraStep3;
+    }
+
+    window._toggleImportaCard = function(el) {
+      var sel = el.classList.contains('selected');
+      document.getElementById('importaTutto').checked = false;
+      if (sel) {
+        el.classList.remove('selected');
+        el.style.borderColor = '#aaa';
+        el.style.background = '#fff';
+        el.style.boxShadow = '';
+      } else {
+        el.classList.add('selected');
+        el.style.borderColor = '#e65100';
+        el.style.background = '#fff5e6';
+        el.style.boxShadow = '0 0 0 2px #ffb74d';
+      }
+      _imp_aggiornaConteggio();
+    };
+    window._importaTuttoChange = function(cb) {
+      var cards = document.querySelectorAll('.importa-letto-card');
+      cards.forEach(function(c) {
+        if (cb.checked) {
+          c.classList.add('selected');
+          c.style.borderColor = '#e65100';
+          c.style.background = '#fff5e6';
+          c.style.boxShadow = '0 0 0 2px #ffb74d';
+        } else {
+          c.classList.remove('selected');
+          c.style.borderColor = '#aaa';
+          c.style.background = '#fff';
+          c.style.boxShadow = '';
+        }
+      });
+      _imp_aggiornaConteggio();
+    };
+    function _imp_aggiornaConteggio() {
+      var sel = document.querySelectorAll('.importa-letto-card.selected').length;
+      var tot = document.querySelectorAll('.importa-letto-card').length;
+      var lbl = document.getElementById('importaConteggioSel');
+      if (lbl) lbl.textContent = sel > 0 ? sel + ' / ' + tot + ' selezionati' : '';
+      var btn = document.getElementById('btnEseguiImporta');
+      if (btn) btn.disabled = sel === 0;
+    }
+
+    // STEP 5: esegue import dei letti selezionati
+    window._importaEsegui = function() {
+      var sel = Array.from(document.querySelectorAll('.importa-letto-card.selected'));
+      if (!sel.length) return;
+      var lettiSel = sel.map(function(c) { return c.getAttribute('data-letto'); });
+      var dadi = _imp_pazientiParsed.filter(function(p) {
+        return lettiSel.indexOf(String(p.Letto)) !== -1;
+      });
+      Swal.fire({
+        icon: 'warning',
+        title: 'Conferma importazione',
+        html: '<div class="text-start">' +
+              '<p class="mb-2">Backup: <strong>' + (_imp_fileSelected ? _imp_fileSelected.dataVis : '?') + '</strong></p>' +
+              '<p class="mb-2"><strong>' + lettiSel.length + ' letti</strong> verranno sovrascritti con i dati del backup.</p>' +
+              '<p class="mb-0 text-danger small"><i class="bi bi-exclamation-triangle me-1"></i>L\'operazione NON è reversibile.</p>' +
+              '</div>',
+        showCancelButton: true,
+        confirmButtonText: 'Sì, importa',
+        confirmButtonColor: '#e65100',
+        cancelButtonText: 'Annulla',
+        reverseButtons: true
+      }).then(function(r) {
+        if (!r.isConfirmed) return;
+        _imp_mostraSpinner('Importazione di ' + lettiSel.length + ' letti…');
+        _imp_salvaLetti(dadi).then(function(riepilogo) {
+          ['importaStep1','importaStep2','importaStep3','importaStep4'].forEach(function(id) {
+            var el = document.getElementById(id); if (el) el.style.display = 'none';
+          });
+          var html = '<div class="alert alert-success mb-2"><i class="bi bi-check-circle-fill me-2"></i>' +
+                     '<strong>' + riepilogo.importati + ' letti importati</strong> con successo.</div>';
+          if (riepilogo.saltati.length > 0) {
+            html += '<div class="alert alert-warning mb-2" style="font-size:0.82rem;">' +
+                    '<strong>Saltati (' + riepilogo.saltati.length + '):</strong> ' +
+                    riepilogo.saltati.join(', ') + '<br><small>I letti non esistono nel DB attuale.</small></div>';
+          }
+          if (riepilogo.errori.length > 0) {
+            html += '<div class="alert alert-danger mb-2" style="font-size:0.82rem;">' +
+                    '<strong>Errori (' + riepilogo.errori.length + '):</strong> ' +
+                    riepilogo.errori.join('; ') + '</div>';
+          }
+          document.getElementById('importaRisultato').innerHTML = html;
+          document.getElementById('importaStep5').style.display = '';
+          document.getElementById('btnConfermaImporta').style.display = 'none';
+          document.getElementById('btnEseguiImporta').style.display = 'none';
+          document.getElementById('importaFooter').innerHTML =
+            '<button type="button" class="btn btn-secondary" data-bs-dismiss="modal" ' +
+            'onclick="_sincronizzaEPoiFai(function(){})">Chiudi e aggiorna</button>';
+          document.getElementById('importaFooter').style.display = '';
+          // Log evento import
+          if (typeof window._log === 'function') {
+            window._log('warning', 'import-drive-backup',
+              riepilogo.importati + ' letti importati da backup Drive',
+              'File backup: ' + (_imp_fileSelected ? _imp_fileSelected.name : '?') +
+              ' (' + (_imp_fileSelected ? _imp_fileSelected.dataVis : '?') + ')\n' +
+              'Letti importati: ' + lettiSel.join(', ') +
+              (riepilogo.saltati.length ? '\nSaltati (non esistono): ' + riepilogo.saltati.join(', ') : '') +
+              (riepilogo.errori.length ? '\nErrori: ' + riepilogo.errori.join('; ') : ''));
+          }
+        }).catch(function(e) {
+          _imp_mostraStep4();
+          Swal.fire({ icon: 'error', title: 'Errore importazione',
+            text: e.message || String(e), confirmButtonColor: '#d33' });
+        });
+      });
+    };
 
     function _richiediDocsToken(callback) {
       if (typeof google === 'undefined' || !google.accounts || !google.accounts.oauth2) { callback(false); return; }

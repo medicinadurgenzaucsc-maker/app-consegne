@@ -1090,6 +1090,39 @@ function _driveGetOrCreateFolder(nome) {
   });
 }
 
+// Lista tutti i Google Doc nella cartella backup ordinati per createdTime DESC
+// (dal più recente al più vecchio). Usato dal modal "Importa da backup Drive"
+// come safety net se Supabase è temporaneamente down.
+// Ritorna array di { id, name, createdTime, modifiedTime }.
+function _driveListaBackupFiles(folderId, limit) {
+  var token = window._googleDriveToken;
+  if (!token) return Promise.reject(new Error('No Drive token'));
+  if (!folderId) return Promise.reject(new Error('No folder ID'));
+  var q = "'" + folderId + "' in parents" +
+          " and mimeType='application/vnd.google-apps.document'" +
+          " and trashed=false";
+  var url = 'https://www.googleapis.com/drive/v3/files?' +
+            'q=' + encodeURIComponent(q) +
+            '&orderBy=createdTime%20desc' +
+            '&pageSize=' + (limit || 100) +
+            '&fields=files(id,name,createdTime,modifiedTime)';
+  return fetch(url, {
+    headers: { 'Authorization': 'Bearer ' + token }
+  }).then(function(r) {
+    if (!r.ok) {
+      return r.json().catch(function(){return {};}).then(function(body) {
+        var msg = (body.error && body.error.message) || 'HTTP ' + r.status;
+        throw new Error(msg);
+      });
+    }
+    return r.json();
+  }).then(function(data) {
+    return (data && data.files) ? data.files : [];
+  });
+}
+window._driveListaBackupFiles = _driveListaBackupFiles;
+window._driveGetOrCreateFolder = _driveGetOrCreateFolder;
+
 // Elimina i file Drive nella cartella più vecchi di cutoffMs (basato su createdTime di Drive).
 function _driveEliminaVecchi(folderId, cutoffMs) {
   var token = window._googleDriveToken;
