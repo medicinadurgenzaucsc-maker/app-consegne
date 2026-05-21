@@ -5319,5 +5319,110 @@
   })();
   </script>
 
+  <!-- ══════════════════════════════════════════════════════════════
+       PROXY HELPER — rileva fallimenti di rete a raffica e suggerisce
+       all'utente che potrebbe essere il proxy aziendale che richiede
+       autenticazione (popup di Chrome di sistema, non controllabile
+       da JS). Toast SweetAlert non-modale, 1 alert max ogni 5 minuti.
+       ══════════════════════════════════════════════════════════════ -->
+  <script>
+  (function() {
+    // Patterning: 3 fetch falliti entro 30s -> mostra toast.
+    // Cooldown: 5 min tra un toast e l'altro (evita spam).
+    var SOGLIA_FALLIMENTI = 3;
+    var FINESTRA_MS       = 30000;     // 30 secondi
+    var COOLDOWN_MS       = 5 * 60000; // 5 minuti
+    var fallimenti = [];               // array di timestamp
+    var ultimoAlertTs = 0;
+
+    if (typeof window.fetch !== 'function') return;
+    var fetchOrig = window.fetch.bind(window);
+
+    window.fetch = function() {
+      var args = arguments;
+      var urlReq = args[0];
+      var urlStr = (typeof urlReq === 'string') ? urlReq :
+                   (urlReq && urlReq.url) ? urlReq.url : '';
+      // Skip: chiamate al SW stesso o data: URLs
+      if (urlStr && (urlStr.indexOf('chrome-extension://') === 0 ||
+                     urlStr.indexOf('data:') === 0)) {
+        return fetchOrig.apply(null, args);
+      }
+      return fetchOrig.apply(null, args).then(function(res) {
+        // HTTP 407 Proxy Auth Required (raro nei browser moderni)
+        if (res && res.status === 407) {
+          _registraFallimento('407 ' + urlStr);
+        }
+        return res;
+      }).catch(function(err) {
+        // Errore di rete (TypeError 'Failed to fetch', AbortError, ecc.)
+        _registraFallimento((err && err.message) || 'unknown');
+        throw err;
+      });
+    };
+
+    function _registraFallimento(motivo) {
+      var ora = Date.now();
+      fallimenti.push(ora);
+      // Mantieni solo gli ultimi entro la finestra
+      fallimenti = fallimenti.filter(function(t) { return ora - t < FINESTRA_MS; });
+      console.log('[ProxyHelper] Fallimento fetch (' + motivo + '), totale nella finestra: ' + fallimenti.length);
+      if (fallimenti.length >= SOGLIA_FALLIMENTI &&
+          (ora - ultimoAlertTs) >= COOLDOWN_MS) {
+        ultimoAlertTs = ora;
+        _mostraAvvisoProxy();
+        // Reset contatore dopo aver avvisato (così se l'utente sistema
+        // il problema e tornano altri errori 5 min dopo, mostriamo di nuovo)
+        fallimenti = [];
+      }
+    }
+
+    function _mostraAvvisoProxy() {
+      // Se non c'è SweetAlert disponibile (es. boot iniziale), skip.
+      if (typeof Swal === 'undefined') return;
+      // Toast non-modale in basso a destra: non interrompe il lavoro.
+      Swal.fire({
+        toast: true,
+        position: 'bottom-end',
+        icon: 'warning',
+        title: 'Problema di rete aziendale',
+        html: '<div style="text-align:left;font-size:0.82rem;line-height:1.4;">'+
+              'Diverse chiamate al server sono fallite. Possibili cause:<br><br>'+
+              '<strong>1. Proxy aziendale</strong> (più probabile)<br>'+
+              'Se Chrome ti mostra un popup "Accedi", inserisci le '+
+              'credenziali del dominio Windows.<br><br>'+
+              '<strong>2. Connessione di rete instabile</strong><br>'+
+              'Se il problema persiste, contatta l\'IT del reparto.'+
+              '</div>',
+        showConfirmButton: true,
+        confirmButtonText: 'Ho capito',
+        confirmButtonColor: '#37474f',
+        timer: 15000,        // chiusura automatica dopo 15s
+        timerProgressBar: true,
+        showClass: { popup: 'swal2-noanimation' },
+        hideClass: { popup: '' },
+        customClass: { popup: 'proxy-helper-toast' },
+        didOpen: function() {
+          // Larghezza un po' più ampia del default per leggere bene
+          var popup = Swal.getPopup();
+          if (popup) {
+            popup.style.minWidth = '380px';
+            popup.style.maxWidth = '440px';
+          }
+        }
+      });
+    }
+
+    // Espone debug helper per ispezione manuale da console
+    window._proxyHelperStatus = function() {
+      return {
+        fallimentiNellaFinestra: fallimenti.length,
+        soglia: SOGLIA_FALLIMENTI,
+        ultimoAlertSecFa: ultimoAlertTs ? Math.round((Date.now()-ultimoAlertTs)/1000) : null
+      };
+    };
+  })();
+  </script>
+
 </body>
 </html>
