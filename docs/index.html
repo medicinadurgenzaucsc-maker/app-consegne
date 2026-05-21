@@ -5493,9 +5493,10 @@
       var body = document.getElementById('logsBody');
       if (!body) return;
       body.innerHTML = '<div class="text-center py-4"><div class="spinner-border text-secondary"></div><div class="mt-2 text-muted">Caricamento log…</div></div>';
-      // Cleanup automatico log vecchi (> 30 giorni)
+      // Cleanup automatico log vecchi (> 20 giorni) PRIMA del fetch
+      // (in modo che l'utente veda subito il dato pulito)
       if (typeof window._sbPuliciLogVecchi === 'function') {
-        window._sbPuliciLogVecchi(30).catch(function(){});
+        window._sbPuliciLogVecchi(20).catch(function(){});
       }
       window._sbGetLogs(200, _statoFiltro || null).then(function(logs) {
         body.innerHTML = _renderTabella(logs, _statoFiltro);
@@ -5526,7 +5527,7 @@
             '<div class="text-center py-4"><div class="spinner-border text-secondary"></div></div>' +
           '</div>' +
           '<div class="text-muted small mt-2" style="font-size:0.72rem;">' +
-            '<i class="bi bi-info-circle me-1"></i>Click su una riga per espandere la descrizione. Log oltre 30 giorni vengono eliminati automaticamente.' +
+            '<i class="bi bi-info-circle me-1"></i>Click su una riga per espandere la descrizione. Log oltre 20 giorni vengono eliminati automaticamente.' +
           '</div>',
         width: '92%',
         showConfirmButton: true,

@@ -180,6 +180,19 @@
         if (document.visibilityState === 'visible') _backupOrarioAutomatico();
       });
 
+      // ── Cleanup log vecchi (> 20 giorni) — eseguito una volta
+      // all'avvio + ogni 6 ore se la pagina resta aperta.
+      function _cleanupLogVecchi() {
+        if (typeof window._sbPuliciLogVecchi !== 'function') return;
+        window._sbPuliciLogVecchi(20).catch(function(e) {
+          console.warn('[Log cleanup] Errore:', e && e.message);
+        });
+      }
+      // Avvio (con piccolo delay per non sovraccaricare il boot)
+      setTimeout(_cleanupLogVecchi, 10000);
+      // Periodico ogni 6 ore
+      setInterval(_cleanupLogVecchi, 6 * 60 * 60 * 1000);
+
       // Dopo 3s senza risposta → questo client sta eseguendo il backup
       var _msgBackupTimer = setTimeout(function() {
         var msg = document.getElementById('backupCheckMsg');

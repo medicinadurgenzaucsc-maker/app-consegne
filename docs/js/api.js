@@ -181,11 +181,21 @@ function _sbGetLogs(limit, livelloFiltro) {
   return _q(q);
 }
 
-// Cleanup: elimina log più vecchi di N giorni (default 30).
-// Chiamato all'apertura del modal log per mantenere il DB snello.
+// Cleanup: elimina log più vecchi di N giorni (default 20).
+// Chiamato:
+//   1. All'apertura del modal log (per dare il dato fresco all'utente)
+//   2. All'avvio dell'app (per non lasciare i log in eccesso anche
+//      se nessuno apre mai il modal)
+// Il DELETE è idempotente e usa l'indice idx_logs_ts (DESC), quindi
+// è veloce anche su tabelle grandi.
 function _sbPuliciLogVecchi(giorni) {
-  var soglia = Date.now() - ((giorni || 30) * 86400000);
-  return _q(_sb.from('logs').delete().lt('ts', soglia));
+  var g = (typeof giorni === 'number' && giorni > 0) ? giorni : 20;
+  var soglia = Date.now() - (g * 86400000);
+  return _q(_sb.from('logs').delete().lt('ts', soglia))
+    .then(function() {
+      console.log('[Log] Cleanup OK (soglia: ' + g + ' giorni = ts < ' + soglia + ')');
+      return { ok: true, soglia: soglia, giorni: g };
+    });
 }
 
 // Cancella TUTTI i log (azione admin)
