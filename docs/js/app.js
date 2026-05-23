@@ -1927,13 +1927,75 @@
 
     // ── Parsing del documento Google Docs API v1 ──────────────────────────────
 
+    // Estrae TUTTO il testo del Doc concatenato, per cercare i marker JSON.
+    function _imp_getFullText(content) {
+      var pezzi = [];
+      (content || []).forEach(function(elem) {
+        if (elem.paragraph && elem.paragraph.elements) {
+          elem.paragraph.elements.forEach(function(e) {
+            if (e.textRun && e.textRun.content) pezzi.push(e.textRun.content);
+          });
+        }
+        // Anche dentro le tabelle (per essere safe se Drive mette i marker nelle celle)
+        if (elem.table && elem.table.tableRows) {
+          elem.table.tableRows.forEach(function(row) {
+            (row.tableCells || []).forEach(function(cell) {
+              (cell.content || []).forEach(function(c) {
+                if (c.paragraph && c.paragraph.elements) {
+                  c.paragraph.elements.forEach(function(e) {
+                    if (e.textRun && e.textRun.content) pezzi.push(e.textRun.content);
+                  });
+                }
+              });
+            });
+          });
+        }
+      });
+      return pezzi.join('');
+    }
+
+    // Cerca il blocco JSON Base64 tra i marker `<<<CONSEGNE_JSON_BEGIN>>>` e
+    // `<<<CONSEGNE_JSON_END>>>`. Se trovato, decodifica e ritorna l'array
+    // pazienti. Lossless: round-trip esatto col formato salvato.
+    function _imp_estraiJsonBlock(content) {
+      var full = _imp_getFullText(content);
+      // Tollera spazi/newline tra marker e contenuto
+      var re = /<<<\s*CONSEGNE_JSON_BEGIN\s*>>>([\s\S]*?)<<<\s*CONSEGNE_JSON_END\s*>>>/;
+      var m = full.match(re);
+      if (!m) return null;
+      var b64 = m[1] || '';
+      if (typeof window._b64decodeUtf8 !== 'function') return null;
+      var raw = window._b64decodeUtf8(b64);
+      if (!raw) return null;
+      try {
+        var obj = JSON.parse(raw);
+        if (obj && Array.isArray(obj.pazienti)) {
+          console.log('[Import] JSON payload v' + (obj.v||'?') + ' trovato — ' + obj.pazienti.length + ' pazienti');
+          return obj.pazienti;
+        }
+      } catch(e) {
+        console.warn('[Import] JSON parse fallito:', e.message);
+      }
+      return null;
+    }
+
     function _imp_parseDocumento(doc) {
       var schedeLetto = [];
       if (!doc || !doc.body || !doc.body.content) return schedeLetto;
 
       var content = doc.body.content;
 
-      // ── 1. Parsing tabelle (schede letto) ────────────────────────────────────
+      // ── 0. PERCORSO PREFERITO: leggi il blocco JSON Base64 ──────────────────
+      // Tutti i backup creati dalla nuova _driveBackupConsegne includono
+      // un blocco JSON lossless con TUTTI i campi. Se presente, lo usiamo
+      // direttamente senza il fragile parsing delle tabelle.
+      var pazientiJson = _imp_estraiJsonBlock(content);
+      if (pazientiJson && pazientiJson.length > 0) {
+        return pazientiJson;
+      }
+      console.warn('[Import] JSON payload assente, fallback al parsing tabelle HTML (backup legacy)');
+
+      // ── 1. FALLBACK: parsing tabelle (schede letto) per backup vecchi ───────
       content.forEach(function(elem) {
         if (!elem.table) return;
         var table = elem.table;

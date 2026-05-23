@@ -1065,6 +1065,24 @@ function _sbOttieniAccountLogin() {
 // GOOGLE DRIVE BACKUP
 // ══════════════════════════════════════════════════════════════
 
+// Helper Base64 UTF-8 safe (gestisce caratteri accentati e Unicode).
+// Usato per embedare il JSON dei dati nel Google Doc di backup senza
+// problemi di escaping HTML.
+function _b64encodeUtf8(s) {
+  try {
+    return btoa(unescape(encodeURIComponent(String(s || ''))));
+  } catch(e) { return ''; }
+}
+function _b64decodeUtf8(b64) {
+  try {
+    // Tollera whitespace/newline introdotti dal Doc
+    var clean = String(b64 || '').replace(/[\s\n\r\t]+/g, '');
+    return decodeURIComponent(escape(atob(clean)));
+  } catch(e) { return ''; }
+}
+window._b64encodeUtf8 = _b64encodeUtf8;
+window._b64decodeUtf8 = _b64decodeUtf8;
+
 // Cerca o crea la cartella "BACKUP CONSEGNE EMERGENZA" nella root dell'utente.
 // Con scope drive.file, files.list restituisce solo le cartelle create da quest'app.
 function _driveGetOrCreateFolder(nome) {
@@ -1357,6 +1375,26 @@ function _driveBackupConsegne(pazienti, ts) {
     return p.Letto === 'NOTE' ? _driveRenderNoteCard(p) : _driveRenderCard(p);
   }).join('');
 
+  // ── Payload JSON con TUTTI i campi (round-trip lossless) ──────────
+  // Inserito in fondo al Doc tra marker univoci + Base64 UTF-8 safe.
+  // Il parser dell'import legge prima questo blocco: se presente usa
+  // il JSON e ottiene TUTTI i campi senza ambiguità. Se assente
+  // (backup molto vecchi creati prima di questa modifica), fallback
+  // al parsing delle tabelle HTML.
+  var jsonPayload;
+  try {
+    jsonPayload = JSON.stringify({
+      v: 1,                 // version schema
+      ts: Number(ts),
+      label: dataLabel,
+      pazienti: ordinati    // tutti i campi così come arrivano da _fromDb
+    });
+  } catch(_) { jsonPayload = '{"v":1,"pazienti":[]}'; }
+  var jsonB64 = _b64encodeUtf8(jsonPayload);
+  // Chunked a 76 char per evitare problemi con Doc che potrebbe wrappare
+  // o introdurre soft-break su righe troppo lunghe (gestiamo entrambi al parse)
+  var jsonChunked = jsonB64.replace(/(.{76})/g, '$1\n');
+
   var html = '<!DOCTYPE html><html><head><meta charset="UTF-8">' +
     '<style>' +
     '@page{size:A4 landscape;margin:15mm 20mm 15mm 20mm;}' +
@@ -1370,6 +1408,17 @@ function _driveBackupConsegne(pazienti, ts) {
     '<td style="text-align:right;font-size:9pt;color:#555;padding-bottom:4pt;">Backup del ' + dataLabel + '</td>' +
     '</tr></table>' +
     cardsHtml +
+    // ── Sezione tecnica con JSON Base64 in fondo (page-break per
+    // isolarla visivamente) ─────────────────────────────────────────
+    '<div style="page-break-before:always;font-family:\'Courier New\',monospace;font-size:6pt;color:#999;margin-top:20pt;border-top:1pt dashed #ccc;padding-top:8pt;">' +
+      '<p style="font-weight:bold;margin-bottom:4pt;">DATI STRUTTURATI — NON MODIFICARE MANUALMENTE</p>' +
+      '<p style="margin-bottom:2pt;">Schema v1 — usati dall\'app per reimport esatto. Modificare questi dati corromperà il backup.</p>' +
+      '<p style="margin-bottom:2pt;">&lt;&lt;&lt;CONSEGNE_JSON_BEGIN&gt;&gt;&gt;</p>' +
+      '<p style="white-space:pre-wrap;word-break:break-all;font-size:5pt;line-height:1.1;margin-bottom:2pt;">' +
+        jsonChunked +
+      '</p>' +
+      '<p style="margin-bottom:2pt;">&lt;&lt;&lt;CONSEGNE_JSON_END&gt;&gt;&gt;</p>' +
+    '</div>' +
     '</body></html>';
 
   // Cerca o crea la cartella nella root, crea il file, poi pulisce i vecchi
