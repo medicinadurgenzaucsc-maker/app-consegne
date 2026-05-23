@@ -2012,73 +2012,120 @@
         }
       });
 
-      // ── 2. Sezione "PENDENTI POST-DIMISIONE NON CANCELLARE" ──────────────────
-      // Cerca il paragrafo con questa intestazione e raccoglie tutto il contenuto
-      // successivo (fino a fine documento) nel letto NOTE → campo Diaria.
-      var pendentiLines = [];
-      var inPendenti    = false;
-
-      content.forEach(function(elem) {
-        if (!elem.paragraph) return; // salta tabelle e altri elementi
-
-        var para = elem.paragraph;
-        var testo = _imp_paraGetText(para).trim();
-
-        if (!inPendenti) {
-          // Cerca l'intestazione (anche parziale / con variazioni di capitalizzazione)
-          if (/PENDENTI\s+POST.{0,6}DIMISS?ION/i.test(testo)) {
-            inPendenti = true;
-            // L'intestazione stessa NON va inserita nel contenuto
+      // NB: la vecchia sezione "PENDENTI POST-DIMISSIONE" come paragrafi
+      // liberi è OBSOLETA con il nuovo layout label-valore. Adesso anche
+      // la card NOTE è una normale tabella 2-col con label "Letto" = "NOTE".
+      // Mantengo qui SOLO il fallback per backup molto vecchi creati col
+      // layout precedente (paragrafi liberi dopo "PENDENTI POST-DIMISSIONE").
+      var giaPresent = schedeLetto.some(function(s) { return String(s.Letto) === 'NOTE'; });
+      if (!giaPresent) {
+        var pendentiLines = [];
+        var inPendenti    = false;
+        content.forEach(function(elem) {
+          if (!elem.paragraph) return;
+          var testo = _imp_paraGetText(elem.paragraph).trim();
+          if (!inPendenti) {
+            if (/PENDENTI\s+POST.{0,6}DIMISS?ION/i.test(testo)) inPendenti = true;
+            return;
           }
-          return;
-        }
-
-        // Siamo dentro la sezione: aggiungi riga preservando HTML
-        pendentiLines.push(_imp_paraToHtml(para));
-      });
-
-      if (pendentiLines.length > 0) {
-        // Rimuovi righe vuote iniziali e finali
-        while (pendentiLines.length > 0 && pendentiLines[0] === '') pendentiLines.shift();
-        while (pendentiLines.length > 0 && pendentiLines[pendentiLines.length - 1] === '') pendentiLines.pop();
-
-        schedeLetto.push({
-          Letto:  'NOTE',
-          Diaria: pendentiLines.join('<br>')
+          pendentiLines.push(_imp_paraToHtml(elem.paragraph));
         });
+        if (pendentiLines.length > 0) {
+          while (pendentiLines.length > 0 && pendentiLines[0] === '') pendentiLines.shift();
+          while (pendentiLines.length > 0 && pendentiLines[pendentiLines.length-1] === '') pendentiLines.pop();
+          schedeLetto.push({ Letto: 'NOTE', Diaria: pendentiLines.join('<br>') });
+        }
       }
-
       return schedeLetto;
     }
 
+    // ══════════════════════════════════════════════════════════════════════
+    // PARSER LABEL-BASED dinamico — riconosce tabelle 2-col (Label | Valore)
+    // ──────────────────────────────────────────────────────────────────────
+    // Lo schema è generato dinamicamente da `_getDriveSchema()` di api.js,
+    // che a sua volta si basa su `_campi`. Quindi:
+    //   - Aggiungere un campo a _campi → automaticamente parsato qui
+    //   - Aggiornare una label in _DRIVE_LABEL_OVERRIDES → riconosciuta
+    //   - Marcare un campo come HTML in _DRIVE_HTML_FIELDS → preservato
+    // Robusto contro modifiche manuali del medico al Doc (label-based,
+    // no posizione/ordine).
+    // ══════════════════════════════════════════════════════════════════════
+
+    // Normalizza una label per matching tollerante:
+    //   "Età" / "Eta" / "ETÀ" / "  età  " → "eta"
+    //   "Data di Nascita" / "Data nascita" / "DataNascita" → "datadinascita"
+    function _imp_normLabel(s) {
+      return String(s || '')
+        .toLowerCase()
+        .normalize('NFD').replace(/[̀-ͯ]/g, '') // strip accenti
+        .replace(/[^a-z0-9]/g, '');                        // strip spazi/punteggiatura
+    }
+
+    // Costruisce mappa label_normalizzata → { campo, isHtml } da:
+    //   1. Schema corrente generato da api.js (_getDriveSchema): label
+    //      ufficiali + nome JS del campo (per future modifiche dei nomi).
+    //   2. Alias retro-compatibilità per importare backup VECCHI creati
+    //      con label diverse (es. "Diaria ed Epicrisi" prima del rinomine).
+    // Ri-costruita ogni volta (poco costosa) per riflettere modifiche
+    // runtime allo schema senza bisogno di reload.
+    function _imp_buildLabelMap() {
+      var m = {};
+      // 1. Schema corrente da api.js — la fonte di verità autoritativa
+      var schema = (typeof window._getDriveSchema === 'function') ? window._getDriveSchema() : [];
+      schema.forEach(function(spec) {
+        // a) Label ufficiale
+        m[_imp_normLabel(spec.label)] = { campo: spec.campo, isHtml: !!spec.isHtml };
+        // b) Anche il nome JS come fallback (per future label override)
+        m[_imp_normLabel(spec.campo)] = { campo: spec.campo, isHtml: !!spec.isHtml };
+      });
+      // 2. Alias retro-compat per import di backup vecchi (label che non
+      //    sono più nell'override ma erano usate in versioni precedenti).
+      var aliasLegacy = [
+        ['diariaedepicrisi',  'Diaria',           true ],
+        ['diariaepicrisi',    'Diaria',           true ],
+        ['pianoterapeutico',  'PianoTerapeutico', true ],
+        ['cs',                'CodiceSanitario',  false],
+        ['dafareerichieste',  'DaFare',           true ],
+        ['dafarerichieste',   'DaFare',           true ],
+        ['dimissione',        'Dimissibile',      false]
+      ];
+      aliasLegacy.forEach(function(a) {
+        if (!m[a[0]]) m[a[0]] = { campo: a[1], isHtml: !!a[2] };
+      });
+      return m;
+    }
+
+    // Estrai valore dalla cella in base al campo:
+    //   - HTML field → _imp_cellToHtml (preserva bold/colori/<br>)
+    //   - Plain field → _imp_cellGetText (testo concatenato)
+    function _imp_estraiValore(cell, isHtml) {
+      if (!cell) return '';
+      return isHtml ? _imp_cellToHtml(cell) : _imp_cellGetText(cell).trim();
+    }
+
+    // Parser principale di una tabella 2-colonne label-valore.
+    // Restituisce un oggetto con TUTTI i campi trovati. Le righe con
+    // label non riconosciuta vengono silenziosamente ignorate (no break).
     function _imp_parseSchedaLetto(rows) {
-      var row0   = rows[0];
-      var cells0 = row0.tableCells || [];
-      var dati   = {};
+      var dati = {};
+      if (!rows || !rows.length) return dati;
+      var labelMap = _imp_buildLabelMap();
 
-      if (cells0.length >= 1) {
-        var sin = _imp_parseColonnaSinistra(cells0[0]);
-        for (var k in sin) dati[k] = sin[k];
-      }
-      if (cells0.length >= 2) {
-        var cen = _imp_parseColonnaCentrale(cells0[1]);
-        for (var k in cen) dati[k] = cen[k];
-      }
-      if (cells0.length >= 3) {
-        dati.DaFare = _imp_cellToHtml(cells0[2]);
-      }
+      rows.forEach(function(row) {
+        var cells = row.tableCells || [];
+        if (cells.length < 2) return; // serve label + valore
+        var labelText = _imp_cellGetText(cells[0]).trim();
+        var normKey = _imp_normLabel(labelText);
+        if (!normKey) return;
+        var spec = labelMap[normKey];
+        if (!spec) return; // label sconosciuta, skip
+        var val = _imp_estraiValore(cells[1], spec.isHtml);
+        // Normalizzazioni minimali per campi specifici
+        if (spec.campo === 'Letto') val = String(val).trim();
+        if (spec.campo === 'TipologiaLetto') val = String(val).trim().toUpperCase();
+        dati[spec.campo] = val;
+      });
 
-      // Riga PIANO DI CURA (seconda riga della tabella)
-      if (rows.length >= 2) {
-        var cells1 = rows[1].tableCells || [];
-        var pianoCell = null;
-        for (var c = 0; c < cells1.length; c++) {
-          var ct = _imp_cellGetText(cells1[c]).trim().toUpperCase();
-          if (ct.indexOf('PIANO') === -1 && ct !== '') { pianoCell = cells1[c]; break; }
-        }
-        if (!pianoCell && cells1.length >= 2) pianoCell = cells1[1];
-        if (pianoCell) dati.PianoTerapeutico = _imp_cellToHtml(pianoCell);
-      }
       return dati;
     }
 

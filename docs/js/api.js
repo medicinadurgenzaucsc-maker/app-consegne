@@ -1258,90 +1258,175 @@ function _driveCreaGoogleDoc(nome, htmlContent, folderId) {
   });
 }
 
-// Costruisce HTML per una singola scheda letto — 3 colonne, larghezza 100%.
-// Struttura compatibile Google Docs: no nested tables, colspan minimo.
-//   Riga 1 (header): C1=Letto (17%) | C2+C3=Nome/Diagnosi/Meta (colspan=2, 83%)
-//   Riga 2 (corpo):  C1=Allergie/Ossigeno/Terapia (17%) | C2=Diaria (63%) | C3=DaFare (20%)
-//   Riga 3 (piano):  C1+C2+C3=Piano Terapeutico (colspan=3, 100%)
+// ══════════════════════════════════════════════════════════════════════
+// SCHEMA DINAMICO PER BACKUP/IMPORT DRIVE — derivato da `_campi`
+// ──────────────────────────────────────────────────────────────────────
+// Ogni paziente nel backup è una tabella 2-colonne (Label | Valore).
+// Il parser dell'import cerca le righe per LABEL (no positional),
+// così il medico può modificare i valori manualmente nel Doc.
+//
+// Il sistema è COMPLETAMENTE DATA-DRIVEN dal mapping `_campi`:
+// - Aggiungi un nuovo campo a `_campi` → appare automaticamente nel
+//   backup e viene riconosciuto in import (label = nome JS per default)
+// - Vuoi un'etichetta leggibile per quel campo? Aggiungi una entry
+//   a `_DRIVE_LABEL_OVERRIDES`
+// - È un campo HTML (rich-text con bold/colori)? Aggiungi a `_DRIVE_HTML_FIELDS`
+// - Vuoi escluderlo dal backup? Aggiungi a `_DRIVE_EXCLUDE_FIELDS`
+//
+// Quindi: NESSUNA modifica al codice di backup/import per nuovi campi.
+// ══════════════════════════════════════════════════════════════════════
+
+// Etichette personalizzate (leggibili) per i campi.
+// Se non presente qui, viene usato il nome JS del campo come label.
+var _DRIVE_LABEL_OVERRIDES = {
+  'TipologiaLetto':   'Tipologia',
+  'Eta':              'Età',
+  'DataNascita':      'Data di Nascita',
+  'DataRicovero':     'Data di Ricovero',
+  'CodiceSanitario':  'Codice Sanitario',
+  'PianoTerapeutico': 'Piano di Cura',
+  'EsamiColturali':   'Esami Colturali',
+  'DaFare':           'Da Fare',
+  'NoteTerapia':      'Note e Terapia',
+  'Diaria':           'Diaria / Epicrisi'
+};
+
+// Campi con HTML rich-text (preserva bold/italic/colori/<br>).
+// Per i campi non-HTML il valore è plain text.
+var _DRIVE_HTML_FIELDS = {
+  'Allergie':         true,
+  'Diagnosi':         true,
+  'PianoTerapeutico': true,
+  'EsamiColturali':   true,
+  'DaFare':           true,
+  'NoteTerapia':      true,
+  'Diaria':           true
+};
+
+// Campi da NON includere nel backup (campi tecnici di sistema)
+var _DRIVE_EXCLUDE_FIELDS = {
+  'UltimoAggiornamento': true
+};
+
+// Ordine canonico delle righe nel backup (per leggibilità del Doc).
+// I campi non in queste liste vengono inseriti in mezzo nell'ordine
+// naturale di Object.keys(_campi).
+var _DRIVE_ORDER_FIRST = ['Letto','TipologiaLetto','Nome','Sesso','Eta',
+                          'DataNascita','DataRicovero','CodiceSanitario',
+                          'Allergie','Ossigeno','Vitto','Dimissibile'];
+var _DRIVE_ORDER_LAST  = ['Diagnosi','PianoTerapeutico','EsamiColturali',
+                          'DaFare','NoteTerapia','Diaria'];
+
+// Costruisce dinamicamente lo schema [{ label, campo, isHtml }] dai
+// campi attualmente registrati in `_campi`. Chiamata ogni volta che
+// serve (poco costosa, evita caching stantio se _campi cambia a runtime).
+function _getDriveSchema() {
+  if (typeof _campi !== 'object' || !_campi) return [];
+  var allFields = Object.keys(_campi);
+  var keep = allFields.filter(function(f) { return !_DRIVE_EXCLUDE_FIELDS[f]; });
+  var ordered = [];
+  // 1. Campi nell'ordine FIRST
+  _DRIVE_ORDER_FIRST.forEach(function(f) {
+    if (keep.indexOf(f) !== -1) ordered.push(f);
+  });
+  // 2. Campi non in FIRST né in LAST (campi nuovi auto-inseriti qui)
+  keep.forEach(function(f) {
+    if (_DRIVE_ORDER_FIRST.indexOf(f) === -1 &&
+        _DRIVE_ORDER_LAST.indexOf(f) === -1 &&
+        ordered.indexOf(f) === -1) {
+      ordered.push(f);
+    }
+  });
+  // 3. Campi nell'ordine LAST
+  _DRIVE_ORDER_LAST.forEach(function(f) {
+    if (keep.indexOf(f) !== -1 && ordered.indexOf(f) === -1) ordered.push(f);
+  });
+  // Trasforma in schema [{label, campo, isHtml}]
+  return ordered.map(function(f) {
+    return {
+      label:  _DRIVE_LABEL_OVERRIDES[f] || f,
+      campo:  f,
+      isHtml: !!_DRIVE_HTML_FIELDS[f]
+    };
+  });
+}
+
+// Espone tutto a window per uso da app.js (parser import)
+window._DRIVE_LABEL_OVERRIDES = _DRIVE_LABEL_OVERRIDES;
+window._DRIVE_HTML_FIELDS     = _DRIVE_HTML_FIELDS;
+window._DRIVE_EXCLUDE_FIELDS  = _DRIVE_EXCLUDE_FIELDS;
+window._DRIVE_ORDER_FIRST     = _DRIVE_ORDER_FIRST;
+window._DRIVE_ORDER_LAST      = _DRIVE_ORDER_LAST;
+window._getDriveSchema        = _getDriveSchema;
+
+// Helper: render una singola riga della tabella backup
+function _driveRenderRow(label, val, isHtml, LB, VB) {
+  if (val == null) val = '';
+  val = String(val);
+  if (!isHtml) {
+    // Plain text → escape minimo (Drive non interpreterà come HTML)
+    val = val.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+  return '<tr>' +
+           '<td style="' + LB + '">' + label + '</td>' +
+           '<td style="' + VB + '">' + (val || '&nbsp;') + '</td>' +
+         '</tr>';
+}
+
 function _driveRenderCard(p) {
   var tipo = (p.TipologiaLetto || '').trim().toUpperCase() || 'STANDARD';
+  var nome = (p.Nome || '').trim();
+  var diag = String(p.Diagnosi || '').replace(/<[^>]+>/g, '').trim(); // strip HTML per header
 
-  var meta = '';
-  if (p.DataNascita)     meta += 'Nasc.: <b>' + p.DataNascita + '</b> &nbsp; ';
-  if (p.Eta)             meta += 'Et&agrave;: <b>' + p.Eta + '</b> &nbsp; ';
-  if (p.DataRicovero)    meta += 'Ricovero: <b>' + p.DataRicovero + '</b> &nbsp; ';
-  if (p.CodiceSanitario) meta += 'C.S.: <b>' + p.CodiceSanitario + '</b>';
-  if (p.Dimissibile)     meta += ' &nbsp; <span style="color:#b8860b;font-weight:bold;">&#x21AA; Dimissione: ' + p.Dimissibile + '</span>';
+  var Bi = '0.75pt solid #ccc';
+  var LB = 'background-color:#eceff1;font-weight:bold;font-size:9pt;padding:5pt 8pt;border:' + Bi + ';width:28%;vertical-align:top;';
+  var VB = 'padding:5pt 8pt;font-size:9pt;border:' + Bi + ';vertical-align:top;width:72%;';
 
-  var B  = '1.5pt solid #333333';
-  var Bi = '1pt solid #888888';
-  var HB = 'background-color:#e8e6e1;font-weight:bold;font-size:8pt;text-transform:uppercase;padding:3pt 5pt;border-bottom:' + Bi + ';';
-  var CB = 'padding:4pt 6pt;font-size:9pt;';
+  // Header visivo (NON parsato — solo per UX, sopra la tabella)
+  var headerVisivo =
+    '<table width="100%" style="border-collapse:collapse;margin-top:14pt;margin-bottom:2pt;border-bottom:1.5pt solid #333;font-family:Arial,sans-serif;">' +
+      '<tr>' +
+        '<td style="font-size:14pt;font-weight:bold;color:#37474f;padding-bottom:3pt;">' +
+          'LETTO ' + (p.Letto || '?') + ' &nbsp; <span style="font-size:9pt;color:#546e7a;font-weight:normal;">[' + tipo + ']</span>' +
+          (nome ? ' &nbsp; <span style="font-size:11pt;text-transform:uppercase;">' + nome + '</span>' : '') +
+        '</td>' +
+      '</tr>' +
+      (diag ? '<tr><td style="font-size:9pt;color:#555;padding-bottom:3pt;font-style:italic;">' + diag.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</td></tr>' : '') +
+    '</table>';
+
+  // Costruisce le righe DINAMICAMENTE dallo schema (derivato da _campi).
+  // Aggiungere un campo a _campi lo fa apparire automaticamente qui.
+  var schema = _getDriveSchema();
+  var rows = schema.map(function(s) {
+    return _driveRenderRow(s.label, p[s.campo], s.isHtml, LB, VB);
+  }).join('');
 
   return (
-    '<table width="100%" style="border-collapse:collapse;margin-bottom:10pt;font-family:Arial,sans-serif;font-size:9pt;">' +
-
-    // ── Riga 1: header ──────────────────────────────────────────────────────
-    '<tr>' +
-      '<td width="17%" style="border:' + B + ';text-align:center;vertical-align:middle;background-color:#f2efe9;padding:6pt;">' +
-        '<p style="font-size:22pt;font-weight:bold;margin:0;line-height:1;">' + (p.Letto || '') + '</p>' +
-        '<p style="font-size:7pt;font-weight:bold;color:#546e7a;text-transform:uppercase;margin:2pt 0 0;">' + tipo + '</p>' +
-      '</td>' +
-      '<td colspan="2" width="83%" style="border:' + B + ';vertical-align:top;padding:5pt 8pt;">' +
-        '<p style="font-size:12pt;font-weight:bold;text-transform:uppercase;border-bottom:1pt solid #999;padding-bottom:2pt;margin:0 0 4pt;">' + (p.Nome || '') + '</p>' +
-        '<p style="font-weight:bold;margin:0 0 3pt;">' + (p.Diagnosi || '') + '</p>' +
-        (meta ? '<p style="font-size:8pt;color:#444;margin:3pt 0 0;">' + meta + '</p>' : '') +
-      '</td>' +
-    '</tr>' +
-
-    // ── Riga 2: corpo ───────────────────────────────────────────────────────
-    '<tr>' +
-      '<td width="17%" style="border:' + B + ';vertical-align:top;padding:0;">' +
-        '<p style="' + HB + '">&#x26A0; Allergie</p>' +
-        '<p style="' + CB + '">' + (p.Allergie || '') + '</p>' +
-        '<p style="' + HB + 'border-top:' + Bi + ';">Ossigeno</p>' +
-        '<p style="' + CB + '">' + (p.Ossigeno || '') + '</p>' +
-        '<p style="' + HB + 'border-top:' + Bi + ';">Vitto</p>' +
-        '<p style="' + CB + '">' + (p.Vitto || '') + '</p>' +
-        '<p style="' + HB + 'border-top:' + B + ';">Note e Terapia</p>' +
-        '<p style="' + CB + '">' + (p.NoteTerapia || '') + '</p>' +
-      '</td>' +
-      '<td width="63%" style="border:' + B + ';vertical-align:top;padding:0;">' +
-        '<p style="' + HB + '">Diaria ed Epicrisi</p>' +
-        '<p style="' + CB + '">' + (p.Diaria || '') + '</p>' +
-      '</td>' +
-      '<td width="20%" style="border:' + B + ';vertical-align:top;padding:0;">' +
-        '<p style="' + HB + '">Da Fare / Richieste</p>' +
-        '<p style="' + CB + '">' + (p.DaFare || '') + '</p>' +
-      '</td>' +
-    '</tr>' +
-
-    // ── Riga 3: piano terapeutico ────────────────────────────────────────────
-    '<tr>' +
-      '<td colspan="3" width="100%" style="border:' + B + ';vertical-align:top;padding:0;">' +
-        '<p style="' + HB + 'text-align:left;">Piano di Cura</p>' +
-        '<p style="' + CB + '">' + (p.PianoTerapeutico || '') + '</p>' +
-      '</td>' +
-    '</tr>' +
-
+    headerVisivo +
+    '<table width="100%" style="border-collapse:collapse;margin-bottom:14pt;border:1pt solid #999;font-family:Arial,sans-serif;">' +
+    rows +
     '</table>'
   );
 }
 
+// Card NOTE: tabella ridotta con solo Letto + Diaria.
+// Il parser distingue NOTE perché il valore di "Letto" è "NOTE".
 function _driveRenderNoteCard(p) {
-  var B = '1.5pt solid #546e7a';
-  var HB = 'background-color:#eceff1;font-weight:bold;font-size:8pt;text-transform:uppercase;padding:3pt 5pt;border-bottom:1pt solid #90a4ae;';
-  var CB = 'padding:4pt 6pt;font-size:9pt;';
+  var Bi = '0.75pt solid #b0bec5';
+  var LB = 'background-color:#eceff1;font-weight:bold;font-size:9pt;padding:5pt 8pt;border:' + Bi + ';width:28%;vertical-align:top;';
+  var VB = 'padding:5pt 8pt;font-size:9pt;border:' + Bi + ';vertical-align:top;width:72%;';
+  var diariaLabel = _DRIVE_LABEL_OVERRIDES['Diaria'] || 'Diaria';
+
+  var headerVisivo =
+    '<table width="100%" style="border-collapse:collapse;margin-top:14pt;margin-bottom:2pt;border-bottom:1.5pt solid #546e7a;font-family:Arial,sans-serif;">' +
+      '<tr><td style="font-size:13pt;font-weight:bold;color:#546e7a;letter-spacing:2px;padding-bottom:3pt;">NOTE DEL REPARTO</td></tr>' +
+    '</table>';
+
   return (
-    '<table width="100%" style="border-collapse:collapse;margin-bottom:10pt;font-family:Arial,sans-serif;font-size:9pt;border:' + B + ';">' +
-    '<tr>' +
-      '<td width="17%" style="border:' + B + ';text-align:center;vertical-align:middle;background-color:#eceff1;padding:6pt;">' +
-        '<p style="font-size:1rem;font-weight:bold;letter-spacing:2px;color:#546e7a;margin:0;">NOTE</p>' +
-      '</td>' +
-      '<td width="83%" style="border:' + B + ';vertical-align:top;padding:0;">' +
-        '<p style="' + CB + '">' + (p.Diaria || '') + '</p>' +
-      '</td>' +
-    '</tr>' +
+    headerVisivo +
+    '<table width="100%" style="border-collapse:collapse;margin-bottom:14pt;border:1pt solid #546e7a;font-family:Arial,sans-serif;">' +
+      _driveRenderRow('Letto', 'NOTE', false, LB, VB) +
+      _driveRenderRow(diariaLabel, p.Diaria || '', true, LB, VB) +
     '</table>'
   );
 }
@@ -1370,30 +1455,15 @@ function _driveBackupConsegne(pazienti, ts) {
     return (!isNaN(nA) && !isNaN(nB)) ? nA - nB : String(a.Letto).localeCompare(String(b.Letto));
   });
 
-  // Costruisce HTML con layout standard (tabelle — Drive converte in Google Doc)
+  // Costruisce HTML: tabelle label-valore (autoritative per parsing/import).
+  // Ogni paziente è una tabella 2-colonne (Label | Valore) con TUTTI i 18
+  // campi. Il parser cerca per LABEL (no positional) quindi:
+  //   - il medico può aggiornare manualmente i valori dal Doc
+  //   - aggiungere righe vuote o riordinare non rompe il parser
+  //   - round-trip backup → modifica → import è LOSSLESS
   var cardsHtml = ordinati.map(function(p) {
     return p.Letto === 'NOTE' ? _driveRenderNoteCard(p) : _driveRenderCard(p);
   }).join('');
-
-  // ── Payload JSON con TUTTI i campi (round-trip lossless) ──────────
-  // Inserito in fondo al Doc tra marker univoci + Base64 UTF-8 safe.
-  // Il parser dell'import legge prima questo blocco: se presente usa
-  // il JSON e ottiene TUTTI i campi senza ambiguità. Se assente
-  // (backup molto vecchi creati prima di questa modifica), fallback
-  // al parsing delle tabelle HTML.
-  var jsonPayload;
-  try {
-    jsonPayload = JSON.stringify({
-      v: 1,                 // version schema
-      ts: Number(ts),
-      label: dataLabel,
-      pazienti: ordinati    // tutti i campi così come arrivano da _fromDb
-    });
-  } catch(_) { jsonPayload = '{"v":1,"pazienti":[]}'; }
-  var jsonB64 = _b64encodeUtf8(jsonPayload);
-  // Chunked a 76 char per evitare problemi con Doc che potrebbe wrappare
-  // o introdurre soft-break su righe troppo lunghe (gestiamo entrambi al parse)
-  var jsonChunked = jsonB64.replace(/(.{76})/g, '$1\n');
 
   var html = '<!DOCTYPE html><html><head><meta charset="UTF-8">' +
     '<style>' +
@@ -1402,23 +1472,15 @@ function _driveBackupConsegne(pazienti, ts) {
     'p{margin:0;padding:0;}' +
     '</style>' +
     '</head><body>' +
-    '<table width="100%" style="margin-bottom:12pt;border-bottom:2pt solid #333;">' +
+    '<table width="100%" style="margin-bottom:8pt;border-bottom:2pt solid #333;">' +
     '<tr>' +
     '<td style="font-size:14pt;font-weight:bold;padding-bottom:4pt;">Consegne Reparto</td>' +
     '<td style="text-align:right;font-size:9pt;color:#555;padding-bottom:4pt;">Backup del ' + dataLabel + '</td>' +
     '</tr></table>' +
+    '<p style="font-size:8pt;color:#888;margin-bottom:14pt;font-style:italic;">' +
+    'Documento utilizzabile come safety net: in caso di down del sistema, modificare i valori nelle celle di destra (non le label di sinistra) e re-importare poi nelle consegne.' +
+    '</p>' +
     cardsHtml +
-    // ── Sezione tecnica con JSON Base64 in fondo (page-break per
-    // isolarla visivamente) ─────────────────────────────────────────
-    '<div style="page-break-before:always;font-family:\'Courier New\',monospace;font-size:6pt;color:#999;margin-top:20pt;border-top:1pt dashed #ccc;padding-top:8pt;">' +
-      '<p style="font-weight:bold;margin-bottom:4pt;">DATI STRUTTURATI — NON MODIFICARE MANUALMENTE</p>' +
-      '<p style="margin-bottom:2pt;">Schema v1 — usati dall\'app per reimport esatto. Modificare questi dati corromperà il backup.</p>' +
-      '<p style="margin-bottom:2pt;">&lt;&lt;&lt;CONSEGNE_JSON_BEGIN&gt;&gt;&gt;</p>' +
-      '<p style="white-space:pre-wrap;word-break:break-all;font-size:5pt;line-height:1.1;margin-bottom:2pt;">' +
-        jsonChunked +
-      '</p>' +
-      '<p style="margin-bottom:2pt;">&lt;&lt;&lt;CONSEGNE_JSON_END&gt;&gt;&gt;</p>' +
-    '</div>' +
     '</body></html>';
 
   // Cerca o crea la cartella nella root, crea il file, poi pulisce i vecchi
