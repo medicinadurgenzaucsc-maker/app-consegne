@@ -2040,13 +2040,13 @@
     }
 
     // ══════════════════════════════════════════════════════════════════════
-    // PARSER LABEL-BASED dinamico — riconosce tabelle 2-col (Label | Valore)
+    // PARSER LABEL-BASED dinamico — riconosce coppie LABEL/VALORE dentro
+    // le celle delle tabelle nel Doc (layout 4-col come la card app).
     // ──────────────────────────────────────────────────────────────────────
     // Lo schema è generato dinamicamente da `_getDriveSchema()` di api.js,
-    // che a sua volta si basa su `_campi`. Quindi:
-    //   - Aggiungere un campo a _campi → automaticamente parsato qui
-    //   - Aggiornare una label in _DRIVE_LABEL_OVERRIDES → riconosciuta
-    //   - Marcare un campo come HTML in _DRIVE_HTML_FIELDS → preservato
+    // che a sua volta si basa su `_DRIVE_LAYOUT` + `_campi`. Quindi:
+    //   - Aggiungere un campo a _campi → parsabile (default label = nome JS)
+    //   - Aggiornare _DRIVE_LAYOUT → cambia label/colonna senza altro lavoro
     // Robusto contro modifiche manuali del medico al Doc (label-based,
     // no posizione/ordine).
     // ══════════════════════════════════════════════════════════════════════
@@ -2058,36 +2058,61 @@
       return String(s || '')
         .toLowerCase()
         .normalize('NFD').replace(/[̀-ͯ]/g, '') // strip accenti
-        .replace(/[^a-z0-9]/g, '');                        // strip spazi/punteggiatura
+        .replace(/[^a-z0-9]/g, '');                       // strip spazi/punteggiatura/emoji
     }
 
-    // Costruisce mappa label_normalizzata → { campo, isHtml } da:
-    //   1. Schema corrente generato da api.js (_getDriveSchema): label
-    //      ufficiali + nome JS del campo (per future modifiche dei nomi).
-    //   2. Alias retro-compatibilità per importare backup VECCHI creati
-    //      con label diverse (es. "Diaria ed Epicrisi" prima del rinomine).
-    // Ri-costruita ogni volta (poco costosa) per riflettere modifiche
-    // runtime allo schema senza bisogno di reload.
+    // Costruisce mappa label_normalizzata → { campo, isHtml }.
+    // Sorgenti:
+    //   1. Schema corrente generato da api.js (`_getDriveSchema()`)
+    //      — la fonte di verità autoritativa (label canoniche).
+    //   2. Anche il nome JS del campo viene aggiunto come alias.
+    //   3. Alias retro-compat per backup vecchi (label storiche).
     function _imp_buildLabelMap() {
       var m = {};
-      // 1. Schema corrente da api.js — la fonte di verità autoritativa
-      var schema = (typeof window._getDriveSchema === 'function') ? window._getDriveSchema() : [];
-      schema.forEach(function(spec) {
-        // a) Label ufficiale
+      var addSpec = function(spec) {
+        if (!spec || !spec.label || !spec.campo) return;
         m[_imp_normLabel(spec.label)] = { campo: spec.campo, isHtml: !!spec.isHtml };
-        // b) Anche il nome JS come fallback (per future label override)
         m[_imp_normLabel(spec.campo)] = { campo: spec.campo, isHtml: !!spec.isHtml };
-      });
-      // 2. Alias retro-compat per import di backup vecchi (label che non
-      //    sono più nell'override ma erano usate in versioni precedenti).
+      };
+      // 1. Schema corrente — i 4 gruppi (info, diag, diaria, terapia)
+      var schema = (typeof window._getDriveSchema === 'function') ? window._getDriveSchema() : null;
+      if (schema && typeof schema === 'object') {
+        ['info','diag','diaria','terapia'].forEach(function(g) {
+          (schema[g] || []).forEach(addSpec);
+        });
+      }
+      // 2. Alias retro-compat per backup pre-modifica
       var aliasLegacy = [
-        ['diariaedepicrisi',  'Diaria',           true ],
-        ['diariaepicrisi',    'Diaria',           true ],
-        ['pianoterapeutico',  'PianoTerapeutico', true ],
-        ['cs',                'CodiceSanitario',  false],
-        ['dafareerichieste',  'DaFare',           true ],
-        ['dafarerichieste',   'DaFare',           true ],
-        ['dimissione',        'Dimissibile',      false]
+        ['diariaedepicrisi',          'Diaria',           true ],
+        ['diariaepicrisi',            'Diaria',           true ],
+        ['pianoterapeutico',          'PianoTerapeutico', true ],
+        ['pianodicura',               'PianoTerapeutico', true ],
+        ['esamicolturali',            'EsamiColturali',   true ],
+        ['cs',                        'CodiceSanitario',  false],
+        ['codicesanitario',           'CodiceSanitario',  false],
+        ['datadinascita',             'DataNascita',      false],
+        ['datadiricovero',            'DataRicovero',     false],
+        ['datanascita',               'DataNascita',      false],
+        ['dataricovero',              'DataRicovero',     false],
+        ['ricovero',                  'DataRicovero',     false],
+        ['dafareerichieste',          'DaFare',           true ],
+        ['dafarerichieste',           'DaFare',           true ],
+        ['dafaree richieste',         'DaFare',           true ],
+        ['noteeterapia',              'NoteTerapia',      true ],
+        ['noteterapia',               'NoteTerapia',      true ],
+        ['allergie',                  'Allergie',         true ],
+        ['tipologialetto',            'TipologiaLetto',   false],
+        ['tipologia',                 'TipologiaLetto',   false],
+        ['diagnosimotivoricovero',    'Diagnosi',         true ],
+        ['diagnosi',                  'Diagnosi',         true ],
+        ['eta',                       'Eta',              false],
+        ['dimissione',                'Dimissibile',      false],
+        ['dimissibile',               'Dimissibile',      false],
+        ['ossigeno',                  'Ossigeno',         false],
+        ['vitto',                     'Vitto',            false],
+        ['letto',                     'Letto',            false],
+        ['nome',                      'Nome',             false],
+        ['sesso',                     'Sesso',            false]
       ];
       aliasLegacy.forEach(function(a) {
         if (!m[a[0]]) m[a[0]] = { campo: a[1], isHtml: !!a[2] };
@@ -2095,17 +2120,68 @@
       return m;
     }
 
-    // Estrai valore dalla cella in base al campo:
-    //   - HTML field → _imp_cellToHtml (preserva bold/colori/<br>)
-    //   - Plain field → _imp_cellGetText (testo concatenato)
-    function _imp_estraiValore(cell, isHtml) {
-      if (!cell) return '';
-      return isHtml ? _imp_cellToHtml(cell) : _imp_cellGetText(cell).trim();
+    // Restituisce il valore associato a una sequenza di paragrafi
+    // (uniti come HTML preservando formattazione + <br> tra paragrafi
+    // diversi). Per campi plain, concatena solo il testo.
+    function _imp_unisciValore(paras, isHtml) {
+      if (!paras || !paras.length) return '';
+      if (isHtml) {
+        return paras.map(_imp_paraToHtml).filter(function(s){return s !== '';}).join('<br>');
+      }
+      return paras.map(_imp_paraGetText).map(function(s){return s.trim();})
+                  .filter(function(s){return s.length;}).join(' ');
     }
 
-    // Parser principale di una tabella 2-colonne label-valore.
-    // Restituisce un oggetto con TUTTI i campi trovati. Le righe con
-    // label non riconosciuta vengono silenziosamente ignorate (no break).
+    // Parsing di UNA cella: estrae paragrafi, riconosce le label
+    // canoniche, prende tutto il testo fino alla prossima label come
+    // valore di quel campo. Aggiorna `dati` in-place.
+    function _imp_parseCellaInPlace(cell, labelMap, dati) {
+      if (!cell) return;
+      var paras = _imp_getCellParas(cell);
+      if (!paras || !paras.length) return;
+      var labelCorrente = null;
+      var bufferParas = [];
+      var commitBuffer = function() {
+        if (!labelCorrente) return;
+        var val = _imp_unisciValore(bufferParas, labelCorrente.isHtml);
+        // Normalizzazioni per specifici campi
+        if (labelCorrente.campo === 'Letto') val = String(val).trim();
+        if (labelCorrente.campo === 'TipologiaLetto') val = String(val).trim().toUpperCase();
+        // Se il campo è già stato visto, mantieni il primo non-vuoto
+        // (caso edge: cella che ripete una label per errore)
+        if (dati[labelCorrente.campo] && !val) return;
+        dati[labelCorrente.campo] = val;
+      };
+      for (var i = 0; i < paras.length; i++) {
+        var text = _imp_paraGetText(paras[i]).trim();
+        if (!text) {
+          // paragrafo vuoto: se siamo dentro un valore, lo conserviamo
+          // come "riga vuota" (utile per separare in Diaria)
+          if (labelCorrente) bufferParas.push(paras[i]);
+          continue;
+        }
+        var key = _imp_normLabel(text);
+        var spec = labelMap[key];
+        if (spec) {
+          // Trovata una label: salva il valore precedente, inizia nuova
+          commitBuffer();
+          labelCorrente = spec;
+          bufferParas = [];
+        } else if (labelCorrente) {
+          // Paragrafo è parte del valore della label corrente
+          bufferParas.push(paras[i]);
+        }
+        // Se siamo qui senza labelCorrente, è un paragrafo "orfano":
+        // potrebbe essere un valore di Letto/Tipologia/Nome se nel
+        // layout legacy non c'era la label. Ignoriamo per ora —
+        // il backup nuovo include sempre le label.
+      }
+      commitBuffer(); // ultimo gruppo
+    }
+
+    // Parser principale: itera TUTTE le celle di una tabella e
+    // estrae le coppie label/valore. Funziona con qualsiasi numero
+    // di colonne (4-col come la card, 2-col legacy, ecc.).
     function _imp_parseSchedaLetto(rows) {
       var dati = {};
       if (!rows || !rows.length) return dati;
@@ -2113,17 +2189,9 @@
 
       rows.forEach(function(row) {
         var cells = row.tableCells || [];
-        if (cells.length < 2) return; // serve label + valore
-        var labelText = _imp_cellGetText(cells[0]).trim();
-        var normKey = _imp_normLabel(labelText);
-        if (!normKey) return;
-        var spec = labelMap[normKey];
-        if (!spec) return; // label sconosciuta, skip
-        var val = _imp_estraiValore(cells[1], spec.isHtml);
-        // Normalizzazioni minimali per campi specifici
-        if (spec.campo === 'Letto') val = String(val).trim();
-        if (spec.campo === 'TipologiaLetto') val = String(val).trim().toUpperCase();
-        dati[spec.campo] = val;
+        cells.forEach(function(cell) {
+          _imp_parseCellaInPlace(cell, labelMap, dati);
+        });
       });
 
       return dati;

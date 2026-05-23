@@ -1261,232 +1261,296 @@ function _driveCreaGoogleDoc(nome, htmlContent, folderId) {
 // ══════════════════════════════════════════════════════════════════════
 // SCHEMA DINAMICO PER BACKUP/IMPORT DRIVE — derivato da `_campi`
 // ──────────────────────────────────────────────────────────────────────
-// Ogni paziente nel backup è una tabella 2-colonne (Label | Valore).
-// Il parser dell'import cerca le righe per LABEL (no positional),
-// così il medico può modificare i valori manualmente nel Doc.
+// Ogni paziente nel backup è una TABELLA 4-COLONNE che replica il
+// layout della card paziente nell'app (info | diag | diaria | terapia).
+// Il parser dell'import cerca le coppie label/valore dentro le celle:
+// non importa in che colonna stanno, basta che la label sia presente.
 //
-// Il sistema è COMPLETAMENTE DATA-DRIVEN dal mapping `_campi`:
-// - Aggiungi un nuovo campo a `_campi` → appare automaticamente nel
-//   backup e viene riconosciuto in import (label = nome JS per default)
-// - Vuoi un'etichetta leggibile per quel campo? Aggiungi una entry
-//   a `_DRIVE_LABEL_OVERRIDES`
-// - È un campo HTML (rich-text con bold/colori)? Aggiungi a `_DRIVE_HTML_FIELDS`
-// - Vuoi escluderlo dal backup? Aggiungi a `_DRIVE_EXCLUDE_FIELDS`
+// SISTEMA DATA-DRIVEN da `_campi`:
+// - Per un nuovo campo, basta aggiungerlo a `_campi`: appare nel backup
+//   nel gruppo "info" con label = nome JS (default).
+// - Per personalizzare label + colonna + tipo HTML, aggiungere una
+//   entry a `_DRIVE_LAYOUT` con { campo, gruppo, label, isHtml? }.
+// - Per escludere un campo dal backup, aggiungere a `_DRIVE_EXCLUDE_FIELDS`.
 //
-// Quindi: NESSUNA modifica al codice di backup/import per nuovi campi.
+// Quindi: NESSUNA modifica al codice di rendering/parsing per nuovi campi.
 // ══════════════════════════════════════════════════════════════════════
 
-// Etichette personalizzate (leggibili) per i campi.
-// Se non presente qui, viene usato il nome JS del campo come label.
-var _DRIVE_LABEL_OVERRIDES = {
-  'TipologiaLetto':   'Tipologia',
-  'Eta':              'Età',
-  'DataNascita':      'Data di Nascita',
-  'DataRicovero':     'Data di Ricovero',
-  'CodiceSanitario':  'Codice Sanitario',
-  'PianoTerapeutico': 'Piano di Cura',
-  'EsamiColturali':   'Esami Colturali',
-  'DaFare':           'Da Fare',
-  'NoteTerapia':      'Note e Terapia',
-  'Diaria':           'Diaria / Epicrisi'
-};
-
-// Campi con HTML rich-text (preserva bold/italic/colori/<br>).
-// Per i campi non-HTML il valore è plain text.
-var _DRIVE_HTML_FIELDS = {
-  'Allergie':         true,
-  'Diagnosi':         true,
-  'PianoTerapeutico': true,
-  'EsamiColturali':   true,
-  'DaFare':           true,
-  'NoteTerapia':      true,
-  'Diaria':           true
-};
+// Definizione layout campo per campo: gruppo (colonna), label visibile
+// nel Doc, isHtml (true = preserva HTML rich-text). L'ORDINE in questo
+// array determina anche l'ordine visivo dei campi dentro ogni gruppo.
+// Gruppi disponibili: 'info' (col sinistra), 'diag' (col centro-sx, una
+// riga per campo), 'diaria' (col centro-grande), 'terapia' (col destra).
+var _DRIVE_LAYOUT = [
+  // ── Colonna INFO (sinistra) — replica .alt-col-info dell'app ──
+  { campo: 'Letto',             gruppo: 'info',    label: 'LETTO' },
+  { campo: 'TipologiaLetto',    gruppo: 'info',    label: 'TIPOLOGIA' },
+  { campo: 'Nome',              gruppo: 'info',    label: 'NOME' },
+  { campo: 'Sesso',             gruppo: 'info',    label: 'SESSO' },
+  { campo: 'Allergie',          gruppo: 'info',    label: '⚠ ALLERGIE',       isHtml: true },
+  { campo: 'DataNascita',       gruppo: 'info',    label: 'Data di Nascita' },
+  { campo: 'Eta',               gruppo: 'info',    label: 'Età' },
+  { campo: 'DataRicovero',      gruppo: 'info',    label: 'Ricovero' },
+  { campo: 'CodiceSanitario',   gruppo: 'info',    label: 'C.S.' },
+  { campo: 'Ossigeno',          gruppo: 'info',    label: 'Ossigeno' },
+  { campo: 'Vitto',             gruppo: 'info',    label: 'Vitto' },
+  { campo: 'Dimissibile',       gruppo: 'info',    label: 'Dimissibile' },
+  // ── Colonna DIAG (centro-sinistra) — replica .alt-col-diag ──
+  { campo: 'Diagnosi',          gruppo: 'diag',    label: 'DIAGNOSI / MOTIVO RICOVERO', isHtml: true },
+  { campo: 'PianoTerapeutico',  gruppo: 'diag',    label: 'PIANO DI CURA',              isHtml: true },
+  { campo: 'EsamiColturali',    gruppo: 'diag',    label: 'ESAMI COLTURALI',            isHtml: true },
+  { campo: 'DaFare',            gruppo: 'diag',    label: 'DA FARE / RICHIESTE',        isHtml: true },
+  // ── Colonna DIARIA (centro, grande) — replica .alt-col-diaria ──
+  { campo: 'Diaria',            gruppo: 'diaria',  label: 'DIARIA ED EPICRISI',         isHtml: true },
+  // ── Colonna TERAPIA (destra) — replica .alt-col-terapia ──
+  { campo: 'NoteTerapia',       gruppo: 'terapia', label: 'NOTE E TERAPIA',             isHtml: true }
+];
 
 // Campi da NON includere nel backup (campi tecnici di sistema)
 var _DRIVE_EXCLUDE_FIELDS = {
   'UltimoAggiornamento': true
 };
 
-// Ordine canonico delle righe nel backup (per leggibilità del Doc).
-// I campi non in queste liste vengono inseriti in mezzo nell'ordine
-// naturale di Object.keys(_campi).
-var _DRIVE_ORDER_FIRST = ['Letto','TipologiaLetto','Nome','Sesso','Eta',
-                          'DataNascita','DataRicovero','CodiceSanitario',
-                          'Allergie','Ossigeno','Vitto','Dimissibile'];
-var _DRIVE_ORDER_LAST  = ['Diagnosi','PianoTerapeutico','EsamiColturali',
-                          'DaFare','NoteTerapia','Diaria'];
-
-// Costruisce dinamicamente lo schema [{ label, campo, isHtml }] dai
-// campi attualmente registrati in `_campi`. Chiamata ogni volta che
-// serve (poco costosa, evita caching stantio se _campi cambia a runtime).
+// Costruisce dinamicamente lo schema gruppi {info:[...], diag:[...], diaria:[...], terapia:[...]}
+// dai campi attualmente registrati in `_campi`, usando `_DRIVE_LAYOUT` per
+// gli override. I campi nuovi non listati vanno in 'info' con label = nome JS.
 function _getDriveSchema() {
-  if (typeof _campi !== 'object' || !_campi) return [];
-  var allFields = Object.keys(_campi);
-  var keep = allFields.filter(function(f) { return !_DRIVE_EXCLUDE_FIELDS[f]; });
-  var ordered = [];
-  // 1. Campi nell'ordine FIRST
-  _DRIVE_ORDER_FIRST.forEach(function(f) {
-    if (keep.indexOf(f) !== -1) ordered.push(f);
+  var groups = { info: [], diag: [], diaria: [], terapia: [] };
+  if (typeof _campi !== 'object' || !_campi) return groups;
+
+  // Mappa rapida campo → spec layout
+  var bySpec = {};
+  _DRIVE_LAYOUT.forEach(function(s) { bySpec[s.campo] = s; });
+
+  // Prima: campi nell'ordine del _DRIVE_LAYOUT (mantengono l'ordine voluto)
+  _DRIVE_LAYOUT.forEach(function(spec) {
+    if (_DRIVE_EXCLUDE_FIELDS[spec.campo]) return;
+    if (!_campi[spec.campo]) return; // il campo non è più in _campi
+    groups[spec.gruppo || 'info'].push({
+      campo:  spec.campo,
+      label:  spec.label || spec.campo,
+      isHtml: !!spec.isHtml
+    });
   });
-  // 2. Campi non in FIRST né in LAST (campi nuovi auto-inseriti qui)
-  keep.forEach(function(f) {
-    if (_DRIVE_ORDER_FIRST.indexOf(f) === -1 &&
-        _DRIVE_ORDER_LAST.indexOf(f) === -1 &&
-        ordered.indexOf(f) === -1) {
-      ordered.push(f);
-    }
+
+  // Poi: campi presenti in _campi ma NON in _DRIVE_LAYOUT (aggiunti dopo)
+  // → vanno automaticamente in 'info' con label = nome JS.
+  Object.keys(_campi).forEach(function(f) {
+    if (_DRIVE_EXCLUDE_FIELDS[f]) return;
+    if (bySpec[f]) return; // già processato sopra
+    groups.info.push({ campo: f, label: f, isHtml: false });
   });
-  // 3. Campi nell'ordine LAST
-  _DRIVE_ORDER_LAST.forEach(function(f) {
-    if (keep.indexOf(f) !== -1 && ordered.indexOf(f) === -1) ordered.push(f);
-  });
-  // Trasforma in schema [{label, campo, isHtml}]
-  return ordered.map(function(f) {
-    return {
-      label:  _DRIVE_LABEL_OVERRIDES[f] || f,
-      campo:  f,
-      isHtml: !!_DRIVE_HTML_FIELDS[f]
-    };
-  });
+
+  return groups;
 }
 
 // Espone tutto a window per uso da app.js (parser import)
-window._DRIVE_LABEL_OVERRIDES = _DRIVE_LABEL_OVERRIDES;
-window._DRIVE_HTML_FIELDS     = _DRIVE_HTML_FIELDS;
+window._DRIVE_LAYOUT          = _DRIVE_LAYOUT;
 window._DRIVE_EXCLUDE_FIELDS  = _DRIVE_EXCLUDE_FIELDS;
-window._DRIVE_ORDER_FIRST     = _DRIVE_ORDER_FIRST;
-window._DRIVE_ORDER_LAST      = _DRIVE_ORDER_LAST;
 window._getDriveSchema        = _getDriveSchema;
 
-// Stili specifici per campo (sfondo riga / colore testo).
-// Coerenti con la card paziente dell'app: Allergie giallo, Diagnosi blu, ecc.
-var _DRIVE_ROW_STYLES = {
-  'Allergie':         { labelBg: '#fff8e1', labelColor: '#b8860b', valBg: '#fffdf0' },
-  'Diagnosi':         { labelBg: '#e3f2fd', labelColor: '#0d47a1', valBg: '#fafdff', valWeight: 'bold' },
-  'PianoTerapeutico': { labelBg: '#f3e5f5', labelColor: '#4a148c' },
-  'EsamiColturali':   { labelBg: '#e8f5e9', labelColor: '#1b5e20' },
-  'DaFare':           { labelBg: '#fff3e0', labelColor: '#bf360c' },
-  'NoteTerapia':      { labelBg: '#fce4ec', labelColor: '#880e4f' },
-  'Diaria':           { labelBg: '#ede7f6', labelColor: '#311b92' },
-  'Dimissibile':      { labelColor: '#b8860b' },
-  'Ossigeno':         { labelColor: '#1565c0' },
-  'Vitto':            { labelColor: '#558b2f' }
-};
+// ──────────────────────────────────────────────────────────────────────
+// HELPER per rendering Doc — replicano stili della card app (.alt-row)
+// ──────────────────────────────────────────────────────────────────────
 
-// Helper: render una singola riga (label | valore) con stili coerenti
-// alla card paziente dell'app. Lo stile dipende dal campo (vedi
-// _DRIVE_ROW_STYLES sopra).
-function _driveRenderRow(spec, val) {
-  var Bi = '0.75pt solid #cfd8dc';
-  var style = _DRIVE_ROW_STYLES[spec.campo] || {};
-  var labelBg = style.labelBg || '#eceff1';
-  var labelColor = style.labelColor || '#37474f';
-  var valBg = style.valBg || '#ffffff';
-  var valWeight = style.valWeight || 'normal';
+// Stile celle: bordo, padding
+var _D_B  = '1.5pt solid #333';
+var _D_Bi = '1pt solid #ccc';
 
-  var LB = 'background-color:' + labelBg + ';color:' + labelColor +
-           ';font-weight:bold;font-size:9pt;padding:6pt 10pt;border:' + Bi +
-           ';width:24%;vertical-align:top;text-transform:uppercase;letter-spacing:0.3pt;';
-  var VB = 'background-color:' + valBg + ';font-weight:' + valWeight +
-           ';font-size:9.5pt;padding:6pt 10pt;border:' + Bi +
-           ';vertical-align:top;width:76%;line-height:1.35;';
-
-  if (val == null) val = '';
-  val = String(val);
-  if (!spec.isHtml) {
-    // Plain text → escape minimo (Drive non interpreta come HTML)
-    val = val.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  }
-  return '<tr>' +
-           '<td style="' + LB + '">' + spec.label + '</td>' +
-           '<td style="' + VB + '">' + (val || '&nbsp;') + '</td>' +
-         '</tr>';
+// Escape minimo per i campi plain text
+function _driveEscape(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 }
 
-function _driveRenderCard(p) {
-  var tipo = (p.TipologiaLetto || '').trim().toUpperCase() || 'STANDARD';
-  var nome = (p.Nome || '').trim();
+// Header colonna (es. "DIAGNOSI / MOTIVO RICOVERO")
+// Replica .alt-col-header / .alt-col-header-split dell'app:
+//   background #e8e6e1, bold, uppercase, center, font 8pt
+function _driveColHeader(label, isSplit) {
+  return '<p style="background-color:#e8e6e1;padding:4pt 6pt;font-weight:bold;' +
+         'font-size:8pt;text-align:center;text-transform:uppercase;letter-spacing:0.3pt;' +
+         'margin:0;color:#263238;' +
+         (isSplit ? 'border-top:1pt solid #333;' : '') +
+         '">' + _driveEscape(label) + '</p>';
+}
+
+// Wrap valore campo: padding standard
+function _driveValueHtml(val, isHtml) {
+  if (val == null || val === '') return '<p style="padding:5pt 8pt;font-size:9pt;margin:0;color:#999;font-style:italic;">&nbsp;</p>';
+  var content = isHtml ? String(val) : _driveEscape(val);
+  return '<p style="padding:5pt 8pt;font-size:9pt;margin:0;line-height:1.4;color:#263238;">' + content + '</p>';
+}
+
+// Rendering della cella INFO (sinistra). Contiene Letto/Tipologia/Nome
+// con stili speciali (numero gigante, badge colorato, nome maiuscolo),
+// poi Allergie con label rossa, e tutti gli altri campi info come
+// piccola label uppercase + valore.
+function _driveRenderColInfo(p, schemaInfo) {
+  // Indice rapido per accesso ai campi standard nello schema info
+  var bySpec = {};
+  schemaInfo.forEach(function(s) { bySpec[s.campo] = s; });
+
+  var tipo  = (p.TipologiaLetto || '').trim().toUpperCase() || 'STANDARD';
+  var nome  = (p.Nome || '').trim();
   var letto = String(p.Letto || '?');
   var sesso = (p.Sesso || '').toUpperCase();
   var sessoSym = sesso === 'M' ? '♂' : sesso === 'F' ? '♀' : '';
   var sessoColor = sesso === 'M' ? '#1976d2' : sesso === 'F' ? '#c2185b' : '#666';
   var tipoColor = stringToColor(tipo);
-  var dimissione = (p.Dimissibile || '').trim();
 
-  // ── HEADER VISIVO (tabella 3 colonne — DECORATIVA, parser la salta
-  // perché non è 2-col label-valore).
-  // Riproduce il look della card paziente nell'app:
-  //   [LETTO grande]  [BADGE TIPO]  [NOME + sesso + dimissione]
-  var headerVisivo =
-    '<table width="100%" style="border-collapse:collapse;margin-top:18pt;margin-bottom:0;font-family:Arial,sans-serif;">' +
+  // Header speciale: letto + sesso + tipologia + nome
+  // Le LABEL sono presenti per il parser, ma stylate piccole/discrete.
+  // Il VALORE invece ha lo stile grande della card app.
+  var lblStyle = 'font-size:7pt;color:#888;font-weight:bold;text-transform:uppercase;letter-spacing:0.4pt;margin:6pt 0 1pt;text-align:center;';
+
+  var html = '';
+
+  // LETTO grande (replica .alt-bed-number: 2rem bold)
+  if (bySpec.Letto) {
+    html += '<p style="' + lblStyle + '">' + _driveEscape(bySpec.Letto.label) + '</p>';
+    html += '<p style="font-size:24pt;font-weight:bold;text-align:center;margin:0;line-height:1;color:#263238;">' + _driveEscape(letto) + '</p>';
+  }
+  // TIPOLOGIA (replica badge colorato)
+  if (bySpec.TipologiaLetto) {
+    html += '<p style="' + lblStyle + '">' + _driveEscape(bySpec.TipologiaLetto.label) + '</p>';
+    html += '<p style="background-color:' + tipoColor + ';color:#fff;text-align:center;font-size:8.5pt;' +
+            'font-weight:bold;text-transform:uppercase;padding:3pt 6pt;margin:0;letter-spacing:0.8pt;">' +
+            _driveEscape(tipo) + '</p>';
+  }
+  // SESSO (piccola riga)
+  if (bySpec.Sesso) {
+    html += '<p style="' + lblStyle + '">' + _driveEscape(bySpec.Sesso.label) + '</p>';
+    html += '<p style="text-align:center;font-size:11pt;margin:0;color:' + sessoColor + ';font-weight:bold;">' +
+            (sessoSym || _driveEscape(sesso) || '—') + '</p>';
+  }
+  // NOME (replica .alt-nome: 1.1rem bold uppercase)
+  if (bySpec.Nome) {
+    html += '<p style="' + lblStyle + '">' + _driveEscape(bySpec.Nome.label) + '</p>';
+    html += '<p style="font-size:11pt;font-weight:bold;text-align:center;text-transform:uppercase;' +
+            'margin:0;padding:2pt;border-bottom:1pt solid #ccc;color:#263238;">' +
+            (_driveEscape(nome) || '<span style="color:#aaa;font-style:italic;font-weight:normal;">— vuoto —</span>') + '</p>';
+  }
+  // ALLERGIE (replica .alt-allergie-label: rosso, uppercase, bold)
+  if (bySpec.Allergie) {
+    html += '<p style="margin:6pt 0 1pt;font-size:9pt;font-weight:bold;color:#c62828;text-transform:uppercase;text-align:center;">' +
+            _driveEscape(bySpec.Allergie.label) + '</p>';
+    var allergieVal = String(p.Allergie || '');
+    html += '<p style="font-size:9.5pt;padding:2pt 4pt;margin:0;text-align:center;color:#263238;">' +
+            (allergieVal || '<span style="color:#aaa;font-style:italic;">—</span>') + '</p>';
+  }
+
+  // Altri campi info (Data Nascita, Età, Ricovero, CS, Ossigeno, Vitto,
+  // Dimissibile, eventuali campi NUOVI aggiunti) → label piccola + valore
+  var processed = { Letto:1, TipologiaLetto:1, Nome:1, Sesso:1, Allergie:1 };
+  schemaInfo.forEach(function(s) {
+    if (processed[s.campo]) return;
+    var val = p[s.campo];
+    var labelStyle = 'font-size:8pt;font-weight:bold;color:#37474f;text-transform:none;margin:5pt 0 0;';
+    var valStyle = 'font-size:9pt;margin:0;color:#263238;padding:0 0 0 2pt;';
+    if (s.isHtml) {
+      html += '<p style="' + labelStyle + '">' + _driveEscape(s.label) + '</p>';
+      html += '<p style="' + valStyle + '">' + (val ? String(val) : '<span style="color:#aaa;font-style:italic;">—</span>') + '</p>';
+    } else {
+      html += '<p style="' + labelStyle + '">' + _driveEscape(s.label) + '</p>';
+      html += '<p style="' + valStyle + '">' + _driveEscape(val) + '</p>';
+    }
+  });
+
+  return html;
+}
+
+// Rendering della cella DIAG (centro-sinistra). Diagnosi sopra,
+// poi PIANO DI CURA, ESAMI COLTURALI, DA FARE / RICHIESTE — divisi
+// da split header. Ogni campo è una "sezione" con header + valore.
+// MA siamo dentro una cella, non in una sottotabella, per parsing
+// semplice.
+function _driveRenderDiagSection(spec, val, isFirst) {
+  return _driveColHeader(spec.label, !isFirst) + _driveValueHtml(val, spec.isHtml);
+}
+
+function _driveRenderCard(p) {
+  var schema = _getDriveSchema();
+  // Schema groups: info, diag, diaria, terapia
+
+  // ── COLONNA 1: INFO (rowspan = numero righe = numero campi diag) ──
+  var infoHtml = _driveRenderColInfo(p, schema.info);
+
+  // ── COLONNA 2: DIAG (una riga per campo, headers stacked) ──
+  // Costruita come singola cella con multiple sezioni stacked verticalmente.
+  // Ogni sezione: header colonna + valore. Visivamente identico a
+  // .alt-col-diag con .alt-diag-top/.alt-diag-bottom/.alt-diag-fourth/.alt-diag-third.
+  var diagHtml = schema.diag.map(function(s, i) {
+    return _driveRenderDiagSection(s, p[s.campo], i === 0);
+  }).join('');
+  if (!diagHtml) diagHtml = '<p style="padding:6pt;font-style:italic;color:#aaa;">—</p>';
+
+  // ── COLONNA 3: DIARIA (più grande) ──
+  var diariaHtml = schema.diaria.map(function(s, i) {
+    return _driveRenderDiagSection(s, p[s.campo], i === 0);
+  }).join('');
+  if (!diariaHtml) diariaHtml = '<p style="padding:6pt;font-style:italic;color:#aaa;">—</p>';
+
+  // ── COLONNA 4: TERAPIA (destra) ──
+  var terapiaHtml = schema.terapia.map(function(s, i) {
+    return _driveRenderDiagSection(s, p[s.campo], i === 0);
+  }).join('');
+  if (!terapiaHtml) terapiaHtml = '<p style="padding:6pt;font-style:italic;color:#aaa;">—</p>';
+
+  // Layout tabella 4-col come la card app (col widths come .alt-col-*)
+  return (
+    '<table width="100%" style="border-collapse:collapse;margin-top:14pt;margin-bottom:14pt;' +
+    'border:' + _D_B + ';font-family:Arial,sans-serif;page-break-inside:avoid;">' +
       '<tr>' +
-        // Cella 1: numero letto grande, sfondo scuro
-        '<td width="9%" style="background-color:#37474f;color:#fff;text-align:center;vertical-align:middle;padding:8pt 4pt;border:1.5pt solid #263238;">' +
-          '<p style="font-size:24pt;font-weight:bold;margin:0;line-height:1;">' + letto + '</p>' +
-          (sessoSym ? '<p style="font-size:13pt;margin:3pt 0 0;color:' + sessoColor + ';line-height:1;">' + sessoSym + '</p>' : '') +
+        '<td width="12%" style="background-color:#f2efe9;vertical-align:top;padding:4pt;border:' + _D_Bi + ';">' +
+          infoHtml +
         '</td>' +
-        // Cella 2: badge tipologia colorato
-        '<td width="14%" style="background-color:' + tipoColor + ';color:#fff;text-align:center;vertical-align:middle;padding:8pt 4pt;border:1.5pt solid #263238;border-left:none;">' +
-          '<p style="font-size:8.5pt;font-weight:bold;text-transform:uppercase;letter-spacing:1pt;margin:0;line-height:1.2;">' + tipo + '</p>' +
+        '<td width="18%" style="vertical-align:top;padding:0;border:' + _D_Bi + ';">' +
+          diagHtml +
         '</td>' +
-        // Cella 3: nome + dimissione + meta veloce
-        '<td width="77%" style="background-color:#fafafa;vertical-align:middle;padding:8pt 12pt;border:1.5pt solid #263238;border-left:none;">' +
-          '<p style="font-size:14pt;font-weight:bold;text-transform:uppercase;margin:0 0 3pt;color:#263238;line-height:1.1;">' +
-            (nome || '<span style="color:#999;font-style:italic;font-weight:normal;">— Letto vuoto —</span>') +
-          '</p>' +
-          (dimissione
-            ? '<p style="font-size:9pt;font-weight:bold;color:#b71c1c;margin:0;line-height:1.2;">⇄ Dimissione: ' + dimissione + '</p>'
-            : '') +
+        '<td width="58%" style="vertical-align:top;padding:0;border:' + _D_Bi + ';">' +
+          diariaHtml +
+        '</td>' +
+        '<td width="12%" style="vertical-align:top;padding:0;border:' + _D_Bi + ';">' +
+          terapiaHtml +
         '</td>' +
       '</tr>' +
-    '</table>';
-
-  // ── TABELLA LABEL-VALORE (2-col, PARSATA dall'import) ────────────
-  // Costruita dinamicamente dallo schema (derivato da _campi).
-  // Stili per campo definiti in _DRIVE_ROW_STYLES.
-  var schema = _getDriveSchema();
-  var rows = schema.map(function(s) {
-    return _driveRenderRow(s, p[s.campo]);
-  }).join('');
-
-  return (
-    headerVisivo +
-    '<table width="100%" style="border-collapse:collapse;margin-bottom:18pt;border:1.5pt solid #263238;border-top:none;font-family:Arial,sans-serif;">' +
-    rows +
     '</table>'
   );
 }
 
-// Card NOTE: header speciale grigio, tabella 2-col label-valore.
+// Card NOTE: una tabella 4-col come le altre, ma quasi vuota:
+// solo "LETTO" → NOTE in col-info e "DIARIA ED EPICRISI" in col-diaria
 function _driveRenderNoteCard(p) {
-  var headerVisivo =
-    '<table width="100%" style="border-collapse:collapse;margin-top:18pt;margin-bottom:0;font-family:Arial,sans-serif;">' +
-      '<tr>' +
-        '<td width="9%" style="background-color:#546e7a;color:#fff;text-align:center;vertical-align:middle;padding:8pt 4pt;border:1.5pt solid #263238;">' +
-          '<p style="font-size:11pt;font-weight:bold;letter-spacing:1.5pt;margin:0;line-height:1;">NOTE</p>' +
-        '</td>' +
-        '<td style="background-color:#eceff1;vertical-align:middle;padding:8pt 12pt;border:1.5pt solid #263238;border-left:none;">' +
-          '<p style="font-size:12pt;font-weight:bold;color:#37474f;margin:0;letter-spacing:1pt;">NOTE DEL REPARTO</p>' +
-          '<p style="font-size:8.5pt;color:#666;margin:2pt 0 0;font-style:italic;">Pendenti post-dimissione · visibili a tutti</p>' +
-        '</td>' +
-      '</tr>' +
-    '</table>';
+  var diariaSpec = null;
+  // Trova lo spec Diaria dallo schema
+  _DRIVE_LAYOUT.forEach(function(s) {
+    if (s.campo === 'Diaria') diariaSpec = s;
+  });
+  if (!diariaSpec) diariaSpec = { campo: 'Diaria', label: 'DIARIA ED EPICRISI', isHtml: true };
 
-  // Tabella 2-col label-valore (parsabile come tutte le altre).
-  // Letto = NOTE per il parser.
-  var lettoSpec  = { label: 'Letto',  campo: 'Letto',  isHtml: false };
-  var diariaSpec = {
-    label: _DRIVE_LABEL_OVERRIDES['Diaria'] || 'Diaria',
-    campo: 'Diaria',
-    isHtml: true
-  };
+  // Cella info semplificata: solo "LETTO" + "NOTE"
+  var lblStyle = 'font-size:7pt;color:#888;font-weight:bold;text-transform:uppercase;letter-spacing:0.4pt;margin:6pt 0 1pt;text-align:center;';
+  var infoHtml =
+    '<p style="' + lblStyle + '">LETTO</p>' +
+    '<p style="font-size:13pt;font-weight:bold;letter-spacing:2pt;color:#546e7a;text-align:center;margin:0;padding:8pt 0;">NOTE</p>';
+
+  // Cella diaria: header + valore
+  var diariaHtml = _driveColHeader(diariaSpec.label, false) +
+                   _driveValueHtml(p.Diaria || '', true);
 
   return (
-    headerVisivo +
-    '<table width="100%" style="border-collapse:collapse;margin-bottom:18pt;border:1.5pt solid #263238;border-top:none;font-family:Arial,sans-serif;">' +
-      _driveRenderRow(lettoSpec, 'NOTE') +
-      _driveRenderRow(diariaSpec, p.Diaria || '') +
+    '<table width="100%" style="border-collapse:collapse;margin-top:14pt;margin-bottom:14pt;' +
+    'border:' + _D_B + ';font-family:Arial,sans-serif;page-break-inside:avoid;">' +
+      '<tr>' +
+        '<td width="12%" style="background-color:#eceff1;vertical-align:top;padding:4pt;border:' + _D_Bi + ';">' +
+          infoHtml +
+        '</td>' +
+        '<td colspan="3" width="88%" style="vertical-align:top;padding:0;border:' + _D_Bi + ';">' +
+          diariaHtml +
+        '</td>' +
+      '</tr>' +
     '</table>'
   );
 }
