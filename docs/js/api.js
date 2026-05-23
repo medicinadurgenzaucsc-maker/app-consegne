@@ -572,14 +572,15 @@ function _sbImportaLetto(letto, dati) {
 // inserito automaticamente quando un letto viene CREATO (Aggiungi Posto
 // Letto) o SVUOTATO (Dimetti / Svuota Letto). Serve come scaletta di
 // lavoro pre-impostata che l'utente può poi compilare.
+//
+// Struttura: tag <b> si CHIUDE prima del <br> così quando l'utente
+// preme Enter dopo una label, il bold NON si propaga al testo nuovo.
+// Tra le sezioni: due <br> per dare riga vuota dove scrivere.
 var _TEMPLATE_DAFARE =
-  '<div><b>DA FARE:</b></div>' +
-  '<div><br></div>' +
-  '<div><b>RICHIESTI/IN ATTESA:</b></div>' +
-  '<div><br></div>' +
-  '<div><b>ESEGUITI:</b></div>' +
-  '<div><br></div>' +
-  '<div><b>NOTE:</b></div>';
+  '<b>DA FARE:</b><br><br>' +
+  '<b>RICHIESTI/IN ATTESA:</b><br><br>' +
+  '<b>ESEGUITI:</b><br><br>' +
+  '<b>NOTE:</b><br>';
 window._TEMPLATE_DAFARE = _TEMPLATE_DAFARE;
 
 function _sbAggiungiLetto(numeroLetto) {
