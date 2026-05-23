@@ -1359,16 +1359,47 @@ window._DRIVE_ORDER_FIRST     = _DRIVE_ORDER_FIRST;
 window._DRIVE_ORDER_LAST      = _DRIVE_ORDER_LAST;
 window._getDriveSchema        = _getDriveSchema;
 
-// Helper: render una singola riga della tabella backup
-function _driveRenderRow(label, val, isHtml, LB, VB) {
+// Stili specifici per campo (sfondo riga / colore testo).
+// Coerenti con la card paziente dell'app: Allergie giallo, Diagnosi blu, ecc.
+var _DRIVE_ROW_STYLES = {
+  'Allergie':         { labelBg: '#fff8e1', labelColor: '#b8860b', valBg: '#fffdf0' },
+  'Diagnosi':         { labelBg: '#e3f2fd', labelColor: '#0d47a1', valBg: '#fafdff', valWeight: 'bold' },
+  'PianoTerapeutico': { labelBg: '#f3e5f5', labelColor: '#4a148c' },
+  'EsamiColturali':   { labelBg: '#e8f5e9', labelColor: '#1b5e20' },
+  'DaFare':           { labelBg: '#fff3e0', labelColor: '#bf360c' },
+  'NoteTerapia':      { labelBg: '#fce4ec', labelColor: '#880e4f' },
+  'Diaria':           { labelBg: '#ede7f6', labelColor: '#311b92' },
+  'Dimissibile':      { labelColor: '#b8860b' },
+  'Ossigeno':         { labelColor: '#1565c0' },
+  'Vitto':            { labelColor: '#558b2f' }
+};
+
+// Helper: render una singola riga (label | valore) con stili coerenti
+// alla card paziente dell'app. Lo stile dipende dal campo (vedi
+// _DRIVE_ROW_STYLES sopra).
+function _driveRenderRow(spec, val) {
+  var Bi = '0.75pt solid #cfd8dc';
+  var style = _DRIVE_ROW_STYLES[spec.campo] || {};
+  var labelBg = style.labelBg || '#eceff1';
+  var labelColor = style.labelColor || '#37474f';
+  var valBg = style.valBg || '#ffffff';
+  var valWeight = style.valWeight || 'normal';
+
+  var LB = 'background-color:' + labelBg + ';color:' + labelColor +
+           ';font-weight:bold;font-size:9pt;padding:6pt 10pt;border:' + Bi +
+           ';width:24%;vertical-align:top;text-transform:uppercase;letter-spacing:0.3pt;';
+  var VB = 'background-color:' + valBg + ';font-weight:' + valWeight +
+           ';font-size:9.5pt;padding:6pt 10pt;border:' + Bi +
+           ';vertical-align:top;width:76%;line-height:1.35;';
+
   if (val == null) val = '';
   val = String(val);
-  if (!isHtml) {
-    // Plain text → escape minimo (Drive non interpreterà come HTML)
+  if (!spec.isHtml) {
+    // Plain text → escape minimo (Drive non interpreta come HTML)
     val = val.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
   return '<tr>' +
-           '<td style="' + LB + '">' + label + '</td>' +
+           '<td style="' + LB + '">' + spec.label + '</td>' +
            '<td style="' + VB + '">' + (val || '&nbsp;') + '</td>' +
          '</tr>';
 }
@@ -1376,57 +1407,86 @@ function _driveRenderRow(label, val, isHtml, LB, VB) {
 function _driveRenderCard(p) {
   var tipo = (p.TipologiaLetto || '').trim().toUpperCase() || 'STANDARD';
   var nome = (p.Nome || '').trim();
-  var diag = String(p.Diagnosi || '').replace(/<[^>]+>/g, '').trim(); // strip HTML per header
+  var letto = String(p.Letto || '?');
+  var sesso = (p.Sesso || '').toUpperCase();
+  var sessoSym = sesso === 'M' ? '♂' : sesso === 'F' ? '♀' : '';
+  var sessoColor = sesso === 'M' ? '#1976d2' : sesso === 'F' ? '#c2185b' : '#666';
+  var tipoColor = stringToColor(tipo);
+  var dimissione = (p.Dimissibile || '').trim();
 
-  var Bi = '0.75pt solid #ccc';
-  var LB = 'background-color:#eceff1;font-weight:bold;font-size:9pt;padding:5pt 8pt;border:' + Bi + ';width:28%;vertical-align:top;';
-  var VB = 'padding:5pt 8pt;font-size:9pt;border:' + Bi + ';vertical-align:top;width:72%;';
-
-  // Header visivo (NON parsato — solo per UX, sopra la tabella)
+  // ── HEADER VISIVO (tabella 3 colonne — DECORATIVA, parser la salta
+  // perché non è 2-col label-valore).
+  // Riproduce il look della card paziente nell'app:
+  //   [LETTO grande]  [BADGE TIPO]  [NOME + sesso + dimissione]
   var headerVisivo =
-    '<table width="100%" style="border-collapse:collapse;margin-top:14pt;margin-bottom:2pt;border-bottom:1.5pt solid #333;font-family:Arial,sans-serif;">' +
+    '<table width="100%" style="border-collapse:collapse;margin-top:18pt;margin-bottom:0;font-family:Arial,sans-serif;">' +
       '<tr>' +
-        '<td style="font-size:14pt;font-weight:bold;color:#37474f;padding-bottom:3pt;">' +
-          'LETTO ' + (p.Letto || '?') + ' &nbsp; <span style="font-size:9pt;color:#546e7a;font-weight:normal;">[' + tipo + ']</span>' +
-          (nome ? ' &nbsp; <span style="font-size:11pt;text-transform:uppercase;">' + nome + '</span>' : '') +
+        // Cella 1: numero letto grande, sfondo scuro
+        '<td width="9%" style="background-color:#37474f;color:#fff;text-align:center;vertical-align:middle;padding:8pt 4pt;border:1.5pt solid #263238;">' +
+          '<p style="font-size:24pt;font-weight:bold;margin:0;line-height:1;">' + letto + '</p>' +
+          (sessoSym ? '<p style="font-size:13pt;margin:3pt 0 0;color:' + sessoColor + ';line-height:1;">' + sessoSym + '</p>' : '') +
+        '</td>' +
+        // Cella 2: badge tipologia colorato
+        '<td width="14%" style="background-color:' + tipoColor + ';color:#fff;text-align:center;vertical-align:middle;padding:8pt 4pt;border:1.5pt solid #263238;border-left:none;">' +
+          '<p style="font-size:8.5pt;font-weight:bold;text-transform:uppercase;letter-spacing:1pt;margin:0;line-height:1.2;">' + tipo + '</p>' +
+        '</td>' +
+        // Cella 3: nome + dimissione + meta veloce
+        '<td width="77%" style="background-color:#fafafa;vertical-align:middle;padding:8pt 12pt;border:1.5pt solid #263238;border-left:none;">' +
+          '<p style="font-size:14pt;font-weight:bold;text-transform:uppercase;margin:0 0 3pt;color:#263238;line-height:1.1;">' +
+            (nome || '<span style="color:#999;font-style:italic;font-weight:normal;">— Letto vuoto —</span>') +
+          '</p>' +
+          (dimissione
+            ? '<p style="font-size:9pt;font-weight:bold;color:#b71c1c;margin:0;line-height:1.2;">⇄ Dimissione: ' + dimissione + '</p>'
+            : '') +
         '</td>' +
       '</tr>' +
-      (diag ? '<tr><td style="font-size:9pt;color:#555;padding-bottom:3pt;font-style:italic;">' + diag.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</td></tr>' : '') +
     '</table>';
 
-  // Costruisce le righe DINAMICAMENTE dallo schema (derivato da _campi).
-  // Aggiungere un campo a _campi lo fa apparire automaticamente qui.
+  // ── TABELLA LABEL-VALORE (2-col, PARSATA dall'import) ────────────
+  // Costruita dinamicamente dallo schema (derivato da _campi).
+  // Stili per campo definiti in _DRIVE_ROW_STYLES.
   var schema = _getDriveSchema();
   var rows = schema.map(function(s) {
-    return _driveRenderRow(s.label, p[s.campo], s.isHtml, LB, VB);
+    return _driveRenderRow(s, p[s.campo]);
   }).join('');
 
   return (
     headerVisivo +
-    '<table width="100%" style="border-collapse:collapse;margin-bottom:14pt;border:1pt solid #999;font-family:Arial,sans-serif;">' +
+    '<table width="100%" style="border-collapse:collapse;margin-bottom:18pt;border:1.5pt solid #263238;border-top:none;font-family:Arial,sans-serif;">' +
     rows +
     '</table>'
   );
 }
 
-// Card NOTE: tabella ridotta con solo Letto + Diaria.
-// Il parser distingue NOTE perché il valore di "Letto" è "NOTE".
+// Card NOTE: header speciale grigio, tabella 2-col label-valore.
 function _driveRenderNoteCard(p) {
-  var Bi = '0.75pt solid #b0bec5';
-  var LB = 'background-color:#eceff1;font-weight:bold;font-size:9pt;padding:5pt 8pt;border:' + Bi + ';width:28%;vertical-align:top;';
-  var VB = 'padding:5pt 8pt;font-size:9pt;border:' + Bi + ';vertical-align:top;width:72%;';
-  var diariaLabel = _DRIVE_LABEL_OVERRIDES['Diaria'] || 'Diaria';
-
   var headerVisivo =
-    '<table width="100%" style="border-collapse:collapse;margin-top:14pt;margin-bottom:2pt;border-bottom:1.5pt solid #546e7a;font-family:Arial,sans-serif;">' +
-      '<tr><td style="font-size:13pt;font-weight:bold;color:#546e7a;letter-spacing:2px;padding-bottom:3pt;">NOTE DEL REPARTO</td></tr>' +
+    '<table width="100%" style="border-collapse:collapse;margin-top:18pt;margin-bottom:0;font-family:Arial,sans-serif;">' +
+      '<tr>' +
+        '<td width="9%" style="background-color:#546e7a;color:#fff;text-align:center;vertical-align:middle;padding:8pt 4pt;border:1.5pt solid #263238;">' +
+          '<p style="font-size:11pt;font-weight:bold;letter-spacing:1.5pt;margin:0;line-height:1;">NOTE</p>' +
+        '</td>' +
+        '<td style="background-color:#eceff1;vertical-align:middle;padding:8pt 12pt;border:1.5pt solid #263238;border-left:none;">' +
+          '<p style="font-size:12pt;font-weight:bold;color:#37474f;margin:0;letter-spacing:1pt;">NOTE DEL REPARTO</p>' +
+          '<p style="font-size:8.5pt;color:#666;margin:2pt 0 0;font-style:italic;">Pendenti post-dimissione · visibili a tutti</p>' +
+        '</td>' +
+      '</tr>' +
     '</table>';
+
+  // Tabella 2-col label-valore (parsabile come tutte le altre).
+  // Letto = NOTE per il parser.
+  var lettoSpec  = { label: 'Letto',  campo: 'Letto',  isHtml: false };
+  var diariaSpec = {
+    label: _DRIVE_LABEL_OVERRIDES['Diaria'] || 'Diaria',
+    campo: 'Diaria',
+    isHtml: true
+  };
 
   return (
     headerVisivo +
-    '<table width="100%" style="border-collapse:collapse;margin-bottom:14pt;border:1pt solid #546e7a;font-family:Arial,sans-serif;">' +
-      _driveRenderRow('Letto', 'NOTE', false, LB, VB) +
-      _driveRenderRow(diariaLabel, p.Diaria || '', true, LB, VB) +
+    '<table width="100%" style="border-collapse:collapse;margin-bottom:18pt;border:1.5pt solid #263238;border-top:none;font-family:Arial,sans-serif;">' +
+      _driveRenderRow(lettoSpec, 'NOTE') +
+      _driveRenderRow(diariaSpec, p.Diaria || '') +
     '</table>'
   );
 }
@@ -1467,19 +1527,29 @@ function _driveBackupConsegne(pazienti, ts) {
 
   var html = '<!DOCTYPE html><html><head><meta charset="UTF-8">' +
     '<style>' +
-    '@page{size:A4 landscape;margin:15mm 20mm 15mm 20mm;}' +
-    'body{font-family:Arial,sans-serif;font-size:9pt;margin:0;padding:0;}' +
+    '@page{size:A4 landscape;margin:14mm 16mm 14mm 16mm;}' +
+    'body{font-family:Arial,sans-serif;font-size:9pt;margin:0;padding:0;color:#263238;}' +
     'p{margin:0;padding:0;}' +
     '</style>' +
     '</head><body>' +
-    '<table width="100%" style="margin-bottom:8pt;border-bottom:2pt solid #333;">' +
+    // Header documento
+    '<table width="100%" style="margin-bottom:6pt;border-bottom:3pt solid #37474f;">' +
     '<tr>' +
-    '<td style="font-size:14pt;font-weight:bold;padding-bottom:4pt;">Consegne Reparto</td>' +
-    '<td style="text-align:right;font-size:9pt;color:#555;padding-bottom:4pt;">Backup del ' + dataLabel + '</td>' +
+    '<td style="font-size:18pt;font-weight:bold;color:#37474f;padding-bottom:6pt;letter-spacing:0.5pt;">' +
+      '🛏 CONSEGNE REPARTO' +
+    '</td>' +
+    '<td style="text-align:right;vertical-align:bottom;font-size:10pt;color:#546e7a;padding-bottom:6pt;">' +
+      '<b>Backup automatico</b><br>' +
+      '<span style="font-size:11pt;color:#37474f;font-weight:bold;">' + dataLabel + '</span>' +
+    '</td>' +
     '</tr></table>' +
-    '<p style="font-size:8pt;color:#888;margin-bottom:14pt;font-style:italic;">' +
-    'Documento utilizzabile come safety net: in caso di down del sistema, modificare i valori nelle celle di destra (non le label di sinistra) e re-importare poi nelle consegne.' +
-    '</p>' +
+    // Banner istruzioni emergenza
+    '<table width="100%" style="background-color:#fff8e1;border-left:3pt solid #f4a300;margin-bottom:14pt;">' +
+    '<tr><td style="padding:6pt 10pt;font-size:8.5pt;color:#7a5800;line-height:1.4;">' +
+      '<b>⚠ Safety net per emergenze</b> · ' +
+      'In caso di down del sistema, modificare i valori nelle celle di destra delle tabelle ' +
+      '(NON modificare le etichette di sinistra). Ri-importare poi nelle consegne via menu ⚙ → "Importa da backup Drive".' +
+    '</td></tr></table>' +
     cardsHtml +
     '</body></html>';
 
