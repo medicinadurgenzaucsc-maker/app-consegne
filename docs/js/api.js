@@ -568,11 +568,29 @@ function _sbImportaLetto(letto, dati) {
     });
 }
 
+// Template HTML iniziale per il campo Da Fare / Richieste. Viene
+// inserito automaticamente quando un letto viene CREATO (Aggiungi Posto
+// Letto) o SVUOTATO (Dimetti / Svuota Letto). Serve come scaletta di
+// lavoro pre-impostata che l'utente può poi compilare.
+var _TEMPLATE_DAFARE =
+  '<div><b>DA FARE:</b></div>' +
+  '<div><br></div>' +
+  '<div><b>RICHIESTI/IN ATTESA:</b></div>' +
+  '<div><br></div>' +
+  '<div><b>ESEGUITI:</b></div>' +
+  '<div><br></div>' +
+  '<div><b>NOTE:</b></div>';
+window._TEMPLATE_DAFARE = _TEMPLATE_DAFARE;
+
 function _sbAggiungiLetto(numeroLetto) {
   return _q(_sb.from('consegne').select('letto').eq('letto', String(numeroLetto)).maybeSingle())
     .then(function(existing) {
       if (existing) return { success: false, message: 'Il letto esiste già!' };
-      return _q(_sb.from('consegne').insert({ letto: String(numeroLetto), tipologia_letto: 'STANDARD' }))
+      return _q(_sb.from('consegne').insert({
+        letto:           String(numeroLetto),
+        tipologia_letto: 'STANDARD',
+        da_fare:         _TEMPLATE_DAFARE
+      }))
         .then(function() { return { success: true, message: 'Letto aggiunto.' }; });
     });
 }
@@ -590,10 +608,12 @@ function _sbEliminaLetto(numeroLetto) {
 }
 
 function _sbDimettiLetto(numeroLetto) {
+  // Reset di tutti i campi a stringa vuota, TRANNE da_fare che viene
+  // preimpostato al template di scaletta (DA FARE / RICHIESTI / ESEGUITI / NOTE)
   var campiVuoti = {
     nome:'', eta:'', data_nascita:'', data_ricovero:'', diagnosi:'',
-    note_terapia:'', diaria:'', da_fare:'', piano_terapeutico:'',
-    esami_colturali:'',
+    note_terapia:'', diaria:'', da_fare: _TEMPLATE_DAFARE,
+    piano_terapeutico:'', esami_colturali:'',
     allergie:'', codice_sanitario:'', ossigeno:'', vitto:'',
     dimissibile:'', sesso:'',
     ultimo_aggiornamento: _oraStr(), updated_at: new Date().toISOString()
