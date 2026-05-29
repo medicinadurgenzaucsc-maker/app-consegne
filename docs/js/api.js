@@ -583,6 +583,16 @@ var _TEMPLATE_DAFARE =
   '<b>NOTE:</b><br>';
 window._TEMPLATE_DAFARE = _TEMPLATE_DAFARE;
 
+// Template HTML iniziale per il campo Note e Terapia. Stessa logica
+// del template DaFare: vie di somministrazione in grassetto + riga
+// vuota sotto ciascuna dove scrivere i farmaci (testo plain).
+var _TEMPLATE_NOTETERAPIA =
+  '<b>TERAPIA EV</b><br><br>' +
+  '<b>TERAPIA OS</b><br><br>' +
+  '<b>TERAPIA SC</b><br><br>' +
+  '<b>AEROSOL</b><br>';
+window._TEMPLATE_NOTETERAPIA = _TEMPLATE_NOTETERAPIA;
+
 function _sbAggiungiLetto(numeroLetto) {
   return _q(_sb.from('consegne').select('letto').eq('letto', String(numeroLetto)).maybeSingle())
     .then(function(existing) {
@@ -590,7 +600,8 @@ function _sbAggiungiLetto(numeroLetto) {
       return _q(_sb.from('consegne').insert({
         letto:           String(numeroLetto),
         tipologia_letto: 'STANDARD',
-        da_fare:         _TEMPLATE_DAFARE
+        da_fare:         _TEMPLATE_DAFARE,
+        note_terapia:    _TEMPLATE_NOTETERAPIA
       }))
         .then(function() { return { success: true, message: 'Letto aggiunto.' }; });
     });
@@ -613,7 +624,7 @@ function _sbDimettiLetto(numeroLetto) {
   // preimpostato al template di scaletta (DA FARE / RICHIESTI / ESEGUITI / NOTE)
   var campiVuoti = {
     nome:'', eta:'', data_nascita:'', data_ricovero:'', diagnosi:'',
-    note_terapia:'', diaria:'', da_fare: _TEMPLATE_DAFARE,
+    note_terapia: _TEMPLATE_NOTETERAPIA, diaria:'', da_fare: _TEMPLATE_DAFARE,
     piano_terapeutico:'', esami_colturali:'',
     allergie:'', codice_sanitario:'', ossigeno:'', vitto:'',
     dimissibile:'', sesso:'',

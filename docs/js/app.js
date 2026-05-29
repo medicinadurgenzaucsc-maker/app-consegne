@@ -1107,14 +1107,20 @@
         _opServer({ barMsg: 'Svuotamento letto in corso...', successTitle: 'Letto svuotato', successText: 'I dati del letto ' + numLetto + ' sono stati cancellati.', errorTitle: 'Errore',
           afterSync: function() {
             document.querySelectorAll('.patient-card[data-bed="' + numLetto + '"]').forEach(function(card) {
-              // NB: DaFare NON è nella lista perché viene ripopolato col template sotto.
-              ['Nome','Diagnosi','Eta','NoteTerapia','Diaria','PianoTerapeutico','EsamiColturali','Allergie','CodiceSanitario','Ossigeno','Vitto'].forEach(function(campo) {
+              // NB: DaFare e NoteTerapia NON sono nella lista perché vengono
+              // ripopolati col rispettivo template sotto.
+              ['Nome','Diagnosi','Eta','Diaria','PianoTerapeutico','EsamiColturali','Allergie','CodiceSanitario','Ossigeno','Vitto'].forEach(function(campo) {
                 var el = card.querySelector('[data-field="' + campo + '"]'); if (el) el.innerHTML = '';
               });
               // DaFare: ripopola con il template (DA FARE / RICHIESTI / ESEGUITI / NOTE)
               var daFareEl = card.querySelector('[data-field="DaFare"]');
               if (daFareEl) {
                 daFareEl.innerHTML = (typeof window._TEMPLATE_DAFARE === 'string') ? window._TEMPLATE_DAFARE : '';
+              }
+              // NoteTerapia: ripopola con il template (TERAPIA EV / OS / SC / AEROSOL)
+              var noteTerEl = card.querySelector('[data-field="NoteTerapia"]');
+              if (noteTerEl) {
+                noteTerEl.innerHTML = (typeof window._TEMPLATE_NOTETERAPIA === 'string') ? window._TEMPLATE_NOTETERAPIA : '';
               }
               var dateEl = card.querySelector('.data-ricovero-text'); if (dateEl) dateEl.value = '';
               var nascEl = card.querySelector('.data-nascita-text'); if (nascEl) nascEl.value = '';
