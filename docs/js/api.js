@@ -871,20 +871,47 @@ function _sbArchiviaGiornoCorrente() {
 // Chiavi nella tabella `impostazioni` per i template della mail dimissioni
 var _MAIL_DIM_KEYS = {
   destinatari: 'MAIL_DIMISSIONI_DESTINATARI',
+  oggetto:     'MAIL_DIMISSIONI_OGGETTO',
   corpo:       'MAIL_DIMISSIONI_CORPO',
   chiusura:    'MAIL_DIMISSIONI_CHIUSURA'
 };
 
-// Carica i template salvati. Restituisce { destinatari, corpo, chiusura }.
-// Valori di default se non presenti nel DB.
+// Sostituisce ogni occorrenza di data DD/MM/YYYY o D/M/YYYY in `str`
+// con la data di domani. Utile per mantenere l'oggetto sempre aggiornato
+// se l'utente ha salvato un template tipo "Dimissioni del 25/05/2026":
+// alla prossima apertura la data diventa quella di domani automaticamente.
+function _aggiornaDataInStringa(str) {
+  if (!str) return str;
+  var dom = _domaniMezzanotte();
+  function pad(n) { return String(n).padStart(2, '0'); }
+  var dataNuova = pad(dom.getDate()) + '/' + pad(dom.getMonth()+1) + '/' + dom.getFullYear();
+  return String(str).replace(/\b\d{1,2}\/\d{1,2}\/\d{4}\b/g, dataNuova);
+}
+
+// Genera oggetto di default dinamico: "Dimissioni previste per il DD/MM/YYYY"
+function _oggettoMailDefault() {
+  var dom = _domaniMezzanotte();
+  function pad(n) { return String(n).padStart(2, '0'); }
+  var data = pad(dom.getDate()) + '/' + pad(dom.getMonth()+1) + '/' + dom.getFullYear();
+  return 'Dimissioni previste per il ' + data;
+}
+
+// Carica i template salvati. Restituisce { destinatari, oggetto, corpo, chiusura }.
+// Default dinamici se non presenti nel DB. Se l'oggetto salvato contiene una
+// data, viene aggiornata a domani per riusabilità giorno dopo giorno.
 function _sbCaricaTemplateMail() {
   return _q(_sb.from('impostazioni').select('chiave,valore')
-    .in('chiave', [_MAIL_DIM_KEYS.destinatari, _MAIL_DIM_KEYS.corpo, _MAIL_DIM_KEYS.chiusura]))
+    .in('chiave', [_MAIL_DIM_KEYS.destinatari, _MAIL_DIM_KEYS.oggetto,
+                   _MAIL_DIM_KEYS.corpo, _MAIL_DIM_KEYS.chiusura]))
     .then(function(rows) {
       var map = {};
       (rows || []).forEach(function(r) { map[r.chiave] = r.valore || ''; });
+      var oggettoSalvato = map[_MAIL_DIM_KEYS.oggetto] || '';
       return {
         destinatari: map[_MAIL_DIM_KEYS.destinatari] || '',
+        oggetto:     oggettoSalvato
+                       ? _aggiornaDataInStringa(oggettoSalvato)
+                       : _oggettoMailDefault(),
         corpo:       map[_MAIL_DIM_KEYS.corpo]       ||
           'Buongiorno,\n\nsi comunica che per la giornata di domani sono previste le seguenti dimissioni dal reparto MEU 11N:',
         chiusura:    map[_MAIL_DIM_KEYS.chiusura]    ||
@@ -894,9 +921,10 @@ function _sbCaricaTemplateMail() {
 }
 
 // Salva i template (upsert su impostazioni)
-function _sbSalvaTemplateMail(destinatari, corpo, chiusura) {
+function _sbSalvaTemplateMail(destinatari, oggetto, corpo, chiusura) {
   var rows = [
     { chiave: _MAIL_DIM_KEYS.destinatari, valore: destinatari || '' },
+    { chiave: _MAIL_DIM_KEYS.oggetto,     valore: oggetto || '' },
     { chiave: _MAIL_DIM_KEYS.corpo,       valore: corpo || '' },
     { chiave: _MAIL_DIM_KEYS.chiusura,    valore: chiusura || '' }
   ];

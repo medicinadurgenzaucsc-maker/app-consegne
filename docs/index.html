@@ -5762,32 +5762,37 @@
         var nome  = (p.Nome || '').trim() || '<em class="text-muted">(vuoto)</em>';
         var dim   = (p.Dimissibile || '').trim();
         var dimBadge = dim
-          ? '<span class="badge bg-warning text-dark ms-1" style="font-size:0.7rem;">' + _esc(dim) + '</span>'
+          ? '<span class="badge bg-warning text-dark ms-1" style="font-size:0.65rem;padding:1px 5px;">' + _esc(dim) + '</span>'
           : '';
-        return '<label class="d-flex align-items-center gap-2 px-2 py-1" style="cursor:pointer;border-bottom:1px solid #eee;font-size:0.85rem;">' +
-               '<input type="checkbox" class="form-check-input mb-0 mail-dim-cb" data-letto="' + _esc(letto) + '" ' + checked + '>' +
-               '<span style="min-width:40px;font-weight:bold;color:#37474f;">L.' + _esc(letto) + '</span>' +
-               '<span style="flex:1;">' + nome + dimBadge + '</span>' +
-               '</label>';
+        return '<label class="d-flex align-items-center gap-1 px-2 py-1" style="cursor:pointer;border:1px solid #e0e0e0;border-radius:4px;font-size:0.8rem;background:#fff;margin:0;overflow:hidden;">' +
+               '<input type="checkbox" class="form-check-input mb-0 mail-dim-cb" data-letto="' + _esc(letto) + '" ' + checked + ' style="flex-shrink:0;">' +
+               '<span style="min-width:32px;font-weight:bold;color:#37474f;flex-shrink:0;">L.' + _esc(letto) + '</span>' +
+               '<span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="' + _esc(nome.replace(/<[^>]+>/g, '')) + (dim ? ' — ' + _esc(dim) : '') + '">' +
+                 nome + dimBadge +
+               '</span></label>';
       }).join('');
 
       var bodyHtml =
         warningHtml +
-        '<div class="text-start mb-3" style="font-size:0.85rem;">' +
+        '<div class="text-start mb-2" style="font-size:0.85rem;">' +
           '<label class="form-label fw-bold mb-1">Destinatari <small class="text-muted">(separati da virgola o ; — più indirizzi consentiti)</small></label>' +
           '<input id="mailDimDest" class="form-control form-control-sm" placeholder="es. primario@email.it, coord@email.it" value="' + _esc(dom.destinatari) + '">' +
         '</div>' +
-        '<div class="text-start mb-3" style="font-size:0.85rem;">' +
+        '<div class="text-start mb-2" style="font-size:0.85rem;">' +
+          '<label class="form-label fw-bold mb-1">Oggetto</label>' +
+          '<input id="mailDimOggetto" class="form-control form-control-sm" placeholder="Oggetto della mail" value="' + _esc(dom.oggetto) + '">' +
+        '</div>' +
+        '<div class="text-start mb-2" style="font-size:0.85rem;">' +
           '<label class="form-label fw-bold mb-1">Testo iniziale</label>' +
           '<textarea id="mailDimCorpo" class="form-control form-control-sm" rows="3">' + _esc(dom.corpo) + '</textarea>' +
         '</div>' +
-        '<div class="text-start mb-3" style="font-size:0.85rem;">' +
+        '<div class="text-start mb-2" style="font-size:0.85rem;">' +
           '<label class="form-label fw-bold mb-1">Pazienti da includere</label>' +
-          '<div id="mailDimCheckboxList" style="max-height:260px;overflow-y:auto;border:1px solid #cfd8dc;border-radius:4px;background:#fafafa;">' +
-            (pazTutti.length ? checkboxesHtml : '<div class="text-muted text-center py-3">Nessun letto.</div>') +
+          '<div id="mailDimCheckboxList" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;padding:6px;border:1px solid #cfd8dc;border-radius:4px;background:#fafafa;">' +
+            (pazTutti.length ? checkboxesHtml : '<div class="text-muted text-center py-3" style="grid-column:1/-1;">Nessun letto.</div>') +
           '</div>' +
         '</div>' +
-        '<div class="text-start mb-3" style="font-size:0.85rem;">' +
+        '<div class="text-start mb-2" style="font-size:0.85rem;">' +
           '<label class="form-label fw-bold mb-1">Chiusura</label>' +
           '<textarea id="mailDimChiusura" class="form-control form-control-sm" rows="2">' + _esc(dom.chiusura) + '</textarea>' +
         '</div>' +
@@ -5826,12 +5831,13 @@
 
     function _raccogliDatiForm() {
       var dest = (document.getElementById('mailDimDest') || {}).value || '';
+      var oggetto = (document.getElementById('mailDimOggetto') || {}).value || '';
       var corpo = (document.getElementById('mailDimCorpo') || {}).value || '';
       var chiusura = (document.getElementById('mailDimChiusura') || {}).value || '';
       var letti = Array.from(document.querySelectorAll('.mail-dim-cb:checked'))
         .map(function(cb){ return cb.getAttribute('data-letto'); });
       var sel = _stato.pazientiTutti.filter(function(p){ return letti.indexOf(String(p.Letto)) !== -1; });
-      return { dest: dest, corpo: corpo, chiusura: chiusura, pazientiSel: sel };
+      return { dest: dest, oggetto: oggetto, corpo: corpo, chiusura: chiusura, pazientiSel: sel };
     }
 
     function _aggiornaAnteprima() {
@@ -5856,6 +5862,10 @@
         Swal.showValidationMessage('Email non valide: ' + invalide.join(', '));
         return;
       }
+      if (!d.oggetto.trim()) {
+        Swal.showValidationMessage('Inserisci un oggetto per la mail');
+        return;
+      }
       if (d.pazientiSel.length === 0) {
         Swal.showValidationMessage('Seleziona almeno un paziente');
         return;
@@ -5866,6 +5876,7 @@
         icon: 'question',
         title: 'Confermi l\'invio?',
         html: '<div class="text-start small">' +
+              '<p class="mb-1"><b>Oggetto:</b> ' + _esc(d.oggetto) + '</p>' +
               '<p class="mb-1"><b>Destinatari:</b> ' + emails.length + '</p>' +
               '<p class="mb-1"><b>Pazienti inclusi:</b> ' + d.pazientiSel.length + '</p>' +
               '<p class="mb-0 text-muted">La mail partirà dal tuo account Google e apparirà in "Inviati".</p>' +
@@ -5882,6 +5893,7 @@
           // Ripristina valori (sono già nei field ma il render li ha sovrascritti — rebuild)
           setTimeout(function() {
             var dEl = document.getElementById('mailDimDest'); if (dEl) dEl.value = d.dest;
+            var oEl = document.getElementById('mailDimOggetto'); if (oEl) oEl.value = d.oggetto;
             var cEl = document.getElementById('mailDimCorpo'); if (cEl) cEl.value = d.corpo;
             var chEl = document.getElementById('mailDimChiusura'); if (chEl) chEl.value = d.chiusura;
             d.pazientiSel.forEach(function(p) {
@@ -5920,15 +5932,13 @@
           var sess = JSON.parse(localStorage.getItem('appSession') || '{}');
           fromEmail = sess.email || '';
         } catch(e) {}
-        var domani = window._domaniMezzanotte ? window._domaniMezzanotte() : new Date(Date.now()+86400000);
-        var oggetto = 'Dimissioni previste per il ' + _fmtDateIt(domani);
         var htmlBody = _buildBodyHtml(d.corpo, d.pazientiSel, d.chiusura);
 
-        window._gmailInviaMail(token, fromEmail, emails, oggetto, htmlBody)
+        window._gmailInviaMail(token, fromEmail, emails, d.oggetto, htmlBody)
           .then(function() {
-            // Salva i template per riuso futuro
+            // Salva i template per riuso futuro (incluso oggetto)
             if (typeof window._sbSalvaTemplateMail === 'function') {
-              window._sbSalvaTemplateMail(d.dest, d.corpo, d.chiusura).catch(function(){});
+              window._sbSalvaTemplateMail(d.dest, d.oggetto, d.corpo, d.chiusura).catch(function(){});
             }
             // Log evento
             if (typeof window._log === 'function') {
