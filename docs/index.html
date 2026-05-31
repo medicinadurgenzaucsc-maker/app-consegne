@@ -5748,10 +5748,10 @@
       });
 
       var warningHtml = ultimo
-        ? '<div class="alert alert-warning d-flex align-items-start gap-2 mb-3" style="font-size:0.85rem;">' +
-          '<i class="bi bi-exclamation-triangle-fill text-warning mt-1"></i>' +
-          '<div><strong>⚠ Attenzione:</strong> una mail dimissioni è già stata inviata oggi alle <strong>' + _esc(_fmtTsIt(ultimo.ts)) + '</strong> da <strong>' + _esc(ultimo.device_name || '?') + '</strong>.<br>' +
-          '<small>Puoi inviare comunque, ma verifica di non duplicare.</small></div></div>'
+        ? '<div class="alert alert-warning d-flex align-items-center gap-2 mb-3 py-2" style="font-size:0.85rem;">' +
+          '<i class="bi bi-exclamation-triangle-fill text-warning"></i>' +
+          '<span>Una mail è già stata inviata oggi.</span>' +
+          '</div>'
         : '';
 
       var checkboxesHtml = pazTutti.map(function(p) {
