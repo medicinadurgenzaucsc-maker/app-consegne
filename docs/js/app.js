@@ -1874,6 +1874,45 @@
       _docsTokenClient.requestAccessToken({ prompt: 'consent' });
     }
 
+    // ── Client OAuth separato per Gmail (scope gmail.send) ─────────
+    // Usato dal modal "Invia mail dimissioni". Pattern identico a
+    // _richiediDocsToken ma con scope diverso: chi non usa la mail
+    // dimissioni non viene infastidito dal popup di consenso.
+    var _gmailTokenClient = null;
+    var _googleGmailToken = null;
+    function _richiediGmailToken(callback) {
+      if (typeof google === 'undefined' || !google.accounts || !google.accounts.oauth2) { callback(false); return; }
+      // Controlla sessionStorage
+      try {
+        var sess = JSON.parse(sessionStorage.getItem('appSession') || '{}');
+        if (sess.gmailToken && sess.gmailExpiry > Date.now()) {
+          _googleGmailToken = sess.gmailToken;
+          callback(true); return;
+        }
+      } catch(e) {}
+
+      _gmailTokenClient = google.accounts.oauth2.initTokenClient({
+        client_id: GOOGLE_CLIENT_ID,
+        scope: 'https://www.googleapis.com/auth/gmail.send',
+        callback: function(resp) {
+          if (resp.error || !resp.access_token) { callback(false); return; }
+          _googleGmailToken = resp.access_token;
+          try {
+            var sess = JSON.parse(sessionStorage.getItem('appSession') || '{}');
+            sess.gmailToken  = resp.access_token;
+            sess.gmailExpiry = Date.now() + 3500000;
+            sessionStorage.setItem('appSession', JSON.stringify(sess));
+          } catch(e) {}
+          callback(true);
+        }
+      });
+      _gmailTokenClient.requestAccessToken({ prompt: 'consent' });
+    }
+    window._richiediGmailToken = _richiediGmailToken;
+    Object.defineProperty(window, '_googleGmailTokenSafe', {
+      get: function() { return _googleGmailToken; }
+    });
+
     function _resetModalImporta() {
       document.getElementById('importaStep1').style.display = '';
       document.getElementById('importaStep2').style.display = 'none';

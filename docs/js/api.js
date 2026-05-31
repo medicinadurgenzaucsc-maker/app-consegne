@@ -864,6 +864,152 @@ function _sbArchiviaGiornoCorrente() {
     .catch(function() { return { inCorso: false }; });
 }
 
+// ══════════════════════════════════════════════════════════════
+// MAIL DIMISSIONI — helper per persistenza template + check
+// ══════════════════════════════════════════════════════════════
+
+// Chiavi nella tabella `impostazioni` per i template della mail dimissioni
+var _MAIL_DIM_KEYS = {
+  destinatari: 'MAIL_DIMISSIONI_DESTINATARI',
+  corpo:       'MAIL_DIMISSIONI_CORPO',
+  chiusura:    'MAIL_DIMISSIONI_CHIUSURA'
+};
+
+// Carica i template salvati. Restituisce { destinatari, corpo, chiusura }.
+// Valori di default se non presenti nel DB.
+function _sbCaricaTemplateMail() {
+  return _q(_sb.from('impostazioni').select('chiave,valore')
+    .in('chiave', [_MAIL_DIM_KEYS.destinatari, _MAIL_DIM_KEYS.corpo, _MAIL_DIM_KEYS.chiusura]))
+    .then(function(rows) {
+      var map = {};
+      (rows || []).forEach(function(r) { map[r.chiave] = r.valore || ''; });
+      return {
+        destinatari: map[_MAIL_DIM_KEYS.destinatari] || '',
+        corpo:       map[_MAIL_DIM_KEYS.corpo]       ||
+          'Buongiorno,\n\nsi comunica che per la giornata di domani sono previste le seguenti dimissioni dal reparto MEU 11N:',
+        chiusura:    map[_MAIL_DIM_KEYS.chiusura]    ||
+          'Cordiali saluti.'
+      };
+    });
+}
+
+// Salva i template (upsert su impostazioni)
+function _sbSalvaTemplateMail(destinatari, corpo, chiusura) {
+  var rows = [
+    { chiave: _MAIL_DIM_KEYS.destinatari, valore: destinatari || '' },
+    { chiave: _MAIL_DIM_KEYS.corpo,       valore: corpo || '' },
+    { chiave: _MAIL_DIM_KEYS.chiusura,    valore: chiusura || '' }
+  ];
+  return _q(_sb.from('impostazioni').upsert(rows, { onConflict: 'chiave' }));
+}
+
+// Verifica se OGGI è già stata inviata una mail dimissioni.
+// Cerca in `logs` tipo='mail-dimissioni' con ts >= mezzanotte di oggi.
+// Restituisce { gia: bool, ultimo: log|null }.
+function _sbMailDimissioniInviataOggi() {
+  var oggiMezzanotte = new Date();
+  oggiMezzanotte.setHours(0, 0, 0, 0);
+  var soglia = oggiMezzanotte.getTime();
+  return _q(_sb.from('logs')
+    .select('ts,device_name,messaggio,descrizione')
+    .eq('tipo', 'mail-dimissioni')
+    .gte('ts', soglia)
+    .order('ts', { ascending: false })
+    .limit(1))
+    .then(function(rows) {
+      if (rows && rows.length) return { gia: true, ultimo: rows[0] };
+      return { gia: false, ultimo: null };
+    });
+}
+
+// Helper: data di DOMANI in formato Date (00:00:00)
+function _domaniMezzanotte() {
+  var d = new Date();
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() + 1);
+  return d;
+}
+
+// Verifica se la stringa Dimissibile rappresenta esattamente DOMANI
+// (data parsata col parser flex deve essere uguale a domani).
+function _isDimissibileDomani(strDim) {
+  if (!strDim) return false;
+  var s = String(strDim).trim().toLowerCase();
+  // Match testuale "domani"
+  if (s === 'domani') return true;
+  // Match data DD/MM/YYYY (usa lo stesso parser flex del dim modal)
+  // Se _parseDimData è disponibile, usalo; altrimenti regex inline.
+  var parsed = null;
+  if (typeof window._parseDimData === 'function') {
+    parsed = window._parseDimData(strDim);
+  }
+  if (!parsed) parsed = strDim;
+  var m = String(parsed).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (!m) return false;
+  var d = new Date(parseInt(m[3],10), parseInt(m[2],10) - 1, parseInt(m[1],10));
+  d.setHours(0, 0, 0, 0);
+  var dom = _domaniMezzanotte();
+  return d.getTime() === dom.getTime();
+}
+
+// Costruisce e invia un'email via Gmail API for-conto-utente.
+// Richiede token con scope https://www.googleapis.com/auth/gmail.send
+function _gmailInviaMail(token, fromEmail, destinatariArr, oggetto, htmlBody) {
+  if (!token) return Promise.reject(new Error('Token Gmail mancante'));
+  if (!destinatariArr || !destinatariArr.length) return Promise.reject(new Error('Nessun destinatario'));
+
+  // Codifica oggetto in RFC 2047 (per accenti, lettere non ASCII)
+  function encodeHeader(s) {
+    var hasNonAscii = /[^\x00-\x7F]/.test(s || '');
+    if (!hasNonAscii) return s || '';
+    return '=?UTF-8?B?' + btoa(unescape(encodeURIComponent(String(s)))) + '?=';
+  }
+
+  var headers = [
+    'From: ' + (fromEmail || ''),
+    'To: ' + destinatariArr.join(', '),
+    'Subject: ' + encodeHeader(oggetto || ''),
+    'MIME-Version: 1.0',
+    'Content-Type: text/html; charset=UTF-8',
+    'Content-Transfer-Encoding: base64',
+    ''
+  ];
+  // Body in Base64 (max 76 char per riga è standard ma Gmail accetta unbroken)
+  var bodyB64 = btoa(unescape(encodeURIComponent(htmlBody || '')));
+  // Chunked a 76 char (più compatibile)
+  bodyB64 = bodyB64.replace(/(.{76})/g, '$1\r\n');
+  var rawMessage = headers.join('\r\n') + bodyB64;
+
+  // URL-safe Base64 (Gmail API richiede questo)
+  var raw = btoa(unescape(encodeURIComponent(rawMessage)))
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+  return fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+    method: 'POST',
+    headers: {
+      'Authorization': 'Bearer ' + token,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ raw: raw })
+  }).then(function(r) {
+    if (!r.ok) {
+      return r.json().catch(function(){return {};}).then(function(b) {
+        var em = (b.error && b.error.message) || 'HTTP ' + r.status;
+        throw new Error(em);
+      });
+    }
+    return r.json();
+  });
+}
+
+window._sbCaricaTemplateMail        = _sbCaricaTemplateMail;
+window._sbSalvaTemplateMail         = _sbSalvaTemplateMail;
+window._sbMailDimissioniInviataOggi = _sbMailDimissioniInviataOggi;
+window._domaniMezzanotte            = _domaniMezzanotte;
+window._isDimissibileDomani         = _isDimissibileDomani;
+window._gmailInviaMail              = _gmailInviaMail;
+
+
 // Backup forzato: inserisce subito un record in archivio e aggiorna ULTIMO_BACKUP.
 // Usato dal backup manuale; bypassa il controllo delle 6h.
 function _sbBackupForzato() {

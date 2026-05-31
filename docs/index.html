@@ -1343,6 +1343,13 @@
                 + '<span>' + (typeof window._dimIconSvg === 'function' ? window._dimIconSvg(13) : '<i class="bi bi-box-arrow-right text-warning me-1"></i>') + ' <span class="text-muted" style="font-size:0.8rem;">In dimissione</span></span>'
                 + '<span class="badge bg-warning text-dark border">' + (r.inDimissione || 0) + '</span>'
                 + '</div>';
+          // Voce "Invia mail dimissioni" sotto il riepilogo
+          html += '<div style="border-top:1px solid #e0e0e0;margin-top:5px;padding-top:5px;">'
+                + '<a href="javascript:void(0)" onclick="apriModalMailDimissioni();event.stopPropagation();" '
+                + 'class="d-flex align-items-center gap-2 text-decoration-none" '
+                + 'style="font-size:0.82rem;color:#1565c0;padding:4px 2px;">'
+                + '<i class="bi bi-send-fill"></i><span>Invia mail dimissioni</span>'
+                + '</a></div>';
           body.innerHTML = html;
         })
         .catch(function() {
@@ -1407,6 +1414,8 @@
       function pad(n) { return String(n).padStart(2, '0'); }
       return pad(d) + '/' + pad(m) + '/' + y;
     }
+    // Esposto per essere riutilizzato dal modal Mail Dimissioni
+    window._parseDimData = _parseDimData;
 
     // ─── Toggle checkbox "Dimissibile" ───────────────────────────
     // Solo dentro focus-mode; chiede data via SweetAlert (testo libero).
@@ -5627,6 +5636,324 @@
       });
     };
 
+  })();
+  </script>
+
+  <!-- ══════════════════════════════════════════════════════════════
+       MODAL MAIL DIMISSIONI — invia email con elenco pazienti
+       dimissibili per domani via Gmail API (scope gmail.send).
+       I template (destinatari, corpo, chiusura) sono persistiti in
+       Supabase impostazioni e ricaricati ad ogni apertura.
+       ══════════════════════════════════════════════════════════════ -->
+  <script>
+  (function() {
+    function _esc(s) {
+      return String(s||'').replace(/[&<>"']/g, function(c) {
+        return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c];
+      });
+    }
+    function _fmtDateIt(d) {
+      function p(n){return String(n).padStart(2,'0');}
+      return p(d.getDate())+'/'+p(d.getMonth()+1)+'/'+d.getFullYear();
+    }
+    function _fmtTsIt(ts) {
+      var d = new Date(Number(ts));
+      function p(n){return String(n).padStart(2,'0');}
+      return p(d.getDate())+'/'+p(d.getMonth()+1)+'/'+d.getFullYear()+' '+p(d.getHours())+':'+p(d.getMinutes());
+    }
+
+    // Parse stringa "a@b.com, c@d.com; e@f.com" → array email pulito
+    function _parseEmails(str) {
+      return String(str||'').split(/[,;]+/).map(function(s){return s.trim();}).filter(function(s){return s.length;});
+    }
+
+    // Costruisce il corpo HTML della mail con elenco pazienti selezionati
+    function _buildBodyHtml(corpo, pazientiSel, chiusura) {
+      var domani = window._domaniMezzanotte ? window._domaniMezzanotte() : new Date(Date.now()+86400000);
+      var lista = '';
+      if (pazientiSel.length === 0) {
+        lista = '<p style="margin:8px 0;font-style:italic;color:#666;">Nessun paziente selezionato.</p>';
+      } else {
+        lista = '<table cellpadding="6" cellspacing="0" style="border-collapse:collapse;margin:10px 0;font-family:Arial,sans-serif;font-size:14px;">';
+        lista += '<thead><tr style="background:#37474f;color:#fff;">' +
+                 '<th style="padding:6px 10px;text-align:left;">Letto</th>' +
+                 '<th style="padding:6px 10px;text-align:left;">Paziente</th>' +
+                 '<th style="padding:6px 10px;text-align:left;">Dimissione</th>' +
+                 '</tr></thead><tbody>';
+        pazientiSel.forEach(function(p, i) {
+          var bg = (i % 2 === 0) ? '#f5f5f5' : '#ffffff';
+          lista += '<tr style="background:'+bg+';">' +
+                   '<td style="padding:6px 10px;border:1px solid #ddd;font-weight:bold;">' + _esc(p.Letto) + '</td>' +
+                   '<td style="padding:6px 10px;border:1px solid #ddd;">' + _esc(p.Nome || '—') + '</td>' +
+                   '<td style="padding:6px 10px;border:1px solid #ddd;">' + _esc(p.Dimissibile || '—') + '</td>' +
+                   '</tr>';
+        });
+        lista += '</tbody></table>';
+      }
+      var corpoHtml    = _esc(corpo).replace(/\n/g, '<br>');
+      var chiusuraHtml = _esc(chiusura).replace(/\n/g, '<br>');
+      return '<div style="font-family:Arial,sans-serif;font-size:14px;color:#222;line-height:1.5;">' +
+        '<p>' + corpoHtml + '</p>' +
+        lista +
+        '<p style="margin-top:16px;">' + chiusuraHtml + '</p>' +
+        '</div>';
+    }
+
+    // Stato del modal
+    var _stato = {
+      template: { destinatari:'', corpo:'', chiusura:'' },
+      pazientiTutti: [],   // tutti i pazienti del DB (per checkbox)
+      ultimoInvio: null    // {ts, device_name, ...} se mail già inviata oggi
+    };
+
+    window.apriModalMailDimissioni = function() {
+      // Carica in parallelo: template + lista pazienti + check oggi
+      var pTpl   = (typeof window._sbCaricaTemplateMail === 'function') ? window._sbCaricaTemplateMail()        : Promise.resolve({destinatari:'',corpo:'',chiusura:''});
+      var pPaz   = (typeof _sbGetPazienti === 'function')                ? _sbGetPazienti()                      : Promise.resolve([]);
+      var pCheck = (typeof window._sbMailDimissioniInviataOggi === 'function') ? window._sbMailDimissioniInviataOggi() : Promise.resolve({gia:false});
+
+      Swal.fire({
+        title: '<i class="bi bi-send-fill me-2 text-primary"></i>Invia mail dimissioni',
+        html: '<div class="text-center py-3"><div class="spinner-border text-secondary"></div><div class="mt-2 text-muted small">Caricamento dati…</div></div>',
+        width: '85%',
+        showConfirmButton: false,
+        allowOutsideClick: false,
+        didOpen: function() {
+          Promise.all([pTpl, pPaz, pCheck]).then(function(results) {
+            _stato.template      = results[0];
+            _stato.pazientiTutti = (results[1] || []).filter(function(p){ return String(p.Letto) !== 'NOTE'; })
+              .sort(function(a,b){
+                var nA = parseInt(a.Letto,10), nB = parseInt(b.Letto,10);
+                return (!isNaN(nA) && !isNaN(nB)) ? nA - nB : String(a.Letto).localeCompare(String(b.Letto));
+              });
+            _stato.ultimoInvio   = results[2] && results[2].ultimo;
+            _renderModalMail();
+          }).catch(function(e) {
+            Swal.fire({ icon: 'error', title: 'Errore caricamento', text: e.message || String(e), confirmButtonColor: '#37474f' });
+          });
+        }
+      });
+    };
+
+    function _renderModalMail() {
+      var dom    = _stato.template;
+      var pazTutti = _stato.pazientiTutti;
+      var ultimo = _stato.ultimoInvio;
+      var domani = window._domaniMezzanotte ? window._domaniMezzanotte() : new Date(Date.now()+86400000);
+
+      // Pre-selezione: pazienti con Dimissibile = domani
+      var preselected = {};
+      pazTutti.forEach(function(p) {
+        if (window._isDimissibileDomani && window._isDimissibileDomani(p.Dimissibile)) {
+          preselected[String(p.Letto)] = true;
+        }
+      });
+
+      var warningHtml = ultimo
+        ? '<div class="alert alert-warning d-flex align-items-start gap-2 mb-3" style="font-size:0.85rem;">' +
+          '<i class="bi bi-exclamation-triangle-fill text-warning mt-1"></i>' +
+          '<div><strong>⚠ Attenzione:</strong> una mail dimissioni è già stata inviata oggi alle <strong>' + _esc(_fmtTsIt(ultimo.ts)) + '</strong> da <strong>' + _esc(ultimo.device_name || '?') + '</strong>.<br>' +
+          '<small>Puoi inviare comunque, ma verifica di non duplicare.</small></div></div>'
+        : '';
+
+      var checkboxesHtml = pazTutti.map(function(p) {
+        var letto = String(p.Letto);
+        var checked = preselected[letto] ? 'checked' : '';
+        var nome  = (p.Nome || '').trim() || '<em class="text-muted">(vuoto)</em>';
+        var dim   = (p.Dimissibile || '').trim();
+        var dimBadge = dim
+          ? '<span class="badge bg-warning text-dark ms-1" style="font-size:0.7rem;">' + _esc(dim) + '</span>'
+          : '';
+        return '<label class="d-flex align-items-center gap-2 px-2 py-1" style="cursor:pointer;border-bottom:1px solid #eee;font-size:0.85rem;">' +
+               '<input type="checkbox" class="form-check-input mb-0 mail-dim-cb" data-letto="' + _esc(letto) + '" ' + checked + '>' +
+               '<span style="min-width:40px;font-weight:bold;color:#37474f;">L.' + _esc(letto) + '</span>' +
+               '<span style="flex:1;">' + nome + dimBadge + '</span>' +
+               '</label>';
+      }).join('');
+
+      var bodyHtml =
+        warningHtml +
+        '<div class="text-start mb-3" style="font-size:0.85rem;">' +
+          '<label class="form-label fw-bold mb-1">Destinatari <small class="text-muted">(separati da virgola o ; — più indirizzi consentiti)</small></label>' +
+          '<input id="mailDimDest" class="form-control form-control-sm" placeholder="es. primario@email.it, coord@email.it" value="' + _esc(dom.destinatari) + '">' +
+        '</div>' +
+        '<div class="text-start mb-3" style="font-size:0.85rem;">' +
+          '<label class="form-label fw-bold mb-1">Testo iniziale</label>' +
+          '<textarea id="mailDimCorpo" class="form-control form-control-sm" rows="3">' + _esc(dom.corpo) + '</textarea>' +
+        '</div>' +
+        '<div class="text-start mb-3" style="font-size:0.85rem;">' +
+          '<label class="form-label fw-bold mb-1">Pazienti da includere</label>' +
+          '<div id="mailDimCheckboxList" style="max-height:260px;overflow-y:auto;border:1px solid #cfd8dc;border-radius:4px;background:#fafafa;">' +
+            (pazTutti.length ? checkboxesHtml : '<div class="text-muted text-center py-3">Nessun letto.</div>') +
+          '</div>' +
+        '</div>' +
+        '<div class="text-start mb-3" style="font-size:0.85rem;">' +
+          '<label class="form-label fw-bold mb-1">Chiusura</label>' +
+          '<textarea id="mailDimChiusura" class="form-control form-control-sm" rows="2">' + _esc(dom.chiusura) + '</textarea>' +
+        '</div>' +
+        '<div id="mailDimAnteprimaWrap" style="display:none;" class="text-start">' +
+          '<label class="form-label fw-bold mb-1" style="font-size:0.85rem;">' +
+            '<i class="bi bi-eye-fill me-1"></i>Anteprima mail' +
+          '</label>' +
+          '<div id="mailDimAnteprima" style="border:1px solid #cfd8dc;border-radius:4px;padding:14px;background:#fff;font-family:Arial,sans-serif;max-height:280px;overflow-y:auto;"></div>' +
+        '</div>';
+
+      Swal.update({
+        html: bodyHtml,
+        showConfirmButton: true,
+        confirmButtonText: '<i class="bi bi-send-fill me-1"></i>Invia',
+        confirmButtonColor: '#1565c0',
+        showCancelButton: true,
+        cancelButtonText: 'Annulla',
+        showDenyButton: true,
+        denyButtonText: '<i class="bi bi-eye-fill me-1"></i>Anteprima',
+        denyButtonColor: '#37474f',
+        reverseButtons: true,
+        focusConfirm: false,
+        allowOutsideClick: false
+      });
+
+      // Listener per il bottone Anteprima (Swal "deny")
+      // Lo manage tramite il then sotto.
+      Swal.getDenyButton().onclick = function() {
+        _aggiornaAnteprima();
+      };
+      Swal.getConfirmButton().onclick = function(e) {
+        e.preventDefault();
+        _eseguiInvio();
+      };
+    }
+
+    function _raccogliDatiForm() {
+      var dest = (document.getElementById('mailDimDest') || {}).value || '';
+      var corpo = (document.getElementById('mailDimCorpo') || {}).value || '';
+      var chiusura = (document.getElementById('mailDimChiusura') || {}).value || '';
+      var letti = Array.from(document.querySelectorAll('.mail-dim-cb:checked'))
+        .map(function(cb){ return cb.getAttribute('data-letto'); });
+      var sel = _stato.pazientiTutti.filter(function(p){ return letti.indexOf(String(p.Letto)) !== -1; });
+      return { dest: dest, corpo: corpo, chiusura: chiusura, pazientiSel: sel };
+    }
+
+    function _aggiornaAnteprima() {
+      var d = _raccogliDatiForm();
+      var html = _buildBodyHtml(d.corpo, d.pazientiSel, d.chiusura);
+      var ante = document.getElementById('mailDimAnteprima');
+      var wrap = document.getElementById('mailDimAnteprimaWrap');
+      if (ante) ante.innerHTML = html;
+      if (wrap) wrap.style.display = '';
+    }
+
+    function _eseguiInvio() {
+      var d = _raccogliDatiForm();
+      var emails = _parseEmails(d.dest);
+      if (!emails.length) {
+        Swal.showValidationMessage('Inserisci almeno un destinatario');
+        return;
+      }
+      // Verifica formato email base
+      var invalide = emails.filter(function(e){ return !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e); });
+      if (invalide.length) {
+        Swal.showValidationMessage('Email non valide: ' + invalide.join(', '));
+        return;
+      }
+      if (d.pazientiSel.length === 0) {
+        Swal.showValidationMessage('Seleziona almeno un paziente');
+        return;
+      }
+
+      // Conferma
+      Swal.fire({
+        icon: 'question',
+        title: 'Confermi l\'invio?',
+        html: '<div class="text-start small">' +
+              '<p class="mb-1"><b>Destinatari:</b> ' + emails.length + '</p>' +
+              '<p class="mb-1"><b>Pazienti inclusi:</b> ' + d.pazientiSel.length + '</p>' +
+              '<p class="mb-0 text-muted">La mail partirà dal tuo account Google e apparirà in "Inviati".</p>' +
+              '</div>',
+        showCancelButton: true,
+        confirmButtonText: 'Sì, invia',
+        confirmButtonColor: '#1565c0',
+        cancelButtonText: 'Annulla',
+        reverseButtons: true
+      }).then(function(c) {
+        if (!c.isConfirmed) {
+          // Riapri il modal precedente con i dati attuali
+          _renderModalMail();
+          // Ripristina valori (sono già nei field ma il render li ha sovrascritti — rebuild)
+          setTimeout(function() {
+            var dEl = document.getElementById('mailDimDest'); if (dEl) dEl.value = d.dest;
+            var cEl = document.getElementById('mailDimCorpo'); if (cEl) cEl.value = d.corpo;
+            var chEl = document.getElementById('mailDimChiusura'); if (chEl) chEl.value = d.chiusura;
+            d.pazientiSel.forEach(function(p) {
+              var cb = document.querySelector('.mail-dim-cb[data-letto="'+String(p.Letto)+'"]');
+              if (cb) cb.checked = true;
+            });
+          }, 50);
+          return;
+        }
+        _inviaConToken(emails, d);
+      });
+    }
+
+    function _inviaConToken(emails, d) {
+      // Mostra spinner
+      Swal.fire({
+        title: 'Invio in corso…',
+        html: '<div class="text-center py-3"><div class="spinner-border text-primary"></div></div>',
+        allowOutsideClick: false,
+        showConfirmButton: false
+      });
+      // Richiede token Gmail
+      if (typeof window._richiediGmailToken !== 'function') {
+        Swal.fire({ icon: 'error', title: 'Funzione Gmail non disponibile', confirmButtonColor: '#d33' });
+        return;
+      }
+      window._richiediGmailToken(function(ok) {
+        if (!ok) {
+          Swal.fire({ icon: 'error', title: 'Accesso Gmail negato',
+            text: 'Non è stato possibile ottenere il permesso per inviare email.', confirmButtonColor: '#d33' });
+          return;
+        }
+        var token = window._googleGmailTokenSafe;
+        var fromEmail = '';
+        try {
+          var sess = JSON.parse(localStorage.getItem('appSession') || '{}');
+          fromEmail = sess.email || '';
+        } catch(e) {}
+        var domani = window._domaniMezzanotte ? window._domaniMezzanotte() : new Date(Date.now()+86400000);
+        var oggetto = 'Dimissioni previste per il ' + _fmtDateIt(domani);
+        var htmlBody = _buildBodyHtml(d.corpo, d.pazientiSel, d.chiusura);
+
+        window._gmailInviaMail(token, fromEmail, emails, oggetto, htmlBody)
+          .then(function() {
+            // Salva i template per riuso futuro
+            if (typeof window._sbSalvaTemplateMail === 'function') {
+              window._sbSalvaTemplateMail(d.dest, d.corpo, d.chiusura).catch(function(){});
+            }
+            // Log evento
+            if (typeof window._log === 'function') {
+              window._log('info', 'mail-dimissioni',
+                'Mail dimissioni inviata (' + d.pazientiSel.length + ' pazienti, ' + emails.length + ' destinatari)',
+                'Destinatari: ' + emails.join(', ') +
+                '\nMittente: ' + fromEmail +
+                '\nPazienti: ' + d.pazientiSel.map(function(p){return 'L.'+p.Letto+' '+(p.Nome||'-');}).join('; '));
+            }
+            Swal.fire({
+              icon: 'success', title: 'Mail inviata!',
+              html: 'Mail inviata a <strong>' + emails.length + '</strong> destinatari.<br>' +
+                    '<small class="text-muted">Trovi una copia nella tua casella "Inviati" di Gmail.</small>',
+              timer: 3500, showConfirmButton: false, timerProgressBar: true
+            });
+          })
+          .catch(function(e) {
+            Swal.fire({
+              icon: 'error', title: 'Errore invio',
+              html: '<div class="text-start small">' + _esc(e.message || String(e)) + '</div>',
+              confirmButtonColor: '#d33'
+            });
+          });
+      });
+    }
   })();
   </script>
 
