@@ -1002,14 +1002,17 @@ function _gmailInviaMail(token, fromEmail, destinatariArr, oggetto, htmlBody) {
     'Subject: ' + encodeHeader(oggetto || ''),
     'MIME-Version: 1.0',
     'Content-Type: text/html; charset=UTF-8',
-    'Content-Transfer-Encoding: base64',
-    ''
+    'Content-Transfer-Encoding: base64'
   ];
   // Body in Base64 (max 76 char per riga è standard ma Gmail accetta unbroken)
   var bodyB64 = btoa(unescape(encodeURIComponent(htmlBody || '')));
   // Chunked a 76 char (più compatibile)
   bodyB64 = bodyB64.replace(/(.{76})/g, '$1\r\n');
-  var rawMessage = headers.join('\r\n') + bodyB64;
+  // RFC 5322: headers e body separati da UNA RIGA VUOTA → \r\n\r\n
+  // (un \r\n chiude l'ultimo header, l'altro è la linea vuota richiesta).
+  // Senza questo separatore, Gmail interpreta il body come header malformato
+  // e la mail arriva con oggetto/destinatari OK ma corpo vuoto.
+  var rawMessage = headers.join('\r\n') + '\r\n\r\n' + bodyB64;
 
   // URL-safe Base64 (Gmail API richiede questo)
   var raw = btoa(unescape(encodeURIComponent(rawMessage)))
