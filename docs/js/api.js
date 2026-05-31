@@ -661,23 +661,26 @@ function _sbSpostaPaziente(lettoOrigine, lettoDestinazione) {
 }
 
 function _sbGetRiepilogo() {
-  return _sbGetPazienti().then(function(pazienti) {
-    var uomini = 0, donne = 0, indefinito = 0, vuoti = 0, inDimissione = 0;
-    var tipologie = {};
-    pazienti.forEach(function(p) {
-      if (p.Letto === 'NOTE') return; // non contare NOTE come letto
-      var hasPaziente = (p.Nome || '').trim() !== '';
-      if (!hasPaziente) { vuoti++; return; }
-      var sesso = (p.Sesso || '').toUpperCase();
-      if (sesso === 'M') uomini++;
-      else if (sesso === 'F') donne++;
-      else indefinito++;
-      var tip = (p.TipologiaLetto || 'STANDARD').toUpperCase();
-      tipologie[tip] = (tipologie[tip] || 0) + 1;
-      if ((p.Dimissibile || '').trim() !== '') inDimissione++;
+  // LIGHT: SELECT solo i 5 campi necessari per il conteggio (no rich-text).
+  // Riduce egress ~30x: da ~150KB a ~5KB per query.
+  return _q(_sb.from('consegne').select('letto,nome,tipologia_letto,sesso,dimissibile'))
+    .then(function(rows) {
+      var uomini = 0, donne = 0, indefinito = 0, vuoti = 0, inDimissione = 0;
+      var tipologie = {};
+      (rows || []).forEach(function(r) {
+        if (r.letto === 'NOTE') return; // non contare NOTE come letto
+        var hasPaziente = (r.nome || '').trim() !== '';
+        if (!hasPaziente) { vuoti++; return; }
+        var sesso = (r.sesso || '').toUpperCase();
+        if (sesso === 'M') uomini++;
+        else if (sesso === 'F') donne++;
+        else indefinito++;
+        var tip = (r.tipologia_letto || 'STANDARD').toUpperCase();
+        tipologie[tip] = (tipologie[tip] || 0) + 1;
+        if ((r.dimissibile || '').trim() !== '') inDimissione++;
+      });
+      return { uomini: uomini, donne: donne, indefinito: indefinito, tipologie: tipologie, vuoti: vuoti, inDimissione: inDimissione };
     });
-    return { uomini: uomini, donne: donne, indefinito: indefinito, tipologie: tipologie, vuoti: vuoti, inDimissione: inDimissione };
-  });
 }
 
 
@@ -1872,7 +1875,16 @@ function _inizializzaRealtime() {
           console.warn('[Realtime delta error, fallback full sync]', e);
           ok = false;
         }
-        if (!ok) _scheduleRealtimeSync();
+        // Se il delta fallisce: passa il letto specifico così il fallback
+        // fa SELECT mirato (~17KB) invece di SELECT * (~500KB).
+        // Letto noto da payload.new (UPDATE/INSERT) o payload.old (DELETE).
+        if (!ok) {
+          var lettoFallback = (payload.new && payload.new.letto) ||
+                              (payload.old && payload.old.letto) || null;
+          // Per NOTE e INSERT serve full sync (rendering completo)
+          if (lettoFallback === 'NOTE' || evType === 'INSERT') lettoFallback = null;
+          _scheduleRealtimeSync(lettoFallback);
+        }
       })
     // Lock: gestiti direttamente in-memory, nessuna query aggiuntiva al DB
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'locks' },
@@ -2075,23 +2087,66 @@ function _onLockChange(event, payload) {
 }
 
 var _pendingSync = false;
+var _pendingSyncLetto = null;  // se non-null, sync mirato su un solo letto
 
-function _scheduleRealtimeSync() {
-  if (_pendingSync) return; // già schedulato
+// Sync intelligente: se lettoSpecifico è passato, fa SELECT mirato (~17KB)
+// invece di SELECT * (~500KB con 30 letti). Riduce egress drasticamente
+// quando il fallback è scattato solo per un singolo letto cambiato.
+// Senza lettoSpecifico, mantiene il comportamento legacy (full sync).
+function _scheduleRealtimeSync(lettoSpecifico) {
+  // Se un sync mirato è in coda ma arriva una richiesta full → promuove a full
+  if (_pendingSync) {
+    if (!lettoSpecifico) _pendingSyncLetto = null;
+    return;
+  }
   _pendingSync = true;
+  _pendingSyncLetto = lettoSpecifico || null;
   clearTimeout(_realtimeTimer);
   _realtimeTimer = setTimeout(function() {
+    var lettoTarget = _pendingSyncLetto;
     _pendingSync = false;
+    _pendingSyncLetto = null;
 
     var ind = document.getElementById('syncIndicator');
     var st  = document.getElementById('syncStatus');
     if (ind) ind.className = 'badge bg-warning text-dark ms-2';
     if (st)  st.innerText  = 'Sync...';
 
-    _sbGetPazienti().then(function(pazienti) {
-      if (typeof _applicaAggiornamentoCompleto === 'function') {
-        _applicaAggiornamentoCompleto(_renderCardsHtml(pazienti));
-      }
+    var fetchPromise;
+    if (lettoTarget) {
+      // SELECT mirato: 1 sola riga (~17KB invece di ~500KB)
+      fetchPromise = _q(_sb.from('consegne').select('*').eq('letto', lettoTarget))
+        .then(function(rows) {
+          if (!rows || !rows.length) return null;
+          var p = _fromDb(rows[0]);
+          // Applica direttamente alla card senza full re-render
+          var cards = document.querySelectorAll('.patient-card[data-bed="' + lettoTarget + '"]');
+          if (cards.length && typeof _aggiornaCardDaPaziente === 'function') {
+            cards.forEach(function(card) { _aggiornaCardDaPaziente(card, p); });
+            if (typeof window._aggiornaBadgePrincipali === 'function') {
+              try { window._aggiornaBadgePrincipali(); } catch(e) {}
+            }
+            return 'mirato';
+          }
+          // Card non trovata → promuovi a full sync (rara)
+          return _sbGetPazienti().then(function(pazienti) {
+            if (typeof _applicaAggiornamentoCompleto === 'function') {
+              _applicaAggiornamentoCompleto(_renderCardsHtml(pazienti));
+            }
+            return 'full-fallback';
+          });
+        });
+    } else {
+      // Full sync legacy: SELECT * (costoso, evitare quando possibile)
+      fetchPromise = _sbGetPazienti().then(function(pazienti) {
+        if (typeof _applicaAggiornamentoCompleto === 'function') {
+          _applicaAggiornamentoCompleto(_renderCardsHtml(pazienti));
+        }
+        return 'full';
+      });
+    }
+
+    fetchPromise.then(function() {
       if (ind) ind.className = 'badge bg-success ms-2';
       if (st)  st.innerText  = new Date().toLocaleTimeString('it-IT');
     }).catch(function(e) {
@@ -2115,25 +2170,34 @@ var _emergenzaForceSaveId = null;  // Force-save scan letti dirty (10s)
 // Avvia force-save scan ogni 10s: rilancia salvataggi pending/falliti
 function _emergenzaAvviaPolling() {
   if (_emergenzaPollingId) return;
-  console.log('[Emergenza] Polling attivato (5s) + force-save (10s)');
+  console.log('[Emergenza] Polling attivato (check 15s + force-save 30s)');
   if (typeof window._log === 'function') {
     window._log('warning', 'emergenza-on',
-      'Modalità emergenza attivata (polling 5s + force-save 10s)',
+      'Modalità emergenza attivata (check 15s + force-save 30s)',
       'Il sistema è passato dal Realtime standard al polling periodico. ' +
-      'Causa: diagnostica ha rilevato problemi di connessione/WebSocket o ' +
-      'attivazione manuale. Verificare rete e proxy.');
+      'Versione LIGHT: ogni 15s controlla solo MAX(updated_at), full sync ' +
+      'solo se rilevate modifiche. Causa: diagnostica ha rilevato problemi ' +
+      'di connessione/WebSocket o attivazione manuale.');
   }
 
-  // POLLING LETTURE — invariato
+  // POLLING LETTURE — versione LIGHT (riduce egress drasticamente)
+  // PROBLEMA precedente: ogni 5s SELECT * FROM consegne (~150KB/query
+  // con 30 letti rich-text). In 24h = ~2.4 GB di egress solo da qui.
+  // Su 3 giorni di emergenza = >5 GB → quota free Supabase esaurita.
+  //
+  // SOLUZIONE: check leggero ogni 15s con SELECT updated_at LIMIT 1
+  // (~50 byte). Full sync (_sbGetPazienti) eseguito SOLO se MAX(updated_at)
+  // è cambiato dalla volta precedente. Risparmio: ~99% nelle finestre
+  // di inattività, quasi-zero costo durante editing normale.
   _emergenzaPollingId = setInterval(function() {
-    _scheduleRealtimeSync();   // funzione esistente, già usata dal canale Realtime
+    _emergenzaCheckSeMutato().catch(function(){});
     _sbGetLocks().then(function(locks) {
       if (typeof _applicaLocks === 'function') _applicaLocks(locks || {});
     }).catch(function(){});
-  }, 5000);
+  }, 15000);
 
   // FORCE-SAVE SCAN — safety net per la modalità emergenza:
-  // ogni 10s, se ci sono letti in _dirtyLetti che NON hanno un retry esponenziale
+  // ogni 30s, se ci sono letti in _dirtyLetti che NON hanno un retry esponenziale
   // attivo (gestito nativamente da app.js) e NON sono in focus mode, forza il save.
   // Utile quando: (a) i 3 retry esponenziali sono esauriti, (b) un save è stato
   // bloccato dal _syncPaused di un altro ciclo, (c) un dirty rimane stagnante.
@@ -2164,7 +2228,34 @@ function _emergenzaAvviaPolling() {
         eseguiSalvataggioLettoCompleto(letto, card);
       }
     });
-  }, 10000);
+  }, 30000);
+}
+
+// Memorizza l'ultimo MAX(updated_at) visto. Usato dal polling
+// emergenza per evitare full sync quando non c'è nulla di nuovo.
+var _lastSyncMaxUpdatedAt = null;
+
+// Check leggero: SELECT updated_at LIMIT 1 (ordinato DESC).
+// Ritorna ~50 bytes invece dei ~150KB di SELECT *.
+// Se MAX(updated_at) è diverso dall'ultimo visto, lancia un full sync.
+function _emergenzaCheckSeMutato() {
+  return _q(_sb.from('consegne').select('updated_at')
+    .order('updated_at', { ascending: false }).limit(1))
+    .then(function(rows) {
+      var maxTs = (rows && rows[0]) ? rows[0].updated_at : null;
+      // Prima esecuzione: registra baseline, no sync
+      if (_lastSyncMaxUpdatedAt === null) {
+        _lastSyncMaxUpdatedAt = maxTs;
+        return false;
+      }
+      if (maxTs !== _lastSyncMaxUpdatedAt) {
+        _lastSyncMaxUpdatedAt = maxTs;
+        console.log('[Emergenza] Modifica rilevata, lancio full sync');
+        _scheduleRealtimeSync();
+        return true;
+      }
+      return false;
+    });
 }
 
 function _emergenzaFermaPolling() {
