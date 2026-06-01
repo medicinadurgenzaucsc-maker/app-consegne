@@ -1103,8 +1103,27 @@
             }
             _lettoLockAtt = letto;
             _rinnovaDebounce(letto);
-            _syncPaused = false;
-            _completaApertura();
+
+            // ── FRESH FETCH del singolo letto prima di abilitare l'editing ──
+            // Acquisito il lock, leggiamo l'ultima versione della riga dal DB
+            // così l'utente vede SEMPRE i dati più aggiornati (no rischio di
+            // sovrascrivere modifiche di altri arrivate negli ultimi secondi,
+            // specialmente in modalità emergenza dove il polling è ogni 30s).
+            // Payload: ~12 KB (1 sola riga). Tempo: ~100-300ms.
+            // Se il fetch fallisce, proseguiamo comunque con i dati attuali
+            // della card (graceful degradation — meglio editare con dati
+            // vecchi che non poter editare).
+            var freshFetch = (typeof window._sbGetPazienteSingolo === 'function')
+              ? window._sbGetPazienteSingolo(letto)
+              : Promise.resolve(null);
+            freshFetch.then(function(p) {
+              if (p && _focusCard && typeof window._aggiornaCardDaPaziente === 'function') {
+                try { window._aggiornaCardDaPaziente(_focusCard, p); } catch(e) {}
+              }
+            }).catch(function(){}).then(function() {
+              _syncPaused = false;
+              _completaApertura();
+            });
           } else if (res.blocked) {
             // Rara race condition: lock preso da altri nell'istante tra check e upsert
             _syncPaused = false;
@@ -1141,8 +1160,18 @@
             if (!_focusCard) return;
             _lettoLockAtt = letto;
             _rinnovaDebounce(letto);
-            _syncPaused = false;
-            _completaApertura();
+            // Tentativo di fresh-fetch (potrebbe fallire come il lock, ma proviamo)
+            var fff = (typeof window._sbGetPazienteSingolo === 'function')
+              ? window._sbGetPazienteSingolo(letto)
+              : Promise.resolve(null);
+            fff.then(function(p) {
+              if (p && _focusCard && typeof window._aggiornaCardDaPaziente === 'function') {
+                try { window._aggiornaCardDaPaziente(_focusCard, p); } catch(e) {}
+              }
+            }).catch(function(){}).then(function() {
+              _syncPaused = false;
+              _completaApertura();
+            });
             return;
           }
           // Fail-closed: chiudi focus mode e mostra errore

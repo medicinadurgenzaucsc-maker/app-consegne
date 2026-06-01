@@ -554,6 +554,19 @@ function _sbSalvaPaziente(letto, datiPaziente) {
     });
 }
 
+// Legge UNA singola riga consegne per il letto specificato.
+// Usato in apertura focus mode per garantire dati freschi prima
+// dell'editing — sia in Realtime normale (sicurezza extra) sia in
+// modalità emergenza (dove il polling può essere stale fino a 30s).
+// Payload: ~12 KB (1 riga rich-text) vs ~298 KB di SELECT *.
+function _sbGetPazienteSingolo(letto) {
+  return _q(_sb.from('consegne').select('*').eq('letto', String(letto)).maybeSingle())
+    .then(function(row) {
+      if (!row) return null;
+      return _fromDb(row);
+    });
+}
+
 // Importa una scheda letto dal parsing Google Doc.
 // Aggiorna il letto se esiste, restituisce false se il letto non è presente.
 function _sbImportaLetto(letto, dati) {
@@ -581,6 +594,8 @@ var _TEMPLATE_DAFARE =
   '<b>RICHIESTI/IN ATTESA:</b><br><br>' +
   '<b>ESEGUITI:</b><br><br>' +
   '<b>NOTE:</b><br>';
+window._sbGetPazienteSingolo = _sbGetPazienteSingolo;
+window._aggiornaCardDaPaziente = _aggiornaCardDaPaziente;
 window._TEMPLATE_DAFARE = _TEMPLATE_DAFARE;
 
 // Template HTML iniziale per il campo Note e Terapia. Stessa logica
