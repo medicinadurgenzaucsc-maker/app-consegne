@@ -4723,7 +4723,13 @@
           (r.cookies  && !r.cookies.ok)  ||
           (r.js       && !r.js.ok)       ||
           (r.lib      && !r.lib.ok);
-        var ciSonoProblemi = (rischioSalvataggio >= 10) || criticiVeri || (r.ws && !r.ws.ok);
+        // Boot-mode: criterio ristretto al solo 'Rischio bug salvataggio'
+        // diverso da NESSUNO (>= 10). Su richiesta dell'utente, all'avvio
+        // della pagina non vogliamo attivare l'emergenza per ws bloccato
+        // o critici di rete: solo per il rischio bug salvataggio effettivo.
+        var ciSonoProblemi = opzioni.soloRischioSalvataggio
+          ? (rischioSalvataggio >= 10)
+          : ((rischioSalvataggio >= 10) || criticiVeri || (r.ws && !r.ws.ok));
 
         // ── Auto-attivazione modalità emergenza ──────────────────────
         // Se opzioni.autoAttivaEmergenza E ci sono problemi E l'emergenza

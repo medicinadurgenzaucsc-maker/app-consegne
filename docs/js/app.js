@@ -126,11 +126,22 @@
               console.warn('[Caricamento] Diagnostica oltre 20s, chiusura overlay');
               _chiudiOverlay();
             }, 20000);
+            // Boot-mode: NESSUN modal di report, anche se ci sono problemi.
+            // Auto-attiva emergenza SOLO se 'Rischio bug salvataggio' è
+            // diverso da NESSUNO (= rischioSalvataggio >= 10). Critici come
+            // WebSocket bloccato o REST down NON triggherano qui — vengono
+            // gestiti dalla diagnostica oraria periodica con la logica
+            // completa (autoAttivaEmergenza + criteri estesi).
             window._eseguiDiagnosticaSilent(function() {
               if (done) return;
               done = true;
               clearTimeout(safety);
               _chiudiOverlay();
+            }, {
+              autoAttivaEmergenza: true,
+              autoDisattivaEmergenza: true,
+              noModal: true,
+              soloRischioSalvataggio: true
             });
           } else {
             // Fallback: nessuna diagnostica disponibile, chiudi subito
