@@ -1822,6 +1822,10 @@
       a.emerg-disabled { filter: grayscale(40%); }
 
       /* ── Banner Modalità Emergenza ────────────────────────────────── */
+      /* position:fixed sotto la navbar (navbar fixed-top è alta ~70px). */
+      /* z-index 1019: sotto la navbar Bootstrap (1030) ma sopra il      */
+      /* contenuto. Quando attivo, body.banner-emergenza-attivo aumenta  */
+      /* il padding-top così il contenuto non viene coperto.             */
       #emergenzaBanner {
         background: #fff3cd;
         border-bottom: 1px solid #ffeaa7;
@@ -1834,11 +1838,15 @@
         align-items: center;
         justify-content: center;
         gap: 8px;
-        position: sticky;
-        top: 0;
-        z-index: 1020;
+        position: fixed;
+        top: 56px;
+        left: 0;
+        right: 0;
+        z-index: 1019;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.04);
       }
       #emergenzaBanner.attivo { display: flex; }
+      body.banner-emergenza-attivo { padding-top: 96px !important; }
       #emergenzaBanner .bi {
         font-size: 1rem;
         color: #d39e00;
@@ -3269,6 +3277,9 @@
         }
       }
       if (banner) banner.classList.toggle('attivo', attiva);
+      // Sposta il contenuto sotto al banner (il banner è position:fixed,
+      // quindi senza incremento del padding coprirebbe la prima riga).
+      if (document.body) document.body.classList.toggle('banner-emergenza-attivo', attiva);
       _emergUpdateUI();
     }
 
