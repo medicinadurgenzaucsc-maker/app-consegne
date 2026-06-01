@@ -1821,39 +1821,15 @@
       button.emerg-disabled,
       a.emerg-disabled { filter: grayscale(40%); }
 
-      /* ── Banner Modalità Emergenza ────────────────────────────────── */
-      /* position:fixed sotto la navbar (navbar fixed-top è alta ~70px). */
-      /* z-index 1019: sotto la navbar Bootstrap (1030) ma sopra il      */
-      /* contenuto. Quando attivo, body.banner-emergenza-attivo aumenta  */
-      /* il padding-top così il contenuto non viene coperto.             */
-      #emergenzaBanner {
-        background: #fff3cd;
-        border-bottom: 1px solid #ffeaa7;
-        color: #5a4a00;
-        font-size: 0.82rem;
-        line-height: 1.3;
-        padding: 6px 12px;
-        text-align: center;
-        display: none;
-        align-items: center;
-        justify-content: center;
-        gap: 8px;
-        position: fixed;
-        top: 56px;
-        left: 0;
-        right: 0;
-        z-index: 1019;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.04);
+      /* ── Badge "PC LENTO" — compare a destra di "Polling ON" ─────── */
+      /* Pulsante rosso che lampeggia leggermente per attirare        */
+      /* l'attenzione. Click → modal con spiegazione.                  */
+      @keyframes pcLentoBlink {
+        0%, 100% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.5); }
+        50%      { box-shadow: 0 0 0 5px rgba(220, 53, 69, 0); }
       }
-      #emergenzaBanner.attivo { display: flex; }
-      body.banner-emergenza-attivo { padding-top: 96px !important; }
-      #emergenzaBanner .bi {
-        font-size: 1rem;
-        color: #d39e00;
-        flex-shrink: 0;
-      }
-      @keyframes emergSpin { to { transform: rotate(360deg); } }
-      .emerg-spin { animation: emergSpin 2s linear infinite; display: inline-block; }
+      #btnPcLento { animation: pcLentoBlink 1.5s ease-in-out infinite; }
+      #btnPcLento:hover { animation: none; }
 
       /* ── Badge "Update disponibile" lampeggiante ──────────────────── */
       /* Pulsa background-color + glow per attirare l'attenzione senza */
@@ -1965,6 +1941,18 @@
             <i class="bi bi-check-circle-fill me-1"></i>PC OK
           </button>
         </li>
+        <!-- Badge "PC LENTO" — compare quando la modalità emergenza è attiva.   -->
+        <!-- Al click apre un modal che spiega cosa è cambiato. Volutamente       -->
+        <!-- separato da btnEmergenzaPC perché serve come info, non come toggle. -->
+        <li class="nav-item me-2" id="navItemPcLento" style="display:none;">
+          <button id="btnPcLento"
+                  class="btn btn-danger btn-sm fw-bold py-0 px-2"
+                  onclick="_mostraInfoPcLento()"
+                  title="Modalità Emergenza attiva — clicca per dettagli"
+                  style="font-size:0.75rem;">
+            <i class="bi bi-exclamation-triangle-fill me-1"></i>PC LENTO
+          </button>
+        </li>
         <li class="nav-item me-2">
           <span id="syncIndicator" class="badge bg-secondary" style="font-size:0.65rem; font-weight:normal;" title="Aggiornamento automatico">
             <i class="bi bi-arrow-repeat"></i> <span id="syncStatus">in attesa...</span>
@@ -2012,13 +2000,6 @@
     </div>
   </div>
 </nav>
-
-<!-- ── Banner Modalità Emergenza ──────────────────────────────────── -->
-<!-- Compare automaticamente quando _emergenzaPollingAttivo() === true   -->
-<div id="emergenzaBanner" style="display:none;">
-  <i class="bi bi-arrow-repeat emerg-spin"></i>
-  <span><strong>Modalità emergenza</strong> — le modifiche sono salvate normalmente, ma il sync con gli altri PC è più lento (fino a 15 secondi).</span>
-</div>
 
 <!-- ================= MODALS ================= -->
 
@@ -3261,7 +3242,7 @@
     // badge stesso.
     function _aggiornaBottoneEmergenza() {
       var btn = document.getElementById('btnEmergenzaPC');
-      var banner = document.getElementById('emergenzaBanner');
+      var navPcLento = document.getElementById('navItemPcLento');
       var attiva = (typeof _emergenzaPollingAttivo === 'function' && _emergenzaPollingAttivo());
       if (btn) {
         if (attiva) {
@@ -3276,12 +3257,37 @@
           btn.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i>PC OK';
         }
       }
-      if (banner) banner.classList.toggle('attivo', attiva);
-      // Sposta il contenuto sotto al banner (il banner è position:fixed,
-      // quindi senza incremento del padding coprirebbe la prima riga).
-      if (document.body) document.body.classList.toggle('banner-emergenza-attivo', attiva);
+      // Badge "PC LENTO" visibile solo in emergenza
+      if (navPcLento) navPcLento.style.display = attiva ? '' : 'none';
       _emergUpdateUI();
     }
+
+    // ── Modal info "PC LENTO" — apre dialog informativo, non azione ──
+    window._mostraInfoPcLento = function() {
+      Swal.fire({
+        icon: 'info',
+        title: '<i class="bi bi-arrow-repeat me-2 text-warning"></i>Modalità Emergenza attiva',
+        html:
+          '<div class="text-start" style="font-size:0.92rem;line-height:1.55;">' +
+            '<p class="mb-2"><strong>Cosa significa:</strong></p>' +
+            '<p class="mb-2">Questo PC sta avendo problemi di connessione o di Realtime, quindi il sistema è passato a una modalità di sincronizzazione più conservativa.</p>' +
+            '<p class="mb-2"><strong>✅ Cosa funziona normalmente:</strong></p>' +
+            '<ul class="mb-2" style="padding-left:20px;">' +
+              '<li>Le modifiche che fai vengono <strong>salvate normalmente</strong></li>' +
+              '<li>Stampa, archivio, dimetti letto, backup, importa — <strong>tutto attivo</strong></li>' +
+              '<li>Il tuo lavoro non è in pericolo</li>' +
+            '</ul>' +
+            '<p class="mb-2"><strong>⏱ Cosa è diverso:</strong></p>' +
+            '<ul class="mb-0" style="padding-left:20px;">' +
+              '<li>Le modifiche degli altri PC possono comparire qui con <strong>qualche secondo di ritardo</strong> (fino a 15s)</li>' +
+              '<li>Quando la rete tornerà OK, la modalità si disattiverà automaticamente</li>' +
+            '</ul>' +
+          '</div>',
+        confirmButtonText: 'Ho capito',
+        confirmButtonColor: '#37474f',
+        width: 520
+      });
+    };
 
     // ── No-op: in modalità emergenza TUTTE le funzioni restano attive ──
     // Decisione di design: le operazioni puntuali (stampa, archivio,
