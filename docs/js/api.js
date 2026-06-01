@@ -2173,12 +2173,12 @@ var _emergenzaForceSaveId = null;  // Force-save scan letti dirty (10s)
 // Avvia force-save scan ogni 10s: rilancia salvataggi pending/falliti
 function _emergenzaAvviaPolling() {
   if (_emergenzaPollingId) return;
-  console.log('[Emergenza] Polling attivato (check 15s + force-save 30s)');
+  console.log('[Emergenza] Polling attivato (check 30s + force-save 30s)');
   if (typeof window._log === 'function') {
     window._log('warning', 'emergenza-on',
-      'Modalità emergenza attivata (check 15s + force-save 30s)',
+      'Modalità emergenza attivata (check 30s + force-save 30s)',
       'Il sistema è passato dal Realtime standard al polling periodico. ' +
-      'Versione LIGHT: ogni 15s controlla solo MAX(updated_at), full sync ' +
+      'Versione LIGHT: ogni 30s controlla solo MAX(updated_at), full sync ' +
       'solo se rilevate modifiche. Causa: diagnostica ha rilevato problemi ' +
       'di connessione/WebSocket o attivazione manuale.');
   }
@@ -2188,16 +2188,18 @@ function _emergenzaAvviaPolling() {
   // con 30 letti rich-text). In 24h = ~2.4 GB di egress solo da qui.
   // Su 3 giorni di emergenza = >5 GB → quota free Supabase esaurita.
   //
-  // SOLUZIONE: check leggero ogni 15s con SELECT updated_at LIMIT 1
+  // SOLUZIONE: check leggero ogni 30s con SELECT updated_at LIMIT 1
   // (~50 byte). Full sync (_sbGetPazienti) eseguito SOLO se MAX(updated_at)
   // è cambiato dalla volta precedente. Risparmio: ~99% nelle finestre
   // di inattività, quasi-zero costo durante editing normale.
+  // Cadenza scelta dopo analisi empirica: 30s permette di stare sotto
+  // 2GB free tier anche nel worst case (5 PC × 20h emergenza × 30g).
   _emergenzaPollingId = setInterval(function() {
     _emergenzaCheckSeMutato().catch(function(){});
     _sbGetLocks().then(function(locks) {
       if (typeof _applicaLocks === 'function') _applicaLocks(locks || {});
     }).catch(function(){});
-  }, 15000);
+  }, 30000);
 
   // FORCE-SAVE SCAN — safety net per la modalità emergenza:
   // ogni 30s, se ci sono letti in _dirtyLetti che NON hanno un retry esponenziale

@@ -161,7 +161,7 @@
       //
       // Cosi' anche un PC che resta sempre aperto fa il backup ogni ora.
       // ═══════════════════════════════════════════════════════════════════════
-      var BACKUP_CHECK_TICK_MS = 5 * 60 * 1000; // tick ogni 5 min
+      var BACKUP_CHECK_TICK_MS = 15 * 60 * 1000; // tick ogni 15 min (era 5 min)
       function _backupOrarioAutomatico() {
         // Skip se diagnostica silenziosa in corso (evita interferenze)
         if (typeof _silentDiag !== 'undefined' && _silentDiag) return;

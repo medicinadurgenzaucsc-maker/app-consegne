@@ -3279,7 +3279,7 @@
             '</ul>' +
             '<p class="mb-2"><strong>⏱ Cosa è diverso:</strong></p>' +
             '<ul class="mb-0" style="padding-left:20px;">' +
-              '<li>Le modifiche degli altri PC possono comparire qui con <strong>qualche secondo di ritardo</strong> (fino a 15s)</li>' +
+              '<li>Le modifiche degli altri PC possono comparire qui con <strong>qualche secondo di ritardo</strong> (fino a 30s)</li>' +
               '<li>Quando la rete tornerà OK, la modalità si disattiverà automaticamente</li>' +
             '</ul>' +
           '</div>',
@@ -4782,7 +4782,7 @@
     //  - visibilitychange: al ritorno tab in foreground, ri-verifica
     // ══════════════════════════════════════════════════════════════
     var INTERVALLO_NORMALE_MS    = 60 * 60 * 1000; // 60 min se tutto OK
-    var INTERVALLO_EMERGENZA_MS  =  5 * 60 * 1000; // 5 min se in emergenza
+    var INTERVALLO_EMERGENZA_MS  = 15 * 60 * 1000; // 15 min se in emergenza (era 5 min)
     var CHECK_TICK_MS            =      60 * 1000; // tick di check ogni 1 min
     var _ultimaDiagAuto = Date.now();              // (boot diag già coperta da app.js)
 
