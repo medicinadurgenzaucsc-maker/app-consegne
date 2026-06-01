@@ -3214,24 +3214,23 @@
       _emergUpdateUI();
     }
 
-    // ── Aggiorna stato visivo voci di menu disabilitate in emergenza ──
+    // ── No-op: in modalità emergenza TUTTE le funzioni restano attive ──
+    // Decisione di design: le operazioni puntuali (stampa, archivio,
+    // aggiungi/dimetti letto, backup, import) non generano traffico
+    // continuo e quindi non sono la causa dei problemi che giustificano
+    // la modalità emergenza. Inoltre il medico potrebbe aver bisogno
+    // proprio di stampare/archiviare quando la rete è instabile.
+    // Le marcature data-emerg-disable="1" nel DOM restano per
+    // backward-compat: questa funzione si limita a rimuovere ogni
+    // eventuale stato "disabilitato" applicato da versioni precedenti.
     function _emergUpdateUI() {
-      var attivo = (typeof _emergenzaPollingAttivo === 'function' && _emergenzaPollingAttivo());
-      var els = document.querySelectorAll('[data-emerg-disable="1"]');
-      els.forEach(function(el) {
-        if (attivo) {
-          el.classList.add('emerg-disabled');
-          el.setAttribute('title', 'Disabilitato in Modalità Emergenza');
-          if (el.tagName === 'BUTTON' || el.tagName === 'INPUT') el.disabled = true;
-        } else {
-          el.classList.remove('emerg-disabled');
-          if (el.getAttribute('title') === 'Disabilitato in Modalità Emergenza') el.removeAttribute('title');
-          if (el.tagName === 'BUTTON' || el.tagName === 'INPUT') el.disabled = false;
+      document.querySelectorAll('.emerg-disabled').forEach(function(el) {
+        el.classList.remove('emerg-disabled');
+        if (el.getAttribute('title') === 'Disabilitato in Modalità Emergenza') {
+          el.removeAttribute('title');
         }
+        if (el.tagName === 'BUTTON' || el.tagName === 'INPUT') el.disabled = false;
       });
-
-      // NB: il floppy è sempre presente in focus mode (gestito da _completaApertura
-      // / _disattivaFocusMode), indipendentemente dalla modalità emergenza.
     }
     // Esposta per chiamate da fuori IIFE (es. dopo aggiunte dinamiche al DOM)
     window._emergUpdateUI = _emergUpdateUI;
