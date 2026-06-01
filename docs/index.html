@@ -2542,6 +2542,69 @@
     // account). Il token di sessione persiste in localStorage per ~58 minuti,
     // quindi un reload entro quel tempo non richiede nuovo login.
 
+    // ── REFRESH TOKEN SILENZIOSO ─────────────────────────────────────
+    // Rinnova access token Google senza popup né interazione utente.
+    // Funziona solo se l'utente ha già concesso il consent una volta
+    // (= dopo il primo login). prompt:'' indica a GIS di non mostrare UI:
+    // se Google può rinnovare → restituisce nuovo token; se serve
+    // interazione (account scollegato, consent revocato), restituisce
+    // errore 'login_required' che gestiamo senza disturbare l'utente.
+    //
+    // Tecnica: salviamo il callback principale, ne installiamo uno
+    // temporaneo per questa specifica richiesta, e ripristiniamo l'orig
+    // al termine. Lock con flag locale anti-concorrenza.
+    window._rinnovaTokenSilenzioso = function() {
+      return new Promise(function(resolve, reject) {
+        if (!_tokenClient && !_inizializzaGoogleClient()) {
+          reject(new Error('Client OAuth non pronto'));
+          return;
+        }
+        var origCallback = _tokenClient.callback;
+        var doneResolved = false;
+        var safety = setTimeout(function() {
+          if (doneResolved) return;
+          doneResolved = true;
+          _tokenClient.callback = origCallback;
+          reject(new Error('Timeout 10s'));
+        }, 10000);
+        _tokenClient.callback = function(resp) {
+          if (doneResolved) return;
+          doneResolved = true;
+          clearTimeout(safety);
+          _tokenClient.callback = origCallback;
+          if (resp.error) {
+            reject(new Error(resp.error));
+            return;
+          }
+          // Aggiorna token in memoria + localStorage (mantiene compat
+          // con la sessione persistente già esistente).
+          window._googleAccessToken = resp.access_token;
+          window._googleDriveToken  = resp.access_token;
+          try {
+            var sess = JSON.parse(localStorage.getItem('appSession') || '{}');
+            sess.token = resp.access_token;
+            sess.expiry = Date.now() + 3500000; // ~58 minuti
+            localStorage.setItem('appSession', JSON.stringify(sess));
+          } catch(e){}
+          console.log('[Token refresh] Rinnovo silenzioso OK (validita ~58 min)');
+          resolve(resp.access_token);
+        };
+        try {
+          _tokenClient.requestAccessToken({
+            prompt: '',
+            hint: _emailConsentita || ''
+          });
+        } catch(e) {
+          if (!doneResolved) {
+            doneResolved = true;
+            clearTimeout(safety);
+            _tokenClient.callback = origCallback;
+            reject(e);
+          }
+        }
+      });
+    };
+
     function _avviaApp() {
       var ov = document.getElementById('loginOverlay');
       if (ov) { ov.style.transition = 'opacity 0.4s'; ov.style.opacity = '0'; setTimeout(function() { ov.style.display = 'none'; }, 420); }

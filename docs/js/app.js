@@ -177,13 +177,39 @@
         // Skip se diagnostica silenziosa in corso (evita interferenze)
         if (typeof _silentDiag !== 'undefined' && _silentDiag) return;
         if (typeof _sbArchiviaGiornoCorrente !== 'function') return;
-        _sbArchiviaGiornoCorrente().then(function(res) {
-          // Logga solo quando un backup è effettivamente partito
-          if (res && res.inCorso) {
-            console.log('[Backup orario] Backup in corso da questo client');
-          }
-        }).catch(function(e) {
-          console.warn('[Backup orario] Errore:', e && e.message);
+
+        // Refresh silenzioso del token Drive PRIMA del backup.
+        // Senza popup né interazione utente: prompt:'' chiede a Google
+        // un nuovo access token usando il consent già concesso. Se va,
+        // il backup orario troverà _googleDriveToken aggiornato e creerà
+        // il file nella cartella Drive. Se fallisce (utente disconnesso
+        // da Google, scenario raro), il backup va solo su Supabase con
+        // log 'skip-no-token' come fa già.
+        // Zero impatto su egress Supabase (la chiamata e' verso
+        // accounts.google.com, non verso Supabase).
+        var refreshNeeded = false;
+        if (typeof window._rinnovaTokenSilenzioso === 'function') {
+          try {
+            var sess = JSON.parse(localStorage.getItem('appSession') || 'null');
+            var scadeFra = (sess && sess.expiry) ? (sess.expiry - Date.now()) : 0;
+            // Rinnova se il token manca o scade entro 15 min
+            refreshNeeded = !window._googleDriveToken || scadeFra < 15 * 60 * 1000;
+          } catch(e) {}
+        }
+        var pre = refreshNeeded
+          ? window._rinnovaTokenSilenzioso().catch(function(e) {
+              console.log('[Token refresh] Silenzioso non riuscito (atteso se utente offline):', e && e.message);
+            })
+          : Promise.resolve();
+        pre.then(function() {
+          _sbArchiviaGiornoCorrente().then(function(res) {
+            // Logga solo quando un backup è effettivamente partito
+            if (res && res.inCorso) {
+              console.log('[Backup orario] Backup in corso da questo client');
+            }
+          }).catch(function(e) {
+            console.warn('[Backup orario] Errore:', e && e.message);
+          });
         });
       }
       setInterval(_backupOrarioAutomatico, BACKUP_CHECK_TICK_MS);
