@@ -3578,21 +3578,17 @@
     window._emergCreaFloppy = _emergCreaFloppy;
     window._emergRimuoviFloppy = _emergRimuoviFloppy;
 
-    // ── Guard runtime: blocca esecuzione se emergenza attiva ──────────
-    // Da chiamare all'inizio di ogni funzione disabilitata in emergenza.
-    // Ritorna true se la funzione DEVE interrompersi (emergenza attiva).
-    window._emergGuard = function() {
-      if (typeof _emergenzaPollingAttivo !== 'function' || !_emergenzaPollingAttivo()) return false;
-      Swal.fire({
-        icon: 'warning',
-        title: 'Funzione disabilitata',
-        html: 'Funzione disabilitata in <strong>Modalità Emergenza</strong>.<br><br>' +
-              '<small class="text-muted">Per usarla, disattiva la modalità emergenza dal pulsante in alto a destra, oppure usa un altro PC.</small>',
-        confirmButtonText: 'Ho capito',
-        confirmButtonColor: '#37474f'
-      });
-      return true;
-    };
+    // ── Guard runtime: NEUTRALIZZATA ──────────────────────────────────
+    // Prima bloccava certe funzioni quando l'emergenza era attiva
+    // (mostrava un alert "Funzione disabilitata in Modalità Emergenza").
+    // Decisione di design: in emergenza tutte le funzioni restano usabili —
+    // le operazioni puntuali (stampa, archivio, dimetti, backup, import)
+    // non sono la causa dei problemi che giustificano la modalità
+    // emergenza, e il medico potrebbe averne bisogno proprio quando la
+    // rete è instabile. La guard ora ritorna sempre false (= "procedi").
+    // Lasciata in piedi come no-op così le chiamate sparse nel codice
+    // continuano a funzionare senza dover toccare ogni callsite.
+    window._emergGuard = function() { return false; };
 
     // ── Toggle principale ─────────────────────────────────────
     window._toggleModalitaEmergenza = function() {
