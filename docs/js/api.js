@@ -863,6 +863,16 @@ function _sbArchiviaGiornoCorrente() {
             dati: pazienti
           }));
         }).then(function() {
+          // Log del backup DB orario riuscito: include info sul token Drive
+          // così, incrociando con i log 'drive-backup', si capisce se il PC
+          // che ha eseguito il backup aveva o no la sessione Drive attiva.
+          if (typeof window._log === 'function') {
+            try {
+              window._log('info', 'backup-orario-db',
+                'Backup orario su DB completato (' + _pazientiBackup.length + ' letti)',
+                'token_drive_disponibile=' + (!!window._googleDriveToken));
+            } catch(e) {}
+          }
           // ── Step 4: backup Drive (fire-and-forget) + pulizia archivio ──────
           _driveBackupConsegne(_pazientiBackup, now);
           return _sbGetGiorniConservazione().then(function(giorni) {
@@ -1786,8 +1796,25 @@ function _driveRenderNoteCard(p) {
 // Le cartelle vengono create la prima volta e l'ID salvato in Supabase.
 // Fire-and-forget: non blocca il flusso principale.
 function _driveBackupConsegne(pazienti, ts) {
+  // Helper logging coerente (logga solo se _log è disponibile)
+  function _bkLog(livello, esito, msg, dettagli) {
+    console.log('[Drive backup]', esito, '—', msg);
+    if (typeof window._log === 'function') {
+      try { window._log(livello, 'drive-backup', esito + ' — ' + msg, dettagli || ''); }
+      catch(e) {}
+    }
+  }
   if (!window._googleDriveToken) {
-    console.log('[Drive backup] Nessun token Drive disponibile — solo Supabase.');
+    // SKIP: questo PC ha vinto la CAS atomica ma non ha il token Drive.
+    // Causa tipica: il login Google a Drive è scaduto (Google rinnova il
+    // token ogni ~1h e in app aperta da molte ore senza interazione il
+    // token può essere null). Conseguenza: il backup va SOLO su Supabase,
+    // niente file nella cartella Drive per quest'ora.
+    _bkLog('warning', 'skip-no-token',
+      'Backup orario su DB OK ma Google Drive saltato',
+      'Questo PC ha vinto il CAS atomico ma _googleDriveToken=null ' +
+      '(login Drive scaduto o mai concesso). Per avere il file nella ' +
+      'cartella Drive servirebbe un altro PC col token attivo.');
     return Promise.resolve();
   }
   var data = new Date(Number(ts));
@@ -1849,7 +1876,9 @@ function _driveBackupConsegne(pazienti, ts) {
     .then(function(folderId) {
       return _driveCreaGoogleDoc(nomeFile, html, folderId)
         .then(function(file) {
-          console.log('[Drive backup] Google Doc creato:', (file && file.name), (file && file.id));
+          _bkLog('info', 'success',
+            'File Drive creato: ' + (file && file.name),
+            'fileId=' + (file && file.id) + ' | folderId=' + folderId);
           // Pulizia file vecchi con la stessa retention di Supabase archivio
           return _sbGetGiorniConservazione().then(function(giorni) {
             var cutoff = Number(ts) - (giorni * 86400000);
@@ -1857,7 +1886,12 @@ function _driveBackupConsegne(pazienti, ts) {
           });
         });
     })
-    .catch(function(e) { console.warn('[Drive backup] Errore (non bloccante):', e.message || e); });
+    .catch(function(e) {
+      var msg = (e && (e.message || e.error || e.toString())) || 'errore sconosciuto';
+      _bkLog('error', 'error',
+        'Backup Drive FALLITO: ' + msg,
+        'nomeFile=' + nomeFile + ' | stack=' + (e && e.stack ? String(e.stack).substring(0,300) : 'n/a'));
+    });
 }
 
 
