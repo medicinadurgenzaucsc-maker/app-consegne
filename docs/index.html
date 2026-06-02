@@ -1906,6 +1906,22 @@
         to   { transform: translateY(0);    opacity: 1; }
       }
 
+      /* ── Modal Mail Dimissioni: altezza limitata + scroll interno ── */
+      /* Vincoliamo il popup SweetAlert al 90% della viewport.         */
+      /* Lo scroll viene gestito SOLO sul corpo (.swal2-html-container),*/
+      /* mentre titolo e bottoni (.swal2-actions) restano fissi.       */
+      .mail-dim-modal {
+        max-height: 90vh !important;
+        display: grid !important;
+        grid-template-rows: auto auto 1fr auto !important;
+      }
+      .mail-dim-modal .swal2-html-container {
+        overflow-y: auto !important;
+        max-height: none !important;
+        margin: 0 !important;
+        padding: 0 1.6em !important;
+      }
+
       /* ── Badge "Update disponibile" lampeggiante ──────────────────── */
       /* Pulsa background-color + glow per attirare l'attenzione senza */
       /* essere troppo fastidioso. Si ferma all'hover per permettere   */
@@ -5975,6 +5991,7 @@
         title: '<i class="bi bi-send-fill me-2 text-primary"></i>Invia mail dimissioni',
         html: '<div class="text-center py-3"><div class="spinner-border text-secondary"></div><div class="mt-2 text-muted small">Caricamento dati…</div></div>',
         width: '85%',
+        customClass: { popup: 'mail-dim-modal' },
         showConfirmButton: false,
         allowOutsideClick: false,
         didOpen: function() {
