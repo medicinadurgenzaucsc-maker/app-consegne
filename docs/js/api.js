@@ -2398,6 +2398,43 @@ function _onAppVersionChange(newSha) {
   }
 }
 
+// POLLING FALLBACK per version check: ogni 5 minuti controlla app_version
+// sul DB e mostra il badge se lo SHA è diverso da _localSha. Serve come
+// safety net nel caso il Realtime listener perda eventi (WebSocket
+// disconnesso, race condition al boot, ecc.). Costo: ~50 byte per query
+// × 12 query/ora × 24h × 30g × 5 PC = ~450 KB/mese, trascurabile.
+function _versionCheckPoll() {
+  _q(_sb.from('app_version').select('sha').eq('id', 1).maybeSingle())
+    .then(function(row) {
+      var remoteSha = (row && row.sha) || '';
+      if (!remoteSha) return;
+      if (!_localSha) {
+        // Baseline mancante: setta senza mostrare badge
+        _localSha = remoteSha;
+        try { localStorage.setItem('_appDeploySha', _localSha); } catch(e){}
+        _aggiornaVoceMenuVersione();
+        return;
+      }
+      if (remoteSha !== _localSha) {
+        // SHA diverso: forza la ricomparsa del badge anche se
+        // _badgeAggiornamentoMostrato era già true da un evento precedente
+        // (es. utente non ha applicato e poi è arrivato un nuovo deploy).
+        if (!_badgeAggiornamentoMostrato) {
+          console.log('[VersionCheck poll] Nuovo deploy rilevato via polling:', remoteSha.substring(0,8));
+          _mostraBadgeAggiornamento();
+        }
+      }
+    }).catch(function(){});
+}
+
+// Avvia il polling. Chiamato da app.js dopo il primo _versionCheckInit.
+function _versionCheckPollStart() {
+  if (typeof window._versionCheckPollId !== 'undefined' && window._versionCheckPollId) return;
+  window._versionCheckPollId = setInterval(_versionCheckPoll, 5 * 60 * 1000);
+}
+window._versionCheckPollStart = _versionCheckPollStart;
+window._versionCheckPoll      = _versionCheckPoll;
+
 function _aggiornaVoceMenuVersione() {
   var el = document.getElementById('navVersionShaText');
   if (!el) return;

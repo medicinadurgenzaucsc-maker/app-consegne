@@ -1431,6 +1431,8 @@
               if (ind) ind.className = 'badge bg-success ms-2'; if (st) st.innerText = new Date().toLocaleTimeString('it-IT');
               _syncPaused = false; _aggiornaVoceSync(); _inizializzaRealtime();
               if (typeof _versionCheckInit === 'function') _versionCheckInit();
+              // Polling fallback ogni 5 min — safety net se Realtime perde eventi
+              if (typeof window._versionCheckPollStart === 'function') window._versionCheckPollStart();
               if (typeof callback === 'function') callback();
             })
             .catch(function() {
@@ -1439,6 +1441,8 @@
               if (ind) ind.className = 'badge bg-success ms-2'; if (st) st.innerText = new Date().toLocaleTimeString('it-IT');
               _syncPaused = false; _aggiornaVoceSync(); _inizializzaRealtime();
               if (typeof _versionCheckInit === 'function') _versionCheckInit();
+              // Polling fallback ogni 5 min — safety net se Realtime perde eventi
+              if (typeof window._versionCheckPollStart === 'function') window._versionCheckPollStart();
               if (typeof callback === 'function') callback();
             });
         })
