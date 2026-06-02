@@ -1295,6 +1295,12 @@
       }
       _focusOrigStyle = null;
       _focusOrigRect  = null;
+
+      // Se un update è arrivato mentre eravamo in focus mode, ora il toast
+      // può essere mostrato. _mostraToastUpdate è idempotente.
+      if (window._updateToastPending && typeof window._mostraToastUpdate === 'function') {
+        window._mostraToastUpdate();
+      }
     }
 
     var _TOOLBAR_FIELDS = { 'NoteTerapia': true, 'Diaria': true, 'DaFare': true, 'PianoTerapeutico': true, 'EsamiColturali': true };
@@ -1860,6 +1866,44 @@
       #btnPcLento { animation: pcLentoBlink 1.5s ease-in-out infinite; }
       #btnPcLento:hover { animation: none; }
 
+      /* ── Toast "Update disponibile" in basso a destra ─────────────── */
+      /* Appare insieme al badge Update, ma NON durante focus mode      */
+      /* (per non disturbare la modifica della scheda). Click sul toast */
+      /* applica l'aggiornamento come il badge.                          */
+      #updateToast {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        max-width: 360px;
+        background: #dc3545;
+        color: #fff;
+        padding: 14px 18px;
+        border-radius: 8px;
+        box-shadow: 0 6px 24px rgba(0,0,0,0.25);
+        font-size: 0.92rem;
+        line-height: 1.4;
+        cursor: pointer;
+        z-index: 1100;
+        display: none;
+        align-items: flex-start;
+        gap: 12px;
+        animation: updateToastIn 0.35s ease-out;
+      }
+      #updateToast.attivo { display: flex; }
+      #updateToast:hover { background: #c82333; }
+      #updateToast .ut-icon {
+        font-size: 1.5rem;
+        line-height: 1;
+        flex-shrink: 0;
+        margin-top: 1px;
+      }
+      #updateToast .ut-title { font-weight: 700; margin-bottom: 4px; }
+      #updateToast .ut-hint  { font-size: 0.82rem; opacity: 0.9; }
+      @keyframes updateToastIn {
+        from { transform: translateY(20px); opacity: 0; }
+        to   { transform: translateY(0);    opacity: 1; }
+      }
+
       /* ── Badge "Update disponibile" lampeggiante ──────────────────── */
       /* Pulsa background-color + glow per attirare l'attenzione senza */
       /* essere troppo fastidioso. Si ferma all'hover per permettere   */
@@ -2029,6 +2073,43 @@
     </div>
   </div>
 </nav>
+
+<!-- ── Toast "Update disponibile" — in basso a destra ───────────── -->
+<!-- Comparsa pilotata da window._mostraToastUpdate(). Si attende    -->
+<!-- la chiusura del focus mode se l'utente sta editando una scheda. -->
+<div id="updateToast" onclick="_applicaAggiornamentoVersione()" title="Clicca per applicare l'aggiornamento">
+  <i class="bi bi-arrow-clockwise ut-icon"></i>
+  <div>
+    <div class="ut-title">Aggiornamento disponibile</div>
+    <div class="ut-hint">Clicca qui o sul badge <strong>Update</strong> in alto a destra per applicarlo.</div>
+  </div>
+</div>
+<script>
+  // Mostra il toast Update se:
+  //   - non siamo in focus mode (.focus-mode su qualche card)
+  //   - il toast non è già visibile (idempotente)
+  // Se siamo in focus mode, mette il flag _updateToastPending = true:
+  // alla prossima chiusura del focus mode, _disattivaFocusMode richiama
+  // questa funzione e il toast appare.
+  window._updateToastPending = false;
+  window._mostraToastUpdate = function() {
+    window._updateToastPending = true;
+    var t = document.getElementById('updateToast');
+    if (!t) return;
+    // Se siamo in focus mode → posticipa
+    if (document.querySelector('.patient-card.focus-mode')) return;
+    if (t.classList.contains('attivo')) return; // già visibile
+    t.classList.add('attivo');
+  };
+  // Quando il click sul toast applica l'update, la pagina si ricarica,
+  // quindi non serve nascondere il toast esplicitamente. Ma per sicurezza
+  // esponiamo anche una funzione di reset (es. se in futuro vorremo un X).
+  window._nascondiToastUpdate = function() {
+    var t = document.getElementById('updateToast');
+    if (t) t.classList.remove('attivo');
+    window._updateToastPending = false;
+  };
+</script>
 
 <!-- ================= MODALS ================= -->
 

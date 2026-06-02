@@ -2415,6 +2415,11 @@ function _mostraBadgeAggiornamento() {
   _badgeAggiornamentoMostrato = true;
   var b = document.getElementById('btnAggiornamentoDisponibile');
   if (b) b.style.display = 'inline-flex';
+  // Mostra anche il toast in basso a destra (idempotente, gestisce
+  // internamente il caso focus mode → posticipa fino a chiusura).
+  if (typeof window._mostraToastUpdate === 'function') {
+    try { window._mostraToastUpdate(); } catch(e) {}
+  }
 }
 
 // Click handler del badge — cleanup totale + hard reload
