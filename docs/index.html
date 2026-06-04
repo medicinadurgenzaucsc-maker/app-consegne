@@ -1011,7 +1011,11 @@
       }
 
       function _completaApertura() {
-        if (!_focusCard) return;
+        // Guard stringente: la chiamata potrebbe arrivare in modo asincrono
+        // dopo che l'utente ha chiuso il focus o aperto un'altra card.
+        // Senza confronto con `card` (closure), operavamo su una card
+        // diversa da quella attualmente in focus.
+        if (!_focusCard || _focusCard !== card) return;
         _abilitaCampi();
         // NB: riordino checklist automatico DISATTIVATO su richiesta utente.
         // Eventuali checkbox legacy nei dati restano nell'ordine originale.
@@ -1113,14 +1117,20 @@
             // Se il fetch fallisce, proseguiamo comunque con i dati attuali
             // della card (graceful degradation — meglio editare con dati
             // vecchi che non poter editare).
+            //
+            // GUARD ANTI-RACE: l'utente può chiudere il focus o aprire un'altra
+            // card mentre il fetch è in volo. Confrontiamo `card` (closure) con
+            // `_focusCard` (globale) per assicurarci che siamo ancora sulla stessa.
             var freshFetch = (typeof window._sbGetPazienteSingolo === 'function')
               ? window._sbGetPazienteSingolo(letto)
               : Promise.resolve(null);
             freshFetch.then(function(p) {
-              if (p && _focusCard && typeof window._aggiornaCardDaPaziente === 'function') {
-                try { window._aggiornaCardDaPaziente(_focusCard, p); } catch(e) {}
+              if (_focusCard !== card) return; // focus chiuso o cambiato → scarta
+              if (p && typeof window._aggiornaCardDaPaziente === 'function') {
+                try { window._aggiornaCardDaPaziente(card, p); } catch(e) {}
               }
             }).catch(function(){}).then(function() {
+              if (_focusCard !== card) return; // re-check dopo async: siamo ancora qui?
               _syncPaused = false;
               _completaApertura();
             });
@@ -1157,7 +1167,7 @@
           var emerOn = (typeof _emergenzaPollingAttivo === 'function' && _emergenzaPollingAttivo());
           if (emerOn) {
             // Fail-open solo in emergenza
-            if (!_focusCard) return;
+            if (!_focusCard || _focusCard !== card) return;
             _lettoLockAtt = letto;
             _rinnovaDebounce(letto);
             // Tentativo di fresh-fetch (potrebbe fallire come il lock, ma proviamo)
@@ -1165,10 +1175,12 @@
               ? window._sbGetPazienteSingolo(letto)
               : Promise.resolve(null);
             fff.then(function(p) {
-              if (p && _focusCard && typeof window._aggiornaCardDaPaziente === 'function') {
-                try { window._aggiornaCardDaPaziente(_focusCard, p); } catch(e) {}
+              if (_focusCard !== card) return;
+              if (p && typeof window._aggiornaCardDaPaziente === 'function') {
+                try { window._aggiornaCardDaPaziente(card, p); } catch(e) {}
               }
             }).catch(function(){}).then(function() {
+              if (_focusCard !== card) return;
               _syncPaused = false;
               _completaApertura();
             });
