@@ -2701,8 +2701,15 @@
           resolve(resp.access_token);
         };
         try {
+          // prompt:'none' è la modalità STRETTAMENTE silenziosa:
+          // - se l'utente è già autenticato e ha già consentito gli scope,
+          //   Google restituisce un nuovo token senza alcuna UI
+          // - se serve interazione, restituisce errore (es. login_required,
+          //   interaction_required) SENZA mostrare popup
+          // Diverso da prompt:'' che lasciava decidere a Google e a volte
+          // faceva lampeggiare il popup (bloccato da alcuni anti-popup).
           _tokenClient.requestAccessToken({
-            prompt: '',
+            prompt: 'none',
             hint: _emailConsentita || ''
           });
         } catch(e) {

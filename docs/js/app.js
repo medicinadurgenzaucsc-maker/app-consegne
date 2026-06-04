@@ -179,24 +179,18 @@
         if (typeof _sbArchiviaGiornoCorrente !== 'function') return;
 
         // Refresh silenzioso del token Drive PRIMA del backup.
-        // Senza popup né interazione utente: prompt:'' chiede a Google
-        // un nuovo access token usando il consent già concesso. Se va,
-        // il backup orario troverà _googleDriveToken aggiornato.
-        // Zero impatto su egress Supabase (la chiamata va a accounts.google.com).
-        //
-        // STRATEGIA REATTIVA, non anticipata: rinnovo SOLO se il token e'
-        // gia' scaduto o manca. In alcuni casi (multi-account Google, sessione
-        // appena ripresa) anche prompt:'' fa lampeggiare brevemente il popup
-        // OAuth Google. Limitando il refresh ai casi strettamente necessari
-        // (1-2 volte al giorno, non ogni 15 min), evitiamo flash di popup
-        // durante l'editing.
+        // Usa GIS prompt:'none' che e' STRETTAMENTE silenzioso: niente popup,
+        // niente UI. Se la sessione e' valida, ritorna nuovo token. Se serve
+        // interazione, ritorna errore senza mostrare nulla.
+        // Strategia anticipata: rinnova quando mancano <15 min alla scadenza,
+        // cosi' il backup orario trova sempre token valido e crea il file Drive.
         var refreshNeeded = false;
         if (typeof window._rinnovaTokenSilenzioso === 'function') {
           try {
             var sess = JSON.parse(localStorage.getItem('appSession') || 'null');
             var scadeFra = (sess && sess.expiry) ? (sess.expiry - Date.now()) : 0;
-            // Rinnova SOLO se token gia' scaduto o mancante (no anticipo)
-            refreshNeeded = !window._googleDriveToken || scadeFra <= 0;
+            // Rinnova se manca token o se scade entro 15 min
+            refreshNeeded = !window._googleDriveToken || scadeFra < 15 * 60 * 1000;
           } catch(e) {}
         }
         var pre = refreshNeeded
