@@ -2361,19 +2361,40 @@ function _emergenzaPollingAttivo() {
 // ══════════════════════════════════════════════════════════════
 var _localSha = (typeof localStorage !== 'undefined') ? localStorage.getItem('_appDeploySha') : null;
 var _badgeAggiornamentoMostrato = false;
+// Flag interno: true dopo il primo check al boot. Le chiamate successive
+// (es. da _sincronizzaEPoiFai dopo un'operazione) NON fanno auto-apply.
+var _versionCheckInitDone = false;
 
 function _versionCheckInit() {
+  // Memorizziamo SUBITO se questa è la prima chiamata (= boot della pagina).
+  // Lo facciamo prima del fetch async per evitare race condition: se per
+  // qualche motivo _versionCheckInit venisse richiamato in rapida
+  // successione, solo la prima esecuzione potrà auto-applicare.
+  var primaVolta = !_versionCheckInitDone;
+  _versionCheckInitDone = true;
   // Carica SHA corrente di Supabase all'avvio
   _q(_sb.from('app_version').select('sha').eq('id', 1).maybeSingle())
     .then(function(row) {
       var remoteSha = (row && row.sha) || '';
       if (!_localSha && remoteSha) {
-        // Prima volta: registra lo SHA del deploy corrente
+        // Prima volta assoluta (no SHA in localStorage): baseline silenziosa
         _localSha = remoteSha;
         try { localStorage.setItem('_appDeploySha', _localSha); } catch(e){}
       } else if (_localSha && remoteSha && _localSha !== remoteSha) {
-        // C'è stato un deploy mentre la tab era chiusa / offline
-        _mostraBadgeAggiornamento();
+        // C'è stato un deploy mentre la tab era chiusa / offline.
+        if (primaVolta) {
+          // AUTO-APPLY al boot: nessuna interazione utente richiesta.
+          // L'utente vede l'overlay 'Aggiornamento in corso...' e la
+          // pagina si ricarica con la versione nuova.
+          console.log('[VersionCheck] Boot: deploy nuovo rilevato, auto-apply');
+          if (typeof _applicaAggiornamentoVersione === 'function') {
+            _applicaAggiornamentoVersione();
+            return; // pagina sta per ricaricarsi, no menu update
+          }
+        } else {
+          // Successive chiamate (durante sessione): badge come prima.
+          _mostraBadgeAggiornamento();
+        }
       }
       _aggiornaVoceMenuVersione();
     })
