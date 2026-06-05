@@ -888,6 +888,24 @@
       if (_focusCard === card) return;
       if (_focusCard) _disattivaFocusMode(false);
 
+      // ── CLEANUP DIFENSIVO ──────────────────────────────────────────
+      // Se per qualche motivo lo stato globale e' rimasto inconsistente
+      // (es. _disattivaFocusMode interrotto da un evento, focusout race
+      // condition, errore async non catturato), forziamo il reset di
+      // tutto cio' che potrebbe far impallare l'apertura nuova.
+      _focusCard = null;
+      _focusHaInput = false;
+      if (_timerFocusInattivo) { clearTimeout(_timerFocusInattivo); _timerFocusInattivo = null; }
+      if (_timerRilascio)      { clearTimeout(_timerRilascio);      _timerRilascio = null; }
+      // _syncPaused puo' restare bloccato a true se l'utente ha chiuso
+      // durante la fase di acquisizione lock. Reset esplicito.
+      _syncPaused = false;
+      // Rimuovi eventuali overlay sospesi (lockCheckOverlay, focusOverlay)
+      var oldLockOv = document.getElementById('lockCheckOverlay');
+      if (oldLockOv && oldLockOv.parentNode) oldLockOv.parentNode.removeChild(oldLockOv);
+      var oldFocOv  = document.getElementById('focusOverlay');
+      if (oldFocOv && oldFocOv.parentNode) oldFocOv.parentNode.removeChild(oldFocOv);
+
       var letto = card.getAttribute('data-bed');
 
       // ── FASE 1: controllo in-memory (0 query) ────────────────────────────
@@ -1700,8 +1718,18 @@
     }, true);
 
     document.addEventListener('focusout', function(e) {
+      // Timeout aumentato da 100ms a 300ms per dare al browser il tempo
+      // di propagare visibilitychange su Alt+Tab / cambio finestra
+      // (su Windows può richiedere 100-200ms).
       setTimeout(function() {
         if (document.hidden) return;
+        // CRITICO: se la finestra ha perso il focus a livello di OS
+        // (Alt+Tab, click su altra app, popup, ecc.), l'activeElement
+        // diventa <body> e il check successivo chiuderebbe il focus mode
+        // senza che l'utente lo voglia. document.hasFocus() ritorna false
+        // appena la finestra perde il focus dell'OS, anche prima che
+        // document.hidden diventi true. Skip in questo caso.
+        if (!document.hasFocus()) return;
         if (document.getElementById('lockCheckOverlay')) return;
         // Ignora se un modal SweetAlert è aperto / in fade-in / in fade-out.
         // Il SweetAlert vive nel <body> (fuori dalla card), quindi il focus che
@@ -1715,7 +1743,7 @@
         if (_focusCard && !_focusCard.contains(active)) {
           _disattivaFocusMode(true);
         }
-      }, 100);
+      }, 300);
     });
 
     // Grace period dopo la chiusura di un SweetAlert: per ~400ms il listener
