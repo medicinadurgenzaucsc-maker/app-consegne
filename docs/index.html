@@ -6106,25 +6106,17 @@
           '<input id="mailDimOggetto" class="form-control form-control-sm" placeholder="Oggetto della mail" value="' + _esc(dom.oggetto) + '">' +
         '</div>' +
         '<div class="text-start mb-2" style="font-size:0.85rem;">' +
-          '<label class="form-label fw-bold mb-1">Testo iniziale <small class="text-muted">(automatico, data del giorno dopo)</small></label>' +
-          '<textarea id="mailDimCorpo" class="form-control form-control-sm" rows="2" readonly ' +
-            'style="background:#f5f5f5;color:#37474f;cursor:not-allowed;">' + _esc(_getTestoInizialeFisso()) + '</textarea>' +
-        '</div>' +
-        '<div class="text-start mb-2" style="font-size:0.85rem;">' +
           '<label class="form-label fw-bold mb-1">Pazienti da includere</label>' +
           '<div id="mailDimCheckboxList" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;padding:6px;border:1px solid #cfd8dc;border-radius:4px;background:#fafafa;">' +
             (pazTutti.length ? checkboxesHtml : '<div class="text-muted text-center py-3" style="grid-column:1/-1;">Nessun letto.</div>') +
           '</div>' +
         '</div>' +
-        '<div class="text-start mb-2" style="font-size:0.85rem;">' +
-          '<label class="form-label fw-bold mb-1">Chiusura</label>' +
-          '<textarea id="mailDimChiusura" class="form-control form-control-sm" rows="2">' + _esc(dom.chiusura) + '</textarea>' +
-        '</div>' +
         '<div id="mailDimAnteprimaWrap" class="text-start mt-3">' +
           '<label class="form-label fw-bold mb-1" style="font-size:0.85rem;">' +
-            '<i class="bi bi-eye-fill me-1"></i>Anteprima mail <small class="text-muted">(aggiornamento in tempo reale)</small>' +
+            '<i class="bi bi-pencil-square me-1"></i>Anteprima mail <small class="text-muted">(editabile: quello che vedi è quello che viene inviato)</small>' +
           '</label>' +
-          '<div id="mailDimAnteprima" style="border:1px solid #cfd8dc;border-radius:4px;padding:14px;background:#fff;font-family:Arial,sans-serif;max-height:240px;overflow-y:auto;"></div>' +
+          '<div id="mailDimAnteprima" contenteditable="true" ' +
+            'style="border:1px solid #cfd8dc;border-radius:4px;padding:14px;background:#fff;font-family:Arial,sans-serif;font-size:14px;color:#222;line-height:1.5;min-height:160px;max-height:300px;overflow-y:auto;outline:none;cursor:text;"></div>' +
         '</div>';
 
       Swal.update({
@@ -6145,41 +6137,65 @@
         _eseguiInvio();
       };
 
-      // ── LIVE PREVIEW ────────────────────────────────────────────────
-      // L'anteprima è sempre visibile e si aggiorna automaticamente ad
-      // ogni modifica di destinatari/oggetto/chiusura/checkbox pazienti.
-      // Il "corpo" è fisso (testo iniziale auto-generato con data domani).
-      function _refresh() { try { _aggiornaAnteprima(); } catch(e) {} }
-      ['mailDimDest','mailDimOggetto','mailDimChiusura'].forEach(function(id) {
-        var el = document.getElementById(id);
-        if (el) el.addEventListener('input', _refresh);
-      });
+      // ── ANTEPRIMA EDITABILE ─────────────────────────────────────────
+      // L'anteprima ora E' il corpo della mail. L'utente puo' editarla
+      // direttamente; quello che vede e' quello che viene inviato.
+      // Flag `_anteprimaEditata`: diventa true al primo input dell'utente.
+      // Se l'utente cambia la selezione pazienti DOPO aver editato, viene
+      // chiesta conferma prima di rigenerare e perdere le modifiche.
+      var _anteprimaEditata = false;
+      var ante = document.getElementById('mailDimAnteprima');
+      if (ante) {
+        ante.addEventListener('input', function() { _anteprimaEditata = true; });
+      }
+
+      function _rigeneraAnteprima() {
+        var pazSel = _raccogliPazientiSelezionati();
+        var html = _buildBodyHtml(_getTestoInizialeFisso(), pazSel, _stato.template.chiusura || '');
+        if (ante) ante.innerHTML = html;
+        _anteprimaEditata = false;
+      }
+
       document.querySelectorAll('.mail-dim-cb').forEach(function(cb) {
-        cb.addEventListener('change', _refresh);
+        cb.addEventListener('change', function() {
+          if (_anteprimaEditata) {
+            Swal.fire({
+              icon: 'question',
+              title: 'Rigenerare l\'anteprima?',
+              html: 'Hai modificato manualmente l\'anteprima.<br>' +
+                    '<small class="text-muted">Rigenerandola perderai le tue modifiche.</small>',
+              showCancelButton: true,
+              confirmButtonText: 'Sì, rigenera',
+              confirmButtonColor: '#1565c0',
+              cancelButtonText: 'No, lascia com\'è'
+            }).then(function(r) {
+              if (r.isConfirmed) _rigeneraAnteprima();
+            });
+          } else {
+            _rigeneraAnteprima();
+          }
+        });
       });
+
       // Anteprima iniziale al primo render
-      _refresh();
+      _rigeneraAnteprima();
+    }
+
+    function _raccogliPazientiSelezionati() {
+      var letti = Array.from(document.querySelectorAll('.mail-dim-cb:checked'))
+        .map(function(cb){ return cb.getAttribute('data-letto'); });
+      return _stato.pazientiTutti.filter(function(p){ return letti.indexOf(String(p.Letto)) !== -1; });
     }
 
     function _raccogliDatiForm() {
-      var dest = (document.getElementById('mailDimDest') || {}).value || '';
-      var oggetto = (document.getElementById('mailDimOggetto') || {}).value || '';
-      // Il corpo iniziale è SEMPRE il testo fisso (auto-aggiornato con data domani),
-      // non si legge dal textarea: cosi' anche se per qualche bug fosse stato editato,
-      // la mail inviata ha comunque il testo coerente.
-      var corpo = _getTestoInizialeFisso();
-      var chiusura = (document.getElementById('mailDimChiusura') || {}).value || '';
-      var letti = Array.from(document.querySelectorAll('.mail-dim-cb:checked'))
-        .map(function(cb){ return cb.getAttribute('data-letto'); });
-      var sel = _stato.pazientiTutti.filter(function(p){ return letti.indexOf(String(p.Letto)) !== -1; });
-      return { dest: dest, oggetto: oggetto, corpo: corpo, chiusura: chiusura, pazientiSel: sel };
-    }
-
-    function _aggiornaAnteprima() {
-      var d = _raccogliDatiForm();
-      var html = _buildBodyHtml(d.corpo, d.pazientiSel, d.chiusura);
-      var ante = document.getElementById('mailDimAnteprima');
-      if (ante) ante.innerHTML = html;
+      return {
+        dest:        (document.getElementById('mailDimDest') || {}).value || '',
+        oggetto:     (document.getElementById('mailDimOggetto') || {}).value || '',
+        pazientiSel: _raccogliPazientiSelezionati(),
+        // Il corpo della mail e' DIRETTAMENTE l'HTML editato dall'utente
+        // nell'anteprima. Quello che vede e' quello che viene inviato.
+        htmlBody:    (document.getElementById('mailDimAnteprima') || {}).innerHTML || ''
+      };
     }
 
     function _eseguiInvio() {
@@ -6223,16 +6239,19 @@
         if (!c.isConfirmed) {
           // Riapri il modal precedente con i dati attuali
           _renderModalMail();
-          // Ripristina valori (sono già nei field ma il render li ha sovrascritti — rebuild)
+          // Ripristina valori (i campi 'Testo iniziale' e 'Chiusura' non
+          // esistono piu' nel modal: il corpo della mail e' interamente
+          // nell'anteprima editabile, che viene rigenerata dal template)
           setTimeout(function() {
             var dEl = document.getElementById('mailDimDest'); if (dEl) dEl.value = d.dest;
             var oEl = document.getElementById('mailDimOggetto'); if (oEl) oEl.value = d.oggetto;
-            var cEl = document.getElementById('mailDimCorpo'); if (cEl) cEl.value = d.corpo;
-            var chEl = document.getElementById('mailDimChiusura'); if (chEl) chEl.value = d.chiusura;
             d.pazientiSel.forEach(function(p) {
               var cb = document.querySelector('.mail-dim-cb[data-letto="'+String(p.Letto)+'"]');
               if (cb) cb.checked = true;
             });
+            // Se l'utente aveva modificato l'anteprima, la ripristino come era
+            var aEl = document.getElementById('mailDimAnteprima');
+            if (aEl && d.htmlBody) aEl.innerHTML = d.htmlBody;
           }, 50);
           return;
         }
@@ -6265,13 +6284,21 @@
           var sess = JSON.parse(localStorage.getItem('appSession') || '{}');
           fromEmail = sess.email || '';
         } catch(e) {}
-        var htmlBody = _buildBodyHtml(d.corpo, d.pazientiSel, d.chiusura);
+        // Il corpo della mail e' DIRETTAMENTE l'HTML editato nell'anteprima
+        // (d.htmlBody). Wrappato in un container con stili coerenti per
+        // garantire rendering corretto nei client di posta.
+        var htmlBody =
+          '<div style="font-family:Arial,sans-serif;font-size:14px;color:#222;line-height:1.5;">' +
+            d.htmlBody +
+          '</div>';
 
         window._gmailInviaMail(token, fromEmail, emails, d.oggetto, htmlBody)
           .then(function() {
-            // Salva i template per riuso futuro (incluso oggetto)
+            // Salva i template per riuso futuro (destinatari + oggetto).
+            // 'corpo' e 'chiusura' non sono piu' campi separati: l'anteprima
+            // viene rigenerata ad ogni apertura del modal.
             if (typeof window._sbSalvaTemplateMail === 'function') {
-              window._sbSalvaTemplateMail(d.dest, d.oggetto, d.corpo, d.chiusura).catch(function(){});
+              window._sbSalvaTemplateMail(d.dest, d.oggetto, '', '').catch(function(){});
             }
             // Log evento
             if (typeof window._log === 'function') {
