@@ -46,6 +46,13 @@
     var _timerRilascio      = null;
     var _timerFocusInattivo = null;
     var _focusHaInput       = false;
+    // Flag: true durante l'apertura del focus mode (dal click sulla matita
+    // fino a _completaApertura inclusa). Serve a far skip al listener
+    // focusout che altrimenti chiuderebbe il focus mode quando viene
+    // emesso focusout dai campi contenteditable mentre vengono disabilitati
+    // o quando l'activeElement transita brevemente da body durante l'inserimento
+    // degli overlay.
+    var _focusModeOpening   = false;
 
     // ── Lock gestiti esclusivamente via Realtime (_lockState in api.js) ──────
     // Nessun listener focusin/input per getLocks o acquistaLock.
@@ -906,6 +913,14 @@
       var oldFocOv  = document.getElementById('focusOverlay');
       if (oldFocOv && oldFocOv.parentNode) oldFocOv.parentNode.removeChild(oldFocOv);
 
+      // ⚠ CRITICO: flag che fa skippare al focusout listener TUTTA la
+      // fase di apertura. Senza, il focusout scatenato dal disable di
+      // contenteditable o dall'inserimento degli overlay (che spostano
+      // brevemente activeElement a body) chiuderebbe immediatamente
+      // il focus mode appena aperto. Resetato a false in _completaApertura
+      // (apertura riuscita) e in tutti i branch di errore.
+      _focusModeOpening = true;
+
       var letto = card.getAttribute('data-bed');
 
       // ── FASE 1: controllo in-memory (0 query) ────────────────────────────
@@ -1093,6 +1108,11 @@
         if (typeof window._snapshotApri === 'function') {
           try { window._snapshotApri(letto, card); } catch(e) { console.warn('[Snapshot] apri:', e); }
         }
+
+        // Apertura completata correttamente: il focusout listener può tornare
+        // a funzionare normalmente. Tra ~50ms qualsiasi focusout transitorio
+        // generato dal primo.focus() di sopra sarà già stato gestito.
+        setTimeout(function() { _focusModeOpening = false; }, 50);
       }
 
       // ── FASE 2: scrivi lock sul DB (1 upsert) ────────────────────────────
@@ -1155,6 +1175,7 @@
           } else if (res.blocked) {
             // Rara race condition: lock preso da altri nell'istante tra check e upsert
             _syncPaused = false;
+            _focusModeOpening = false;
             _abilitaCampi();
             _disattivaFocusMode(false);
             _mostraAvvisoLock(letto);
@@ -1164,6 +1185,7 @@
             // restava in focus mode con campi contenteditable=false →
             // l'utente vedeva la scheda ma non poteva scrivere.
             _syncPaused = false;
+            _focusModeOpening = false;
             _abilitaCampi();
             _disattivaFocusMode(false);
             Swal.fire({
@@ -1206,6 +1228,7 @@
           }
           // Fail-closed: chiudi focus mode e mostra errore
           _syncPaused = false;
+          _focusModeOpening = false;
           _disattivaFocusMode(false);
           Swal.fire({
             icon: 'error',
@@ -1218,6 +1241,9 @@
     }
 
     function _disattivaFocusMode(scrollToCard) {
+      // Safety: durante la chiusura, _focusModeOpening puo' restare attivo
+      // se l'apertura era fallita. Reset incondizionato.
+      _focusModeOpening = false;
       if (!_focusCard) return;
       var _lettoUscita = _focusCard.getAttribute('data-bed');
 
@@ -1722,8 +1748,14 @@
       // di propagare visibilitychange su Alt+Tab / cambio finestra
       // (su Windows può richiedere 100-200ms).
       setTimeout(function() {
+        // ⚠ CRITICO #1: durante l'apertura del focus mode, il disable di
+        // contenteditable e l'inserimento degli overlay scatenano focusout
+        // transitori che NON devono chiudere il focus appena aperto.
+        // Il flag _focusModeOpening viene messo a false al termine di
+        // _completaApertura (50ms dopo primo.focus()).
+        if (_focusModeOpening) return;
         if (document.hidden) return;
-        // CRITICO: se la finestra ha perso il focus a livello di OS
+        // CRITICO #2: se la finestra ha perso il focus a livello di OS
         // (Alt+Tab, click su altra app, popup, ecc.), l'activeElement
         // diventa <body> e il check successivo chiuderebbe il focus mode
         // senza che l'utente lo voglia. document.hasFocus() ritorna false
