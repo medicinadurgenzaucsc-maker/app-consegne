@@ -6076,17 +6076,31 @@
     // La logica di stampa vera e propria verrà definita in seguito: per
     // ora il modal raccoglie le scelte e le mostra in un riepilogo.
     window._stampaCheckListOdierna = function() {
-      // Spinner mentre carichiamo le tipologie attive
+      // Spinner mentre carichiamo i pazienti (da cui ricaviamo sia le
+      // tipologie attive sia la lista dei singoli letti con nome)
       Swal.fire({
         title: '<i class="bi bi-card-checklist me-2 text-success"></i>Stampa Check List Odierna',
         html: '<div class="text-center py-3"><div class="spinner-border text-secondary"></div>' +
-              '<div class="mt-2 text-muted small">Caricamento tipologie…</div></div>',
+              '<div class="mt-2 text-muted small">Caricamento letti…</div></div>',
         showConfirmButton: false,
         allowOutsideClick: false,
         didOpen: function() {
-          var pRiep = (typeof _sbGetRiepilogo === 'function') ? _sbGetRiepilogo() : Promise.resolve({ tipologie: {} });
-          pRiep.then(function(r) {
-            _renderModalCheckList(r.tipologie || {});
+          var pPaz = (typeof _sbGetPazienti === 'function') ? _sbGetPazienti() : Promise.resolve([]);
+          pPaz.then(function(pazienti) {
+            // Letti occupati (con paziente), escluso NOTE, ordinati per numero
+            var occupati = (pazienti || [])
+              .filter(function(p) { return String(p.Letto) !== 'NOTE' && (p.Nome || '').trim() !== ''; })
+              .sort(function(a, b) {
+                var nA = parseInt(a.Letto, 10), nB = parseInt(b.Letto, 10);
+                return (!isNaN(nA) && !isNaN(nB)) ? nA - nB : String(a.Letto).localeCompare(String(b.Letto));
+              });
+            // Conteggio tipologie sui letti occupati
+            var tipologie = {};
+            occupati.forEach(function(p) {
+              var tip = (p.TipologiaLetto || 'STANDARD').toUpperCase();
+              tipologie[tip] = (tipologie[tip] || 0) + 1;
+            });
+            _renderModalCheckList(tipologie, occupati);
           }).catch(function(e) {
             Swal.fire({ icon: 'error', title: 'Errore caricamento',
               text: (e && e.message) || String(e), confirmButtonColor: '#37474f' });
@@ -6095,7 +6109,7 @@
       });
     };
 
-    function _renderModalCheckList(tipologie) {
+    function _renderModalCheckList(tipologie, occupati) {
       var tipKeys = Object.keys(tipologie).filter(Boolean).sort();
 
       // Sezione 1: verso di stampa (default orizzontale, coerente coi backup)
@@ -6131,11 +6145,33 @@
         '</label>';
       }).join('');
 
+      // Sezione 3: selezione SINGOLA dei letti (mutuamente esclusiva con
+      // i radio sopra). Checkbox per ogni letto occupato con nome paziente.
+      var singoliHtml = '';
+      if (occupati && occupati.length) {
+        var checkItems = occupati.map(function(p) {
+          var letto = String(p.Letto);
+          var nome  = (p.Nome || '').trim() || '(senza nome)';
+          return '<label class="d-flex align-items-center gap-1 px-2 py-1 cl-letto-item" style="cursor:pointer;border:1px solid #e0e0e0;border-radius:4px;background:#fff;margin:0;overflow:hidden;font-size:0.8rem;">' +
+            '<input type="checkbox" class="form-check-input mb-0 cl-letto-cb" data-letto="' + _esc(letto) + '" style="flex-shrink:0;">' +
+            '<span style="min-width:30px;font-weight:bold;color:#37474f;flex-shrink:0;">L.' + _esc(letto) + '</span>' +
+            '<span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="' + _esc(nome) + '">' + _esc(nome) + '</span>' +
+          '</label>';
+        }).join('');
+        singoliHtml =
+          '<div class="text-start mt-3">' +
+            '<div class="d-flex align-items-center my-2"><hr class="flex-grow-1 my-0"><span class="px-2 text-muted" style="font-size:0.78rem;">oppure seleziona singoli letti</span><hr class="flex-grow-1 my-0"></div>' +
+            '<div id="clLettiSingoli" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;max-height:200px;overflow-y:auto;padding:6px;border:1px solid #cfd8dc;border-radius:4px;background:#fafafa;">' +
+              checkItems +
+            '</div>' +
+          '</div>';
+      }
+
       var lettiHtml =
         '<div class="text-start">' +
           '<label class="form-label fw-bold mb-2" style="font-size:0.88rem;">Quali letti stampare</label>' +
           lettiOpzioni +
-        '</div>';
+        '</div>' + singoliHtml;
 
       Swal.update({
         html: versoHtml + lettiHtml,
@@ -6149,12 +6185,45 @@
         allowOutsideClick: false
       });
 
+      // ── MUTUA ESCLUSIONE ────────────────────────────────────────────
+      // - Selezionando un radio (Tutti/tipologia) → deseleziona tutti i
+      //   checkbox dei singoli letti.
+      // - Selezionando un checkbox letto → deseleziona il radio gruppo.
+      var radios = document.querySelectorAll('input[name="clLetti"]');
+      var checks = document.querySelectorAll('.cl-letto-cb');
+      radios.forEach(function(rb) {
+        rb.addEventListener('change', function() {
+          if (rb.checked) checks.forEach(function(cb) { cb.checked = false; });
+        });
+      });
+      checks.forEach(function(cb) {
+        cb.addEventListener('change', function() {
+          if (cb.checked) radios.forEach(function(rb) { rb.checked = false; });
+        });
+      });
+
       Swal.getConfirmButton().onclick = function(e) {
         e.preventDefault();
         var verso = (document.querySelector('input[name="clVerso"]:checked') || {}).value || 'landscape';
-        var letti = (document.querySelector('input[name="clLetti"]:checked') || {}).value || '__ALL__';
-        var lettiLabel = (letti === '__ALL__') ? 'Tutti i letti' : ('Tipologia: ' + letti);
         var versoLabel = (verso === 'portrait') ? 'Verticale' : 'Orizzontale';
+
+        // Priorità: se ci sono singoli letti selezionati → modalità singoli
+        var singoliSel = Array.from(document.querySelectorAll('.cl-letto-cb:checked'))
+          .map(function(cb) { return cb.getAttribute('data-letto'); });
+        var radioSel = (document.querySelector('input[name="clLetti"]:checked') || {}).value || null;
+
+        if (!singoliSel.length && !radioSel) {
+          Swal.showValidationMessage('Seleziona "Tutti", una tipologia, oppure uno o più letti');
+          return;
+        }
+
+        var lettiLabel;
+        if (singoliSel.length) {
+          lettiLabel = 'Letti selezionati: ' + singoliSel.map(function(l){return 'L.'+l;}).join(', ');
+        } else {
+          lettiLabel = (radioSel === '__ALL__') ? 'Tutti i letti' : ('Tipologia: ' + radioSel);
+        }
+
         // PLACEHOLDER: la stampa vera sarà implementata in seguito.
         Swal.fire({
           icon: 'info',
