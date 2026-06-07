@@ -1944,38 +1944,52 @@
       /* applica l'aggiornamento come il badge.                          */
       #updateToast {
         position: fixed;
-        bottom: 20px;
-        right: 20px;
-        max-width: 360px;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);   /* centrato nella pagina */
+        max-width: 460px;
+        width: calc(100% - 40px);
         background: #ffd180;          /* arancio pastello (non rosso, non da errore) */
         color: #4e342e;                /* marrone scuro per contrasto */
-        border-left: 4px solid #ff9800;
-        padding: 14px 18px;
-        border-radius: 8px;
-        box-shadow: 0 6px 24px rgba(0,0,0,0.18);
-        font-size: 0.92rem;
-        line-height: 1.4;
+        border: 2px solid #ff9800;
+        padding: 22px 26px;
+        border-radius: 12px;
+        box-shadow: 0 12px 48px rgba(0,0,0,0.35);   /* ombra marcata per staccarsi dal contenuto */
+        font-size: 1rem;
+        line-height: 1.45;
         cursor: pointer;
         z-index: 1100;
         display: none;
         align-items: flex-start;
-        gap: 12px;
-        animation: updateToastIn 0.35s ease-out;
+        gap: 14px;
+        animation: updateToastIn 0.3s ease-out;
       }
       #updateToast.attivo { display: flex; }
       #updateToast:hover { background: #ffb74d; }
       #updateToast .ut-icon {
-        font-size: 1.5rem;
+        font-size: 1.9rem;
         line-height: 1;
         flex-shrink: 0;
         margin-top: 1px;
         color: #e65100;                /* arancione scuro per icona */
       }
-      #updateToast .ut-title { font-weight: 700; margin-bottom: 4px; }
-      #updateToast .ut-hint  { font-size: 0.82rem; opacity: 0.85; }
+      #updateToast .ut-title { font-weight: 700; margin-bottom: 5px; font-size: 1.08rem; }
+      #updateToast .ut-hint  { font-size: 0.9rem; opacity: 0.9; }
+      /* Overlay leggero dietro il toast centrato: attira l'attenzione e
+         stacca il riquadro dal contenuto sottostante senza bloccare nulla
+         di critico (un click sull'overlay applica comunque l'update). */
+      #updateToastBackdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.28);
+        z-index: 1099;
+        display: none;
+        cursor: pointer;
+      }
+      #updateToastBackdrop.attivo { display: block; }
       @keyframes updateToastIn {
-        from { transform: translateY(20px); opacity: 0; }
-        to   { transform: translateY(0);    opacity: 1; }
+        from { transform: translate(-50%, -54%); opacity: 0; }
+        to   { transform: translate(-50%, -50%); opacity: 1; }
       }
 
       /* ── Modal Mail Dimissioni: altezza limitata + scroll interno ── */
@@ -2164,14 +2178,17 @@
   </div>
 </nav>
 
-<!-- ── Toast "Update disponibile" — in basso a destra ───────────── -->
+<!-- ── Toast "Update disponibile" — CENTRATO nella pagina ───────── -->
 <!-- Comparsa pilotata da window._mostraToastUpdate(). Si attende    -->
 <!-- la chiusura del focus mode se l'utente sta editando una scheda. -->
+<!-- Backdrop leggero per attirare l'attenzione: anche il click sul  -->
+<!-- backdrop applica l'aggiornamento.                               -->
+<div id="updateToastBackdrop" onclick="_applicaAggiornamentoVersione()"></div>
 <div id="updateToast" onclick="_applicaAggiornamentoVersione()" title="Clicca per applicare l'aggiornamento">
   <i class="bi bi-arrow-clockwise ut-icon"></i>
   <div>
     <div class="ut-title">Aggiornamento disponibile</div>
-    <div class="ut-hint">Clicca qui o sul badge <strong>Update</strong> in alto a destra per applicarlo.</div>
+    <div class="ut-hint">Clicca qui per applicare l'aggiornamento, oppure sul badge <strong>Update</strong> in alto a destra.</div>
   </div>
 </div>
 <script>
@@ -2185,10 +2202,12 @@
   window._mostraToastUpdate = function() {
     window._updateToastPending = true;
     var t = document.getElementById('updateToast');
+    var bd = document.getElementById('updateToastBackdrop');
     if (!t) return;
-    // Se siamo in focus mode → posticipa
+    // Se siamo in focus mode → posticipa (non disturbare l'editing scheda)
     if (document.querySelector('.patient-card.focus-mode')) return;
     if (t.classList.contains('attivo')) return; // già visibile
+    if (bd) bd.classList.add('attivo');
     t.classList.add('attivo');
   };
   // Quando il click sul toast applica l'update, la pagina si ricarica,
@@ -2196,7 +2215,9 @@
   // esponiamo anche una funzione di reset (es. se in futuro vorremo un X).
   window._nascondiToastUpdate = function() {
     var t = document.getElementById('updateToast');
+    var bd = document.getElementById('updateToastBackdrop');
     if (t) t.classList.remove('attivo');
+    if (bd) bd.classList.remove('attivo');
     window._updateToastPending = false;
   };
 </script>
