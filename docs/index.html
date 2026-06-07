@@ -6236,25 +6236,114 @@
           return;
         }
 
-        var lettiLabel;
+        // Filtra i letti da stampare in base alla selezione
+        var lettiDaStampare;
         if (singoliSel.length) {
-          lettiLabel = 'Letti selezionati: ' + singoliSel.map(function(l){return 'L.'+l;}).join(', ');
+          lettiDaStampare = occupati.filter(function(p) {
+            return singoliSel.indexOf(String(p.Letto)) !== -1;
+          });
+        } else if (radioSel === '__ALL__') {
+          lettiDaStampare = occupati.slice();
         } else {
-          lettiLabel = (radioSel === '__ALL__') ? 'Tutti i letti' : ('Tipologia: ' + radioSel);
+          lettiDaStampare = occupati.filter(function(p) {
+            return (p.TipologiaLetto || 'STANDARD').toUpperCase() === radioSel;
+          });
         }
 
-        // PLACEHOLDER: la stampa vera sarà implementata in seguito.
-        Swal.fire({
-          icon: 'info',
-          title: 'Check List — selezione',
-          html: '<div class="text-start" style="font-size:0.9rem;">' +
-                '<p class="mb-1"><b>Verso:</b> ' + versoLabel + '</p>' +
-                '<p class="mb-2"><b>Letti:</b> ' + _esc(lettiLabel) + '</p>' +
-                '<p class="mb-0 text-muted">Funzione di stampa in preparazione.</p>' +
-                '</div>',
-          confirmButtonColor: '#37474f'
-        });
+        if (!lettiDaStampare.length) {
+          Swal.showValidationMessage('Nessun letto da stampare con questa selezione');
+          return;
+        }
+
+        Swal.close();
+        _generaStampaCheckList(verso, lettiDaStampare);
       };
+    }
+
+    // Genera la pagina di stampa della Check List in una nuova finestra.
+    // Per ogni letto un "block notes" con: numero letto + nome paziente,
+    // voci fisse da spuntare (Diaria / Esami Ematici / Consegne) e alcune
+    // righe vuote per appunti a mano.
+    function _generaStampaCheckList(verso, letti) {
+      var landscape = (verso === 'landscape');
+      // Voci fisse della check list
+      var vociFisse = ['Diaria', 'Esami Ematici', 'Consegne'];
+      var righeLibere = 5;
+
+      var oggi = new Date();
+      var pad = function(n){ return String(n).padStart(2,'0'); };
+      var dataStr = pad(oggi.getDate()) + '/' + pad(oggi.getMonth()+1) + '/' + oggi.getFullYear();
+
+      var cards = letti.map(function(p) {
+        var letto = _esc(String(p.Letto));
+        var nome  = _esc((p.Nome || '').trim() || '—');
+        var voci = vociFisse.map(function(v) {
+          return '<div class="cl-item"><span class="cl-box"></span>' + _esc(v) + '</div>';
+        }).join('');
+        var righe = '';
+        for (var i = 0; i < righeLibere; i++) righe += '<div class="cl-line"></div>';
+        return '<div class="cl-card">' +
+            '<div class="cl-head">' +
+              '<span class="cl-bed">Letto ' + letto + '</span>' +
+              '<span class="cl-name">' + nome + '</span>' +
+            '</div>' +
+            '<div class="cl-body">' + voci +
+              '<div class="cl-notes">' + righe + '</div>' +
+            '</div>' +
+          '</div>';
+      }).join('');
+
+      var nCols = landscape ? 3 : 2;
+      var html = '<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8">' +
+        '<title>Check List ' + dataStr + '</title>' +
+        '<style>' +
+        '@page { size: A4 ' + (landscape ? 'landscape' : 'portrait') + '; margin: 10mm; }' +
+        '* { box-sizing: border-box; }' +
+        'body { font-family: Arial, sans-serif; margin: 0; padding: 0; color: #1a1a1a; }' +
+        '.cl-topbar { display:flex; justify-content:space-between; align-items:baseline; ' +
+          'border-bottom: 2px solid #2e7d32; padding-bottom: 6px; margin-bottom: 12px; }' +
+        '.cl-title { font-size: 16pt; font-weight: bold; color: #2e7d32; }' +
+        '.cl-date { font-size: 11pt; color: #555; }' +
+        '.cl-grid { display: grid; grid-template-columns: repeat(' + nCols + ', 1fr); gap: 8mm; }' +
+        '.cl-card { border: 1.5px solid #333; border-radius: 6px; overflow: hidden; ' +
+          'break-inside: avoid; page-break-inside: avoid; }' +
+        '.cl-head { background: #eceff1; border-bottom: 1.5px solid #333; padding: 6px 8px; ' +
+          'display: flex; flex-direction: column; gap: 1px; }' +
+        '.cl-bed { font-size: 12pt; font-weight: bold; color: #2e7d32; }' +
+        '.cl-name { font-size: 11pt; font-weight: bold; color: #1a1a1a; ' +
+          'white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }' +
+        '.cl-body { padding: 8px 10px 10px; }' +
+        '.cl-item { display: flex; align-items: center; gap: 7px; font-size: 10.5pt; ' +
+          'margin-bottom: 5px; }' +
+        '.cl-box { display: inline-block; width: 13px; height: 13px; border: 1.5px solid #333; ' +
+          'border-radius: 2px; flex-shrink: 0; }' +
+        '.cl-notes { margin-top: 8px; }' +
+        '.cl-line { border-bottom: 1px solid #bbb; height: 22px; }' +
+        '@media print { .cl-no-print { display: none; } }' +
+        '.cl-no-print { text-align:center; margin: 14px 0; }' +
+        '.cl-no-print button { font-size: 13px; padding: 8px 20px; cursor: pointer; ' +
+          'background: #2e7d32; color: #fff; border: none; border-radius: 6px; }' +
+        '</style></head><body>' +
+        '<div class="cl-topbar">' +
+          '<span class="cl-title">Check List Reparto</span>' +
+          '<span class="cl-date">' + dataStr + ' &middot; ' + letti.length + ' letti</span>' +
+        '</div>' +
+        '<div class="cl-no-print"><button onclick="window.print()">🖨 Stampa</button></div>' +
+        '<div class="cl-grid">' + cards + '</div>' +
+        '<script>window.addEventListener("load",function(){setTimeout(function(){window.print();},300);});<\/script>' +
+        '</body></html>';
+
+      var win = window.open('', '_blank');
+      if (!win) {
+        Swal.fire({ icon: 'warning', title: 'Popup bloccato',
+          html: 'Il browser ha bloccato la finestra di stampa.<br>' +
+                '<small class="text-muted">Consenti i popup per questo sito e riprova.</small>',
+          confirmButtonColor: '#37474f' });
+        return;
+      }
+      win.document.open();
+      win.document.write(html);
+      win.document.close();
     }
 
     // Stato del modal
