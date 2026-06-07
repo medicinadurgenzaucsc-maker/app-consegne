@@ -6261,18 +6261,38 @@
     }
 
     // Genera la pagina di stampa della Check List in una nuova finestra.
-    // Per ogni letto un "block notes" con: numero letto + nome paziente,
-    // voci fisse da spuntare (Diaria / Esami Ematici / Consegne) e alcune
-    // righe vuote per appunti a mano.
+    // TUTTI i letti selezionati entrano in UNA SOLA pagina A4: griglia
+    // calcolata dinamicamente (colonne/righe) + dimensioni in mm fisse
+    // sull'area utile A4 + font scalato in base alla densità.
     function _generaStampaCheckList(verso, letti) {
       var landscape = (verso === 'landscape');
-      // Voci fisse della check list
       var vociFisse = ['Diaria', 'Esami Ematici', 'Consegne'];
-      var righeLibere = 5;
 
       var oggi = new Date();
       var pad = function(n){ return String(n).padStart(2,'0'); };
       var dataStr = pad(oggi.getDate()) + '/' + pad(oggi.getMonth()+1) + '/' + oggi.getFullYear();
+
+      var N = letti.length;
+
+      // ── Area utile A4 (margine pagina 8mm) ──────────────────────────
+      var areaW = landscape ? 281 : 194;   // mm
+      var areaH = landscape ? 194 : 281;   // mm
+      var topbarH = 12;                     // mm riservati all'intestazione
+      var gridH = areaH - topbarH;
+
+      // ── Colonne/righe: disposizione che riempie bene l'area ─────────
+      // cols ∝ sqrt(N * larghezzaArea / altezzaGriglia)
+      var cols = Math.max(1, Math.round(Math.sqrt(N * areaW / gridH)));
+      var rows = Math.ceil(N / cols);
+      // Riduci colonne se l'ultima riga resterebbe troppo vuota
+      while (cols > 1 && Math.ceil(N / (cols - 1)) === rows) cols--;
+
+      // ── Scala tipografica in base al numero di righe (densità) ──────
+      var fontPt   = rows <= 2 ? 12 : rows === 3 ? 11 : rows === 4 ? 10 : rows === 5 ? 9 : rows === 6 ? 8 : 7;
+      var bedPt    = fontPt + 1.5;
+      // Numero righe libere: 5 di default, ridotte se le celle sono molto basse
+      var righeLibere = rows >= 7 ? 3 : rows >= 5 ? 4 : 5;
+      var gapMm    = N > 16 ? 2.5 : 4;
 
       var cards = letti.map(function(p) {
         var letto = _esc(String(p.Letto));
@@ -6293,43 +6313,51 @@
           '</div>';
       }).join('');
 
-      var nCols = landscape ? 3 : 2;
       var html = '<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8">' +
         '<title>Check List ' + dataStr + '</title>' +
         '<style>' +
-        '@page { size: A4 ' + (landscape ? 'landscape' : 'portrait') + '; margin: 10mm; }' +
+        '@page { size: A4 ' + (landscape ? 'landscape' : 'portrait') + '; margin: 8mm; }' +
         '* { box-sizing: border-box; }' +
-        'body { font-family: Arial, sans-serif; margin: 0; padding: 0; color: #1a1a1a; }' +
-        '.cl-topbar { display:flex; justify-content:space-between; align-items:baseline; ' +
-          'border-bottom: 2px solid #2e7d32; padding-bottom: 6px; margin-bottom: 12px; }' +
-        '.cl-title { font-size: 16pt; font-weight: bold; color: #2e7d32; }' +
-        '.cl-date { font-size: 11pt; color: #555; }' +
-        '.cl-grid { display: grid; grid-template-columns: repeat(' + nCols + ', 1fr); gap: 8mm; }' +
-        '.cl-card { border: 1.5px solid #333; border-radius: 6px; overflow: hidden; ' +
-          'break-inside: avoid; page-break-inside: avoid; }' +
-        '.cl-head { background: #eceff1; border-bottom: 1.5px solid #333; padding: 6px 8px; ' +
-          'display: flex; flex-direction: column; gap: 1px; }' +
-        '.cl-bed { font-size: 12pt; font-weight: bold; color: #2e7d32; }' +
-        '.cl-name { font-size: 11pt; font-weight: bold; color: #1a1a1a; ' +
+        'html, body { margin: 0; padding: 0; }' +
+        'body { font-family: Arial, sans-serif; color: #1a1a1a; font-size: ' + fontPt + 'pt; }' +
+        '.cl-page { width: ' + areaW + 'mm; height: ' + areaH + 'mm; ' +
+          'display: flex; flex-direction: column; overflow: hidden; }' +
+        '.cl-topbar { flex-shrink: 0; height: ' + topbarH + 'mm; display:flex; ' +
+          'justify-content:space-between; align-items:center; ' +
+          'border-bottom: 2px solid #2e7d32; margin-bottom: 3mm; }' +
+        '.cl-title { font-size: ' + (fontPt + 4) + 'pt; font-weight: bold; color: #2e7d32; }' +
+        '.cl-date { font-size: ' + fontPt + 'pt; color: #555; }' +
+        '.cl-grid { flex: 1; min-height: 0; display: grid; ' +
+          'grid-template-columns: repeat(' + cols + ', 1fr); ' +
+          'grid-template-rows: repeat(' + rows + ', 1fr); gap: ' + gapMm + 'mm; }' +
+        '.cl-card { border: 1.2px solid #333; border-radius: 5px; overflow: hidden; ' +
+          'display: flex; flex-direction: column; min-height: 0; }' +
+        '.cl-head { flex-shrink: 0; background: #eceff1; border-bottom: 1.2px solid #333; ' +
+          'padding: 3px 6px; display: flex; flex-direction: column; gap: 0; line-height: 1.15; }' +
+        '.cl-bed { font-size: ' + bedPt + 'pt; font-weight: bold; color: #2e7d32; }' +
+        '.cl-name { font-size: ' + fontPt + 'pt; font-weight: bold; color: #1a1a1a; ' +
           'white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }' +
-        '.cl-body { padding: 8px 10px 10px; }' +
-        '.cl-item { display: flex; align-items: center; gap: 7px; font-size: 10.5pt; ' +
-          'margin-bottom: 5px; }' +
-        '.cl-box { display: inline-block; width: 13px; height: 13px; border: 1.5px solid #333; ' +
+        '.cl-body { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 4px 6px; }' +
+        '.cl-item { display: flex; align-items: center; gap: 5px; line-height: 1.25; flex-shrink: 0; }' +
+        '.cl-box { display: inline-block; width: 0.95em; height: 0.95em; border: 1.2px solid #333; ' +
           'border-radius: 2px; flex-shrink: 0; }' +
-        '.cl-notes { margin-top: 8px; }' +
-        '.cl-line { border-bottom: 1px solid #bbb; height: 22px; }' +
-        '@media print { .cl-no-print { display: none; } }' +
-        '.cl-no-print { text-align:center; margin: 14px 0; }' +
+        '.cl-notes { flex: 1; min-height: 0; display: flex; flex-direction: column; margin-top: 2px; }' +
+        '.cl-line { flex: 1; min-height: 0; border-bottom: 1px solid #bbb; }' +
+        '@media screen { body { background: #e0e0e0; padding: 10px; } ' +
+          '.cl-page { background: #fff; box-shadow: 0 2px 12px rgba(0,0,0,0.25); margin: 0 auto; } }' +
+        '@media print { .cl-no-print { display: none !important; } }' +
+        '.cl-no-print { text-align:center; margin: 0 0 10px; }' +
         '.cl-no-print button { font-size: 13px; padding: 8px 20px; cursor: pointer; ' +
           'background: #2e7d32; color: #fff; border: none; border-radius: 6px; }' +
         '</style></head><body>' +
-        '<div class="cl-topbar">' +
-          '<span class="cl-title">Check List Reparto</span>' +
-          '<span class="cl-date">' + dataStr + ' &middot; ' + letti.length + ' letti</span>' +
-        '</div>' +
         '<div class="cl-no-print"><button onclick="window.print()">🖨 Stampa</button></div>' +
-        '<div class="cl-grid">' + cards + '</div>' +
+        '<div class="cl-page">' +
+          '<div class="cl-topbar">' +
+            '<span class="cl-title">Check List Reparto</span>' +
+            '<span class="cl-date">' + dataStr + ' &middot; ' + N + ' letti</span>' +
+          '</div>' +
+          '<div class="cl-grid">' + cards + '</div>' +
+        '</div>' +
         '<script>window.addEventListener("load",function(){setTimeout(function(){window.print();},300);});<\/script>' +
         '</body></html>';
 
