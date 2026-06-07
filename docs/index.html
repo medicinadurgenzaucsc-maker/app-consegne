@@ -6070,16 +6070,104 @@
     }
 
     // ── Stampa Check List Odierna ──────────────────────────────────
-    // PLACEHOLDER: la logica di stampa verrà definita in seguito.
-    // Per ora la voce di menu mostra solo un avviso informativo.
+    // Apre un modal che chiede:
+    //   1. Verso di stampa (verticale / orizzontale)
+    //   2. Quali letti: "Tutti" + elenco tipologie con ≥1 letto attivo
+    // La logica di stampa vera e propria verrà definita in seguito: per
+    // ora il modal raccoglie le scelte e le mostra in un riepilogo.
     window._stampaCheckListOdierna = function() {
+      // Spinner mentre carichiamo le tipologie attive
       Swal.fire({
-        icon: 'info',
-        title: 'Check List Odierna',
-        text: 'Funzione in preparazione.',
-        confirmButtonColor: '#37474f'
+        title: '<i class="bi bi-card-checklist me-2 text-success"></i>Stampa Check List Odierna',
+        html: '<div class="text-center py-3"><div class="spinner-border text-secondary"></div>' +
+              '<div class="mt-2 text-muted small">Caricamento tipologie…</div></div>',
+        showConfirmButton: false,
+        allowOutsideClick: false,
+        didOpen: function() {
+          var pRiep = (typeof _sbGetRiepilogo === 'function') ? _sbGetRiepilogo() : Promise.resolve({ tipologie: {} });
+          pRiep.then(function(r) {
+            _renderModalCheckList(r.tipologie || {});
+          }).catch(function(e) {
+            Swal.fire({ icon: 'error', title: 'Errore caricamento',
+              text: (e && e.message) || String(e), confirmButtonColor: '#37474f' });
+          });
+        }
       });
     };
+
+    function _renderModalCheckList(tipologie) {
+      var tipKeys = Object.keys(tipologie).filter(Boolean).sort();
+
+      // Sezione 1: verso di stampa (default orizzontale, coerente coi backup)
+      var versoHtml =
+        '<div class="text-start mb-3">' +
+          '<label class="form-label fw-bold mb-2" style="font-size:0.88rem;">Verso di stampa</label>' +
+          '<div class="d-flex gap-3" style="font-size:0.9rem;">' +
+            '<label class="d-flex align-items-center gap-2" style="cursor:pointer;">' +
+              '<input type="radio" name="clVerso" value="portrait" class="form-check-input mt-0">' +
+              '<i class="bi bi-file-earmark"></i> Verticale' +
+            '</label>' +
+            '<label class="d-flex align-items-center gap-2" style="cursor:pointer;">' +
+              '<input type="radio" name="clVerso" value="landscape" class="form-check-input mt-0" checked>' +
+              '<i class="bi bi-file-earmark-landscape"></i> Orizzontale' +
+            '</label>' +
+          '</div>' +
+        '</div>';
+
+      // Sezione 2: quali letti (Tutti + tipologie con ≥1 letto attivo)
+      var lettiOpzioni =
+        '<label class="d-flex align-items-center gap-2 px-2 py-1" style="cursor:pointer;border:1px solid #e0e0e0;border-radius:4px;background:#fff;margin:0 0 4px 0;font-size:0.9rem;">' +
+          '<input type="radio" name="clLetti" value="__ALL__" class="form-check-input mt-0" checked>' +
+          '<i class="bi bi-grid-3x3-gap-fill text-secondary"></i><strong>Tutti</strong>' +
+        '</label>';
+      lettiOpzioni += tipKeys.map(function(tip) {
+        var colore = (tip === 'STANDARD') ? '#6c757d'
+          : ((typeof window._getColoreTipo === 'function') ? window._getColoreTipo(tip) : '#6c757d');
+        return '<label class="d-flex align-items-center gap-2 px-2 py-1" style="cursor:pointer;border:1px solid #e0e0e0;border-radius:4px;background:#fff;margin:0 0 4px 0;font-size:0.9rem;">' +
+          '<input type="radio" name="clLetti" value="' + _esc(tip) + '" class="form-check-input mt-0">' +
+          '<span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:' + colore + ';flex-shrink:0;"></span>' +
+          '<span>' + _esc(tip) + '</span>' +
+          '<span class="badge bg-light text-dark border ms-auto">' + tipologie[tip] + '</span>' +
+        '</label>';
+      }).join('');
+
+      var lettiHtml =
+        '<div class="text-start">' +
+          '<label class="form-label fw-bold mb-2" style="font-size:0.88rem;">Quali letti stampare</label>' +
+          lettiOpzioni +
+        '</div>';
+
+      Swal.update({
+        html: versoHtml + lettiHtml,
+        showConfirmButton: true,
+        confirmButtonText: '<i class="bi bi-printer-fill me-1"></i>Stampa',
+        confirmButtonColor: '#2e7d32',
+        showCancelButton: true,
+        cancelButtonText: 'Annulla',
+        reverseButtons: true,
+        focusConfirm: false,
+        allowOutsideClick: false
+      });
+
+      Swal.getConfirmButton().onclick = function(e) {
+        e.preventDefault();
+        var verso = (document.querySelector('input[name="clVerso"]:checked') || {}).value || 'landscape';
+        var letti = (document.querySelector('input[name="clLetti"]:checked') || {}).value || '__ALL__';
+        var lettiLabel = (letti === '__ALL__') ? 'Tutti i letti' : ('Tipologia: ' + letti);
+        var versoLabel = (verso === 'portrait') ? 'Verticale' : 'Orizzontale';
+        // PLACEHOLDER: la stampa vera sarà implementata in seguito.
+        Swal.fire({
+          icon: 'info',
+          title: 'Check List — selezione',
+          html: '<div class="text-start" style="font-size:0.9rem;">' +
+                '<p class="mb-1"><b>Verso:</b> ' + versoLabel + '</p>' +
+                '<p class="mb-2"><b>Letti:</b> ' + _esc(lettiLabel) + '</p>' +
+                '<p class="mb-0 text-muted">Funzione di stampa in preparazione.</p>' +
+                '</div>',
+          confirmButtonColor: '#37474f'
+        });
+      };
+    }
 
     // Stato del modal
     var _stato = {
