@@ -2001,6 +2001,23 @@
         padding: 0 1.6em !important;
       }
 
+      /* ── Modal Check List Odierna: largo, niente scrollbar interna ── */
+      .checklist-modal {
+        width: 92% !important;
+        max-width: 920px !important;
+      }
+      .checklist-modal .swal2-html-container {
+        max-height: none !important;
+        overflow: visible !important;
+        margin: 0.6em 1.2em 0 !important;
+      }
+      /* Lista singoli letti: griglia adattiva, nessuno scroll interno */
+      #clLettiSingoli {
+        max-height: none !important;
+        overflow: visible !important;
+        grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)) !important;
+      }
+
       /* ── Badge "Update disponibile" lampeggiante ──────────────────── */
       /* Pulsa background-color + glow per attirare l'attenzione senza */
       /* essere troppo fastidioso. Si ferma all'hover per permettere   */
@@ -6082,6 +6099,8 @@
         title: '<i class="bi bi-card-checklist me-2 text-success"></i>Stampa Check List Odierna',
         html: '<div class="text-center py-3"><div class="spinner-border text-secondary"></div>' +
               '<div class="mt-2 text-muted small">Caricamento letti…</div></div>',
+        width: '92%',
+        customClass: { popup: 'checklist-modal' },
         showConfirmButton: false,
         allowOutsideClick: false,
         didOpen: function() {
