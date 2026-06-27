@@ -385,6 +385,12 @@ body { padding-top: 70px; background-color: #d4e6f1 !important; }
    99999) così conferme, toast e diagnostica sono SEMPRE visibili. */
 .swal2-container { z-index: 200000 !important; }
 
+/* Modal "Cambia Tipologia": quando aperto dalla chip in focus mode deve
+   stare SOPRA la card focus (z-index 1070) e il floppy (1080). Il modal
+   Bootstrap di default è 1055 → veniva coperto. Lo alziamo a 1090 (il
+   backdrop resta sotto: il focusOverlay fa già da sfondo scuro). */
+#modalCambiaTipologiaLetto { z-index: 1090 !important; }
+
 /* ===== Badge "Update" — Claude orange (D97757) + lampeggio sull'icona =====
    Il badge è statico (no pulse), l'icona triangolare lampeggia per
    attirare l'attenzione senza essere troppo invasiva. */

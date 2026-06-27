@@ -106,6 +106,10 @@
     Object.defineProperty(window, '_lettoLockAttSafe', {
       get: function() { return _lettoLockAtt; }
     });
+    // Esposta per il cambio tipologia da focus mode (app2.js _ctlSalva):
+    // dopo aver salvato la nuova tipologia, chiude il focus mode (che salva
+    // i campi dirty e rilascia il lock). _disattivaFocusMode è hoisted.
+    window._disattivaFocusMode = function(scrollToCard) { return _disattivaFocusMode(scrollToCard); };
 
     function _mostraAvvisoLock(letto) {
       Swal.fire({

@@ -596,8 +596,14 @@
     }
 
     var _ctlPreselezioneLetto = null;
+    var _ctlDaFocusMode = null;   // letto da cui è stato aperto via chip in focus mode
     function _apriModalTipologia(letto) {
+      // Apertura via chip colorata: consentita SOLO se la card di quel letto
+      // è in focus mode (modifica attiva). Fuori focus mode il click è ignorato.
+      var cardFocus = document.querySelector('.patient-card.focus-mode[data-bed="' + letto + '"]');
+      if (!cardFocus) return;
       _ctlPreselezioneLetto = letto;
+      _ctlDaFocusMode = letto;
       bootstrap.Modal.getOrCreateInstance(document.getElementById('modalCambiaTipologiaLetto')).show();
     }
 
@@ -611,9 +617,51 @@
         Swal.fire({ icon:'warning', text:'Seleziona un letto.', timer:2000, showConfirmButton:false });
         return;
       }
+      // daFocus vero SOLO se: flag settato dall'apertura via chip E la card
+      // è effettivamente ancora in focus mode adesso (guardia anti-stale:
+      // un flag rimasto da un annullamento precedente non deve attivare
+      // il ramo focus quando si apre dal menu).
+      var daFocus = (_ctlDaFocusMode === letto) &&
+        !!document.querySelector('.patient-card.focus-mode[data-bed="' + letto + '"]');
+      _ctlDaFocusMode = null;
       var modalEl = document.getElementById('modalCambiaTipologiaLetto');
       bootstrap.Modal.getInstance(modalEl).hide();
       var label = nuovaTipo || 'STANDARD';
+
+      // ── CASO A: cambio tipologia da FOCUS MODE ──────────────────────
+      // Non usiamo _opServer (che farebbe un full re-render distruggendo
+      // il focus mode). Salviamo la tipologia con query diretta, aggiorniamo
+      // il badge nel DOM, poi chiudiamo il focus mode (che a sua volta salva
+      // gli eventuali campi modificati e rilascia il lock).
+      if (daFocus) {
+        _sbCambiaTipologiaALetto(letto, nuovaTipo)
+          .then(function(res) {
+            if (!res || !res.success) throw new Error((res && res.message) || 'Operazione fallita.');
+            // Aggiorna badge tipologia nel DOM della card (Realtime è skippato
+            // mentre la card è lockata in focus mode)
+            var card = document.querySelector('.patient-card[data-bed="' + letto + '"]');
+            if (card) {
+              card.setAttribute('data-tipologia', (nuovaTipo || '').toUpperCase());
+              if (typeof _aggiornaBadgePrincipali === 'function') {
+                try { _aggiornaBadgePrincipali(); } catch(e) {}
+              }
+            }
+            // Chiudi il focus mode: salva i campi dirty + rilascia il lock
+            if (typeof window._disattivaFocusMode === 'function') {
+              window._disattivaFocusMode(false);
+            }
+            Swal.fire({ icon: 'success', title: 'Tipologia aggiornata',
+              html: 'Letto ' + letto + ' → <strong>' + label + '</strong>',
+              timer: 1800, showConfirmButton: false, timerProgressBar: true });
+          })
+          .catch(function(err) {
+            Swal.fire({ icon: 'error', title: 'Errore',
+              text: (err && err.message) || 'Operazione fallita.', confirmButtonColor: '#d33' });
+          });
+        return;
+      }
+
+      // ── CASO B: cambio tipologia da menu (comportamento invariato) ──
       _opServer({ barMsg: 'Aggiornamento tipologia letto in corso...', successTitle: 'Tipologia aggiornata',
         successText: 'Letto ' + letto + ' → ' + label, errorTitle: 'Errore',
         serverFn: function(onOk, onErr) {

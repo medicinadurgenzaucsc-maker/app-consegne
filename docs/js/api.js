@@ -328,12 +328,12 @@ function _renderAltCard(p) {
     ? '<span class="badge text-white text-uppercase shadow-sm"' +
       ' style="background-color:' + colore + ';cursor:pointer;"' +
       ' id="badge-tipo-alt-' + _aEsc(letto) + '"' +
-      ' ondblclick="_apriModalTipologia(\'' + _aEsc(letto) + '\')"' +
-      ' title="Doppio click per cambiare tipologia">' + _aEsc(tipo) + '</span>'
+      ' onclick="_apriModalTipologia(\'' + _aEsc(letto) + '\')"' +
+      ' title="Click per cambiare tipologia (solo in modifica)">' + _aEsc(tipo) + '</span>'
     : '<span class="badge bg-light text-secondary border text-uppercase shadow-sm"' +
       ' style="cursor:pointer;"' +
-      ' ondblclick="_apriModalTipologia(\'' + _aEsc(letto) + '\')"' +
-      ' title="Doppio click per cambiare tipologia">STANDARD</span>';
+      ' onclick="_apriModalTipologia(\'' + _aEsc(letto) + '\')"' +
+      ' title="Click per cambiare tipologia (solo in modifica)">STANDARD</span>';
 
   // Icona "in dimissione" accanto al badge tipologia
   var dimVal = (p.Dimissibile || '').trim();
