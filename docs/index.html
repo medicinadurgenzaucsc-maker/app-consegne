@@ -106,10 +106,11 @@
     Object.defineProperty(window, '_lettoLockAttSafe', {
       get: function() { return _lettoLockAtt; }
     });
-    // Esposta per il cambio tipologia da focus mode (app2.js _ctlSalva):
-    // dopo aver salvato la nuova tipologia, chiude il focus mode (che salva
-    // i campi dirty e rilascia il lock). _disattivaFocusMode è hoisted.
-    window._disattivaFocusMode = function(scrollToCard) { return _disattivaFocusMode(scrollToCard); };
+    // NB: l'esposizione di window._disattivaFocusMode è spostata SUBITO DOPO
+    // la dichiarazione della funzione (più sotto), per evitare la ricorsione
+    // infinita che si verificava qui: in questo punto l'identificatore
+    // _disattivaFocusMode si risolveva a window._disattivaFocusMode (la lambda
+    // stessa) invece che alla funzione locale.
 
     function _mostraAvvisoLock(letto) {
       Swal.fire({
@@ -1362,6 +1363,11 @@
         window._mostraToastUpdate();
       }
     }
+    // Esposizione CORRETTA: qui _disattivaFocusMode si risolve alla funzione
+    // locale appena dichiarata (assegnazione diretta del riferimento, nessun
+    // wrapper → nessuna ricorsione). Usata da app2.js per chiudere il focus
+    // dopo il cambio tipologia.
+    window._disattivaFocusMode = _disattivaFocusMode;
 
     var _TOOLBAR_FIELDS = { 'NoteTerapia': true, 'Diaria': true, 'DaFare': true, 'PianoTerapeutico': true, 'EsamiColturali': true };
 
@@ -1372,7 +1378,7 @@
       else { el.textContent = '⊘'; el.style.color = '#b8b0a0'; }
     }
 
-    document.addEventListener('dblclick', function(e) {
+    document.addEventListener('click', function(e) {
       var el = e.target.closest ? e.target.closest('.sesso-symbol') : null;
       if (!el) return;
       var card = el.closest('.patient-card');
