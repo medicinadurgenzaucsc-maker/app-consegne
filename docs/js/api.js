@@ -399,8 +399,8 @@ function _renderAltCard(p) {
     '<div class="editable-area rich-text alt-editable" contenteditable="true" data-field="PianoTerapeutico" data-placeholder="Piano di cura...">' + (p.PianoTerapeutico || '') + '</div>' +
     '</div>' +
     '<div class="alt-diag-fourth">' +
-    '<div class="alt-col-header-split">Esami Colturali</div>' +
-    '<div class="editable-area rich-text alt-editable" contenteditable="true" data-field="EsamiColturali" data-placeholder="Esami colturali...">' + (p.EsamiColturali || '') + '</div>' +
+    '<div class="alt-col-header-split">Esami Colturali e Scale Valutazione</div>' +
+    '<div class="editable-area rich-text alt-editable" contenteditable="true" data-field="EsamiColturali" data-placeholder="Esami colturali... PESI SCORE, HASBLED, GENEVA...">' + (p.EsamiColturali || '') + '</div>' +
     '</div>' +
     '<div class="alt-diag-third">' +
     '<div class="alt-col-header-split">Da Fare / Richieste</div>' +
