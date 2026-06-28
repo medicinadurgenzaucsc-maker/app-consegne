@@ -349,8 +349,9 @@
     return '<div class="alt-row">' +
       '<div class="alt-col alt-col-info">' +
         '<div class="alt-info-box">' +
-          '<div style="display:flex;align-items:center;justify-content:center;">' +
+          '<div style="display:flex;align-items:center;justify-content:center;gap:4px;">' +
             '<div class="alt-bed-number">' + (p.Letto || '') + '</div>' +
+            ((p.Dimissibile || '').trim() && typeof _dimIconSvg === 'function' ? _dimIconSvg(16) : '') +
             sessoHtml(p.Sesso, '1.6rem') +
           '</div>' +
           tipoBadge +

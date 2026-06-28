@@ -6307,6 +6307,9 @@
       var cards = letti.map(function(p) {
         var letto = _esc(String(p.Letto));
         var nome  = _esc((p.Nome || '').trim() || '—');
+        // Icona "dimissibile" accanto al numero letto se il paziente è marcato
+        var dimIco = ((p.Dimissibile || '').trim() && typeof window._dimIconSvg === 'function')
+          ? ' ' + window._dimIconSvg(14) : '';
         var voci = vociFisse.map(function(v) {
           return '<div class="cl-item"><span class="cl-box"></span>' + _esc(v) + '</div>';
         }).join('');
@@ -6314,7 +6317,7 @@
         for (var i = 0; i < righeLibere; i++) righe += '<div class="cl-line"></div>';
         return '<div class="cl-card">' +
             '<div class="cl-head">' +
-              '<span class="cl-bed">Letto ' + letto + '</span>' +
+              '<span class="cl-bed">Letto ' + letto + dimIco + '</span>' +
               '<span class="cl-name">' + nome + '</span>' +
             '</div>' +
             '<div class="cl-body">' + voci +
