@@ -1,7 +1,15 @@
 name: Supabase Keep Alive
 
 # Esegue ogni 3 giorni alle 07:00 UTC per prevenire la pausa del DB free tier.
-# Supabase pausa i progetti free dopo 7 giorni di inattività.
+# Supabase pausa i progetti free dopo 7 giorni di inattività: pingandolo ogni
+# 3 giorni restiamo sempre ampiamente sotto la soglia.
+#
+# In più, protegge SE STESSO dalla disabilitazione automatica: GitHub disabilita
+# i workflow schedulati dopo 60 giorni senza attività (commit) nel repository.
+# Se lo sviluppo si ferma a lungo, senza questa protezione il cron morirebbe e
+# di conseguenza Supabase andrebbe comunque in pausa. Lo step finale fa un commit
+# vuoto SOLO se l'ultimo commit è più vecchio di 50 giorni, azzerando il contatore.
+#
 # Può essere triggerato manualmente da GitHub Actions per testare.
 
 on:
@@ -9,10 +17,18 @@ on:
     - cron: '0 7 */3 * *'   # ogni 3 giorni alle 07:00 UTC
   workflow_dispatch:         # trigger manuale per test
 
+permissions:
+  contents: write            # necessario per il commit anti-disabilitazione
+
 jobs:
   keepalive:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0     # serve la history per leggere la data dell'ultimo commit
+
       - name: Ping Supabase REST API
         run: |
           HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
@@ -27,4 +43,22 @@ jobs:
           else
             echo "Risposta inattesa: $HTTP_STATUS"
             exit 1
+          fi
+
+      - name: Anti-disabilitazione Actions (commit vuoto se repo inattivo da >50 giorni)
+        run: |
+          LAST_COMMIT_TS=$(git log -1 --format=%ct)
+          NOW_TS=$(date +%s)
+          DAYS_SINCE=$(( (NOW_TS - LAST_COMMIT_TS) / 86400 ))
+          echo "Giorni dall'ultimo commit: $DAYS_SINCE"
+
+          if [ "$DAYS_SINCE" -ge 50 ]; then
+            git config user.name  "keepalive-bot"
+            git config user.email "keepalive-bot@users.noreply.github.com"
+            # [skip ci] evita di triggerare notify-deploy / build inutili
+            git commit --allow-empty -m "chore: keepalive per evitare disabilitazione GitHub Actions [skip ci]"
+            git push
+            echo "Commit vuoto di keepalive effettuato (repo era inattivo da $DAYS_SINCE giorni)"
+          else
+            echo "Repo attivo di recente ($DAYS_SINCE giorni): nessun commit necessario"
           fi
