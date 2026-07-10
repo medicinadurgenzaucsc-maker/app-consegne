@@ -274,6 +274,13 @@
               if (v && v !== 'STANDARD') newBadge.style.backgroundColor = stringToColor(v);
             }
           }
+          // Isolamento: la Diaria appena copiata può aver aggiunto/rimosso il
+          // banner (dimissione → diaria svuotata, sposta/scambia → diaria che
+          // segue il paziente, modifica da altro PC) → sincronizza l'icona
+          // virus accanto al numero letto di QUESTA card.
+          if (typeof window._isolamentoSyncIcona === 'function') {
+            try { window._isolamentoSyncIcona(attuale); } catch(e) {}
+          }
         });
       });
     }
@@ -6493,6 +6500,9 @@
         // Icona "dimissibile" accanto al numero letto se il paziente è marcato
         var dimIco = ((p.Dimissibile || '').trim() && typeof window._dimIconSvg === 'function')
           ? ' ' + window._dimIconSvg(14) : '';
+        // Icona "isolamento" se la Diaria contiene il banner
+        var isoIco = (String(p.Diaria || '').indexOf('isolamento-banner') !== -1 && typeof window._virusIconSvg === 'function')
+          ? ' ' + window._virusIconSvg(14) : '';
         var voci = vociFisse.map(function(v) {
           return '<div class="cl-item"><span class="cl-box"></span>' + _esc(v) + '</div>';
         }).join('');
@@ -6500,7 +6510,7 @@
         for (var i = 0; i < righeLibere; i++) righe += '<div class="cl-line"></div>';
         return '<div class="cl-card">' +
             '<div class="cl-head">' +
-              '<span class="cl-bed">Letto ' + letto + dimIco + '</span>' +
+              '<span class="cl-bed">Letto ' + letto + dimIco + isoIco + '</span>' +
               '<span class="cl-name">' + nome + '</span>' +
             '</div>' +
             '<div class="cl-body">' + voci +
