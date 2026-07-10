@@ -1273,6 +1273,15 @@
         }
         return;
       }
+      if (cmd === 'isolamento') {
+        // Click sull'icona virus nella toolbar Diaria/Epicrisi: apri il
+        // modal isolamento per il paziente della card corrente (solo FM).
+        var cardIso = tb.closest('.patient-card');
+        if (cardIso && typeof window._apriModalIsolamento === 'function') {
+          window._apriModalIsolamento(cardIso);
+        }
+        return;
+      }
       _tbRestoreSelection();
       if (fmult !== null) { _tbApplyFontMultiplier(parseFloat(fmult)); var p = tb.querySelector('[data-tb-submenu="fsmenu"]'); if (p) p.classList.remove('open'); return; }
       if (cmd) { document.execCommand(cmd, false, null); }

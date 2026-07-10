@@ -315,6 +315,24 @@ function _dimIconSvg(size) {
 }
 window._dimIconSvg = _dimIconSvg;
 
+// Icona "virus" verdognola per l'ISOLAMENTO paziente.
+// SVG inline (come _dimIconSvg): look identico ovunque, indipendente
+// dal font Bootstrap Icons. Usata in: toolbar Diaria, banner isolamento,
+// icona accanto al numero letto, stampa.
+function _virusIconSvg(size) {
+  var s = size || 16;
+  return '<svg width="' + s + '" height="' + s + '" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:middle;">' +
+    '<g stroke="#2e7d32" stroke-width="1.8" stroke-linecap="round">' +
+      '<path d="M12 1.5v3.5 M12 19v3.5 M1.5 12H5 M19 12h3.5 M4.6 4.6l2.5 2.5 M16.9 16.9l2.5 2.5 M19.4 4.6l-2.5 2.5 M7.1 16.9l-2.5 2.5" fill="none"/>' +
+    '</g>' +
+    '<circle cx="12" cy="12" r="6.8" fill="#66bb6a" stroke="#2e7d32" stroke-width="1.2"/>' +
+    '<circle cx="9.8" cy="10.4" r="1.3" fill="#e8f5e9"/>' +
+    '<circle cx="14.2" cy="12.8" r="1.6" fill="#e8f5e9"/>' +
+    '<circle cx="10.8" cy="14.8" r="1.0" fill="#e8f5e9"/>' +
+  '</svg>';
+}
+window._virusIconSvg = _virusIconSvg;
+
 // ── RENDERER CARD (vista compatta a riga, unica vista attiva) ─
 function _renderAltCard(p) {
   var letto = String(p.Letto || '');
@@ -343,11 +361,20 @@ function _renderAltCard(p) {
       _dimIconSvg(14) + '</span>'
     : '';
 
+  // ── Isolamento: fonte di verità = banner .isolamento-banner dentro la
+  // Diaria (viaggia con l'HTML del campo: realtime, stampa, backup, import).
+  // Qui serve solo per decidere se mostrare l'icona virus accanto al letto.
+  var isoMatch = String(p.Diaria || '').match(/data-isolamento="([^"]*)"/);
+  var isoIconHtml = isoMatch
+    ? '<span class="isolamento-icon-bed" title="Paziente in isolamento' + (isoMatch[1] ? ': ' + _aEsc(isoMatch[1]) : '') + '">' + _virusIconSvg(28) + '</span>'
+    : '';
+
   return '<div class="alt-row patient-card" data-bed="' + _aEsc(letto) + '" data-tipologia="' + _aEsc(tipo) + '">' +
     '<div class="alt-col alt-col-info">' +
     '<button class="focus-pencil-btn" title="Modifica scheda"' +
     ' onclick="_attivaFocusMode(this.closest(\'.patient-card\'))"><i class="bi bi-pencil-fill"></i></button>' +
     '<span id="status-alt-' + _aEsc(letto) + '" class="badge status-badge position-absolute top-0 start-0 m-1 bg-secondary"></span>' +
+    isoIconHtml +
     '<div class="alt-info-box">' +
     '<div class="bed-number-flex">' +
     '<div class="alt-bed-number">' + _aEsc(letto) + '</div>' +
@@ -2038,6 +2065,12 @@ function _aggiornaCardDaPaziente(card, p) {
     // Aggiorna stato placeholder (mostra/nasconde la classe .is-empty)
     if (typeof _placeholderCheck === 'function') _placeholderCheck(dst);
   });
+
+  // Isolamento: la Diaria appena aggiornata può aver aggiunto/rimosso il
+  // banner → sincronizza l'icona virus accanto al numero letto.
+  if (typeof window._isolamentoSyncIcona === 'function') {
+    try { window._isolamentoSyncIcona(card); } catch(e) {}
+  }
 
   // Date (data ricovero + giorni calcolati, data nascita + età ricalcolata in UI)
   var ric = _parseDataRicovero(p.DataRicovero);

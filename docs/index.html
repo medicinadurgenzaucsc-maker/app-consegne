@@ -341,6 +341,10 @@
               + '<button class="tb-btn tb-snapshot-recovery" data-cmd="apriSnapshot" title="Recupera dati da snapshot precedente">'
               +   svgSnapshot
               +   '<span class="tb-snapshot-badge" data-snap-badge style="display:none;"></span>'
+              + '</button>'
+              // Isolamento paziente — virus verdognolo accanto all'orologio snapshot
+              + '<button class="tb-btn tb-isolamento" data-cmd="isolamento" title="Isolamento paziente">'
+              +   (typeof window._virusIconSvg === 'function' ? window._virusIconSvg(20) : '<i class="bi bi-virus" style="color:#43a047"></i>')
               + '</button>';
       }
       // Esami Colturali e Da Fare: pulsante checkbox RIMOSSO su richiesta utente.
@@ -1396,6 +1400,149 @@
       document.querySelectorAll('.sesso-symbol').forEach(function(el) { _aggiornaSimboloSesso(el); });
     });
 
+    // ══════════════════════════════════════════════════════════════════
+    // ISOLAMENTO PAZIENTE
+    // Fonte di verità: div .isolamento-banner (contenteditable=false)
+    // come PRIMA riga dentro il campo Diaria/Epicrisi. Viaggia con
+    // l'HTML della Diaria: realtime, stampa, backup Drive, import —
+    // zero modifiche allo schema DB.
+    // - Attivazione: icona virus nella toolbar Diaria (solo focus mode)
+    // - Il banner non è editabile; click sopra (in FM) riapre il modal
+    // - Icona virus accanto al numero letto quando attivo
+    // Il modal è SweetAlert2 (z-index 200000 → sempre sopra il focus
+    // mode; il focusout listener ha già i guard per Swal → niente
+    // chiusure spurie del focus, niente scroll bloccato).
+    // ══════════════════════════════════════════════════════════════════
+    function _escIso(s) {
+      return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function _isolamentoGetBanner(card) {
+      var d = card ? card.querySelector('[data-field="Diaria"]') : null;
+      return d ? d.querySelector('.isolamento-banner') : null;
+    }
+
+    // Crea/aggiorna il banner in cima alla Diaria e salva
+    function _isolamentoApplica(card, testo) {
+      var diaria = card.querySelector('[data-field="Diaria"]');
+      if (!diaria) return;
+      var b = diaria.querySelector('.isolamento-banner');
+      if (!b) {
+        b = document.createElement('div');
+        b.className = 'isolamento-banner';
+        b.setAttribute('contenteditable', 'false');
+        diaria.insertBefore(b, diaria.firstChild);
+      }
+      b.setAttribute('data-isolamento', testo);
+      b.setAttribute('title', 'Isolamento: ' + testo + ' — clicca per modificare');
+      b.innerHTML = (typeof window._virusIconSvg === 'function' ? window._virusIconSvg(20) : '');
+      b.appendChild(document.createTextNode(' ISOLAMENTO: ' + testo));
+      if (typeof window._placeholderCheck === 'function') window._placeholderCheck(diaria);
+      _isolamentoSyncIcona(card);
+      _isolamentoSalva(card);
+    }
+
+    function _isolamentoRimuovi(card) {
+      var b = _isolamentoGetBanner(card);
+      if (b) b.remove();
+      var diaria = card.querySelector('[data-field="Diaria"]');
+      if (diaria && typeof window._placeholderCheck === 'function') window._placeholderCheck(diaria);
+      _isolamentoSyncIcona(card);
+      _isolamentoSalva(card);
+    }
+
+    function _isolamentoSalva(card) {
+      var letto = card.getAttribute('data-bed');
+      if (letto && typeof attivaSalvataggioRitardato === 'function') {
+        attivaSalvataggioRitardato(letto, card);
+      }
+    }
+
+    // Mostra/nasconde l'icona virus accanto al numero letto in base alla
+    // presenza del banner nella Diaria. Idempotente; usata anche da
+    // _aggiornaCardDaPaziente (api.js) sugli update remoti.
+    function _isolamentoSyncIcona(card) {
+      if (!card) return;
+      var banner = _isolamentoGetBanner(card);
+      var icona = card.querySelector('.isolamento-icon-bed');
+      if (banner && !icona) {
+        var info = card.querySelector('.alt-col-info');
+        if (!info) return;
+        icona = document.createElement('span');
+        icona.className = 'isolamento-icon-bed';
+        icona.innerHTML = (typeof window._virusIconSvg === 'function' ? window._virusIconSvg(28) : '');
+        info.appendChild(icona);
+      } else if (!banner && icona) {
+        icona.remove();
+        icona = null;
+      }
+      if (banner && icona) {
+        icona.title = 'Paziente in isolamento: ' + (banner.getAttribute('data-isolamento') || '');
+      }
+    }
+    window._isolamentoSyncIcona = _isolamentoSyncIcona;
+
+    // Modal isolamento (SweetAlert2). Si apre SOLO dal focus mode.
+    window._apriModalIsolamento = function(card) {
+      if (!card || !card.classList.contains('focus-mode')) return;
+      var banner = _isolamentoGetBanner(card);
+      var attivo = !!banner;
+      var tipoAttuale = attivo ? (banner.getAttribute('data-isolamento') || '') : '';
+      Swal.fire({
+        title: (typeof window._virusIconSvg === 'function' ? window._virusIconSvg(28) + ' ' : '') +
+               (attivo ? 'Isolamento attivo' : 'Attivare isolamento?'),
+        html:
+          '<div class="text-start mb-2" style="font-size:0.92rem;">' +
+            (attivo
+              ? 'Il paziente è in <strong>isolamento</strong>. Puoi modificare il tipo oppure rimuoverlo.'
+              : 'Attivare l\'isolamento per questo paziente? Indica il tipo qui sotto.') +
+          '</div>' +
+          '<input id="isolamentoTipoInput" class="swal2-input" style="margin:0;width:100%;box-sizing:border-box;" ' +
+            'placeholder="Tipo di isolamento (es. da contatto, droplet, aereo...)" ' +
+            'value="' + _escIso(tipoAttuale) + '">',
+        showCancelButton: true,
+        cancelButtonText: 'Annulla',
+        confirmButtonText: attivo ? '<i class="bi bi-check-lg me-1"></i>Salva' : '<i class="bi bi-check-lg me-1"></i>Attiva isolamento',
+        confirmButtonColor: '#2e7d32',
+        showDenyButton: attivo,
+        denyButtonText: '<i class="bi bi-x-circle me-1"></i>Rimuovi isolamento',
+        denyButtonColor: '#c62828',
+        focusConfirm: false,
+        didOpen: function() {
+          var inp = document.getElementById('isolamentoTipoInput');
+          if (inp && !attivo) inp.focus();
+        },
+        preConfirm: function() {
+          var v = ((document.getElementById('isolamentoTipoInput') || {}).value || '').trim();
+          if (!v) {
+            Swal.showValidationMessage('Scrivi il tipo di isolamento');
+            return false;
+          }
+          return v;
+        }
+      }).then(function(res) {
+        if (res.isConfirmed && res.value) {
+          _isolamentoApplica(card, String(res.value));
+        } else if (res.isDenied) {
+          _isolamentoRimuovi(card);
+        }
+      });
+    };
+
+    // Click sul banner (riga non editabile in cima alla Diaria):
+    // riapre il modal — SOLO se la card è in focus mode.
+    document.addEventListener('click', function(e) {
+      var b = e.target.closest ? e.target.closest('.isolamento-banner') : null;
+      if (!b) return;
+      var card = b.closest('.patient-card');
+      if (!card || !card.classList.contains('focus-mode')) return;
+      e.preventDefault();
+      e.stopPropagation();
+      window._apriModalIsolamento(card);
+    });
+
     document.addEventListener('visibilitychange', function() {
       if (document.hidden) {
         if (!_focusCard) {
@@ -1773,6 +1920,14 @@
         if (document.querySelector('.swal2-container')) return;
         if (document.body && document.body.classList.contains('swal2-shown')) return;
         if (Date.now() - _swalChiusoTs < 400) return;
+        // ⚠ CRITICO #3: modal BOOTSTRAP aperto (es. "Cambia Tipologia" dalla
+        // chip in focus mode). Cliccare la select/input dentro il modal sposta
+        // il focus FUORI dalla card → senza questo guard il focus mode si
+        // chiudeva dietro al modal. Copre anche la coda del fade-out con la
+        // grace _bsModalChiusoTs (la classe .show viene tolta subito a hide()).
+        if (document.querySelector('.modal.show')) return;
+        if (document.body && document.body.classList.contains('modal-open')) return;
+        if (Date.now() - _bsModalChiusoTs < 500) return;
         if (_lastMousedownInCard) return;
         var active = document.activeElement;
         if (_focusCard && !_focusCard.contains(active)) {
@@ -1789,6 +1944,34 @@
     // NB: lo script è in <head>, quindi body non esiste ancora — aspettiamo
     // DOMContentLoaded prima di attaccare l'observer.
     var _swalChiusoTs = 0;
+
+    // ── Grace period + safety net per i modal BOOTSTRAP ─────────────────
+    // _bsModalChiusoTs: timestamp dell'ultima chiusura di un modal Bootstrap.
+    // Il focusout listener lo usa per non chiudere il focus mode nei ~500ms
+    // successivi (il focus rimbalza su body prima di tornare nella card).
+    //
+    // SAFETY NET SCROLL: Bootstrap, all'apertura di un modal, SALVA lo stile
+    // inline `overflow` del body e lo RIPRISTINA alla chiusura. Se il modal
+    // è stato aperto col focus mode attivo (body overflow:hidden inline) e
+    // il focus mode nel frattempo si è chiuso, Bootstrap ripristina "hidden"
+    // → scroll pagina bloccato per sempre (serviva un refresh). Qui, alla
+    // chiusura di ogni modal, se non resta alcun contesto che giustifichi
+    // il blocco (focus mode / altro modal / SweetAlert), puliamo l'overflow.
+    var _bsModalChiusoTs = 0;
+    document.addEventListener('hidden.bs.modal', function() {
+      _bsModalChiusoTs = Date.now();
+      setTimeout(function() {
+        var focusAttivo = !!document.querySelector('.patient-card.focus-mode');
+        var modalAperto = !!document.querySelector('.modal.show');
+        var swalAperto  = !!(document.body && document.body.classList.contains('swal2-shown'));
+        if (!focusAttivo && !modalAperto && !swalAperto) {
+          if (document.body.style.overflow === 'hidden') document.body.style.overflow = '';
+          if (document.documentElement.style.overflow === 'hidden') document.documentElement.style.overflow = '';
+          document.body.style.paddingRight = '';
+        }
+      }, 60);
+    });
+
     (function setupSwalCloseObserver() {
       if (!document.body) {
         document.addEventListener('DOMContentLoaded', setupSwalCloseObserver);

@@ -391,6 +391,49 @@ body { padding-top: 70px; background-color: #d4e6f1 !important; }
    backdrop resta sotto: il focusOverlay fa già da sfondo scuro). */
 #modalCambiaTipologiaLetto { z-index: 1090 !important; }
 
+/* ═════ ISOLAMENTO PAZIENTE ═════ */
+/* Banner in cima alla Diaria/Epicrisi: riga evidenziata NON editabile
+   (contenteditable=false), 1.25x, evidenziazione arancione. Click (solo
+   in focus mode) riapre il modal isolamento. */
+.isolamento-banner {
+  display: block;
+  font-size: 1.25em;
+  font-weight: 700;
+  background: #ffcc80;              /* evidenziazione arancione */
+  color: #3e2723;
+  border-left: 5px solid #ef6c00;
+  border-radius: 4px;
+  padding: 3px 8px;
+  margin: 0 0 6px 0;
+  cursor: pointer;
+  user-select: none;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.isolamento-banner svg { vertical-align: -4px; margin-right: 6px; }
+
+/* Icona virus a sinistra del numero letto — speculare alla matita
+   (che sta in alto a destra, top:8 right:10 46x46). Solo indicatore:
+   pointer-events none, il modal si apre dal banner o dalla toolbar. */
+.isolamento-icon-bed {
+  position: absolute;
+  top: 8px;
+  left: 10px;
+  width: 46px;
+  height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #e8f5e9;
+  border: 2px solid #43a047;
+  border-radius: 12px;
+  z-index: 3;
+  pointer-events: none;
+}
+/* Il badge di stato salvataggio (top-left transiente) deve restare
+   leggibile sopra l'icona virus */
+.patient-card .status-badge { z-index: 5; }
+
 /* ===== Badge "Update" — Claude orange (D97757) + lampeggio sull'icona =====
    Il badge è statico (no pulse), l'icona triangolare lampeggia per
    attirare l'attenzione senza essere troppo invasiva. */
