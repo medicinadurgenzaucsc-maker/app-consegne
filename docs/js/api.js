@@ -705,24 +705,34 @@ function _sbSpostaPaziente(lettoOrigine, lettoDestinazione) {
 function _sbGetRiepilogo() {
   // LIGHT: SELECT solo i 5 campi necessari per il conteggio (no rich-text).
   // Riduce egress ~30x: da ~150KB a ~5KB per query.
-  return _q(_sb.from('consegne').select('letto,nome,tipologia_letto,sesso,dimissibile'))
-    .then(function(rows) {
-      var uomini = 0, donne = 0, indefinito = 0, vuoti = 0, inDimissione = 0;
-      var tipologie = {};
-      (rows || []).forEach(function(r) {
-        if (r.letto === 'NOTE') return; // non contare NOTE come letto
-        var hasPaziente = (r.nome || '').trim() !== '';
-        if (!hasPaziente) { vuoti++; return; }
-        var sesso = (r.sesso || '').toUpperCase();
-        if (sesso === 'M') uomini++;
-        else if (sesso === 'F') donne++;
-        else indefinito++;
-        var tip = (r.tipologia_letto || 'STANDARD').toUpperCase();
-        tipologie[tip] = (tipologie[tip] || 0) + 1;
-        if ((r.dimissibile || '').trim() !== '') inDimissione++;
-      });
-      return { uomini: uomini, donne: donne, indefinito: indefinito, tipologie: tipologie, vuoti: vuoti, inDimissione: inDimissione };
+  var pConteggi = _q(_sb.from('consegne').select('letto,nome,tipologia_letto,sesso,dimissibile'));
+  // Conteggio ISOLATI senza scaricare la diaria (rich-text pesante):
+  // filtro server-side sul marker del banner + head:true → PostgREST
+  // restituisce SOLO l'header con il count, zero byte di body.
+  var pIsolati = _sb.from('consegne')
+    .select('letto', { count: 'exact', head: true })
+    .like('diaria', '%isolamento-banner%')
+    .neq('letto', 'NOTE')
+    .then(function(res) { return res.error ? 0 : (res.count || 0); });
+
+  return Promise.all([pConteggi, pIsolati]).then(function(results) {
+    var rows = results[0], isolati = results[1];
+    var uomini = 0, donne = 0, indefinito = 0, vuoti = 0, inDimissione = 0;
+    var tipologie = {};
+    (rows || []).forEach(function(r) {
+      if (r.letto === 'NOTE') return; // non contare NOTE come letto
+      var hasPaziente = (r.nome || '').trim() !== '';
+      if (!hasPaziente) { vuoti++; return; }
+      var sesso = (r.sesso || '').toUpperCase();
+      if (sesso === 'M') uomini++;
+      else if (sesso === 'F') donne++;
+      else indefinito++;
+      var tip = (r.tipologia_letto || 'STANDARD').toUpperCase();
+      tipologie[tip] = (tipologie[tip] || 0) + 1;
+      if ((r.dimissibile || '').trim() !== '') inDimissione++;
     });
+    return { uomini: uomini, donne: donne, indefinito: indefinito, tipologie: tipologie, vuoti: vuoti, inDimissione: inDimissione, isolati: isolati };
+  });
 }
 
 
