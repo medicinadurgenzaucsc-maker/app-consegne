@@ -1232,7 +1232,14 @@ function _sbEliminaTipologia(nome, force) {
 }
 
 function _sbCambiaTipologiaALetto(letto, nuovaTipologia) {
-  return _q(_sb.from('consegne').update({ tipologia_letto: nuovaTipologia }).eq('letto', String(letto)))
+  // updated_at incluso esplicitamente (belt & braces: il trigger DB
+  // trg_consegne_touch_updated_at lo garantisce comunque server-side).
+  // Senza bump, il cambio tipologia era INVISIBILE ai PC in modalità
+  // emergenza: il check leggero confronta MAX(updated_at).
+  return _q(_sb.from('consegne').update({
+    tipologia_letto: nuovaTipologia,
+    updated_at: new Date().toISOString()
+  }).eq('letto', String(letto)))
     .then(function() { return { success: true }; });
 }
 
@@ -2318,30 +2325,70 @@ function _emergenzaAvviaPolling() {
   }, 30000);
 }
 
-// Memorizza l'ultimo MAX(updated_at) visto. Usato dal polling
-// emergenza per evitare full sync quando non c'è nulla di nuovo.
-var _lastSyncMaxUpdatedAt = null;
+// ── CHECK LEGGERO EMERGENZA — versione robusta ─────────────────────────
+// Firma dello stato tabella = "MAX(updated_at)|COUNT(righe)".
+// Perché entrambi:
+//   - MAX(updated_at): rileva ogni UPDATE (dal trigger DB
+//     trg_consegne_touch_updated_at è garantito server-side, immune agli
+//     orologi sbagliati dei PC client e ai percorsi che non bumpavano)
+//   - COUNT: rileva INSERT e soprattutto DELETE (una DELETE non altera il
+//     MAX se la riga eliminata non era la più recente → prima era
+//     invisibile ai PC in polling: "Elimina letto" non si sincronizzava)
+// nullsFirst:false → un'eventuale riga con updated_at NULL non maschera
+// il vero MAX (PostgREST di default mette i NULL per primi in DESC, il
+// che avrebbe reso il check cieco per sempre).
+// Payload: ~60 byte per tick, come prima.
+var _emergFirmaSync   = null;   // firma dell'ultimo sync RIUSCITO
+var _emergFirmaInit   = false;  // baseline registrata? (flag esplicito, non null-sentinel)
+var _emergSyncInCorso = false;  // full sync in volo: non accodarne altri
 
-// Check leggero: SELECT updated_at LIMIT 1 (ordinato DESC).
-// Ritorna ~50 bytes invece dei ~150KB di SELECT *.
-// Se MAX(updated_at) è diverso dall'ultimo visto, lancia un full sync.
 function _emergenzaCheckSeMutato() {
-  return _q(_sb.from('consegne').select('updated_at')
-    .order('updated_at', { ascending: false }).limit(1))
-    .then(function(rows) {
-      var maxTs = (rows && rows[0]) ? rows[0].updated_at : null;
+  if (_emergSyncInCorso) return Promise.resolve(false);
+  return _sb.from('consegne')
+    .select('updated_at', { count: 'exact' })
+    .order('updated_at', { ascending: false, nullsFirst: false })
+    .limit(1)
+    .then(function(res) {
+      if (res.error) throw res.error;
+      var maxTs = (res.data && res.data[0]) ? res.data[0].updated_at : null;
+      var firma = String(maxTs) + '|' + String(res.count);
+
       // Prima esecuzione: registra baseline, no sync
-      if (_lastSyncMaxUpdatedAt === null) {
-        _lastSyncMaxUpdatedAt = maxTs;
+      if (!_emergFirmaInit) {
+        _emergFirmaInit = true;
+        _emergFirmaSync = firma;
         return false;
       }
-      if (maxTs !== _lastSyncMaxUpdatedAt) {
-        _lastSyncMaxUpdatedAt = maxTs;
-        console.log('[Emergenza] Modifica rilevata, lancio full sync');
-        _scheduleRealtimeSync();
+      if (firma === _emergFirmaSync) return false;
+
+      console.log('[Emergenza] Modifica rilevata (' + firma + '), lancio full sync');
+      _emergSyncInCorso = true;
+      var ind = document.getElementById('syncIndicator');
+      var st  = document.getElementById('syncStatus');
+      if (ind) ind.className = 'badge bg-warning text-dark ms-2';
+      if (st)  st.innerText  = 'Sync...';
+
+      return _sbGetPazienti().then(function(pazienti) {
+        if (typeof _applicaAggiornamentoCompleto === 'function') {
+          _applicaAggiornamentoCompleto(_renderCardsHtml(pazienti));
+        }
+        // ⚠ Baseline avanzata SOLO a sync RIUSCITO. Prima veniva avanzata
+        // subito dopo la detection: se il full sync falliva (rete instabile
+        // — esattamente il contesto in cui la modalità emergenza è attiva),
+        // la modifica era persa per sempre finché qualcos'altro non
+        // cambiava. Ora al tick successivo (30s) si riprova.
+        _emergFirmaSync = firma;
+        _emergSyncInCorso = false;
+        if (ind) ind.className = 'badge bg-success ms-2';
+        if (st)  st.innerText  = new Date().toLocaleTimeString('it-IT');
         return true;
-      }
-      return false;
+      }).catch(function(e) {
+        _emergSyncInCorso = false;
+        if (ind) ind.className = 'badge bg-danger ms-2';
+        if (st)  st.innerText  = 'Errore sync';
+        console.warn('[Emergenza] Full sync fallito, riprovo al prossimo tick:', e && e.message);
+        return false;
+      });
     });
 }
 
