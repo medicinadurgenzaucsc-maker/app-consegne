@@ -557,6 +557,17 @@ body { padding-top: 70px; background-color: #d4e6f1 !important; }
 }
 .sc-info[open] > summary::before { transform: rotate(90deg); }
 .sc-info-body { padding: 0 10px 8px 24px; font-size: 0.84rem; color: #455a64; line-height: 1.45; }
+/* Riquadro descrizione della scala (verde), sopra i riquadri a scomparsa */
+.sc-descr {
+  background: #e8f5e9;
+  border-left: 4px solid #43a047;
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin: 4px 0 10px;
+  font-size: 0.86rem;
+  color: #2e5b1e;
+  line-height: 1.45;
+}
 /* Quando le icone sono DUE (isolamento + rianimazione) le rimpiccioliamo
    così stanno affiancate senza sovrapporsi né coprire il numero del letto.
    :not(:only-child) = c'è più di un'icona nel contenitore. */

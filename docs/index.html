@@ -1762,6 +1762,17 @@
       return html ? '<div class="sc-info-wrap">' + html + '</div>' : '';
     }
 
+    // Apertura ESCLUSIVA dei riquadri a scomparsa: aprendone uno, gli altri si chiudono.
+    function _scaleInfoBindExclusive(root) {
+      if (!root) return;
+      var dets = root.querySelectorAll('details.sc-info');
+      dets.forEach(function(d) {
+        d.addEventListener('toggle', function() {
+          if (d.open) dets.forEach(function(o) { if (o !== d) o.open = false; });
+        });
+      });
+    }
+
     function _scaleRenderDettaglio(card, scala, scaleAll) {
       var body = document.getElementById('scaleModalBody');
       if (!body) return;
@@ -1814,7 +1825,7 @@
       body.innerHTML =
         '<button type="button" id="scaleIndietro" class="btn btn-sm btn-link px-0 mb-1"><i class="bi bi-arrow-left me-1"></i>Tutte le scale</button>' +
         '<div style="font-weight:600;font-size:1.05rem;color:#37474f;">' + _escIso(scala.nome) + '</div>' +
-        '<div class="text-muted mb-2" style="font-size:0.82rem;">' + _escIso(scala.descrizione || '') + '</div>' +
+        (scala.descrizione ? '<div class="sc-descr">' + _escIso(scala.descrizione) + '</div>' : '') +
         _scaleInfoAccordion(def) +
         '<div class="sc-criteri">' + criteriHtml + '</div>' +
         '<div id="scaleRisultato" class="sc-risultato">' +
@@ -1905,6 +1916,7 @@
         _inserisciRisultatoScala(card, scala.id, testo);
         Swal.close();
       });
+      _scaleInfoBindExclusive(body);
       _ricalcola();
     }
 
@@ -1999,7 +2011,7 @@
           '<div style="text-align:left;font-size:0.9rem;">' +
             '<div style="background:#e3f2fd;border-left:4px solid #1565c0;border-radius:4px;padding:7px 10px;margin-bottom:10px;color:#0d47a1;font-weight:600;">' +
               _escIso(testoInserito) + '</div>' +
-            (scala && scala.descrizione ? '<div class="text-muted mb-2" style="font-size:0.85rem;">' + _escIso(scala.descrizione) + '</div>' : '') +
+            (scala && scala.descrizione ? '<div class="sc-descr">' + _escIso(scala.descrizione) + '</div>' : '') +
             _scaleInfoAccordion(def) +
             (interpHtml ? '<div style="font-weight:600;margin:8px 0 2px;color:#37474f;">Interpretazione del punteggio</div>' +
               '<table style="border-collapse:collapse;width:100%;">' + interpHtml + '</table>' : '') +
@@ -2015,7 +2027,8 @@
           confirmButtonText: '<i class="bi bi-trash me-1"></i>Cancella inserimento',
           confirmButtonColor: '#c62828',
           cancelButtonText: 'Chiudi',
-          width: 480
+          width: 480,
+          didOpen: function() { _scaleInfoBindExclusive(Swal.getHtmlContainer()); }
         }).then(function(res) {
           if (!res.isConfirmed) return;
           Swal.fire({
