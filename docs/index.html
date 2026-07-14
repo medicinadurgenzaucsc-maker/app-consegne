@@ -2123,6 +2123,9 @@
     document.addEventListener('click', function(ev) {
       var riga = ev.target.closest ? ev.target.closest('.scala-risultato') : null;
       if (!riga || !riga.closest('[data-field="EsamiColturali"]')) return;
+      // Solo in focus mode: fuori dal focus le scale non sono cliccabili/eliminabili
+      var card = riga.closest('.patient-card');
+      if (!card || !card.classList.contains('focus-mode')) return;
       ev.preventDefault();
       ev.stopPropagation();
       if (typeof window._apriModalRiepilogoScala === 'function') window._apriModalRiepilogoScala(riga);
