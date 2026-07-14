@@ -455,8 +455,25 @@
                 if (sel.length > 0) tipologie = sel.join(',');
               }
             }
+            // ⚠ Chiudi PRIMA il modal (teardown del focus-trap Bootstrap con
+            // la tab ANCORA in primo piano), POI apri la stampa. Se window.open
+            // (dentro il callback) partisse mentre il modal si sta chiudendo,
+            // la nuova tab manda in background la principale, l'animazione di
+            // chiusura si sospende, 'hidden.bs.modal' non scatta e il focus-trap
+            // resta ATTIVO: rende non scrivibili gli input dei modal successivi
+            // (es. il campo del modal isolamento). Il fallback timeout copre
+            // l'improbabile caso in cui 'hidden' non scatti.
+            var _opt = [saltaVuoti, orientamento, tipologie, scala, includiNote];
+            var _lanciato = false;
+            var _lancia = function() {
+              if (_lanciato) return; _lanciato = true;
+              if (typeof _scalaModalCallback === 'function') {
+                _scalaModalCallback(_opt[0], _opt[1], _opt[2], _opt[3], _opt[4]);
+              }
+            };
+            modalEl.addEventListener('hidden.bs.modal', _lancia, { once: true });
+            setTimeout(_lancia, 700);
             mi.hide();
-            if (typeof _scalaModalCallback === 'function') _scalaModalCallback(saltaVuoti, orientamento, tipologie, scala, includiNote);
           });
         }
       }
