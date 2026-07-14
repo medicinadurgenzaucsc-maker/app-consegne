@@ -424,12 +424,12 @@ function _calcolaScala(def, valori) {
   }
   // Interpretazione: fascia [min,max] che contiene il punteggio (arrotondato)
   var pRound = Math.round(punteggio);
-  var interp = '';
+  var interp = '', interpBreve = '';
   (def.interpretazione || []).forEach(function(f) {
     if (interp) return;
-    if (pRound >= f.min && pRound <= f.max) interp = f.testo;
+    if (pRound >= f.min && pRound <= f.max) { interp = f.testo; interpBreve = f.breve || f.testo; }
   });
-  return { punteggio: punteggio, interpretazione: interp };
+  return { punteggio: punteggio, interpretazione: interp, interpretazioneBreve: interpBreve };
 }
 window._calcolaScala = _calcolaScala;
 
@@ -450,7 +450,7 @@ function _scalaFormattaRisultato(scala, ris) {
     // Nella riga di consegna solo l'etichetta breve: le fasce verbose sono
     // scritte come "Etichetta breve — spiegazione lunga", si taglia al primo
     // " — ". Il dettaglio completo resta nel modal (click sulla riga).
-    var breve = String(ris.interpretazione).split(' — ')[0].trim();
+    var breve = ris.interpretazioneBreve || ris.interpretazione;
     txt += ' — ' + breve;
   }
   return txt;
