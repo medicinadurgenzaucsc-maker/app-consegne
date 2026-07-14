@@ -401,6 +401,7 @@ body { padding-top: 70px; background-color: #d4e6f1 !important; }
   font-weight: 700;
   background: #ffcc80;              /* evidenziazione arancione */
   color: #3e2723;
+  text-transform: uppercase;
   border-left: 5px solid #ef6c00;
   border-radius: 4px;
   padding: 3px 8px;
@@ -421,6 +422,7 @@ body { padding-top: 70px; background-color: #d4e6f1 !important; }
   font-weight: 700;
   background: #ffcdd2;              /* rosso pastello */
   color: #7f1d1d;
+  text-transform: uppercase;
   border-left: 5px solid #c62828;
   border-radius: 4px;
   padding: 3px 8px;
