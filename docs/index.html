@@ -1762,13 +1762,18 @@
       return html ? '<div class="sc-info-wrap">' + html + '</div>' : '';
     }
 
-    // Apertura ESCLUSIVA dei riquadri a scomparsa: aprendone uno, gli altri si chiudono.
+    // Apertura ESCLUSIVA dei riquadri a scomparsa: aprendone uno, gli altri si
+    // chiudono. Usa il click sul summary (sincrono): l'evento "toggle" di
+    // <details> è asincrono e non chiuderebbe gli altri in tempo.
     function _scaleInfoBindExclusive(root) {
       if (!root) return;
-      var dets = root.querySelectorAll('details.sc-info');
+      var dets = Array.prototype.slice.call(root.querySelectorAll('details.sc-info'));
       dets.forEach(function(d) {
-        d.addEventListener('toggle', function() {
-          if (d.open) dets.forEach(function(o) { if (o !== d) o.open = false; });
+        var sum = d.querySelector('summary');
+        if (!sum) return;
+        sum.addEventListener('click', function() {
+          // d.open qui è ancora lo stato PRIMA del toggle: se sta per aprirsi, chiudi gli altri
+          if (!d.open) dets.forEach(function(o) { if (o !== d) o.open = false; });
         });
       });
     }
