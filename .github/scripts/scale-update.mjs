@@ -210,7 +210,9 @@ async function geminiCall(prompt) {
       return parts.map(p => p.text || '').join('\n');
     }
     const t = await resp.text().catch(() => '');
-    ultimoErrore = `HTTP ${resp.status}: ${t.slice(0, 200)}`;
+    let msg = t.slice(0, 200);
+    try { const j = JSON.parse(t); if (j.error && j.error.message) msg = j.error.message; } catch (e) {}
+    ultimoErrore = `HTTP ${resp.status}: ${msg}`;
     // 429 (rate limit) o 5xx → backoff e ritenta; altri errori → lancia subito
     if (resp.status === 429 || resp.status >= 500) {
       const attesa = 2000 * tentativo;
