@@ -1753,29 +1753,47 @@
       var body = document.getElementById('scaleModalBody');
       if (!body) return;
       var def = scala.definizione || {};
-      var criteriHtml = (def.criteri || []).map(function(c, i) {
+
+      // Badge punti: +N / −N / 0
+      function _fmtPt(p) {
+        if (p == null || isNaN(p)) return '';
+        if (p > 0) return '+' + p;
+        if (p < 0) return '−' + Math.abs(p);
+        return '0';
+      }
+
+      var criteriHtml = (def.criteri || []).map(function(c) {
         if (c.tipo === 'bool') {
-          return '<label class="d-flex align-items-center gap-2 py-1" style="cursor:pointer;font-size:0.9rem;">' +
-            '<input type="checkbox" class="form-check-input mt-0 sc-crit" data-cid="' + _escIso(c.id) + '" data-tipo="bool">' +
-            '<span>' + _escIso(c.label) + '</span></label>';
+          // Due bottoni No/Sì (No preselezionato = 0 punti)
+          return '<div class="sc-row" data-cid="' + _escIso(c.id) + '" data-tipo="bool">' +
+            '<span class="sc-lbl">' + _escIso(c.label) + '</span>' +
+            '<div class="sc-opts">' +
+              '<button type="button" class="sc-opt active" data-v="0">No</button>' +
+              '<button type="button" class="sc-opt" data-v="1">Sì' +
+                (c.punti ? ' <span class="sc-pt">' + _fmtPt(c.punti) + '</span>' : '') + '</button>' +
+            '</div></div>';
         }
         if (c.tipo === 'choice') {
+          // N bottoni, la prima opzione (di norma il valore "normale") preselezionata
           var opts = (c.opzioni || []).map(function(o, idx) {
-            return '<option value="' + idx + '">' + _escIso(o.label) + '</option>';
+            var pt = (o.valore == null && typeof o.punti === 'number')
+              ? ' <span class="sc-pt">' + _fmtPt(o.punti) + '</span>' : '';
+            return '<button type="button" class="sc-opt' + (idx === 0 ? ' active' : '') + '" data-v="' + idx + '">' +
+              _escIso(o.label) + pt + '</button>';
           }).join('');
-          return '<div class="py-1" style="font-size:0.9rem;">' +
-            '<div class="mb-1">' + _escIso(c.label) + '</div>' +
-            '<select class="form-select form-select-sm sc-crit" data-cid="' + _escIso(c.id) + '" data-tipo="choice">' + opts + '</select></div>';
+          return '<div class="sc-row" data-cid="' + _escIso(c.id) + '" data-tipo="choice">' +
+            '<span class="sc-lbl">' + _escIso(c.label) + '</span>' +
+            '<div class="sc-opts">' + opts + '</div></div>';
         }
         if (c.tipo === 'number') {
-          return '<div class="py-1 d-flex align-items-center gap-2" style="font-size:0.9rem;">' +
-            '<span style="flex:1;">' + _escIso(c.label) + '</span>' +
-            '<input type="number" class="form-control form-control-sm sc-crit" style="width:110px;" ' +
-              'data-cid="' + _escIso(c.id) + '" data-tipo="number" ' +
-              (c.min != null ? 'min="' + c.min + '" ' : '') + (c.max != null ? 'max="' + c.max + '" ' : '') +
-              (c.step != null ? 'step="' + c.step + '" ' : '') + '>' +
-            (c.unita ? '<span class="text-muted small" style="width:70px;">' + _escIso(c.unita) + '</span>' : '') +
-          '</div>';
+          return '<div class="sc-row" data-cid="' + _escIso(c.id) + '" data-tipo="number">' +
+            '<span class="sc-lbl">' + _escIso(c.label) + '</span>' +
+            '<span class="sc-numwrap">' +
+              '<input type="number" inputmode="decimal" class="sc-num" ' +
+                (c.min != null ? 'min="' + c.min + '" ' : '') + (c.max != null ? 'max="' + c.max + '" ' : '') +
+                (c.step != null ? 'step="' + c.step + '" ' : '') + 'placeholder="—">' +
+              (c.unita ? '<span class="sc-unit">' + _escIso(c.unita) + '</span>' : '') +
+            '</span></div>';
         }
         return '';
       }).join('');
@@ -1784,10 +1802,10 @@
         '<button type="button" id="scaleIndietro" class="btn btn-sm btn-link px-0 mb-1"><i class="bi bi-arrow-left me-1"></i>Tutte le scale</button>' +
         '<div style="font-weight:600;font-size:1.05rem;color:#37474f;">' + _escIso(scala.nome) + '</div>' +
         '<div class="text-muted mb-2" style="font-size:0.82rem;">' + _escIso(scala.descrizione || '') + '</div>' +
-        '<div style="max-height:300px;overflow-y:auto;border:1px solid #eceff1;border-radius:6px;padding:8px 10px;">' + criteriHtml + '</div>' +
-        '<div id="scaleRisultato" style="margin-top:12px;padding:10px 12px;border-radius:8px;background:#eceff1;text-align:center;">' +
-          '<span style="font-size:1.6rem;font-weight:700;color:#37474f;" id="scaleValore">—</span>' +
-          '<span style="display:block;font-size:0.85rem;color:#607d8b;" id="scaleInterp"></span>' +
+        '<div class="sc-criteri">' + criteriHtml + '</div>' +
+        '<div id="scaleRisultato" class="sc-risultato">' +
+          '<span class="sc-ris-val" id="scaleValore">—</span>' +
+          '<span class="sc-ris-int" id="scaleInterp"></span>' +
         '</div>' +
         (scala.riferimento || scala.fonte_url
           ? '<div class="text-muted mt-2" style="font-size:0.72rem;line-height:1.3;">Fonte: ' +
@@ -1802,16 +1820,21 @@
 
       function _raccogliValori() {
         var v = {};
-        body.querySelectorAll('.sc-crit').forEach(function(el) {
-          var cid = el.getAttribute('data-cid'), tipo = el.getAttribute('data-tipo');
-          if (tipo === 'bool') v[cid] = el.checked;
-          else if (tipo === 'choice') {
+        body.querySelectorAll('.sc-row').forEach(function(row) {
+          var cid = row.getAttribute('data-cid'), tipo = row.getAttribute('data-tipo');
+          if (tipo === 'bool') {
+            var act = row.querySelector('.sc-opt.active');
+            v[cid] = !!(act && act.getAttribute('data-v') === '1');
+          } else if (tipo === 'choice') {
+            var actc = row.querySelector('.sc-opt.active');
+            var idx = actc ? Number(actc.getAttribute('data-v')) : 0;
             var c = (def.criteri || []).find(function(x){ return x.id === cid; });
-            var op = c && c.opzioni ? c.opzioni[Number(el.value)] : null;
+            var op = c && c.opzioni ? c.opzioni[idx] : null;
             // per le formule il choice porta un "valore" (es. sesso M/F), altrimenti l'indice
-            v[cid] = (op && op.valore != null) ? op.valore : Number(el.value);
+            v[cid] = (op && op.valore != null) ? op.valore : idx;
           } else if (tipo === 'number') {
-            v[cid] = el.value === '' ? null : Number(el.value);
+            var inp = row.querySelector('.sc-num');
+            v[cid] = (!inp || inp.value === '') ? null : Number(inp.value);
           }
         });
         return v;
@@ -1819,7 +1842,7 @@
       function _ricalcola() {
         // Se ci sono criteri numerici non compilati, il risultato è incompleto
         var numMancante = false;
-        body.querySelectorAll('.sc-crit[data-tipo="number"]').forEach(function(el) {
+        body.querySelectorAll('.sc-num').forEach(function(el) {
           if (String(el.value).trim() === '') numMancante = true;
         });
         var ris = numMancante ? null : window._calcolaScala(def, _raccogliValori());
@@ -1830,7 +1853,7 @@
         if (!ris) {
           elV.textContent = '—';
           elI.textContent = (numMancante || def.tipo === 'formula') ? 'compila tutti i campi' : '';
-          elBtn.disabled = true; elBox.style.background = '#eceff1';
+          elBtn.disabled = true; elBox.className = 'sc-risultato';
           return;
         }
         var p = ris.punteggio;
@@ -1841,11 +1864,22 @@
         elI.textContent = ris.interpretazione || '';
         elBtn.disabled = false;
         var alto = /alt|grave|alto/i.test(ris.interpretazione || '');
-        elBox.style.background = alto ? '#ffebee' : '#e8f5e9';
+        elBox.className = 'sc-risultato ' + (alto ? 'is-alto' : 'is-basso');
       }
-      body.querySelectorAll('.sc-crit').forEach(function(el) {
-        el.addEventListener('change', _ricalcola);
+
+      // Un click su un'opzione = seleziona (deseleziona le sorelle) + ricalcola
+      body.querySelectorAll('.sc-opts').forEach(function(group) {
+        group.addEventListener('click', function(ev) {
+          var btn = ev.target.closest('.sc-opt');
+          if (!btn) return;
+          group.querySelectorAll('.sc-opt').forEach(function(b){ b.classList.remove('active'); });
+          btn.classList.add('active');
+          _ricalcola();
+        });
+      });
+      body.querySelectorAll('.sc-num').forEach(function(el) {
         el.addEventListener('input', _ricalcola);
+        el.addEventListener('change', _ricalcola);
       });
       document.getElementById('scaleIndietro').addEventListener('click', function() {
         _scaleRenderLista(card, scaleAll);
