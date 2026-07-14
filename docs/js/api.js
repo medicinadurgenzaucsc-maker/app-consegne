@@ -346,6 +346,110 @@ function _rianimIconSvg(size) {
 }
 window._rianimIconSvg = _rianimIconSvg;
 
+// ══════════════════════════════════════════════════════════════════
+// SCALE DI VALUTAZIONE MEDICHE
+// Le scale sono DATI (tabella scale_valutazione), caricate con cache
+// localStorage + fallback offline. Il calcolo è 100% locale.
+// ══════════════════════════════════════════════════════════════════
+var _SCALE_CACHE_KEY = '_scaleValutazioneCache';
+
+// Formule matematiche (non somme di punti). Restano in codice — verificabili,
+// nessun eval. Le scale a formula puntano qui via definizione.formula.
+var _SCALE_FORMULE = {
+  // Cockcroft-Gault: CrCl (mL/min) = ((140-età)·peso·[0.85 se F]) / (72·Scr[mg/dL])
+  cockcroft_gault: function(v) {
+    var eta = +v.eta, peso = +v.peso, cr = +v.creatinina;
+    if (!(eta > 0) || !(peso > 0) || !(cr > 0)) return null;
+    var r = ((140 - eta) * peso) / (72 * cr);
+    if (v.sesso === 'F') r *= 0.85;
+    return r;
+  },
+  // CKD-EPI 2021 (senza fattore razza): 142·min(Scr/κ,1)^α·max(Scr/κ,1)^-1.200·0.9938^età·[1.012 se F]
+  ckd_epi_2021: function(v) {
+    var eta = +v.eta, cr = +v.creatinina;
+    if (!(eta > 0) || !(cr > 0)) return null;
+    var f = (v.sesso === 'F');
+    var k = f ? 0.7 : 0.9, a = f ? -0.241 : -0.302;
+    var r = 142 * Math.pow(Math.min(cr / k, 1), a) *
+            Math.pow(Math.max(cr / k, 1), -1.200) * Math.pow(0.9938, eta);
+    if (f) r *= 1.012;
+    return r;
+  }
+};
+
+// Motore di calcolo. `valori` = { criterioId: valore }
+//  - bool   → valore booleano
+//  - choice → indice dell'opzione scelta (numero)
+//  - number → valore numerico
+// Ritorna { punteggio, interpretazione } o null se input insufficiente (formula).
+function _calcolaScala(def, valori) {
+  if (!def) return null;
+  var punteggio;
+  if (def.tipo === 'formula') {
+    var fn = _SCALE_FORMULE[def.formula];
+    if (typeof fn !== 'function') return null;
+    punteggio = fn(valori || {});
+    if (punteggio == null || isNaN(punteggio)) return null;
+  } else {
+    punteggio = 0;
+    (def.criteri || []).forEach(function(c) {
+      var val = valori ? valori[c.id] : undefined;
+      if (c.tipo === 'bool') {
+        if (val) punteggio += (c.punti || 0);
+      } else if (c.tipo === 'choice') {
+        var idx = (val == null) ? 0 : Number(val);
+        var op = (c.opzioni || [])[idx];
+        if (op && typeof op.punti === 'number') punteggio += op.punti;
+      }
+    });
+  }
+  // Interpretazione: fascia [min,max] che contiene il punteggio (arrotondato)
+  var pRound = Math.round(punteggio);
+  var interp = '';
+  (def.interpretazione || []).forEach(function(f) {
+    if (interp) return;
+    if (pRound >= f.min && pRound <= f.max) interp = f.testo;
+  });
+  return { punteggio: punteggio, interpretazione: interp };
+}
+window._calcolaScala = _calcolaScala;
+
+// Formatta la riga da inserire nel campo: "NOME del DD/MM: X[ unità] — interpretazione"
+function _scalaFormattaRisultato(scala, ris) {
+  var d = new Date();
+  var data = String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0');
+  var def = scala.definizione || {};
+  var p = ris.punteggio;
+  var valStr;
+  if (def.tipo === 'formula') {
+    valStr = String(Math.round(p)) + (def.unita ? ' ' + def.unita : '');
+  } else {
+    valStr = Number.isInteger(p) ? String(p) : String(Number(p.toFixed(1)));
+  }
+  var txt = scala.nome + ' del ' + data + ': ' + valStr;
+  if (ris.interpretazione) txt += ' — ' + ris.interpretazione;
+  return txt;
+}
+window._scalaFormattaRisultato = _scalaFormattaRisultato;
+
+// Carica le scale (cache-first per reattività + offline, poi refresh dal DB).
+// Ritorna sempre subito la cache se presente; aggiorna in background.
+function _sbGetScaleValutazione() {
+  var cached = null;
+  try { cached = JSON.parse(localStorage.getItem(_SCALE_CACHE_KEY) || 'null'); } catch(e) {}
+  var fetchPromise = _q(_sb.from('scale_valutazione').select('*').eq('attiva', true).order('ordine'))
+    .then(function(rows) {
+      if (rows && rows.length) {
+        try { localStorage.setItem(_SCALE_CACHE_KEY, JSON.stringify(rows)); } catch(e) {}
+      }
+      return rows || [];
+    })
+    .catch(function() { return cached || []; });
+  // Se ho la cache, la ritorno subito; altrimenti aspetto il fetch
+  return (cached && cached.length) ? Promise.resolve(cached) : fetchPromise;
+}
+window._sbGetScaleValutazione = _sbGetScaleValutazione;
+
 // ── RENDERER CARD (vista compatta a riga, unica vista attiva) ─
 function _renderAltCard(p) {
   var letto = String(p.Letto || '');

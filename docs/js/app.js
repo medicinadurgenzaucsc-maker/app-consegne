@@ -1308,6 +1308,15 @@
         }
         return;
       }
+      if (cmd === 'scale') {
+        // Click sul pulsante "Scale" nella toolbar Esami Colturali:
+        // apri il modal delle scale di valutazione per la card corrente.
+        var cardSc = tb.closest('.patient-card');
+        if (cardSc && typeof window._apriModalScale === 'function') {
+          window._apriModalScale(cardSc);
+        }
+        return;
+      }
       _tbRestoreSelection();
       if (fmult !== null) { _tbApplyFontMultiplier(parseFloat(fmult)); var p = tb.querySelector('[data-tb-submenu="fsmenu"]'); if (p) p.classList.remove('open'); return; }
       if (cmd) { document.execCommand(cmd, false, null); }

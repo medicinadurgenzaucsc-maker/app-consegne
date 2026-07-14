@@ -358,7 +358,14 @@
               +   (typeof window._rianimIconSvg === 'function' ? window._rianimIconSvg(20) : '<i class="bi bi-heart-pulse-fill" style="color:#e53935"></i>')
               + '</button>';
       }
-      // Esami Colturali e Da Fare: pulsante checkbox RIMOSSO su richiesta utente.
+      // Esami Colturali e Scale Valutazione: pulsante scale mediche
+      if (campo === 'EsamiColturali') {
+        extra = '<span class="tb-sep"></span>'
+              + '<button class="tb-btn tb-scale" data-cmd="scale" title="Scale di valutazione mediche">'
+              +   '<i class="bi bi-clipboard-pulse"></i><span class="tb-scale-label">Scale</span>'
+              + '</button>';
+      }
+      // Da Fare: pulsante checkbox RIMOSSO su richiesta utente.
       // Il sistema dei caret + ordinamento automatico è disattivato.
       // I dati esistenti con checkbox continuano a funzionare per retro-compatibilità.
 
@@ -1679,6 +1686,194 @@
       e.stopPropagation();
       window._apriModalRianimazione(card);
     });
+
+    // ══════════════════════════════════════════════════════════════════
+    // SCALE DI VALUTAZIONE — modal calcolatrice
+    // Lista con ricerca → dettaglio scala (criteri + calcolo live) →
+    // "Inserisci nel referto": riga fissa non editabile in cima al campo
+    // Esami Colturali. Stessa scala ricalcolata = sostituisce (valore+data).
+    // ══════════════════════════════════════════════════════════════════
+    window._apriModalScale = function(card) {
+      if (!card || !card.classList.contains('focus-mode')) return;
+      Swal.fire({
+        title: '<i class="bi bi-clipboard-pulse me-2" style="color:#1565c0;"></i>Scale di valutazione',
+        html: '<div id="scaleModalBody" class="text-start">' +
+              '<div class="text-center py-4"><div class="spinner-border text-secondary"></div>' +
+              '<div class="mt-2 text-muted small">Caricamento scale…</div></div></div>',
+        width: 640,
+        showConfirmButton: false,
+        showCloseButton: true,
+        allowOutsideClick: true,
+        didOpen: function() {
+          _sbGetScaleValutazione().then(function(scale) {
+            _scaleRenderLista(card, scale || []);
+          }).catch(function() {
+            var b = document.getElementById('scaleModalBody');
+            if (b) b.innerHTML = '<div class="text-danger small py-3">Impossibile caricare le scale.</div>';
+          });
+        }
+      });
+    };
+
+    function _scaleRenderLista(card, scale) {
+      var body = document.getElementById('scaleModalBody');
+      if (!body) return;
+      var righe = scale.map(function(s) {
+        return '<button type="button" class="cl-scala-item" data-scala-id="' + _escIso(s.id) + '" ' +
+          'style="display:block;width:100%;text-align:left;border:1px solid #e0e0e0;border-radius:6px;' +
+          'background:#fff;padding:8px 10px;margin:0 0 6px 0;cursor:pointer;">' +
+          '<span style="font-weight:600;color:#37474f;">' + _escIso(s.nome) + '</span>' +
+          '<span style="display:block;font-size:0.8rem;color:#78909c;">' + _escIso(s.descrizione || '') + '</span>' +
+        '</button>';
+      }).join('');
+      body.innerHTML =
+        '<input id="scaleSearch" class="form-control form-control-sm mb-2" placeholder="Cerca una scala (es. HAS-BLED, Wells, GFR…)">' +
+        '<div id="scaleLista" style="max-height:380px;overflow-y:auto;">' + righe + '</div>';
+      var search = document.getElementById('scaleSearch');
+      if (search) {
+        search.addEventListener('input', function() {
+          var q = this.value.toLowerCase().trim();
+          document.querySelectorAll('#scaleLista .cl-scala-item').forEach(function(it) {
+            var txt = it.textContent.toLowerCase();
+            it.style.display = (!q || txt.indexOf(q) !== -1) ? '' : 'none';
+          });
+        });
+        search.focus();
+      }
+      document.querySelectorAll('#scaleLista .cl-scala-item').forEach(function(it) {
+        it.addEventListener('click', function() {
+          var id = it.getAttribute('data-scala-id');
+          var s = scale.find(function(x) { return x.id === id; });
+          if (s) _scaleRenderDettaglio(card, s, scale);
+        });
+      });
+    }
+
+    function _scaleRenderDettaglio(card, scala, scaleAll) {
+      var body = document.getElementById('scaleModalBody');
+      if (!body) return;
+      var def = scala.definizione || {};
+      var criteriHtml = (def.criteri || []).map(function(c, i) {
+        if (c.tipo === 'bool') {
+          return '<label class="d-flex align-items-center gap-2 py-1" style="cursor:pointer;font-size:0.9rem;">' +
+            '<input type="checkbox" class="form-check-input mt-0 sc-crit" data-cid="' + _escIso(c.id) + '" data-tipo="bool">' +
+            '<span>' + _escIso(c.label) + '</span></label>';
+        }
+        if (c.tipo === 'choice') {
+          var opts = (c.opzioni || []).map(function(o, idx) {
+            return '<option value="' + idx + '">' + _escIso(o.label) + '</option>';
+          }).join('');
+          return '<div class="py-1" style="font-size:0.9rem;">' +
+            '<div class="mb-1">' + _escIso(c.label) + '</div>' +
+            '<select class="form-select form-select-sm sc-crit" data-cid="' + _escIso(c.id) + '" data-tipo="choice">' + opts + '</select></div>';
+        }
+        if (c.tipo === 'number') {
+          return '<div class="py-1 d-flex align-items-center gap-2" style="font-size:0.9rem;">' +
+            '<span style="flex:1;">' + _escIso(c.label) + '</span>' +
+            '<input type="number" class="form-control form-control-sm sc-crit" style="width:110px;" ' +
+              'data-cid="' + _escIso(c.id) + '" data-tipo="number" ' +
+              (c.min != null ? 'min="' + c.min + '" ' : '') + (c.max != null ? 'max="' + c.max + '" ' : '') +
+              (c.step != null ? 'step="' + c.step + '" ' : '') + '>' +
+            (c.unita ? '<span class="text-muted small" style="width:70px;">' + _escIso(c.unita) + '</span>' : '') +
+          '</div>';
+        }
+        return '';
+      }).join('');
+
+      body.innerHTML =
+        '<button type="button" id="scaleIndietro" class="btn btn-sm btn-link px-0 mb-1"><i class="bi bi-arrow-left me-1"></i>Tutte le scale</button>' +
+        '<div style="font-weight:600;font-size:1.05rem;color:#37474f;">' + _escIso(scala.nome) + '</div>' +
+        '<div class="text-muted mb-2" style="font-size:0.82rem;">' + _escIso(scala.descrizione || '') + '</div>' +
+        '<div style="max-height:300px;overflow-y:auto;border:1px solid #eceff1;border-radius:6px;padding:8px 10px;">' + criteriHtml + '</div>' +
+        '<div id="scaleRisultato" style="margin-top:12px;padding:10px 12px;border-radius:8px;background:#eceff1;text-align:center;">' +
+          '<span style="font-size:1.6rem;font-weight:700;color:#37474f;" id="scaleValore">—</span>' +
+          '<span style="display:block;font-size:0.85rem;color:#607d8b;" id="scaleInterp"></span>' +
+        '</div>' +
+        (scala.riferimento || scala.fonte_url
+          ? '<div class="text-muted mt-2" style="font-size:0.72rem;line-height:1.3;">Fonte: ' +
+            _escIso(scala.riferimento || '') +
+            (scala.fonte_url ? ' · <a href="' + _escIso(scala.fonte_url) + '" target="_blank" rel="noopener">MDCalc</a>' : '') +
+            '</div>'
+          : '') +
+        '<div class="d-flex gap-2 mt-3">' +
+          '<button type="button" id="scaleInserisci" class="btn btn-sm fw-bold flex-grow-1" style="background:#1565c0;color:#fff;" disabled>' +
+            '<i class="bi bi-check-lg me-1"></i>Inserisci nel referto</button>' +
+        '</div>';
+
+      function _raccogliValori() {
+        var v = {};
+        body.querySelectorAll('.sc-crit').forEach(function(el) {
+          var cid = el.getAttribute('data-cid'), tipo = el.getAttribute('data-tipo');
+          if (tipo === 'bool') v[cid] = el.checked;
+          else if (tipo === 'choice') {
+            var c = (def.criteri || []).find(function(x){ return x.id === cid; });
+            var op = c && c.opzioni ? c.opzioni[Number(el.value)] : null;
+            // per le formule il choice porta un "valore" (es. sesso M/F), altrimenti l'indice
+            v[cid] = (op && op.valore != null) ? op.valore : Number(el.value);
+          } else if (tipo === 'number') {
+            v[cid] = el.value === '' ? null : Number(el.value);
+          }
+        });
+        return v;
+      }
+      function _ricalcola() {
+        var ris = window._calcolaScala(def, _raccogliValori());
+        var elV = document.getElementById('scaleValore'),
+            elI = document.getElementById('scaleInterp'),
+            elBtn = document.getElementById('scaleInserisci'),
+            elBox = document.getElementById('scaleRisultato');
+        if (!ris) {
+          elV.textContent = '—'; elI.textContent = (def.tipo === 'formula') ? 'compila tutti i campi' : '';
+          elBtn.disabled = true; elBox.style.background = '#eceff1';
+          return;
+        }
+        var p = ris.punteggio;
+        var valStr = (def.tipo === 'formula')
+          ? Math.round(p) + (def.unita ? ' ' + def.unita : '')
+          : (Number.isInteger(p) ? p : Number(p.toFixed(1)));
+        elV.textContent = valStr;
+        elI.textContent = ris.interpretazione || '';
+        elBtn.disabled = false;
+        var alto = /alt|grave|alto/i.test(ris.interpretazione || '');
+        elBox.style.background = alto ? '#ffebee' : '#e8f5e9';
+      }
+      body.querySelectorAll('.sc-crit').forEach(function(el) {
+        el.addEventListener('change', _ricalcola);
+        el.addEventListener('input', _ricalcola);
+      });
+      document.getElementById('scaleIndietro').addEventListener('click', function() {
+        _scaleRenderLista(card, scaleAll);
+      });
+      document.getElementById('scaleInserisci').addEventListener('click', function() {
+        var ris = window._calcolaScala(def, _raccogliValori());
+        if (!ris) return;
+        var testo = window._scalaFormattaRisultato(scala, ris);
+        _inserisciRisultatoScala(card, scala.id, testo);
+        Swal.close();
+      });
+      _ricalcola();
+    }
+
+    // Inserisce/aggiorna la riga fissa (non editabile) in cima al campo
+    // Esami Colturali. Stessa scala → sostituisce; scale diverse → impilate.
+    function _inserisciRisultatoScala(card, scalaId, testo) {
+      var campo = card.querySelector('[data-field="EsamiColturali"]');
+      if (!campo) return;
+      var esistente = campo.querySelector('.scala-risultato[data-scala="' + scalaId + '"]');
+      if (esistente) {
+        esistente.textContent = testo;
+      } else {
+        var div = document.createElement('div');
+        div.className = 'scala-risultato';
+        div.setAttribute('contenteditable', 'false');
+        div.setAttribute('data-scala', scalaId);
+        div.textContent = testo;
+        campo.insertBefore(div, campo.firstChild);
+      }
+      if (typeof window._placeholderCheck === 'function') window._placeholderCheck(campo);
+      var letto = card.getAttribute('data-bed');
+      if (letto && typeof attivaSalvataggioRitardato === 'function') attivaSalvataggioRitardato(letto, card);
+    }
 
     document.addEventListener('visibilitychange', function() {
       if (document.hidden) {
