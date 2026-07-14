@@ -1,0 +1,46 @@
+name: Auto-aggiornamento scale (MDCalc)
+
+# Riverifica mensilmente i punteggi/soglie delle scale di valutazione dalla
+# fonte unica MDCalc. Doppia lettura in consenso anti-allucinazione; pubblica
+# in automatico i cambiamenti affidabili (con log di allerta se i casi_verità
+# non passano più) e conserva lo storico per il rollback.
+#
+# Richiede i secret del repo:
+#   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY  (già presenti — usati anche da notify-deploy)
+#   ANTHROPIC_API_KEY                        (DA AGGIUNGERE)
+
+on:
+  schedule:
+    - cron: '0 4 1 * *'   # ogni giorno 1 del mese alle 04:00 UTC
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Prova a vuoto (non scrive nel DB)'
+        type: boolean
+        default: true
+      only:
+        description: 'Solo questa scala (id, opzionale)'
+        type: string
+        default: ''
+
+jobs:
+  aggiorna-scale:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Esegui aggiornamento scale
+        env:
+          SUPABASE_URL:             ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          ANTHROPIC_API_KEY:        ${{ secrets.ANTHROPIC_API_KEY }}
+          # Su schedule (mensile) scrive davvero; da dispatch rispetta la spunta.
+          SCALE_UPDATE_DRY_RUN:     ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
+          SCALE_UPDATE_ONLY:        ${{ github.event_name == 'workflow_dispatch' && inputs.only || '' }}
+        run: node .github/scripts/scale-update.mjs
