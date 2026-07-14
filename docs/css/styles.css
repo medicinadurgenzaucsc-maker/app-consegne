@@ -861,6 +861,13 @@ span.valore-giorni.alt-info-val { font-weight: normal; }
   vertical-align: middle;
 }
 .dim-icon-list svg { display: block; }
+/* Icone stato (isolamento/rianimazione) accanto al nome nella Lista Pazienti */
+.bedstatus-icon-list {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+}
+.bedstatus-icon-list svg { display: block; }
 
 /* Fuori focus mode la checkbox sembra disabilitata visivamente */
 .patient-card:not(.focus-mode) .dim-checkbox {

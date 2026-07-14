@@ -2063,6 +2063,51 @@
       if (typeof window._apriModalRiepilogoScala === 'function') window._apriModalRiepilogoScala(riga);
     }, true);
 
+    // ── Protezione del blocco scale (sopra la riga di divisione) ─────────────
+    // Le scale NON devono poter essere cancellate col testo libero: né tenendo
+    // premuto Backspace dall'area sottostante, né selezionando tutto e
+    // cancellando/scrivendo sopra.
+    function _campoConScaleBox(target) {
+      var campo = target && target.closest ? target.closest('[data-field="EsamiColturali"]') : null;
+      if (!campo) return null;
+      return campo.querySelector(':scope > .scale-box') ? campo : null;
+    }
+    // beforeinput: blocca ogni modifica (digitazione, canc, incolla) che toccherebbe il box.
+    document.addEventListener('beforeinput', function(ev) {
+      var campo = _campoConScaleBox(ev.target);
+      if (!campo) return;
+      var box = campo.querySelector(':scope > .scale-box');
+      var ranges = (ev.getTargetRanges && ev.getTargetRanges()) || [];
+      var tocca = ranges.some(function(r) {
+        return box.contains(r.startContainer) || box.contains(r.endContainer) ||
+               (r.intersectsNode && r.intersectsNode(box));
+      });
+      if (!tocca) {
+        var sel = window.getSelection();
+        if (sel && sel.rangeCount) {
+          var rg = sel.getRangeAt(0);
+          if (!rg.collapsed && (box.contains(rg.startContainer) || box.contains(rg.endContainer) ||
+              (rg.intersectsNode && rg.intersectsNode(box)))) tocca = true;
+        }
+      }
+      if (tocca) ev.preventDefault();
+    }, true);
+    // keydown: Backspace col cursore a inizio area editabile cancellerebbe il box.
+    document.addEventListener('keydown', function(ev) {
+      if (ev.key !== 'Backspace') return;
+      var campo = _campoConScaleBox(ev.target);
+      if (!campo) return;
+      var box = campo.querySelector(':scope > .scale-box');
+      var sel = window.getSelection();
+      if (!sel || !sel.rangeCount) return;
+      var range = sel.getRangeAt(0);
+      if (!range.collapsed) return; // le selezioni le gestisce beforeinput
+      var r = document.createRange();
+      r.setStartAfter(box);
+      try { r.setEnd(range.startContainer, range.startOffset); } catch (e) { return; }
+      if (r.toString().replace(/\s| /g, '') === '') ev.preventDefault();
+    }, true);
+
     document.addEventListener('visibilitychange', function() {
       if (document.hidden) {
         if (!_focusCard) {

@@ -1186,6 +1186,10 @@
               }
               var dimIcon = card.querySelector('.tipo-badge-wrap .dim-icon-badge');
               if (dimIcon) dimIcon.remove();
+              // Rimuove le icone di stato (isolamento/rianimazione) accanto al
+              // numero letto: la Diaria è stata svuotata, quindi non ci sono più
+              // banner. Le scale spariscono già con EsamiColturali svuotato.
+              if (typeof window._isolamentoSyncIcona === 'function') window._isolamentoSyncIcona(card);
             });
           },
           serverFn: function(onOk, onErr) { _sbDimettiLetto(numLetto).then(function(res) { if (res.success) onOk(); else onErr(res.message); }).catch(function(err) { onErr(err.message || 'Operazione fallita.'); }); }
@@ -1357,9 +1361,18 @@
         var dimIconAngolo = dimVal
           ? '<span class="dim-icon-corner" title="In dimissione — ' + dimVal + '">' + dimSvg + '</span>'
           : '';
+        // Icone di stato accanto al nome: isolamento e/o rianimazione, se attivi
+        // (fonte di verità: i banner nel campo Diaria della card).
+        var bIso = card.querySelector('.isolamento-banner');
+        var bRianim = card.querySelector('.rianimazione-banner');
+        var statusIcons =
+          (bIso && typeof window._virusIconSvg === 'function'
+            ? ' <span class="bedstatus-icon-list" title="In isolamento — ' + (bIso.getAttribute('data-isolamento') || '') + '">' + window._virusIconSvg(13) + '</span>' : '') +
+          (bRianim && typeof window._rianimIconSvg === 'function'
+            ? ' <span class="bedstatus-icon-list" title="In rianimazione — ' + (bRianim.getAttribute('data-rianimazione') || '') + '">' + window._rianimIconSvg(13) + '</span>' : '');
         html += '<li><a class="dropdown-item d-flex align-items-center gap-2 py-1" href="javascript:void(0)" data-scroll-letto="' + letto + '">'+
                 '<span class="badge text-white position-relative" style="min-width:36px;font-size:0.8rem;background:' + sessoBg + ';">' + dimIconAngolo + 'L.' + letto + '</span>'+
-                '<span>' + nomeTxt + tipoBadge + dimIconAccantoNome + '</span>'+
+                '<span>' + nomeTxt + tipoBadge + dimIconAccantoNome + statusIcons + '</span>'+
                 '</a></li>';
       });
       menu.innerHTML = html;
