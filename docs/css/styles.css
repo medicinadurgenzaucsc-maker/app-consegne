@@ -500,6 +500,15 @@ body { padding-top: 70px; background-color: #d4e6f1 !important; }
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
 }
+/* Blocco isolamento/rianimazione in cima al campo Diaria: una linea lo separa
+   dal testo libero sotto, che resta sempre scrivibile. */
+.diaria-status-box {
+  border-bottom: 2px solid #cfd8dc;
+  margin-bottom: 6px;
+  padding-bottom: 5px;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
 /* ===== Modal Scale: compilazione rapida a bottoni (stile MDCalc) =====
    Un click per opzione, niente menu a tendina. I punti sono visibili su
    ogni scelta; i valori "normali" sono preselezionati, così si clicca

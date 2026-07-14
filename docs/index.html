@@ -998,6 +998,10 @@
       document.body.style.overflow = 'hidden';
       document.documentElement.style.overflow = 'hidden';
       card.classList.add('focus-mode');
+      // Normalizza i banner Diaria (box + area scrivibile) anche per dati salvati
+      // col vecchio formato, così si può sempre scrivere sotto isolamento/rianim.
+      var _diaFM = card.querySelector('[data-field="Diaria"]');
+      if (_diaFM && typeof window._diariaNormalizza === 'function') window._diariaNormalizza(_diaFM);
 
       // Crea il badge di stato salvataggio dedicato al focus mode
       // (top-left fisso del viewport, fuori dalla card). _getBadges in
@@ -1436,6 +1440,36 @@
         .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
 
+    // Raggruppa i banner isolamento/rianimazione in un box in cima al Diaria
+    // (con riga di divisione via CSS) e garantisce SEMPRE un'area editabile
+    // sotto, così il testo libero si può scrivere anche quando i banner sono il
+    // primo/unico contenuto. Se non ci sono banner, rimuove il box.
+    function _diariaNormalizza(diaria) {
+      if (!diaria) return;
+      var iso = diaria.querySelector('.isolamento-banner');
+      var rianim = diaria.querySelector('.rianimazione-banner');
+      var box = diaria.querySelector(':scope > .diaria-status-box');
+      if (!iso && !rianim) { if (box) box.remove(); return; }
+      if (!box) {
+        box = document.createElement('div');
+        box.className = 'diaria-status-box';
+        box.setAttribute('contenteditable', 'false');
+        diaria.insertBefore(box, diaria.firstChild);
+      }
+      if (iso) box.appendChild(iso);          // isolamento sopra
+      if (rianim) box.appendChild(rianim);    // rianimazione sotto
+      if (diaria.firstChild !== box) diaria.insertBefore(box, diaria.firstChild);
+      // area editabile dopo il box (altrimenti col solo box il cursore non entra)
+      var n = box.nextSibling, haEdit = false;
+      while (n) {
+        if (n.nodeType === 1 && !n.classList.contains('diaria-status-box')) { haEdit = true; break; }
+        if (n.nodeType === 3 && n.textContent.replace(/[\s ]/g, '') !== '') { haEdit = true; break; }
+        n = n.nextSibling;
+      }
+      if (!haEdit) { var d = document.createElement('div'); d.appendChild(document.createElement('br')); diaria.appendChild(d); }
+    }
+    window._diariaNormalizza = _diariaNormalizza;
+
     function _isolamentoGetBanner(card) {
       var d = card ? card.querySelector('[data-field="Diaria"]') : null;
       return d ? d.querySelector('.isolamento-banner') : null;
@@ -1456,6 +1490,7 @@
       b.setAttribute('title', 'Isolamento: ' + testo + ' — clicca per modificare');
       b.innerHTML = (typeof window._virusIconSvg === 'function' ? window._virusIconSvg(20) : '');
       b.appendChild(document.createTextNode(' ISOLAMENTO: ' + testo));
+      _diariaNormalizza(diaria);
       if (typeof window._placeholderCheck === 'function') window._placeholderCheck(diaria);
       _isolamentoSyncIcona(card);
       _isolamentoSalva(card);
@@ -1465,6 +1500,7 @@
       var b = _isolamentoGetBanner(card);
       if (b) b.remove();
       var diaria = card.querySelector('[data-field="Diaria"]');
+      if (diaria) _diariaNormalizza(diaria);
       if (diaria && typeof window._placeholderCheck === 'function') window._placeholderCheck(diaria);
       _isolamentoSyncIcona(card);
       _isolamentoSalva(card);
@@ -1608,6 +1644,7 @@
       b.setAttribute('title', 'Rianimazione: ' + testo + ' — clicca per modificare');
       b.innerHTML = (typeof window._rianimIconSvg === 'function' ? window._rianimIconSvg(20) : '');
       b.appendChild(document.createTextNode(' RIANIMAZIONE: ' + testo));
+      _diariaNormalizza(diaria);
       if (typeof window._placeholderCheck === 'function') window._placeholderCheck(diaria);
       _rianimazioneSyncIcona(card);
       _rianimazioneSalva(card);
@@ -1617,6 +1654,7 @@
       var b = _rianimazioneGetBanner(card);
       if (b) b.remove();
       var diaria = card.querySelector('[data-field="Diaria"]');
+      if (diaria) _diariaNormalizza(diaria);
       if (diaria && typeof window._placeholderCheck === 'function') window._placeholderCheck(diaria);
       _rianimazioneSyncIcona(card);
       _rianimazioneSalva(card);
@@ -2067,27 +2105,33 @@
     // Le scale NON devono poter essere cancellate col testo libero: né tenendo
     // premuto Backspace dall'area sottostante, né selezionando tutto e
     // cancellando/scrivendo sopra.
-    function _campoConScaleBox(target) {
-      var campo = target && target.closest ? target.closest('[data-field="EsamiColturali"]') : null;
+    function _campoProtetto(target) {
+      if (!target || !target.closest) return null;
+      var campo = target.closest('[data-field="EsamiColturali"], [data-field="Diaria"]');
       if (!campo) return null;
-      return campo.querySelector(':scope > .scale-box') ? campo : null;
+      var sel = campo.getAttribute('data-field') === 'EsamiColturali'
+        ? ':scope > .scale-box'
+        : ':scope > .diaria-status-box, :scope > .isolamento-banner, :scope > .rianimazione-banner';
+      var prot = campo.querySelectorAll(sel);
+      return prot.length ? { campo: campo, protetti: Array.prototype.slice.call(prot) } : null;
     }
-    // beforeinput: blocca ogni modifica (digitazione, canc, incolla) che toccherebbe il box.
-    document.addEventListener('beforeinput', function(ev) {
-      var campo = _campoConScaleBox(ev.target);
-      if (!campo) return;
-      var box = campo.querySelector(':scope > .scale-box');
-      var ranges = (ev.getTargetRanges && ev.getTargetRanges()) || [];
-      var tocca = ranges.some(function(r) {
+    function _toccaProtetti(protetti, r) {
+      return protetti.some(function(box) {
         return box.contains(r.startContainer) || box.contains(r.endContainer) ||
                (r.intersectsNode && r.intersectsNode(box));
       });
+    }
+    // beforeinput: blocca ogni modifica (digitazione, canc, incolla) che toccherebbe il box.
+    document.addEventListener('beforeinput', function(ev) {
+      var p = _campoProtetto(ev.target);
+      if (!p) return;
+      var ranges = (ev.getTargetRanges && ev.getTargetRanges()) || [];
+      var tocca = ranges.some(function(r) { return _toccaProtetti(p.protetti, r); });
       if (!tocca) {
         var sel = window.getSelection();
         if (sel && sel.rangeCount) {
           var rg = sel.getRangeAt(0);
-          if (!rg.collapsed && (box.contains(rg.startContainer) || box.contains(rg.endContainer) ||
-              (rg.intersectsNode && rg.intersectsNode(box)))) tocca = true;
+          if (!rg.collapsed && _toccaProtetti(p.protetti, rg)) tocca = true;
         }
       }
       if (tocca) ev.preventDefault();
@@ -2095,17 +2139,17 @@
     // keydown: Backspace col cursore a inizio area editabile cancellerebbe il box.
     document.addEventListener('keydown', function(ev) {
       if (ev.key !== 'Backspace') return;
-      var campo = _campoConScaleBox(ev.target);
-      if (!campo) return;
-      var box = campo.querySelector(':scope > .scale-box');
+      var p = _campoProtetto(ev.target);
+      if (!p) return;
       var sel = window.getSelection();
       if (!sel || !sel.rangeCount) return;
       var range = sel.getRangeAt(0);
       if (!range.collapsed) return; // le selezioni le gestisce beforeinput
+      var ultimo = p.protetti[p.protetti.length - 1];
       var r = document.createRange();
-      r.setStartAfter(box);
+      r.setStartAfter(ultimo);
       try { r.setEnd(range.startContainer, range.startOffset); } catch (e) { return; }
-      if (r.toString().replace(/\s| /g, '') === '') ev.preventDefault();
+      if (r.collapsed || r.toString().replace(/\s| /g, '') === '') ev.preventDefault();
     }, true);
 
     document.addEventListener('visibilitychange', function() {
