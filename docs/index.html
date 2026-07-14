@@ -1737,7 +1737,7 @@
         html: '<div id="scaleModalBody" class="text-start">' +
               '<div class="text-center py-4"><div class="spinner-border text-secondary"></div>' +
               '<div class="mt-2 text-muted small">Caricamento scale…</div></div></div>',
-        width: 640,
+        width: 'min(1200px, 95vw)',
         showConfirmButton: false,
         showCloseButton: true,
         allowOutsideClick: true,
@@ -2070,7 +2070,7 @@
           confirmButtonText: '<i class="bi bi-trash me-1"></i>Cancella inserimento',
           confirmButtonColor: '#c62828',
           cancelButtonText: 'Chiudi',
-          width: 480,
+          width: 'min(820px, 94vw)',
           didOpen: function() { _scaleInfoBindExclusive(Swal.getHtmlContainer()); }
         }).then(function(res) {
           if (!res.isConfirmed) return;

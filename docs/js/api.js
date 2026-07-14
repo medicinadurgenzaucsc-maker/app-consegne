@@ -446,7 +446,13 @@ function _scalaFormattaRisultato(scala, ris) {
     valStr = Number.isInteger(p) ? String(p) : String(Number(p.toFixed(1)));
   }
   var txt = scala.nome + ' del ' + data + ': ' + valStr;
-  if (ris.interpretazione) txt += ' — ' + ris.interpretazione;
+  if (ris.interpretazione) {
+    // Nella riga di consegna solo l'etichetta breve: le fasce verbose sono
+    // scritte come "Etichetta breve — spiegazione lunga", si taglia al primo
+    // " — ". Il dettaglio completo resta nel modal (click sulla riga).
+    var breve = String(ris.interpretazione).split(' — ')[0].trim();
+    txt += ' — ' + breve;
+  }
   return txt;
 }
 window._scalaFormattaRisultato = _scalaFormattaRisultato;
