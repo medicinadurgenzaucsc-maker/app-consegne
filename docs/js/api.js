@@ -333,6 +333,19 @@ function _virusIconSvg(size) {
 }
 window._virusIconSvg = _virusIconSvg;
 
+// Icona "cuore + battito ECG" per la RIANIMAZIONE paziente.
+// Cuore rosso pieno con linea di battito bianca. Come le altre, SVG
+// inline (identico ovunque). Usata in: toolbar Diaria, banner
+// rianimazione, icona accanto al numero letto, stampa.
+function _rianimIconSvg(size) {
+  var s = size || 16;
+  return '<svg width="' + s + '" height="' + s + '" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:middle;">' +
+    '<path d="M12 20.5S3.5 15 3.5 8.9C3.5 6 5.6 4 8.1 4c1.7 0 3.1 1 3.9 2.3C12.8 5 14.2 4 15.9 4c2.5 0 4.6 2 4.6 4.9 0 6.1-8.5 11.6-8.5 11.6z" fill="#e53935" stroke="#b71c1c" stroke-width="1.1"/>' +
+    '<path d="M5.5 12.4h3l1.4-3.1 2.1 5.2 1.3-2.6h4.7" stroke="#fff" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>' +
+  '</svg>';
+}
+window._rianimIconSvg = _rianimIconSvg;
+
 // ── RENDERER CARD (vista compatta a riga, unica vista attiva) ─
 function _renderAltCard(p) {
   var letto = String(p.Letto || '');
@@ -361,20 +374,28 @@ function _renderAltCard(p) {
       _dimIconSvg(14) + '</span>'
     : '';
 
-  // ── Isolamento: fonte di verità = banner .isolamento-banner dentro la
-  // Diaria (viaggia con l'HTML del campo: realtime, stampa, backup, import).
-  // Qui serve solo per decidere se mostrare l'icona virus accanto al letto.
-  var isoMatch = String(p.Diaria || '').match(/data-isolamento="([^"]*)"/);
-  var isoIconHtml = isoMatch
-    ? '<span class="isolamento-icon-bed" title="Paziente in isolamento' + (isoMatch[1] ? ': ' + _aEsc(isoMatch[1]) : '') + '">' + _virusIconSvg(28) + '</span>'
-    : '';
+  // ── Icone di stato accanto al letto (isolamento + rianimazione).
+  // Fonte di verità = banner dentro la Diaria (viaggiano con l'HTML del
+  // campo: realtime, stampa, backup, import). Qui leggiamo i marker per il
+  // primo render; poi _bedStatusSyncIcone (index.html) le tiene allineate.
+  // Le due icone stanno AFFIANCATE in un contenitore condiviso.
+  var isoMatch    = String(p.Diaria || '').match(/data-isolamento="([^"]*)"/);
+  var rianimMatch = String(p.Diaria || '').match(/data-rianimazione="([^"]*)"/);
+  var statusIcons = '';
+  if (isoMatch) {
+    statusIcons += '<span class="bed-status-ico iso" title="Paziente in isolamento' + (isoMatch[1] ? ': ' + _aEsc(isoMatch[1]) : '') + '">' + _virusIconSvg(26) + '</span>';
+  }
+  if (rianimMatch) {
+    statusIcons += '<span class="bed-status-ico rianim" title="Rianimazione' + (rianimMatch[1] ? ': ' + _aEsc(rianimMatch[1]) : '') + '">' + _rianimIconSvg(26) + '</span>';
+  }
+  var statusIconsHtml = statusIcons ? '<div class="bed-status-icons">' + statusIcons + '</div>' : '';
 
   return '<div class="alt-row patient-card" data-bed="' + _aEsc(letto) + '" data-tipologia="' + _aEsc(tipo) + '">' +
     '<div class="alt-col alt-col-info">' +
     '<button class="focus-pencil-btn" title="Modifica scheda"' +
     ' onclick="_attivaFocusMode(this.closest(\'.patient-card\'))"><i class="bi bi-pencil-fill"></i></button>' +
     '<span id="status-alt-' + _aEsc(letto) + '" class="badge status-badge position-absolute top-0 start-0 m-1 bg-secondary"></span>' +
-    isoIconHtml +
+    statusIconsHtml +
     '<div class="alt-info-box">' +
     '<div class="bed-number-flex">' +
     '<div class="alt-bed-number">' + _aEsc(letto) + '</div>' +
@@ -714,9 +735,14 @@ function _sbGetRiepilogo() {
     .like('diaria', '%isolamento-banner%')
     .neq('letto', 'NOTE')
     .then(function(res) { return res.error ? 0 : (res.count || 0); });
+  var pRianim = _sb.from('consegne')
+    .select('letto', { count: 'exact', head: true })
+    .like('diaria', '%rianimazione-banner%')
+    .neq('letto', 'NOTE')
+    .then(function(res) { return res.error ? 0 : (res.count || 0); });
 
-  return Promise.all([pConteggi, pIsolati]).then(function(results) {
-    var rows = results[0], isolati = results[1];
+  return Promise.all([pConteggi, pIsolati, pRianim]).then(function(results) {
+    var rows = results[0], isolati = results[1], rianimazione = results[2];
     var uomini = 0, donne = 0, indefinito = 0, vuoti = 0, inDimissione = 0;
     var tipologie = {};
     (rows || []).forEach(function(r) {
@@ -731,7 +757,7 @@ function _sbGetRiepilogo() {
       tipologie[tip] = (tipologie[tip] || 0) + 1;
       if ((r.dimissibile || '').trim() !== '') inDimissione++;
     });
-    return { uomini: uomini, donne: donne, indefinito: indefinito, tipologie: tipologie, vuoti: vuoti, inDimissione: inDimissione, isolati: isolati };
+    return { uomini: uomini, donne: donne, indefinito: indefinito, tipologie: tipologie, vuoti: vuoti, inDimissione: inDimissione, isolati: isolati, rianimazione: rianimazione };
   });
 }
 

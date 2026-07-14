@@ -133,6 +133,21 @@
       print-color-adjust: exact;
     }
     .isolamento-banner svg { vertical-align: -3px; margin-right: 5px; }
+    /* Banner rianimazione dentro la Diaria (rosso pastello) */
+    .rianimazione-banner {
+      display: block;
+      font-size: 1.25em;
+      font-weight: bold;
+      background: #ffcdd2;
+      color: #7f1d1d;
+      border-left: 4px solid #c62828;
+      border-radius: 3px;
+      padding: 2px 6px;
+      margin-bottom: 4px;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .rianimazione-banner svg { vertical-align: -3px; margin-right: 5px; }
     .alt-nome        { font-weight: bold; font-size: 0.80rem; text-align: center;
                        text-transform: uppercase; width: 100%; padding: 2px;
                        border-bottom: 1px solid #ccc; word-break: break-word; }
@@ -368,6 +383,7 @@
             '<div class="alt-bed-number">' + (p.Letto || '') + '</div>' +
             ((p.Dimissibile || '').trim() && typeof _dimIconSvg === 'function' ? _dimIconSvg(16) : '') +
             (String(p.Diaria || '').indexOf('isolamento-banner') !== -1 && typeof _virusIconSvg === 'function' ? _virusIconSvg(16) : '') +
+            (String(p.Diaria || '').indexOf('rianimazione-banner') !== -1 && typeof _rianimIconSvg === 'function' ? _rianimIconSvg(16) : '') +
             sessoHtml(p.Sesso, '1.6rem') +
           '</div>' +
           tipoBadge +

@@ -1282,6 +1282,15 @@
         }
         return;
       }
+      if (cmd === 'rianimazione') {
+        // Click sull'icona cuore nella toolbar Diaria/Epicrisi: apri il
+        // modal rianimazione per il paziente della card corrente (solo FM).
+        var cardRi = tb.closest('.patient-card');
+        if (cardRi && typeof window._apriModalRianimazione === 'function') {
+          window._apriModalRianimazione(cardRi);
+        }
+        return;
+      }
       _tbRestoreSelection();
       if (fmult !== null) { _tbApplyFontMultiplier(parseFloat(fmult)); var p = tb.querySelector('[data-tb-submenu="fsmenu"]'); if (p) p.classList.remove('open'); return; }
       if (cmd) { document.execCommand(cmd, false, null); }

@@ -352,6 +352,10 @@
               // Isolamento paziente — virus verdognolo accanto all'orologio snapshot
               + '<button class="tb-btn tb-isolamento" data-cmd="isolamento" title="Isolamento paziente">'
               +   (typeof window._virusIconSvg === 'function' ? window._virusIconSvg(20) : '<i class="bi bi-virus" style="color:#43a047"></i>')
+              + '</button>'
+              // Rianimazione paziente — cuore rosso accanto al virus
+              + '<button class="tb-btn tb-rianimazione" data-cmd="rianimazione" title="Rianimazione paziente">'
+              +   (typeof window._rianimIconSvg === 'function' ? window._rianimIconSvg(20) : '<i class="bi bi-heart-pulse-fill" style="color:#e53935"></i>')
               + '</button>';
       }
       // Esami Colturali e Da Fare: pulsante checkbox RIMOSSO su richiesta utente.
@@ -1467,29 +1471,45 @@
       }
     }
 
-    // Mostra/nasconde l'icona virus accanto al numero letto in base alla
-    // presenza del banner nella Diaria. Idempotente; usata anche da
-    // _aggiornaCardDaPaziente (api.js) sugli update remoti.
-    function _isolamentoSyncIcona(card) {
+    // ── Sincronizza le icone di stato (isolamento + rianimazione) accanto
+    // al numero letto. Le due icone vivono AFFIANCATE in un contenitore
+    // condiviso .bed-status-icons (flex row) così "il cuore sta accanto al
+    // germe". Idempotente; ricostruisce il contenuto ad ogni chiamata.
+    // Usata da _aggiornaCardDaPaziente (api.js) sugli update remoti e dai
+    // moduli isolamento/rianimazione dopo ogni azione.
+    function _bedStatusSyncIcone(card) {
       if (!card) return;
-      var banner = _isolamentoGetBanner(card);
-      var icona = card.querySelector('.isolamento-icon-bed');
-      if (banner && !icona) {
-        var info = card.querySelector('.alt-col-info');
-        if (!info) return;
-        icona = document.createElement('span');
-        icona.className = 'isolamento-icon-bed';
-        icona.innerHTML = (typeof window._virusIconSvg === 'function' ? window._virusIconSvg(28) : '');
-        info.appendChild(icona);
-      } else if (!banner && icona) {
-        icona.remove();
-        icona = null;
+      var info = card.querySelector('.alt-col-info');
+      if (!info) return;
+      var bIso   = _isolamentoGetBanner(card);
+      var bRianim = _rianimazioneGetBanner(card);
+      var wrap = info.querySelector('.bed-status-icons');
+
+      if (!bIso && !bRianim) { if (wrap) wrap.remove(); return; }
+
+      if (!wrap) {
+        wrap = document.createElement('div');
+        wrap.className = 'bed-status-icons';
+        info.appendChild(wrap);
       }
-      if (banner && icona) {
-        icona.title = 'Paziente in isolamento: ' + (banner.getAttribute('data-isolamento') || '');
+      var html = '';
+      if (bIso) {
+        html += '<span class="bed-status-ico iso" title="Paziente in isolamento: ' +
+          _escIso(bIso.getAttribute('data-isolamento') || '') + '">' +
+          (typeof window._virusIconSvg === 'function' ? window._virusIconSvg(26) : '') + '</span>';
       }
+      if (bRianim) {
+        html += '<span class="bed-status-ico rianim" title="Rianimazione: ' +
+          _escIso(bRianim.getAttribute('data-rianimazione') || '') + '">' +
+          (typeof window._rianimIconSvg === 'function' ? window._rianimIconSvg(26) : '') + '</span>';
+      }
+      wrap.innerHTML = html;
     }
-    window._isolamentoSyncIcona = _isolamentoSyncIcona;
+    // Alias retrocompatibili: entrambe le feature chiamano la stessa sync.
+    function _isolamentoSyncIcona(card)  { _bedStatusSyncIcone(card); }
+    function _rianimazioneSyncIcona(card){ _bedStatusSyncIcone(card); }
+    window._isolamentoSyncIcona   = _isolamentoSyncIcona;
+    window._rianimazioneSyncIcona = _rianimazioneSyncIcona;
 
     // Modal isolamento (SweetAlert2). Si apre SOLO dal focus mode.
     window._apriModalIsolamento = function(card) {
@@ -1550,6 +1570,116 @@
       window._apriModalIsolamento(card);
     });
 
+    // ══════════════════════════════════════════════════════════════════
+    // RIANIMAZIONE PAZIENTE
+    // Identica all'isolamento come meccanica (banner non editabile in cima
+    // alla Diaria → viaggia con l'HTML: realtime, stampa, backup, import),
+    // ma icona a cuore e banner ROSSO PASTELLO. Indica se il paziente è da
+    // rianimare o meno + indicazioni.
+    // ══════════════════════════════════════════════════════════════════
+    function _rianimazioneGetBanner(card) {
+      var d = card ? card.querySelector('[data-field="Diaria"]') : null;
+      return d ? d.querySelector('.rianimazione-banner') : null;
+    }
+
+    function _rianimazioneApplica(card, testo) {
+      var diaria = card.querySelector('[data-field="Diaria"]');
+      if (!diaria) return;
+      var b = diaria.querySelector('.rianimazione-banner');
+      if (!b) {
+        b = document.createElement('div');
+        b.className = 'rianimazione-banner';
+        b.setAttribute('contenteditable', 'false');
+        // Sotto l'eventuale banner isolamento: inserito come primo figlio,
+        // ma se c'è già l'isolamento (anch'esso primo figlio) lo mettiamo
+        // subito dopo per un ordine stabile (isolamento sopra, rianim sotto).
+        var iso = diaria.querySelector('.isolamento-banner');
+        if (iso && iso.nextSibling) diaria.insertBefore(b, iso.nextSibling);
+        else if (iso) diaria.appendChild(b);
+        else diaria.insertBefore(b, diaria.firstChild);
+      }
+      b.setAttribute('data-rianimazione', testo);
+      b.setAttribute('title', 'Rianimazione: ' + testo + ' — clicca per modificare');
+      b.innerHTML = (typeof window._rianimIconSvg === 'function' ? window._rianimIconSvg(20) : '');
+      b.appendChild(document.createTextNode(' RIANIMAZIONE: ' + testo));
+      if (typeof window._placeholderCheck === 'function') window._placeholderCheck(diaria);
+      _rianimazioneSyncIcona(card);
+      _rianimazioneSalva(card);
+    }
+
+    function _rianimazioneRimuovi(card) {
+      var b = _rianimazioneGetBanner(card);
+      if (b) b.remove();
+      var diaria = card.querySelector('[data-field="Diaria"]');
+      if (diaria && typeof window._placeholderCheck === 'function') window._placeholderCheck(diaria);
+      _rianimazioneSyncIcona(card);
+      _rianimazioneSalva(card);
+    }
+
+    function _rianimazioneSalva(card) {
+      var letto = card.getAttribute('data-bed');
+      if (letto && typeof attivaSalvataggioRitardato === 'function') {
+        attivaSalvataggioRitardato(letto, card);
+      }
+    }
+
+    // Modal rianimazione (SweetAlert2). Si apre SOLO dal focus mode.
+    window._apriModalRianimazione = function(card) {
+      if (!card || !card.classList.contains('focus-mode')) return;
+      var banner = _rianimazioneGetBanner(card);
+      var attivo = !!banner;
+      var tipoAttuale = attivo ? (banner.getAttribute('data-rianimazione') || '') : '';
+      Swal.fire({
+        title: (typeof window._rianimIconSvg === 'function' ? window._rianimIconSvg(28) + ' ' : '') +
+               (attivo ? 'Indicazioni rianimazione' : 'Indicazioni rianimazione'),
+        html:
+          '<div class="text-start mb-2" style="font-size:0.92rem;">' +
+            (attivo
+              ? 'Indicazioni presenti. Puoi modificarle oppure rimuoverle.'
+              : 'Indica se il paziente è <strong>da rianimare</strong> o meno, con eventuali note.') +
+          '</div>' +
+          '<input id="rianimazioneTipoInput" class="swal2-input" style="margin:0;width:100%;box-sizing:border-box;" ' +
+            'placeholder="es. DA RIANIMARE — NON RIANIMARE (DNR) — note..." ' +
+            'value="' + _escIso(tipoAttuale) + '">',
+        showCancelButton: true,
+        cancelButtonText: 'Annulla',
+        confirmButtonText: '<i class="bi bi-check-lg me-1"></i>Salva',
+        confirmButtonColor: '#c62828',
+        showDenyButton: attivo,
+        denyButtonText: '<i class="bi bi-x-circle me-1"></i>Rimuovi indicazioni',
+        denyButtonColor: '#616161',
+        focusConfirm: false,
+        didOpen: function() {
+          var inp = document.getElementById('rianimazioneTipoInput');
+          if (inp && !attivo) inp.focus();
+        },
+        preConfirm: function() {
+          var v = ((document.getElementById('rianimazioneTipoInput') || {}).value || '').trim();
+          if (!v) {
+            Swal.showValidationMessage('Scrivi le indicazioni per la rianimazione');
+            return false;
+          }
+          return v;
+        }
+      }).then(function(res) {
+        if (res.isConfirmed && res.value) {
+          _rianimazioneApplica(card, String(res.value));
+        } else if (res.isDenied) {
+          _rianimazioneRimuovi(card);
+        }
+      });
+    };
+
+    document.addEventListener('click', function(e) {
+      var b = e.target.closest ? e.target.closest('.rianimazione-banner') : null;
+      if (!b) return;
+      var card = b.closest('.patient-card');
+      if (!card || !card.classList.contains('focus-mode')) return;
+      e.preventDefault();
+      e.stopPropagation();
+      window._apriModalRianimazione(card);
+    });
+
     document.addEventListener('visibilitychange', function() {
       if (document.hidden) {
         if (!_focusCard) {
@@ -1601,6 +1731,10 @@
           html += '<div class="d-flex align-items-center justify-content-between" style="padding-top:2px;">'
                 + '<span>' + (typeof window._virusIconSvg === 'function' ? window._virusIconSvg(13) : '🦠') + ' <span class="text-muted" style="font-size:0.8rem;">In isolamento</span></span>'
                 + '<span class="badge text-white border" style="background:#43a047;">' + (r.isolati || 0) + '</span>'
+                + '</div>';
+          html += '<div class="d-flex align-items-center justify-content-between" style="padding-top:2px;">'
+                + '<span>' + (typeof window._rianimIconSvg === 'function' ? window._rianimIconSvg(13) : '❤') + ' <span class="text-muted" style="font-size:0.8rem;">Note rianimazione</span></span>'
+                + '<span class="badge text-white border" style="background:#e53935;">' + (r.rianimazione || 0) + '</span>'
                 + '</div>';
           body.innerHTML = html;
         })
@@ -6507,6 +6641,9 @@
         // Icona "isolamento" se la Diaria contiene il banner
         var isoIco = (String(p.Diaria || '').indexOf('isolamento-banner') !== -1 && typeof window._virusIconSvg === 'function')
           ? ' ' + window._virusIconSvg(14) : '';
+        // Icona "rianimazione" se la Diaria contiene il banner
+        var rianimIco = (String(p.Diaria || '').indexOf('rianimazione-banner') !== -1 && typeof window._rianimIconSvg === 'function')
+          ? ' ' + window._rianimIconSvg(14) : '';
         var voci = vociFisse.map(function(v) {
           return '<div class="cl-item"><span class="cl-box"></span>' + _esc(v) + '</div>';
         }).join('');
@@ -6514,7 +6651,7 @@
         for (var i = 0; i < righeLibere; i++) righe += '<div class="cl-line"></div>';
         return '<div class="cl-card">' +
             '<div class="cl-head">' +
-              '<span class="cl-bed">Letto ' + letto + dimIco + isoIco + '</span>' +
+              '<span class="cl-bed">Letto ' + letto + dimIco + isoIco + rianimIco + '</span>' +
               '<span class="cl-name">' + nome + '</span>' +
             '</div>' +
             '<div class="cl-body">' + voci +

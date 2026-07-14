@@ -412,26 +412,54 @@ body { padding-top: 70px; background-color: #d4e6f1 !important; }
 }
 .isolamento-banner svg { vertical-align: -4px; margin-right: 6px; }
 
-/* Icona virus a sinistra del numero letto — speculare alla matita
-   (che sta in alto a destra, top:8 right:10 46x46). Solo indicatore:
-   pointer-events none, il modal si apre dal banner o dalla toolbar. */
-.isolamento-icon-bed {
+/* ═════ RIANIMAZIONE PAZIENTE ═════ */
+/* Banner in cima alla Diaria: rosso pastello, non editabile, 1.25x.
+   Click (solo in focus mode) riapre il modal rianimazione. */
+.rianimazione-banner {
+  display: block;
+  font-size: 1.25em;
+  font-weight: 700;
+  background: #ffcdd2;              /* rosso pastello */
+  color: #7f1d1d;
+  border-left: 5px solid #c62828;
+  border-radius: 4px;
+  padding: 3px 8px;
+  margin: 0 0 6px 0;
+  cursor: pointer;
+  user-select: none;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.rianimazione-banner svg { vertical-align: -4px; margin-right: 6px; }
+
+/* ═════ ICONE DI STATO accanto al numero letto ═════ */
+/* Contenitore condiviso in alto a sinistra (speculare alla matita, che
+   sta a destra). Le icone isolamento e rianimazione stanno AFFIANCATE.
+   Solo indicatore: pointer-events none, il modal si apre da toolbar/banner. */
+.bed-status-icons {
   position: absolute;
   top: 8px;
   left: 10px;
-  width: 46px;
-  height: 46px;
   display: flex;
+  flex-direction: row;
   align-items: center;
-  justify-content: center;
-  background: #e8f5e9;
-  border: 2px solid #43a047;
-  border-radius: 12px;
+  gap: 4px;
   z-index: 3;
   pointer-events: none;
 }
+.bed-status-ico {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 11px;
+  border: 2px solid;
+}
+.bed-status-ico.iso    { background: #e8f5e9; border-color: #43a047; }
+.bed-status-ico.rianim { background: #ffebee; border-color: #c62828; }
 /* Il badge di stato salvataggio (top-left transiente) deve restare
-   leggibile sopra l'icona virus */
+   leggibile sopra le icone di stato */
 .patient-card .status-badge { z-index: 5; }
 
 /* ===== Badge "Update" — Claude orange (D97757) + lampeggio sull'icona =====
