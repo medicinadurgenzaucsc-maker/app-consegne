@@ -339,32 +339,31 @@
                         '<polygon points="3,7.5 7,7.5 5,11" fill="#fff"/>' +
                         '</svg>';
       var extra = '';
+      // Data odierna + snapshot recovery: solo Diaria/Epicrisi
       if (campo === 'Diaria') {
-        extra = '<span class="tb-sep"></span>'
+        extra += '<span class="tb-sep"></span>'
               + '<button class="tb-btn tb-data-diaria" data-cmd="insertDataDiaria" title="Aggiungi data odierna">'
               +   svgPlus
               + '</button>'
-              // Snapshot recovery — accanto al "+" verde (solo Diaria/Epicrisi)
               + '<button class="tb-btn tb-snapshot-recovery" data-cmd="apriSnapshot" title="Recupera dati da snapshot precedente">'
               +   svgSnapshot
               +   '<span class="tb-snapshot-badge" data-snap-badge style="display:none;"></span>'
-              + '</button>'
-              // Isolamento paziente — virus verdognolo accanto all'orologio snapshot
-              + '<button class="tb-btn tb-isolamento" data-cmd="isolamento" title="Isolamento paziente">'
-              +   (typeof window._virusIconSvg === 'function' ? window._virusIconSvg(20) : '<i class="bi bi-virus" style="color:#43a047"></i>')
-              + '</button>'
-              // Rianimazione paziente — cuore rosso accanto al virus
-              + '<button class="tb-btn tb-rianimazione" data-cmd="rianimazione" title="Rianimazione paziente">'
-              +   (typeof window._rianimIconSvg === 'function' ? window._rianimIconSvg(20) : '<i class="bi bi-heart-pulse-fill" style="color:#e53935"></i>')
               + '</button>';
       }
-      // Esami Colturali e Scale Valutazione: pulsante scale mediche
-      if (campo === 'EsamiColturali') {
-        extra = '<span class="tb-sep"></span>'
-              + '<button class="tb-btn tb-scale" data-cmd="scale" title="Scale di valutazione mediche">'
-              +   '<i class="bi bi-clipboard-pulse"></i><span class="tb-scale-label">Scale</span>'
-              + '</button>';
-      }
+      // Isolamento + Rianimazione + Scale: presenti in OGNI toolbar, così sono
+      // premibili da qualunque campo della scheda. Gli handler puntano comunque
+      // alla card: isolamento/rianimazione = stato letto, le scale inseriscono
+      // sempre nel campo Esami Colturali (dove le abbiamo impostate).
+      extra += '<span class="tb-sep"></span>'
+            + '<button class="tb-btn tb-isolamento" data-cmd="isolamento" title="Isolamento paziente">'
+            +   (typeof window._virusIconSvg === 'function' ? window._virusIconSvg(20) : '<i class="bi bi-virus" style="color:#43a047"></i>')
+            + '</button>'
+            + '<button class="tb-btn tb-rianimazione" data-cmd="rianimazione" title="Rianimazione paziente">'
+            +   (typeof window._rianimIconSvg === 'function' ? window._rianimIconSvg(20) : '<i class="bi bi-heart-pulse-fill" style="color:#e53935"></i>')
+            + '</button>'
+            + '<button class="tb-btn tb-scale" data-cmd="scale" title="Scale di valutazione mediche">'
+            +   '<i class="bi bi-clipboard-pulse"></i><span class="tb-scale-label">Scale</span>'
+            + '</button>';
       // Da Fare: pulsante checkbox RIMOSSO su richiesta utente.
       // Il sistema dei caret + ordinamento automatico è disattivato.
       // I dati esistenti con checkbox continuano a funzionare per retro-compatibilità.
@@ -1749,6 +1748,20 @@
       });
     }
 
+    // Sezioni a scomparsa (stile MDCalc) coi testi clinici tradotti in italiano.
+    function _scaleInfoAccordion(def) {
+      var sezioni = [
+        ['Quando usare', def.quando_usare],
+        ['Perché usare', def.perche_usare],
+        ['Insidie e note', def.insidie]
+      ];
+      var html = sezioni.filter(function(s) { return s[1]; }).map(function(s) {
+        return '<details class="sc-info"><summary>' + s[0] + '</summary>' +
+               '<div class="sc-info-body">' + _escIso(s[1]) + '</div></details>';
+      }).join('');
+      return html ? '<div class="sc-info-wrap">' + html + '</div>' : '';
+    }
+
     function _scaleRenderDettaglio(card, scala, scaleAll) {
       var body = document.getElementById('scaleModalBody');
       if (!body) return;
@@ -1802,6 +1815,7 @@
         '<button type="button" id="scaleIndietro" class="btn btn-sm btn-link px-0 mb-1"><i class="bi bi-arrow-left me-1"></i>Tutte le scale</button>' +
         '<div style="font-weight:600;font-size:1.05rem;color:#37474f;">' + _escIso(scala.nome) + '</div>' +
         '<div class="text-muted mb-2" style="font-size:0.82rem;">' + _escIso(scala.descrizione || '') + '</div>' +
+        _scaleInfoAccordion(def) +
         '<div class="sc-criteri">' + criteriHtml + '</div>' +
         '<div id="scaleRisultato" class="sc-risultato">' +
           '<span class="sc-ris-val" id="scaleValore">—</span>' +
@@ -1986,6 +2000,7 @@
             '<div style="background:#e3f2fd;border-left:4px solid #1565c0;border-radius:4px;padding:7px 10px;margin-bottom:10px;color:#0d47a1;font-weight:600;">' +
               _escIso(testoInserito) + '</div>' +
             (scala && scala.descrizione ? '<div class="text-muted mb-2" style="font-size:0.85rem;">' + _escIso(scala.descrizione) + '</div>' : '') +
+            _scaleInfoAccordion(def) +
             (interpHtml ? '<div style="font-weight:600;margin:8px 0 2px;color:#37474f;">Interpretazione del punteggio</div>' +
               '<table style="border-collapse:collapse;width:100%;">' + interpHtml + '</table>' : '') +
             (scala && (scala.riferimento || scala.fonte_url)

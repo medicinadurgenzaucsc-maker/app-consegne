@@ -178,6 +178,10 @@ function mergeValori(defDb, defEstratta) {
     if (ef && typeof ef.min === 'number') f.min = ef.min;
     if (ef && typeof ef.max === 'number') f.max = ef.max;
   });
+  // testi clinici (italiano): aggiorna se l'estrazione li fornisce
+  ['quando_usare', 'perche_usare', 'insidie'].forEach(function (k) {
+    if (defEstratta[k] && String(defEstratta[k]).trim()) nuova[k] = defEstratta[k];
+  });
   return nuova;
 }
 
@@ -230,11 +234,15 @@ async function leggiDaMdcalc(scala) {
       ...(c.tipo === 'choice' ? { opzioni: (c.opzioni || []).map(o => ({ label: o.label, punti: o.punti, valore: o.valore })) } : {}),
       ...(c.tipo === 'number' ? { contributo: c.contributo } : {})
     })),
-    interpretazione: (def.interpretazione || []).map(f => ({ min: f.min, max: f.max, testo: f.testo }))
+    interpretazione: (def.interpretazione || []).map(f => ({ min: f.min, max: f.max, testo: f.testo })),
+    descrizione: scala.descrizione || '',
+    quando_usare: def.quando_usare || '',
+    perche_usare: def.perche_usare || '',
+    insidie: def.insidie || ''
   });
 
   const prompt =
-`Sei un assistente clinico esperto. Verifica i punteggi ufficiali di una scala medica secondo la definizione validata (come pubblicata su MDCalc: ${scala.fonte_url}).
+`Sei un assistente clinico esperto. Verifica una scala medica secondo la definizione validata (come pubblicata su MDCalc: ${scala.fonte_url}).
 
 Scala: "${scala.nome}" (id interno: ${scala.id})
 
@@ -247,8 +255,10 @@ gli stessi "id" e lo stesso ordine di criteri e opzioni.
 - NON aggiungere o togliere criteri/opzioni se la struttura è invariata.
 - Se tutto coincide con la definizione ufficiale, restituisci gli stessi identici numeri.
 - Basati sulla definizione clinica consolidata della scala; se non sei certo di un valore, mantieni quello attuale.
+- Aggiorna i testi clinici IN ITALIANO, concisi (max ~2 frasi ciascuno), tradotti dalle sezioni ufficiali:
+  "descrizione" (breve), "quando_usare" (When to Use), "perche_usare" (Why Use), "insidie" (Pitfalls/Advice).
 
-Rispondi SOLTANTO con un blocco di codice \`\`\`json ... \`\`\` contenente la definizione, senza altro testo.`;
+Rispondi SOLTANTO con un blocco di codice \`\`\`json ... \`\`\` contenente la definizione (con criteri, interpretazione, descrizione, quando_usare, perche_usare, insidie), senza altro testo.`;
 
   const testo = await geminiCall(prompt);
   return estraiJson(testo);
@@ -328,23 +338,29 @@ async function main() {
           'Le due riletture indipendenti non coincidono: possibile ambiguità della fonte. Definizione lasciata invariata.');
         continue;
       }
-      if (fA === fDb) {
+      const testiMancano = !scala.definizione.quando_usare || !scala.definizione.perche_usare || !scala.definizione.insidie;
+      if (fA === fDb && !testiMancano) {
         esiti.invariate++;
         console.log(`${tag} ✓ invariata`);
         continue;
       }
+      const soloTesti = (fA === fDb); // numeri invariati: si aggiornano solo i testi mancanti
 
-      // ── Cambiamento affidabile rilevato ──
+      // ── Cambiamento affidabile rilevato (numerico e/o testi) ──
       const stessaStruttura = firmaStruttura(a) === firmaStruttura(scala.definizione);
       let defNuova;
       if (stessaStruttura) {
-        defNuova = mergeValori(scala.definizione, a);           // preserva label/testi/casi
+        defNuova = mergeValori(scala.definizione, a);           // preserva label/casi, aggiorna numeri+testi
       } else {
         defNuova = JSON.parse(JSON.stringify(a));               // cambiamento strutturale
         defNuova.casi_verita = scala.definizione.casi_verita;  // conserva la rete di sicurezza
         if (scala.definizione.unita && !defNuova.unita) defNuova.unita = scala.definizione.unita;
         if (scala.definizione.tolleranza != null && defNuova.tolleranza == null) defNuova.tolleranza = scala.definizione.tolleranza;
+        ['quando_usare', 'perche_usare', 'insidie'].forEach(function (k) {
+          if (!defNuova[k] && scala.definizione[k]) defNuova[k] = scala.definizione[k];
+        });
       }
+      const nuovaDescr = (a.descrizione && String(a.descrizione).trim()) ? a.descrizione : scala.descrizione;
 
       const casi = verificaCasi(defNuova);
       const casiOk = casi.falliti.length === 0;
@@ -352,7 +368,7 @@ async function main() {
       const oggi = new Date().toISOString().slice(0, 10);
       const esitoStr = casi.tot ? (casiOk ? `pass (${casi.ok}/${casi.tot})` : `FAIL (${casi.ok}/${casi.tot}: ${casi.falliti.join('; ')})`) : 'n/a';
 
-      console.log(`${tag} ★ CAMBIAMENTO → v${scala.versione}→v${nuovaVer} | struttura ${stessaStruttura ? 'invariata' : 'MODIFICATA'} | casi ${esitoStr}`);
+      console.log(`${tag} ★ ${soloTesti ? 'TESTI' : 'CAMBIAMENTO'} → v${scala.versione}→v${nuovaVer} | struttura ${stessaStruttura ? 'invariata' : 'MODIFICATA'} | casi ${esitoStr}`);
 
       if (DRY_RUN) {
         console.log(`${tag}   [dry-run] non scrivo. Nuova firma: ${firmaNumerica(defNuova)}`);
@@ -371,18 +387,18 @@ async function main() {
         }])
       });
 
-      // 2) pubblica la nuova definizione
+      // 2) pubblica la nuova definizione (+ descrizione colonna)
       await sb(`scale_valutazione?id=eq.${encodeURIComponent(scala.id)}`, {
         method: 'PATCH',
         headers: { Prefer: 'return=minimal' },
-        body: JSON.stringify({ definizione: defNuova, versione: nuovaVer, data_revisione: oggi })
+        body: JSON.stringify({ definizione: defNuova, versione: nuovaVer, data_revisione: oggi, descrizione: nuovaDescr })
       });
 
       // 3) notifica nel Log dell'app
       await scriviLog(
         casiOk ? 'info' : 'warning',
         'scale-update',
-        `Scala "${scala.nome}" aggiornata da MDCalc (v${scala.versione}→v${nuovaVer})` + (casiOk ? '' : ' — VERIFICARE'),
+        `Scala "${scala.nome}" ${soloTesti ? 'testi aggiornati' : 'aggiornata'} da MDCalc (v${scala.versione}→v${nuovaVer})` + (casiOk ? '' : ' — VERIFICARE'),
         (casiOk
           ? `Aggiornamento pubblicato automaticamente. Casi di verifica: ${esitoStr}.`
           : `⚠ Attenzione: la nuova definizione da MDCalc NON supera i casi di verifica noti (${esitoStr}). ` +

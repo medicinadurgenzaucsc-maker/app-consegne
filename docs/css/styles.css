@@ -544,6 +544,19 @@ body { padding-top: 70px; background-color: #d4e6f1 !important; }
   .sc-lbl { flex-basis: 100%; }
   .sc-opts, .sc-numwrap { margin-left: 0; }
 }
+/* Sezioni a scomparsa coi testi clinici (Quando usare / Perché usare / Insidie) */
+.sc-info-wrap { display: flex; flex-direction: column; gap: 4px; margin: 4px 0 10px; }
+.sc-info { border: 1px solid #e0e0e0; border-radius: 6px; background: #fafbfc; overflow: hidden; }
+.sc-info > summary {
+  cursor: pointer; padding: 6px 10px; font-weight: 600; font-size: 0.85rem;
+  color: #1565c0; list-style: none; display: flex; align-items: center; gap: 6px;
+}
+.sc-info > summary::-webkit-details-marker { display: none; }
+.sc-info > summary::before {
+  content: '\25B8'; font-size: 0.8rem; color: #90a4ae; transition: transform .15s;
+}
+.sc-info[open] > summary::before { transform: rotate(90deg); }
+.sc-info-body { padding: 0 10px 8px 24px; font-size: 0.84rem; color: #455a64; line-height: 1.45; }
 /* Quando le icone sono DUE (isolamento + rianimazione) le rimpiccioliamo
    così stanno affiancate senza sovrapporsi né coprire il numero del letto.
    :not(:only-child) = c'è più di un'icona nel contenitore. */
