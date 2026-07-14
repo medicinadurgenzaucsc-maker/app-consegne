@@ -585,6 +585,22 @@ body { padding-top: 70px; background-color: #d4e6f1 !important; }
   color: #2e5b1e;
   line-height: 1.45;
 }
+/* Riquadro "in risalto" per l'elenco procedure per rischio (es. anticoag perioperatoria) */
+.sc-procedure {
+  border: 1.5px solid #ffcc80;
+  background: #fff8f0;
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin: 4px 0 12px;
+  font-size: 0.85rem;
+  color: #4e342e;
+  line-height: 1.5;
+}
+.sc-procedure b { color: #37474f; }
+.sc-procedure .risk-basso { color: #2e7d32; font-weight: 700; }
+.sc-procedure .risk-alto { color: #c62828; font-weight: 700; }
+.sc-procedure ul { margin: 2px 0 8px; padding-left: 18px; }
+.sc-procedure li { margin: 1px 0; }
 /* Quando le icone sono DUE (isolamento + rianimazione) le rimpiccioliamo
    così stanno affiancate senza sovrapporsi né coprire il numero del letto.
    :not(:only-child) = c'è più di un'icona nel contenitore. */

@@ -1816,6 +1816,31 @@
       });
     }
 
+    // Pre-compila i criteri "età" (number) e "sesso" (choice) dai dati del
+    // paziente nella card, se disponibili: le scale che li chiedono partono
+    // già riempite (l'utente può sempre modificarli).
+    function _precompilaScala(card, def, body) {
+      if (!card || !def) return;
+      var etaPaz = null, sessoPaz = null;
+      var etaEl = card.querySelector('[data-field="Eta"]');
+      if (etaEl) { var mm = (etaEl.innerText || '').match(/\d+/); if (mm) etaPaz = mm[0]; }
+      var sesEl = card.querySelector('.sesso-symbol[data-field="Sesso"]');
+      if (sesEl) { var ss = (sesEl.getAttribute('data-sesso') || '').toUpperCase(); if (ss === 'M' || ss === 'F') sessoPaz = ss; }
+      (def.criteri || []).forEach(function(c) {
+        if (c.tipo === 'number' && c.id === 'eta' && etaPaz != null) {
+          var inp = body.querySelector('.sc-row[data-cid="eta"] .sc-num'); if (inp) inp.value = etaPaz;
+        }
+        if (c.tipo === 'choice' && c.id === 'sesso' && sessoPaz) {
+          var ix = (c.opzioni || []).findIndex(function(o) { return String(o.valore).toUpperCase() === sessoPaz; });
+          if (ix >= 0) {
+            var row = body.querySelector('.sc-row[data-cid="sesso"]');
+            if (row) { row.querySelectorAll('.sc-opt').forEach(function(b) { b.classList.remove('active'); });
+                       var bt = row.querySelectorAll('.sc-opt')[ix]; if (bt) bt.classList.add('active'); }
+          }
+        }
+      });
+    }
+
     function _scaleRenderDettaglio(card, scala, scaleAll) {
       var body = document.getElementById('scaleModalBody');
       if (!body) return;
@@ -1870,6 +1895,7 @@
         '<div style="font-weight:600;font-size:1.05rem;color:#37474f;">' + _escIso(scala.nome) + '</div>' +
         (scala.descrizione ? '<div class="sc-descr">' + _escIso(scala.descrizione) + '</div>' : '') +
         _scaleInfoAccordion(def) +
+        (def.procedure_rischio ? '<div class="sc-procedure">' + def.procedure_rischio + '</div>' : '') +
         '<div class="sc-criteri">' + criteriHtml + '</div>' +
         '<div id="scaleRisultato" class="sc-risultato">' +
           '<span class="sc-ris-val" id="scaleValore">—</span>' +
@@ -1960,6 +1986,7 @@
         Swal.close();
       });
       _scaleInfoBindExclusive(body);
+      _precompilaScala(card, def, body);
       _ricalcola();
     }
 

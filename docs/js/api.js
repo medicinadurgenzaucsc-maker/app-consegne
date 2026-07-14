@@ -390,6 +390,19 @@ var _SCALE_FORMULE = {
     if (v.epatopatia) s += 2;
     if (v.scompenso) s += 2;
     return s;
+  },
+  // Gestione perioperatoria dell'anticoagulante → giorni di sospensione prima
+  // della procedura. v.farmaco (warfarin/apixaban/dabigatran/edoxaban/
+  // rivaroxaban), v.rischio (basso/alto emorragico), v.clearance (per dabigatran).
+  perioperative_anticoag: function(v) {
+    var f = v.farmaco, alto = (v.rischio === 'alto'), cl = v.clearance;
+    if (f === 'warfarin') return 5;
+    if (f === 'dabigatran') {
+      if (cl === 'lt30') return 4;              // CrCl <30: evitare; sosp. lunga
+      if (cl === 'cl30_49') return alto ? 4 : 2;
+      return alto ? 2 : 1;                      // CrCl >=50
+    }
+    return alto ? 2 : 1;                        // apixaban / edoxaban / rivaroxaban
   }
 };
 
