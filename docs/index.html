@@ -1817,13 +1817,19 @@
         return v;
       }
       function _ricalcola() {
-        var ris = window._calcolaScala(def, _raccogliValori());
+        // Se ci sono criteri numerici non compilati, il risultato è incompleto
+        var numMancante = false;
+        body.querySelectorAll('.sc-crit[data-tipo="number"]').forEach(function(el) {
+          if (String(el.value).trim() === '') numMancante = true;
+        });
+        var ris = numMancante ? null : window._calcolaScala(def, _raccogliValori());
         var elV = document.getElementById('scaleValore'),
             elI = document.getElementById('scaleInterp'),
             elBtn = document.getElementById('scaleInserisci'),
             elBox = document.getElementById('scaleRisultato');
         if (!ris) {
-          elV.textContent = '—'; elI.textContent = (def.tipo === 'formula') ? 'compila tutti i campi' : '';
+          elV.textContent = '—';
+          elI.textContent = (numMancante || def.tipo === 'formula') ? 'compila tutti i campi' : '';
           elBtn.disabled = true; elBox.style.background = '#eceff1';
           return;
         }

@@ -374,6 +374,22 @@ var _SCALE_FORMULE = {
             Math.pow(Math.max(cr / k, 1), -1.200) * Math.pow(0.9938, eta);
     if (f) r *= 1.012;
     return r;
+  },
+  // Glasgow-Blatchford: fasce urea/Hb/PAS (Hb dipende dal sesso) + criteri clinici
+  glasgow_blatchford: function(v) {
+    var urea = +v.urea, hb = +v.hb, pas = +v.pas;
+    if (isNaN(urea) || isNaN(hb) || isNaN(pas)) return null;
+    var s = 0;
+    if (urea >= 25) s += 6; else if (urea >= 10) s += 4; else if (urea >= 8) s += 3; else if (urea >= 6.5) s += 2;
+    if (v.sesso === 'F') { if (hb < 10) s += 6; else if (hb < 12) s += 1; }
+    else { if (hb < 10) s += 6; else if (hb < 12) s += 3; else if (hb < 13) s += 1; }
+    if (pas < 90) s += 3; else if (pas < 100) s += 2; else if (pas < 110) s += 1;
+    if (v.fc) s += 1;
+    if (v.melena) s += 1;
+    if (v.sincope) s += 2;
+    if (v.epatopatia) s += 2;
+    if (v.scompenso) s += 2;
+    return s;
   }
 };
 
@@ -400,6 +416,9 @@ function _calcolaScala(def, valori) {
         var idx = (val == null) ? 0 : Number(val);
         var op = (c.opzioni || [])[idx];
         if (op && typeof op.punti === 'number') punteggio += op.punti;
+      } else if (c.tipo === 'number' && c.contributo === 'valore') {
+        // Il valore stesso è il punteggio (es. età in PESI)
+        if (val != null && val !== '' && !isNaN(val)) punteggio += Number(val);
       }
     });
   }
