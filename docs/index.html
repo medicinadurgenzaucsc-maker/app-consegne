@@ -1738,6 +1738,7 @@
               '<div class="text-center py-4"><div class="spinner-border text-secondary"></div>' +
               '<div class="mt-2 text-muted small">Caricamento scale…</div></div></div>',
         width: 'min(1200px, 95vw)',
+        customClass: { popup: 'scale-modal-popup' },
         showConfirmButton: false,
         showCloseButton: true,
         allowOutsideClick: true,
@@ -1793,11 +1794,13 @@
         ['Perché usare', def.perche_usare],
         ['Insidie e note', def.insidie]
       ];
-      var html = sezioni.filter(function(s) { return s[1]; }).map(function(s) {
-        return '<details class="sc-info"><summary>' + s[0] + '</summary>' +
-               '<div class="sc-info-body">' + _escIso(s[1]) + '</div></details>';
+      var sez = sezioni.filter(function(s) { return s[1]; });
+      if (!sez.length) return '';
+      var tabs = sez.map(function(s) {
+        return '<button type="button" class="sc-tab" data-testo="' + _escIso(s[1]) + '">' + s[0] + '</button>';
       }).join('');
-      return html ? '<div class="sc-info-wrap">' + html + '</div>' : '';
+      return '<div class="sc-info-tabs"><div class="sc-tabbar">' + tabs + '</div>' +
+             '<div class="sc-tabpanel" style="display:none;"></div></div>';
     }
 
     // Apertura ESCLUSIVA dei riquadri a scomparsa: aprendone uno, gli altri si
@@ -1805,13 +1808,18 @@
     // <details> è asincrono e non chiuderebbe gli altri in tempo.
     function _scaleInfoBindExclusive(root) {
       if (!root) return;
-      var dets = Array.prototype.slice.call(root.querySelectorAll('details.sc-info'));
-      dets.forEach(function(d) {
-        var sum = d.querySelector('summary');
-        if (!sum) return;
-        sum.addEventListener('click', function() {
-          // d.open qui è ancora lo stato PRIMA del toggle: se sta per aprirsi, chiudi gli altri
-          if (!d.open) dets.forEach(function(o) { if (o !== d) o.open = false; });
+      root.querySelectorAll('.sc-info-tabs').forEach(function(wrap) {
+        var panel = wrap.querySelector('.sc-tabpanel');
+        var tabs = Array.prototype.slice.call(wrap.querySelectorAll('.sc-tab'));
+        tabs.forEach(function(tab) {
+          tab.addEventListener('click', function() {
+            var era = tab.classList.contains('active');
+            tabs.forEach(function(t) { t.classList.remove('active'); });
+            if (era) { panel.style.display = 'none'; panel.textContent = ''; return; }
+            tab.classList.add('active');
+            panel.textContent = tab.getAttribute('data-testo') || '';
+            panel.style.display = 'block';
+          });
         });
       });
     }
@@ -2098,6 +2106,7 @@
           confirmButtonColor: '#c62828',
           cancelButtonText: 'Chiudi',
           width: 'min(820px, 94vw)',
+          customClass: { popup: 'scale-modal-popup' },
           didOpen: function() { _scaleInfoBindExclusive(Swal.getHtmlContainer()); }
         }).then(function(res) {
           if (!res.isConfirmed) return;

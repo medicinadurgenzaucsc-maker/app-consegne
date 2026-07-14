@@ -564,19 +564,24 @@ body { padding-top: 70px; background-color: #d4e6f1 !important; }
   .sc-lbl { flex-basis: 100%; }
   .sc-opts, .sc-numwrap { margin-left: 0; }
 }
-/* Sezioni a scomparsa coi testi clinici (Quando usare / Perché usare / Insidie) */
-.sc-info-wrap { display: flex; flex-direction: column; gap: 4px; margin: 4px 0 10px; }
-.sc-info { border: 1px solid #e0e0e0; border-radius: 6px; background: #fafbfc; overflow: hidden; }
-.sc-info > summary {
-  cursor: pointer; padding: 6px 10px; font-weight: 600; font-size: 0.85rem;
-  color: #1565c0; list-style: none; display: flex; align-items: center; gap: 6px;
+/* Testi clinici a TAB (Quando usare / Perché usare / Insidie): 3 pulsanti in
+   riga + un pannello sotto che mostra il testo del tab selezionato. */
+.sc-info-tabs { margin: 6px 0 12px; }
+.sc-tabbar { display: flex; gap: 6px; }
+.sc-tab {
+  flex: 1 1 0; border: 1px solid #d0d7de; background: #f4f2ee; color: #1565c0;
+  border-radius: 7px 7px 0 0; padding: 7px 8px; font-size: 0.83rem; font-weight: 600;
+  cursor: pointer; white-space: nowrap; transition: background .12s, color .12s, border-color .12s;
 }
-.sc-info > summary::-webkit-details-marker { display: none; }
-.sc-info > summary::before {
-  content: '\25B8'; font-size: 0.8rem; color: #90a4ae; transition: transform .15s;
+.sc-tab:hover { background: #eef5ff; border-color: #90b4e0; }
+.sc-tab.active { background: #1565c0; border-color: #1565c0; color: #fff; }
+.sc-tabpanel {
+  border: 1px solid #d0d7de; border-top: none; border-radius: 0 0 8px 8px;
+  padding: 10px 12px; font-size: 0.85rem; color: #455a64; line-height: 1.5; background: #fffdf9;
 }
-.sc-info[open] > summary::before { transform: rotate(90deg); }
-.sc-info-body { padding: 0 10px 8px 24px; font-size: 0.84rem; color: #455a64; line-height: 1.45; }
+/* Sfondo del modal scale: bianco sporco (non bianco puro) per non affaticare gli occhi */
+.scale-modal-popup { background: #f6f4ef !important; }
+.sc-criteri { background: #fffdf9; }
 /* Riquadro descrizione della scala (verde), sopra i riquadri a scomparsa */
 .sc-descr {
   background: #e8f5e9;
