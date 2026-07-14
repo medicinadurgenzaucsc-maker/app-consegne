@@ -1894,12 +1894,14 @@
       _ricalcola();
     }
 
-    // Inserisce/aggiorna la riga fissa (non editabile) in cima al campo
-    // Esami Colturali. Stessa scala → sostituisce; scale diverse → impilate.
+    // Inserisce/aggiorna la riga scala in un blocco NON editabile in cima al
+    // campo Esami Colturali, separato da una linea dal testo libero sotto (che
+    // resta sempre scrivibile). Stessa scala → sostituisce; scale diverse → impilate.
     function _inserisciRisultatoScala(card, scalaId, testo) {
       var campo = card.querySelector('[data-field="EsamiColturali"]');
       if (!campo) return;
-      var esistente = campo.querySelector('.scala-risultato[data-scala="' + scalaId + '"]');
+      var box = _scaleBox(campo);
+      var esistente = box.querySelector('.scala-risultato[data-scala="' + scalaId + '"]');
       if (esistente) {
         esistente.textContent = testo;
       } else {
@@ -1908,12 +1910,125 @@
         div.setAttribute('contenteditable', 'false');
         div.setAttribute('data-scala', scalaId);
         div.textContent = testo;
-        campo.insertBefore(div, campo.firstChild);
+        box.appendChild(div);
       }
+      _assicuraEditabileDopoScale(campo);
       if (typeof window._placeholderCheck === 'function') window._placeholderCheck(campo);
       var letto = card.getAttribute('data-bed');
       if (letto && typeof attivaSalvataggioRitardato === 'function') attivaSalvataggioRitardato(letto, card);
     }
+
+    // Trova (o crea in cima) il contenitore non editabile delle scale, e vi
+    // raccoglie eventuali righe scala "sparse" salvate col vecchio formato.
+    function _scaleBox(campo) {
+      var box = campo.querySelector(':scope > .scale-box');
+      if (!box) {
+        box = document.createElement('div');
+        box.className = 'scale-box';
+        box.setAttribute('contenteditable', 'false');
+        campo.insertBefore(box, campo.firstChild);
+      }
+      campo.querySelectorAll(':scope > .scala-risultato').forEach(function(r) {
+        r.setAttribute('contenteditable', 'false');
+        box.appendChild(r);
+      });
+      return box;
+    }
+
+    // Garantisce che DOPO il box scale ci sia sempre un punto editabile dove
+    // scrivere a mano (col solo box non editabile il cursore non entrerebbe).
+    function _assicuraEditabileDopoScale(campo) {
+      var box = campo.querySelector(':scope > .scale-box');
+      if (!box) return;
+      var n = box.nextSibling, haEdit = false;
+      while (n) {
+        if (n.nodeType === 1 && !n.classList.contains('scale-box')) { haEdit = true; break; }
+        if (n.nodeType === 3 && n.textContent.replace(/\s| /g, '') !== '') { haEdit = true; break; }
+        n = n.nextSibling;
+      }
+      if (!haEdit) {
+        var d = document.createElement('div');
+        d.appendChild(document.createElement('br'));
+        campo.appendChild(d);
+      }
+    }
+
+    // Rimuove l'inserimento di una scala. Se il box resta vuoto, lo elimina.
+    function _rimuoviScala(card, scalaId) {
+      var campo = card.querySelector('[data-field="EsamiColturali"]');
+      if (!campo) return;
+      var box = campo.querySelector(':scope > .scale-box');
+      var riga = (box || campo).querySelector('.scala-risultato[data-scala="' + scalaId + '"]');
+      if (riga) riga.remove();
+      if (box && !box.querySelector('.scala-risultato')) box.remove();
+      if (typeof window._placeholderCheck === 'function') window._placeholderCheck(campo);
+      var letto = card.getAttribute('data-bed');
+      if (letto && typeof attivaSalvataggioRitardato === 'function') attivaSalvataggioRitardato(letto, card);
+    }
+
+    // Modal riepilogo di una scala inserita: spiega cosa significa e permette
+    // di cancellarne l'inserimento (con conferma). Aperto cliccando la riga.
+    window._apriModalRiepilogoScala = function(rigaEl) {
+      var scalaId = rigaEl.getAttribute('data-scala');
+      var card = rigaEl.closest('.patient-card');
+      var testoInserito = rigaEl.textContent || '';
+      _sbGetScaleValutazione().then(function(scale) {
+        var scala = (scale || []).find(function(s) { return s.id === scalaId; });
+        var def = scala ? (scala.definizione || {}) : {};
+        var interpHtml = (def.interpretazione || []).map(function(f) {
+          var range = (f.max >= 999) ? ('≥ ' + f.min)
+                    : (f.min === f.max ? ('' + f.min) : (f.min + '–' + f.max));
+          return '<tr><td style="padding:2px 8px;font-weight:600;white-space:nowrap;vertical-align:top;">' + _escIso(range) +
+                 '</td><td style="padding:2px 8px;color:#546e7a;">' + _escIso(f.testo) + '</td></tr>';
+        }).join('');
+        var html =
+          '<div style="text-align:left;font-size:0.9rem;">' +
+            '<div style="background:#e3f2fd;border-left:4px solid #1565c0;border-radius:4px;padding:7px 10px;margin-bottom:10px;color:#0d47a1;font-weight:600;">' +
+              _escIso(testoInserito) + '</div>' +
+            (scala && scala.descrizione ? '<div class="text-muted mb-2" style="font-size:0.85rem;">' + _escIso(scala.descrizione) + '</div>' : '') +
+            (interpHtml ? '<div style="font-weight:600;margin:8px 0 2px;color:#37474f;">Interpretazione del punteggio</div>' +
+              '<table style="border-collapse:collapse;width:100%;">' + interpHtml + '</table>' : '') +
+            (scala && (scala.riferimento || scala.fonte_url)
+              ? '<div class="text-muted mt-2" style="font-size:0.72rem;line-height:1.3;">Fonte: ' + _escIso(scala.riferimento || '') +
+                (scala.fonte_url ? ' · <a href="' + _escIso(scala.fonte_url) + '" target="_blank" rel="noopener">MDCalc</a>' : '') + '</div>'
+              : '') +
+          '</div>';
+        Swal.fire({
+          title: scala ? scala.nome : scalaId,
+          html: html,
+          showCancelButton: true,
+          confirmButtonText: '<i class="bi bi-trash me-1"></i>Cancella inserimento',
+          confirmButtonColor: '#c62828',
+          cancelButtonText: 'Chiudi',
+          width: 480
+        }).then(function(res) {
+          if (!res.isConfirmed) return;
+          Swal.fire({
+            title: 'Cancellare l\'inserimento?',
+            text: 'Vuoi togliere "' + (scala ? scala.nome : scalaId) + '" dalla consegna?',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: 'Sì, cancella',
+            confirmButtonColor: '#c62828',
+            cancelButtonText: 'Annulla'
+          }).then(function(r2) {
+            if (!r2.isConfirmed) return;
+            _rimuoviScala(card, scalaId);
+            Swal.fire({ icon: 'success', title: 'Inserimento rimosso', timer: 1100, showConfirmButton: false });
+          });
+        });
+      });
+    };
+
+    // Click su una riga scala già inserita → modal riepilogo/cancellazione.
+    // In capture, così intercetta prima dell'attivazione della focus mode.
+    document.addEventListener('click', function(ev) {
+      var riga = ev.target.closest ? ev.target.closest('.scala-risultato') : null;
+      if (!riga || !riga.closest('[data-field="EsamiColturali"]')) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      if (typeof window._apriModalRiepilogoScala === 'function') window._apriModalRiepilogoScala(riga);
+    }, true);
 
     document.addEventListener('visibilitychange', function() {
       if (document.hidden) {

@@ -485,6 +485,18 @@ body { padding-top: 70px; background-color: #d4e6f1 !important; }
   padding: 2px 8px;
   margin: 0 0 4px 0;
   font-size: 0.95em;
+  cursor: pointer;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.scala-risultato:hover { filter: brightness(0.96); }
+.scala-risultato:last-child { margin-bottom: 0; }
+/* Blocco scale in cima al campo Esami Colturali: una linea lo separa dal
+   testo libero sotto, che resta sempre scrivibile. */
+.scale-box {
+  border-bottom: 2px solid #90caf9;
+  margin-bottom: 6px;
+  padding-bottom: 5px;
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
 }

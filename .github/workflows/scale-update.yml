@@ -1,10 +1,10 @@
 name: Auto-aggiornamento scale (MDCalc via Gemini)
 
-# Riverifica mensilmente i punteggi/soglie delle scale di valutazione dalla
-# fonte MDCalc, GRATIS, usando Google Gemini (piano gratuito) con grounding
-# Google Search. Doppia lettura in consenso anti-allucinazione; pubblica in
-# automatico i cambiamenti affidabili (con log di allerta se i casi_verità
-# non passano più) e conserva lo storico per il rollback.
+# Riverifica mensilmente i punteggi/soglie delle scale di valutazione
+# (riferimento MDCalc), GRATIS, usando Google Gemini (piano gratuito). Doppia
+# lettura in consenso anti-allucinazione; pubblica in automatico i cambiamenti
+# affidabili (con log di allerta se i casi_verità non passano più) e conserva
+# lo storico per il rollback.
 #
 # Richiede i secret del repo:
 #   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY  (già presenti — usati anche da notify-deploy)

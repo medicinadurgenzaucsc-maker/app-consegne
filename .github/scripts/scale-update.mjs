@@ -1,14 +1,16 @@
 #!/usr/bin/env node
 // ─────────────────────────────────────────────────────────────────────────────
-//  Auto-aggiornamento SCALE DI VALUTAZIONE dalla fonte MDCalc — GRATIS.
-//  Usa Google Gemini (piano gratuito) con grounding Google Search per rileggere
-//  i punteggi/soglie ufficiali. Nessun costo fisso: ~30 letture/mese stanno
-//  ampiamente nel free tier.
+//  Auto-aggiornamento SCALE DI VALUTAZIONE (riferimento MDCalc) — GRATIS.
+//  Usa Google Gemini (piano gratuito) per riverificare i punteggi/soglie
+//  ufficiali delle scale standard. Nessun costo fisso: ~30 letture/mese stanno
+//  ampiamente nel free tier. NB: niente grounding Google Search (non disponibile
+//  sul free tier → 429); il modello usa la sua conoscenza clinica consolidata,
+//  con doppia lettura + casi_verità come rete di sicurezza.
 //
 //  Per ogni scala attiva nel DB Supabase:
 //   1. legge la definizione corrente
 //   2. interroga Gemini DUE volte in modo indipendente (temperature 0) per
-//      rileggere i punteggi/soglie secondo MDCalc
+//      riverificare i punteggi/soglie ufficiali
 //   3. confronta le due letture tra loro (anti-allucinazione) e col DB
 //   4. se le due letture CONCORDANO e DIFFERISCONO dal DB → pubblica il cambiamento
 //        · policy "sempre automatico": pubblica anche se i casi_verità non passano
@@ -179,14 +181,18 @@ function mergeValori(defDb, defEstratta) {
   return nuova;
 }
 
-// ── Chiamata Gemini (grounding Google Search) con retry su rate-limit ────────
+// ── Chiamata Gemini con retry su rate-limit ──────────────────────────────────
+// NB: niente tool `google_search` (grounding): sul piano GRATUITO non è
+// disponibile e restituisce 429/RESOURCE_EXHAUSTED. Il modello risponde dalla
+// sua conoscenza delle scale standard; la doppia lettura + i casi_verità fanno
+// da rete di sicurezza.
 async function geminiCall(prompt) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${GEMINI_KEY}`;
   const body = {
     contents: [{ parts: [{ text: prompt }] }],
-    tools: [{ google_search: {} }],
     generationConfig: { temperature: 0, maxOutputTokens: 3000 }
   };
+  let ultimoErrore = '';
   for (let tentativo = 1; tentativo <= 4; tentativo++) {
     const resp = await fetch(url, {
       method: 'POST',
@@ -199,17 +205,18 @@ async function geminiCall(prompt) {
       const parts = (cand && cand.content && cand.content.parts) || [];
       return parts.map(p => p.text || '').join('\n');
     }
-    // 429 (rate limit) o 5xx → backoff e ritenta; altri errori → lancia
+    const t = await resp.text().catch(() => '');
+    ultimoErrore = `HTTP ${resp.status}: ${t.slice(0, 200)}`;
+    // 429 (rate limit) o 5xx → backoff e ritenta; altri errori → lancia subito
     if (resp.status === 429 || resp.status >= 500) {
       const attesa = 2000 * tentativo;
-      console.log(`   ⏳ Gemini HTTP ${resp.status}, ritento tra ${attesa}ms (${tentativo}/4)`);
+      console.log(`   ⏳ Gemini ${ultimoErrore.slice(0, 120)} — ritento tra ${attesa}ms (${tentativo}/4)`);
       await sleep(attesa);
       continue;
     }
-    const t = await resp.text().catch(() => '');
-    throw new Error(`Gemini HTTP ${resp.status}: ${t.slice(0, 300)}`);
+    throw new Error(`Gemini ${ultimoErrore}`);
   }
-  throw new Error('Gemini: troppi tentativi falliti (rate limit)');
+  throw new Error(`Gemini: troppi tentativi falliti — ${ultimoErrore}`);
 }
 
 async function leggiDaMdcalc(scala) {
@@ -227,20 +234,19 @@ async function leggiDaMdcalc(scala) {
   });
 
   const prompt =
-`Sei un assistente clinico. Verifica i punteggi ufficiali di una scala medica consultando la fonte MDCalc.
+`Sei un assistente clinico esperto. Verifica i punteggi ufficiali di una scala medica secondo la definizione validata (come pubblicata su MDCalc: ${scala.fonte_url}).
 
 Scala: "${scala.nome}" (id interno: ${scala.id})
-Pagina ufficiale MDCalc: ${scala.fonte_url}
-Usa Google per consultare quella pagina di MDCalc (mdcalc.com).
 
 Definizione attualmente in uso nel nostro sistema (JSON):
 ${schemaEsempio}
 
-COMPITO: restituisci la definizione CORRENTE secondo MDCalc usando ESATTAMENTE la stessa struttura,
+COMPITO: restituisci la definizione UFFICIALE CORRENTE usando ESATTAMENTE la stessa struttura,
 gli stessi "id" e lo stesso ordine di criteri e opzioni.
-- Cambia SOLO i numeri (punti, valore, min, max, contributo) se su MDCalc sono diversi.
+- Cambia SOLO i numeri (punti, valore, min, max, contributo) se differiscono dalla definizione ufficiale della scala.
 - NON aggiungere o togliere criteri/opzioni se la struttura è invariata.
-- Se tutto coincide, restituisci gli stessi identici numeri.
+- Se tutto coincide con la definizione ufficiale, restituisci gli stessi identici numeri.
+- Basati sulla definizione clinica consolidata della scala; se non sei certo di un valore, mantieni quello attuale.
 
 Rispondi SOLTANTO con un blocco di codice \`\`\`json ... \`\`\` contenente la definizione, senza altro testo.`;
 
