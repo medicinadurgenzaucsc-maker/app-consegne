@@ -3698,6 +3698,22 @@
       } catch(e) {}
     }
 
+    // Log arricchito: interroga is_autorizzato() (RPC ~50B) col JWT della
+    // sessione appena creata/ripristinata → il Log dice subito se il PC ha
+    // scelto un account valido per la futura stretta RLS. Se un collega
+    // clicca il proprio account personale invece di quello del reparto,
+    // lo vediamo dal log e lo sistemiamo PRIMA di chiudere le policy.
+    function _supaAuthLogConAutorizzazione(esito, email) {
+      try {
+        _sb.rpc('is_autorizzato').then(function(r) {
+          var flag = (r && r.error) ? 'verifica non riuscita'
+                   : (r && r.data === true ? 'SÌ'
+                   : 'NO — account non in lista autorizzati');
+          _supaAuthLog(esito, email + ' | valida per la stretta RLS: ' + flag);
+        }).catch(function() { _supaAuthLog(esito, email); });
+      } catch(e) { _supaAuthLog(esito, email); }
+    }
+
     function _supaAuthInit() {
       try {
         if (typeof _sb === 'undefined' || !_sb || !_sb.auth ||
@@ -3708,7 +3724,7 @@
         _sb.auth.getSession().then(function(res) {
           var sess = res && res.data && res.data.session;
           if (sess && sess.user) {
-            _supaAuthLog('ok-ripristinata', sess.user.email || '');
+            _supaAuthLogConAutorizzazione('ok-ripristinata', sess.user.email || '');
             return;
           }
           _supaAuthOneTap();
@@ -3735,7 +3751,7 @@
             _sb.auth.signInWithIdToken({ provider: 'google', token: cred.credential })
               .then(function(r) {
                 if (r.error) _supaAuthLog('errore-signin', r.error.message || '');
-                else _supaAuthLog('ok-creata', (r.data && r.data.user && r.data.user.email) || '');
+                else _supaAuthLogConAutorizzazione('ok-creata', (r.data && r.data.user && r.data.user.email) || '');
               })
               .catch(function(e) { _supaAuthLog('errore-signin', (e && e.message) || ''); });
           }
