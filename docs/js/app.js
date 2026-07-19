@@ -1406,7 +1406,12 @@
           card.style.transition = 'box-shadow 0.3s'; card.style.boxShadow = '0 0 0 4px rgba(55,71,79,0.45)';
           setTimeout(function() { if (_fuoriPosizione()) _scrollAllaCard('auto'); }, 700);
           setTimeout(function() {
-            if (_fuoriPosizione()) _scrollAllaCard('auto');
+            if (_fuoriPosizione()) {
+              // Ultimo tentativo: scrollIntoView usa un percorso diverso del
+              // motore e può funzionare dove scrollTo viene ignorato (renderer
+              // sotto carico sui PC lenti). scroll-margin-top CSS compensa la navbar.
+              try { card.scrollIntoView({ behavior: 'auto', block: 'start' }); } catch(e) {}
+            }
             card.style.boxShadow = ''; card.style.transition = '';
           }, 1500);
         }, 250);

@@ -902,6 +902,9 @@ span.valore-giorni.alt-info-val { font-weight: normal; }
   vertical-align: middle;
 }
 .dim-icon-list svg { display: block; }
+/* Compensa la navbar fissa quando si usa scrollIntoView (fallback dello
+   scroll Lista Pazienti sui renderer sotto carico) */
+.patient-card { scroll-margin-top: 90px; }
 /* Icone stato (isolamento/rianimazione) accanto al nome nella Lista Pazienti */
 .bedstatus-icon-list {
   display: inline-flex;
