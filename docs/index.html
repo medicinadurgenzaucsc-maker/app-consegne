@@ -2812,7 +2812,12 @@
         font-size: 1rem;
         line-height: 1.45;
         cursor: pointer;
-        z-index: 1100;
+        /* z-index SOTTO i dialoghi (modal Bootstrap 1050-1055, Swal 1060):
+           il toast non deve MAI coprire un modal aperto. Bug 19/07: a
+           1100 il toast+velo coprivano i campi dei modal (Aggiungi letto,
+           Rinomina, ...) → click sull'input non arrivavano → "non si
+           riesce a scrivere". Sopra la navbar (1030), sotto i modal. */
+        z-index: 1040;
         display: none;
         align-items: flex-start;
         gap: 14px;
@@ -2836,7 +2841,7 @@
         position: fixed;
         inset: 0;
         background: rgba(0,0,0,0.28);
-        z-index: 1099;
+        z-index: 1039; /* sotto il toast (1040), sotto i modal (1050+) */
         display: none;
         cursor: pointer;
       }
