@@ -2717,6 +2717,12 @@
       <strong style="display:inline-block;margin-right:4px;">⚠</strong><span id="loginErrorText"></span>
     </div>
 
+    <!-- Login unificato: qui JS renderizza il pulsante Google ufficiale
+         (flusso credential → sessione Supabase). Il pulsante classico
+         sotto resta come FALLBACK automatico: viene nascosto solo quando
+         il pulsante GIS è renderizzato con successo. -->
+    <div id="loginUnifBox" style="display:flex;justify-content:center;margin-bottom:6px;"></div>
+
     <button id="btnGoogleLogin" onclick="_avviaLoginGoogle()"
       style="display:flex;align-items:center;justify-content:center;gap:12px;width:100%;
              padding:13px 20px;border:2px solid #e0e0e0;border-radius:10px;
@@ -3716,31 +3722,18 @@
       } catch(e) { _supaAuthLog(esito, email); }
     }
 
-    function _supaAuthInit() {
-      try {
-        if (typeof _sb === 'undefined' || !_sb || !_sb.auth ||
-            typeof _sb.auth.getSession !== 'function') {
-          _supaAuthLog('errore-client', 'supabase-js senza modulo auth');
-          return;
-        }
-        _sb.auth.getSession().then(function(res) {
-          var sess = res && res.data && res.data.session;
-          if (sess && sess.user) {
-            _supaAuthLogConAutorizzazione('ok-ripristinata', sess.user.email || '');
-            return;
-          }
-          _supaAuthOneTap();
-        }).catch(function(e) { _supaAuthLog('errore-getsession', (e && e.message) || ''); });
-      } catch(e) { _supaAuthLog('errore-init', (e && e.message) || ''); }
-    }
-
-    function _supaAuthOneTap() {
-      // GIS è caricato async/defer: attende che google.accounts.id esista
+    // ── LOGIN UNIFICATO: pulsante Google unico nella schermata di login ─
+    // Un solo passaggio: credential (ID token) → sessione Supabase →
+    // verifica allowlist → ingresso. Il token Drive viene rinnovato in
+    // silenzio dopo (consenso già concesso in passato su questi PC).
+    // Il pulsante classico #btnGoogleLogin (flusso access-token) resta nel
+    // DOM come FALLBACK automatico: nascosto solo a render GIS riuscito.
+    function _montaPulsanteUnificato() {
       if (typeof google === 'undefined' || !google.accounts || !google.accounts.id) {
-        _supaAuthOneTap._retry = (_supaAuthOneTap._retry || 0) + 1;
-        if (_supaAuthOneTap._retry <= 20) { setTimeout(_supaAuthOneTap, 500); return; }
-        _supaAuthLog('gis-id-assente', 'google.accounts.id non disponibile dopo 10s');
-        return;
+        _montaPulsanteUnificato._retry = (_montaPulsanteUnificato._retry || 0) + 1;
+        if (_montaPulsanteUnificato._retry <= 20) { setTimeout(_montaPulsanteUnificato, 500); return; }
+        _supaAuthLog('gis-id-assente', 'login unificato non disponibile: resta il pulsante classico');
+        return; // fallback: il pulsante classico è già visibile
       }
       try {
         google.accounts.id.initialize({
@@ -3748,115 +3741,88 @@
           cancel_on_tap_outside: false,
           use_fedcm_for_prompt: true,
           context: 'signin',
-          // Pre-punta l'account del reparto: il popup Google propone
-          // direttamente quello (resta l'opzione "usa un altro account",
-          // ma quelli non in lista vengono rifiutati dal check sotto)
+          // Pre-punta l'account del reparto (resta "usa un altro account",
+          // ma i non autorizzati vengono respinti dalla verifica server)
           login_hint: _emailConsentita || 'medicinadurgenza.ucsc@gmail.com',
-          callback: function(cred) {
-            if (!cred || !cred.credential) { _supaAuthErroreOverlay('Risposta Google vuota. Riprova.'); return; }
-            _sb.auth.signInWithIdToken({ provider: 'google', token: cred.credential })
-              .then(function(r) {
-                if (r.error) {
-                  _supaAuthLog('errore-signin', r.error.message || '');
-                  _supaAuthErroreOverlay('Errore di accesso: ' + (r.error.message || 'riprova.'));
-                  return;
-                }
-                var email = (r.data && r.data.user && r.data.user.email) || '';
-                // Verifica SERVER che l'account sia in lista autorizzati
-                _sb.rpc('is_autorizzato').then(function(chk) {
-                  var autorizzato = !(chk && chk.error) && chk && chk.data === true;
-                  if (autorizzato) {
-                    _supaAuthLog('ok-creata', email + ' | valida per la stretta RLS: SÌ');
-                    _supaAuthRimuoviOverlay();
-                  } else {
-                    // Account sbagliato: sessione eliminata SUBITO (solo su
-                    // questo dispositivo) e si richiede quello del reparto
-                    try { _sb.auth.signOut({ scope: 'local' }); } catch(e) {}
-                    _supaAuthLog('account-non-autorizzato', email);
-                    _supaAuthErroreOverlay('Account non autorizzato: ' + email +
-                      '. Usa l\'account del reparto: ' +
-                      (_emailConsentita || 'medicinadurgenza.ucsc@gmail.com'));
-                  }
-                }).catch(function() {
-                  // RPC non raggiungibile: in fase dual-run non blocchiamo
-                  _supaAuthLog('ok-creata', email + ' | verifica autorizzazione non riuscita');
-                  _supaAuthRimuoviOverlay();
-                });
-              })
-              .catch(function(e) {
-                _supaAuthLog('errore-signin', (e && e.message) || '');
-                _supaAuthErroreOverlay('Errore di accesso. Controlla la connessione e riprova.');
-              });
-          }
+          callback: _onCredentialUnificato
         });
-        _supaAuthMostraOverlay();
-      } catch(e) { _supaAuthLog('errore-onetap', (e && e.message) || ''); }
-    }
-
-    // ── Overlay centrale: velo scuro + pannello con pulsante Google ────
-    // Richiesta utente: il riquadro deve comparire AL CENTRO annerendo
-    // tutto, così il collega è "quasi costretto" a scegliere l'account
-    // del reparto. Le schede caricano dietro il velo; al click giusto il
-    // velo svanisce e trova tutto pronto. Un PC con sessione già attiva
-    // non lo vede mai. "Salta per ora" resta come uscita di sicurezza
-    // (fase dual-run: l'app funziona comunque) e verrà rimosso alla
-    // stretta RLS definitiva.
-    function _supaAuthMostraOverlay() {
-      if (document.getElementById('supaAuthOverlay')) return;
-      var ov = document.createElement('div');
-      ov.id = 'supaAuthOverlay';
-      ov.style.cssText = 'position:fixed;inset:0;z-index:99990;background:rgba(15,23,30,0.82);display:flex;align-items:center;justify-content:center;backdrop-filter:blur(2px);';
-      ov.innerHTML =
-        '<div style="background:#fafaf7;border-radius:16px;box-shadow:0 12px 48px rgba(0,0,0,0.5);max-width:430px;width:92%;padding:30px 28px;text-align:center;font-family:Arial,sans-serif;">' +
-          '<div style="font-size:2rem;">🔐</div>' +
-          '<h5 style="margin:10px 0 6px;color:#263238;font-weight:bold;">Conferma l\'account del reparto</h5>' +
-          '<p style="font-size:0.9rem;color:#546e7a;margin:0 0 4px;">Per la protezione dei dati dei pazienti,<br>conferma l\'accesso con:</p>' +
-          '<p style="font-weight:bold;color:#1565c0;font-size:0.95rem;margin:0 0 18px;">' +
-            (_emailConsentita || 'medicinadurgenza.ucsc@gmail.com') + '</p>' +
-          '<div id="supaAuthBtn" style="display:flex;justify-content:center;"></div>' +
-          '<div id="supaAuthErr" style="display:none;margin-top:14px;padding:10px 12px;background:#fff3e0;border-left:4px solid #f57c00;border-radius:8px;color:#bf360c;font-size:0.82rem;text-align:left;"></div>' +
-          '<div style="margin-top:16px;"><a href="javascript:void(0)" id="supaAuthSalta" style="font-size:0.72rem;color:#90a4ae;">Salta per ora (temporaneo)</a></div>' +
-        '</div>';
-      document.body.appendChild(ov);
-      try {
-        google.accounts.id.renderButton(document.getElementById('supaAuthBtn'), {
+        var box = document.getElementById('loginUnifBox');
+        if (!box) return;
+        google.accounts.id.renderButton(box, {
           type: 'standard', theme: 'filled_blue', size: 'large',
           text: 'signin_with', shape: 'pill', logo_alignment: 'left',
           width: 300, locale: 'it'
         });
+        var legacy = document.getElementById('btnGoogleLogin');
+        if (legacy && box.childElementCount > 0) legacy.style.display = 'none';
       } catch(e) {
-        _supaAuthErroreOverlay('Impossibile mostrare il pulsante Google. Ricarica la pagina.');
+        _supaAuthLog('errore-render-login', (e && e.message) || '');
       }
-      var salta = document.getElementById('supaAuthSalta');
-      if (salta) salta.onclick = function() {
-        _supaAuthLog('saltato-manuale', 'l\'utente ha rimandato la conferma account');
-        _supaAuthRimuoviOverlay();
-      };
     }
 
-    function _supaAuthErroreOverlay(msg) {
-      var e = document.getElementById('supaAuthErr');
-      if (e) { e.style.display = 'block'; e.textContent = msg; }
+    function _onCredentialUnificato(cred) {
+      if (!cred || !cred.credential) { _mostraErroreLogin('Risposta Google vuota. Riprova.'); return; }
+      var sp = document.getElementById('loginSpinner');
+      if (sp) sp.style.display = 'flex';
+      _sb.auth.signInWithIdToken({ provider: 'google', token: cred.credential })
+        .then(function(r) {
+          if (r.error) {
+            if (sp) sp.style.display = 'none';
+            _supaAuthLog('errore-signin', r.error.message || '');
+            _mostraErroreLogin('Errore di accesso: ' + (r.error.message || 'riprova.'));
+            return;
+          }
+          var email = (r.data && r.data.user && r.data.user.email) || '';
+          _sb.rpc('is_autorizzato').then(function(chk) {
+            var autorizzato = !(chk && chk.error) && chk && chk.data === true;
+            if (!autorizzato) {
+              // Account sbagliato: sessione eliminata subito (solo su
+              // questo dispositivo) e messaggio con l'account giusto
+              try { _sb.auth.signOut({ scope: 'local' }); } catch(e) {}
+              if (sp) sp.style.display = 'none';
+              _supaAuthLog('account-non-autorizzato', email);
+              _mostraErroreLogin('Account non autorizzato: ' + email +
+                '\nUsa l\'account del reparto: ' +
+                (_emailConsentita || 'medicinadurgenza.ucsc@gmail.com'));
+              return;
+            }
+            _supaAuthLog('ok-creata', email + ' | valida per la stretta RLS: SÌ');
+            _dopoLoginUnificato();
+          }).catch(function() {
+            // RPC irraggiungibile: in fase dual-run non blocchiamo
+            _supaAuthLog('ok-creata', email + ' | verifica autorizzazione non riuscita');
+            _dopoLoginUnificato();
+          });
+        })
+        .catch(function(e) {
+          if (sp) sp.style.display = 'none';
+          _supaAuthLog('errore-signin', (e && e.message) || '');
+          _mostraErroreLogin('Errore di accesso. Controlla la connessione e riprova.');
+        });
     }
 
-    function _supaAuthRimuoviOverlay() {
-      var ov = document.getElementById('supaAuthOverlay');
-      if (!ov) return;
-      ov.style.transition = 'opacity 0.3s'; ov.style.opacity = '0';
-      // pointer-events subito spenti: la pagina è usabile immediatamente
-      ov.style.pointerEvents = 'none';
-      // remove con doppia rete: timer (estetica dissolvenza) + fallback
-      // sincrono a 1.2s — su PC con timer throttlati l'overlay non deve
-      // MAI restare appeso
-      setTimeout(function() { try { ov.remove(); } catch(e) {} }, 320);
-      setTimeout(function() { try { ov.remove(); } catch(e) {} }, 1200);
+    function _dopoLoginUnificato() {
+      // Token Drive in silenzio (prompt:'none' + hint): se fallisce NON
+      // blocca l'ingresso — i backup Drive hanno già retry-401 + refresh
+      // orario che sistemano il token alla prima occasione
+      try {
+        if (typeof window._rinnovaTokenSilenzioso === 'function') {
+          window._rinnovaTokenSilenzioso().catch(function() {});
+        }
+      } catch(e) {}
+      var sp = document.getElementById('loginSpinner');
+      if (sp) sp.style.display = 'none';
+      _nascondiErroreLogin();
+      _avviaApp();
     }
+
+    // (Il vecchio "velo" post-ingresso con overlay dedicato è stato
+    // sostituito dal LOGIN UNIFICATO qui sopra: la conferma dell'account
+    // è ora parte della schermata di login stessa — un solo passaggio.)
 
     function _avviaApp() {
       var ov = document.getElementById('loginOverlay');
       if (ov) { ov.style.transition = 'opacity 0.4s'; ov.style.opacity = '0'; setTimeout(function() { ov.style.display = 'none'; }, 420); }
-      // Path A dual-run: avvio ritardato per non competere col boot dati
-      setTimeout(_supaAuthInit, 400);
       // Se eravamo in version update reload e il login ha temporaneamente
       // nascosto il versionUpdateOverlay (deadlock prevention), ripristinalo
       // ora che l'utente è loggato. Sarà chiuso da _avviaCaricamentoDati.
@@ -3914,39 +3880,53 @@
         _emailConsentita = email || '';
       }).catch(function() {});
 
-      // 1. Controlla sessione in localStorage (persiste oltre chiusura browser)
-      var sessioneScaduta = false;
+      // ══ GATE UNIFICATO (Path A) ═══════════════════════════════════════
+      // Il cancello d'ingresso è la SESSIONE SUPABASE (permanente, si
+      // auto-rinnova da sola). Il vecchio appSession non è più il gate:
+      // resta SOLO come token Drive per i backup. Un unico login Google.
+
+      // 1. Ripristina il token Drive da appSession se ancora valido
+      //    (solo per i backup Drive: non decide più l'ingresso)
       try {
-        var sess = JSON.parse(localStorage.getItem('appSession') || 'null');
-        if (sess && sess.token) {
-          if (sess.expiry > Date.now()) {
-            // Sessione valida → entra direttamente
-            window._googleAccessToken = sess.token;
-            window._googleDriveToken  = sess.token;
-            var ov = document.getElementById('loginOverlay');
-            if (ov) ov.style.display = 'none';
-            if (typeof window._avviaFlussoApp === 'function') window._avviaFlussoApp();
-            // Path A dual-run: questo ramo (sessione ripristinata, il più
-            // comune sui PC di reparto) NON passa da _avviaApp → aggancio
-            // qui il login Supabase silenzioso
-            setTimeout(_supaAuthInit, 400);
-            return;
-          }
-          // Sessione presente ma scaduta → flag per mostrare toast informativo
-          sessioneScaduta = true;
-          try { localStorage.removeItem('appSession'); } catch(e){}
+        var sessD = JSON.parse(localStorage.getItem('appSession') || 'null');
+        if (sessD && sessD.token && sessD.expiry > Date.now()) {
+          window._googleAccessToken = sessD.token;
+          window._googleDriveToken  = sessD.token;
         }
       } catch(e) {}
 
-      // 2. Nessuna sessione valida → mostra login overlay
-      // (è già visibile di default, ma assicuriamoci)
-      _mostraLoginOverlay();
-      if (sessioneScaduta) {
-        _mostraErroreLogin('La sessione è scaduta. Effettua di nuovo l\'accesso.');
-      }
-      // NB: NESSUN tentativo di login silenzioso. Il login parte solo al click
-      // del pulsante (richiesto dall'UX desiderata: utente vede sempre la
-      // schermata di login e poi sceglie l'account).
+      // 2. Gate: sessione Supabase presente → dentro, zero interazioni
+      _sb.auth.getSession().then(function(res) {
+        var s = res && res.data && res.data.session;
+        if (s && s.user) {
+          var ov = document.getElementById('loginOverlay');
+          if (ov) ov.style.display = 'none';
+          if (typeof window._avviaFlussoApp === 'function') window._avviaFlussoApp();
+          _supaAuthLogConAutorizzazione('ok-ripristinata', s.user.email || '');
+          // Token Drive: se manca o scade entro 15 min → rinnovo silenzioso
+          // (non blocca; il backup ha comunque retry-401 + refresh orario)
+          setTimeout(function() {
+            try {
+              var ss = JSON.parse(localStorage.getItem('appSession') || 'null');
+              var scadeFra = (ss && ss.expiry) ? (ss.expiry - Date.now()) : 0;
+              if ((!window._googleDriveToken || scadeFra < 15 * 60 * 1000) &&
+                  typeof window._rinnovaTokenSilenzioso === 'function') {
+                window._rinnovaTokenSilenzioso().catch(function() {});
+              }
+            } catch(e) {}
+          }, 3000);
+          return;
+        }
+        // 3. Nessuna sessione → schermata di login col pulsante unificato
+        //    (il pulsante classico resta visibile come fallback finché il
+        //    pulsante GIS non è renderizzato)
+        _mostraLoginOverlay();
+        _montaPulsanteUnificato();
+      }).catch(function(e) {
+        // getSession fallita (storage rotto?) → schermata classica
+        _supaAuthLog('errore-getsession', (e && e.message) || '');
+        _mostraLoginOverlay();
+      });
     });
 
   })();
