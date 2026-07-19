@@ -2710,7 +2710,7 @@
   <div style="background:#fff;border-radius:18px;padding:44px 48px;max-width:400px;width:92%;box-shadow:0 24px 64px rgba(0,0,0,0.45);text-align:center;">
     <div style="font-size:3rem;margin-bottom:10px;">🏥</div>
     <h2 style="font-size:1.35rem;font-weight:700;color:#263238;margin:0 0 6px;">Consegne Reparto</h2>
-    <p style="color:#607d8b;font-size:0.88rem;margin:0 0 24px;line-height:1.5;">Accedi con l'account Google autorizzato<br>per il reparto.</p>
+    <p id="loginSottotitolo" style="color:#607d8b;font-size:0.88rem;margin:0 0 24px;line-height:1.5;">Accedi con l'account Google autorizzato<br>per il reparto.</p>
 
     <!-- Toast errore (sopra il pulsante) — visibile solo in caso di errore precedente -->
     <div id="loginError" role="alert" style="display:none;margin-bottom:18px;padding:12px 14px;background:#fff3e0;border:1px solid #ffb74d;border-left:4px solid #f57c00;border-radius:8px;color:#bf360c;font-size:0.84rem;text-align:left;line-height:1.45;white-space:pre-line;">
@@ -3741,13 +3741,23 @@
           cancel_on_tap_outside: false,
           use_fedcm_for_prompt: true,
           context: 'signin',
-          // Pre-punta l'account del reparto (resta "usa un altro account",
-          // ma i non autorizzati vengono respinti dalla verifica server)
-          login_hint: _emailConsentita || 'medicinadurgenza.ucsc@gmail.com',
+          // NB: NIENTE login_hint. Con profili che hanno molti account
+          // Google, l'hint può produrre la pagina "400 malformed" di
+          // Google nel popup (conflitto indice di sessione — osservato
+          // il 19/07 sul PC admin con 7 account; in incognito ok).
+          // La guida verso l'account giusto è affidata al testo della
+          // schermata + al respingimento server (is_autorizzato).
           callback: _onCredentialUnificato
         });
         var box = document.getElementById('loginUnifBox');
         if (!box) return;
+        // Evidenzia l'account da usare nel sottotitolo della schermata
+        var sott = document.getElementById('loginSottotitolo');
+        if (sott) {
+          sott.innerHTML = 'Accedi con l\'account del reparto:<br>' +
+            '<strong style="color:#1565c0;">' +
+            (_emailConsentita || 'medicinadurgenza.ucsc@gmail.com') + '</strong>';
+        }
         google.accounts.id.renderButton(box, {
           type: 'standard', theme: 'filled_blue', size: 'large',
           text: 'signin_with', shape: 'pill', logo_alignment: 'left',
