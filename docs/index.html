@@ -3740,7 +3740,25 @@
               .catch(function(e) { _supaAuthLog('errore-signin', (e && e.message) || ''); });
           }
         });
-        google.accounts.id.prompt();
+        // Moment-callback: logga PERCHÉ il riquadro non è comparso o è
+        // stato chiuso (osservabilità per il rollout sui PC di reparto).
+        // Con FedCM i motivi possono essere limitati: tutto in try/catch.
+        google.accounts.id.prompt(function(moment) {
+          try {
+            if (moment && moment.isNotDisplayed && moment.isNotDisplayed()) {
+              _supaAuthLog('onetap-non-mostrato',
+                (moment.getNotDisplayedReason && moment.getNotDisplayedReason()) || 'motivo non disponibile (FedCM)');
+            } else if (moment && moment.isSkippedMoment && moment.isSkippedMoment()) {
+              _supaAuthLog('onetap-saltato',
+                (moment.getSkippedReason && moment.getSkippedReason()) || 'motivo non disponibile (FedCM)');
+            } else if (moment && moment.isDismissedMoment && moment.isDismissedMoment()) {
+              var mot = (moment.getDismissedReason && moment.getDismissedReason()) || '';
+              // credential_returned = l'utente HA scelto l'account: arriverà
+              // il callback con il credential → non è una chiusura
+              if (mot !== 'credential_returned') _supaAuthLog('onetap-chiuso', mot);
+            }
+          } catch(e) {}
+        });
       } catch(e) { _supaAuthLog('errore-onetap', (e && e.message) || ''); }
     }
 
