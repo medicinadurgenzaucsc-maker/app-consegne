@@ -3,7 +3,7 @@
 
 // Bump CACHE_NAME quando si aggiungono/cambiano asset nella precache,
 // così i client già connessi invalidano la vecchia cache e ricaricano.
-var CACHE_NAME = 'consegne-v68';
+var CACHE_NAME = 'consegne-v69';
 
 // Asset statici da pre-cachare all'installazione
 var PRECACHE_ASSETS = [

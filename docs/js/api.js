@@ -916,7 +916,7 @@ function _sbGetLocks() {
     (rows || []).forEach(function(r) {
       if (now - Number(r.ts) <= LOCK_TTL_MS) {
         locks[r.letto] = { token: r.token, ts: Number(r.ts) };
-        _lockState[r.letto] = { token: r.token };
+        _lockState[r.letto] = { token: r.token, ts: Number(r.ts) };
       }
     });
     return locks;
@@ -2167,8 +2167,103 @@ function _inizializzaRealtime() {
       })
     .subscribe(function(status) {
       console.log('[Realtime]', status);
+      _onRealtimeStatus(status, _realtimeChannel);
     });
 }
+
+// ── RESILIENZA REALTIME ────────────────────────────────────────────────
+// Problema storico: .subscribe loggava soltanto. Se il canale moriva
+// (CHANNEL_ERROR/TIMED_OUT/CLOSED — tab in background, rete instabile,
+// PC lento) il client smetteva SILENZIOSAMENTE di ricevere consegne+lock
+// finché la diagnostica (anche 60 min dopo) non attivava l'emergenza.
+// In più, OGNI _inizializzaRealtime (chiamato a ogni operazione) crea una
+// finestra cieca di ~1-2s tra removeChannel e il nuovo SUBSCRIBED: gli
+// eventi lock persi lì lasciavano overlay "In aggiornamento" fantasma.
+//
+// Soluzione:
+//  - retry con backoff (5s→10s→20s→40s→60s) SOLO a tab visibile e SOLO se
+//    il canale fallito è ancora quello corrente (i CLOSED del canale
+//    vecchio, emessi dal removeChannel intenzionale, vengono ignorati)
+//  - dal 2° SUBSCRIBED in poi: mini-resync (lock ~1KB + firma ~60B) che
+//    copre la finestra cieca. Il 1° subscribe del boot è già coperto dal
+//    full sync di avvio → nessun costo extra lì.
+var _rtRetryTimer     = null;
+var _rtRetryDelayMs   = 5000;
+var _rtSubscribeCount = 0;
+
+function _rtMiniResync() {
+  // Lock: stato fresco dal DB (payload ~0.5-1KB)
+  _sbGetLocks().then(function(locks) {
+    if (typeof _applicaLocks === 'function') _applicaLocks(locks || {});
+  }).catch(function(){});
+  // Dati: check firma MAX(updated_at)|COUNT (~60B). Se cambiata → full sync.
+  // Alla prima chiamata registra solo la baseline (nessun sync inutile).
+  if (typeof _emergenzaCheckSeMutato === 'function') {
+    _emergenzaCheckSeMutato().catch(function(){});
+  }
+}
+
+function _onRealtimeStatus(status, ch) {
+  // Eventi di un canale ormai sostituito (removeChannel intenzionale a ogni
+  // _inizializzaRealtime): ignora, non sono errori del canale corrente.
+  if (ch !== _realtimeChannel) return;
+
+  if (status === 'SUBSCRIBED') {
+    _rtRetryDelayMs = 5000;            // reset backoff
+    if (_rtRetryTimer) { clearTimeout(_rtRetryTimer); _rtRetryTimer = null; }
+    _rtSubscribeCount++;
+    if (_rtSubscribeCount > 1) _rtMiniResync();
+    return;
+  }
+  if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+    // In background il browser throttla i timer e il websocket non riparte:
+    // inutile insistere lì — al ritorno visibile ci pensa il resync di
+    // visibilitychange. Riproviamo solo a tab visibile.
+    if (document.visibilityState !== 'visible') return;
+    if (_rtRetryTimer) return; // retry già pianificato
+    var delay = _rtRetryDelayMs;
+    _rtRetryDelayMs = Math.min(_rtRetryDelayMs * 2, 60000);
+    console.warn('[Realtime] Canale ' + status + ' — retry tra ' + (delay/1000) + 's');
+    _rtRetryTimer = setTimeout(function() {
+      _rtRetryTimer = null;
+      // Se nel frattempo il canale è stato ricreato da altri flussi, skip
+      if (ch !== _realtimeChannel) return;
+      _inizializzaRealtime();
+    }, delay);
+  }
+}
+
+// ── RESYNC AL RITORNO IN FOREGROUND ────────────────────────────────────
+// In background il browser throttla i timer e sospende il websocket: al
+// ritorno della tab il client può avere (a) canale morto senza saperlo,
+// (b) lock stantii (rilasci mai visti — "il lock resta per tanto tempo"),
+// (c) modifiche di altri PC mai ricevute. Qui, con throttle 10s:
+//  - emergenza attiva → tick immediato (il setInterval 30s era throttlato)
+//  - realtime → se il canale non è joined lo ricrea (il mini-resync parte
+//    da solo al SUBSCRIBED); se è joined fa comunque il mini-resync
+// Egress: ~1.1KB per rientro in foreground. Con 6 PC e decine di rientri
+// al giorno → pochi MB/mese, irrilevante rispetto alla quota.
+var _lastVisResyncTs = 0;
+document.addEventListener('visibilitychange', function() {
+  if (document.visibilityState !== 'visible') return;
+  var now = Date.now();
+  if (now - _lastVisResyncTs < 10000) return; // throttle anti-raffica
+  _lastVisResyncTs = now;
+
+  var emergAttiva = (typeof _emergenzaPollingAttivo === 'function' && _emergenzaPollingAttivo());
+  if (emergAttiva) {
+    _rtMiniResync();
+    return;
+  }
+  var stato = '';
+  try { stato = _realtimeChannel && _realtimeChannel.state; } catch(e) {}
+  if (stato !== 'joined') {
+    console.log('[Realtime] Ritorno in foreground con canale "' + stato + '" — resubscribe');
+    _inizializzaRealtime(); // → SUBSCRIBED → mini-resync automatico
+  } else {
+    _rtMiniResync(); // canale ok ma eventi possibili persi nel throttling
+  }
+});
 
 // ── DELTA UPDATE — aggiorna SOLO la card interessata ──────────────────
 // Ritorna true se gestito, false se serve fallback al full sync.
@@ -2346,7 +2441,11 @@ function _onLockChange(event, payload) {
   } else {
     var row = payload.new;
     if (row && row.letto) {
-      _lockState[row.letto] = { token: row.token };
+      // ts incluso: permette la scadenza CLIENT-SIDE del lock (sweep 60s).
+      // Senza ts, un lock il cui DELETE si perdeva (websocket giù, finestra
+      // cieca del resubscribe) restava visualizzato per sempre → card coperta
+      // dall'overlay "In aggiornamento" e non più cliccabile.
+      _lockState[row.letto] = { token: row.token, ts: Number(row.ts) || Date.now() };
     }
   }
   if (typeof _applicaLocks === 'function') { _applicaLocks(_lockState); }
@@ -2355,6 +2454,31 @@ function _onLockChange(event, payload) {
   if (ind) ind.className = 'badge bg-success ms-2';
   if (st)  st.innerText  = new Date().toLocaleTimeString('it-IT');
 }
+
+// ── SWEEP LOCK SCADUTI — zero rete ─────────────────────────────────────
+// Ogni 60s, se ci sono lock in memoria, ri-applica _applicaLocks: il filtro
+// TTL client-side dentro _applicaLocks espelle i lock scaduti, così un
+// overlay "In aggiornamento" rimasto orfano (DELETE perso col websocket giù)
+// sparisce da solo entro ~1 minuto dalla scadenza del TTL (10 min), invece
+// di bloccare la card per sempre. Nessuna query: lavora sullo stato in-memory.
+setInterval(function() {
+  var haLock = false;
+  for (var k in _lockState) { haLock = true; break; }
+  if (!haLock) return;
+  var now = Date.now();
+  var rimossi = false;
+  Object.keys(_lockState).forEach(function(letto) {
+    var info = _lockState[letto];
+    if (info && info.ts && (now - Number(info.ts)) > LOCK_TTL_MS) {
+      delete _lockState[letto];
+      rimossi = true;
+    }
+  });
+  // Ri-applica sempre (anche senza rimozioni in-memory: copre overlay creati
+  // da _sbGetLocks con dati poi invecchiati)
+  if (typeof _applicaLocks === 'function') { try { _applicaLocks(_lockState); } catch(e) {} }
+  if (rimossi) console.log('[Lock sweep] Rimossi lock scaduti dallo stato in-memory');
+}, 60000);
 
 var _pendingSync = false;
 var _pendingSyncLetto = null;  // se non-null, sync mirato su un solo letto

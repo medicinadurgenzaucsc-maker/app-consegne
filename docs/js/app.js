@@ -1381,12 +1381,35 @@
         var letto = a.getAttribute('data-scroll-letto');
         var tog = document.getElementById('dropdownListaPazienti'); if (tog) { var dd = bootstrap.Dropdown.getInstance(tog); if (dd) dd.hide(); }
         var card = document.querySelector('#cardsContainer .patient-card[data-bed="' + letto + '"]'); if (!card) return;
-        setTimeout(function() {
+        // Scroll ROBUSTO a doppio assestamento. Il vecchio one-shot smooth
+        // falliva "ogni tanto": se durante l'animazione arrivava un update
+        // Realtime / un reflow (equalizza colonne, contenuti applicati),
+        // le posizioni cambiavano e lo scroll atterrava nel punto sbagliato;
+        // su PC lenti i 200ms non bastavano nemmeno per la chiusura del
+        // dropdown. Ora: attesa 250ms → smooth → a +700ms ri-misura e
+        // corregge (istantaneo) → ultima verifica a +1500ms.
+        function _scrollAllaCard(behavior) {
           var top = card.getBoundingClientRect().top + window.pageYOffset - 80;
-          window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+          window.scrollTo({ top: Math.max(0, top), behavior: behavior });
+        }
+        function _fuoriPosizione() {
+          // La card è "a posto" se il suo top è vicino agli 80px dalla navbar
+          var delta = Math.abs(card.getBoundingClientRect().top - 80);
+          // A inizio/fine pagina non si può scrollare oltre: considera ok
+          var maxScroll = document.documentElement.scrollHeight - window.innerHeight;
+          var target = card.getBoundingClientRect().top + window.pageYOffset - 80;
+          if (target <= 0 || target >= maxScroll) return false;
+          return delta > 30;
+        }
+        setTimeout(function() {
+          _scrollAllaCard('smooth');
           card.style.transition = 'box-shadow 0.3s'; card.style.boxShadow = '0 0 0 4px rgba(55,71,79,0.45)';
-          setTimeout(function() { card.style.boxShadow = ''; card.style.transition = ''; }, 1500);
-        }, 200);
+          setTimeout(function() { if (_fuoriPosizione()) _scrollAllaCard('auto'); }, 700);
+          setTimeout(function() {
+            if (_fuoriPosizione()) _scrollAllaCard('auto');
+            card.style.boxShadow = ''; card.style.transition = '';
+          }, 1500);
+        }, 250);
       };
     }
 
