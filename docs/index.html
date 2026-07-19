@@ -3684,11 +3684,13 @@
     // Primo accesso per PC: possibile riquadro Google One Tap (1 click,
     // una tantum); dai boot successivi la sessione si ripristina da sola.
     // ══════════════════════════════════════════════════════════════════
-    var _supaAuthLoggato = false;
+    var _supaAuthLogCount = 0;
     function _supaAuthLog(esito, dettaglio) {
       console.log('[SupaAuth] ' + esito + (dettaglio ? ' — ' + dettaglio : ''));
-      if (_supaAuthLoggato) return; // un solo log su DB per boot
-      _supaAuthLoggato = true;
+      // Max 3 log su DB per boot: consente di tracciare la sequenza
+      // "account sbagliato → poi corretto" senza spam
+      if (_supaAuthLogCount >= 3) return;
+      _supaAuthLogCount++;
       try {
         if (typeof window._log === 'function') {
           window._log(esito.indexOf('ok') === 0 ? 'info' : 'warning', 'supa-auth',
@@ -3743,46 +3745,113 @@
       try {
         google.accounts.id.initialize({
           client_id: GOOGLE_CLIENT_ID,
-          auto_select: true,             // silenzioso se 1 account già consentito
           cancel_on_tap_outside: false,
           use_fedcm_for_prompt: true,
+          context: 'signin',
+          // Pre-punta l'account del reparto: il popup Google propone
+          // direttamente quello (resta l'opzione "usa un altro account",
+          // ma quelli non in lista vengono rifiutati dal check sotto)
+          login_hint: _emailConsentita || 'medicinadurgenza.ucsc@gmail.com',
           callback: function(cred) {
-            if (!cred || !cred.credential) { _supaAuthLog('credential-vuoto', ''); return; }
+            if (!cred || !cred.credential) { _supaAuthErroreOverlay('Risposta Google vuota. Riprova.'); return; }
             _sb.auth.signInWithIdToken({ provider: 'google', token: cred.credential })
               .then(function(r) {
-                if (r.error) _supaAuthLog('errore-signin', r.error.message || '');
-                else _supaAuthLogConAutorizzazione('ok-creata', (r.data && r.data.user && r.data.user.email) || '');
+                if (r.error) {
+                  _supaAuthLog('errore-signin', r.error.message || '');
+                  _supaAuthErroreOverlay('Errore di accesso: ' + (r.error.message || 'riprova.'));
+                  return;
+                }
+                var email = (r.data && r.data.user && r.data.user.email) || '';
+                // Verifica SERVER che l'account sia in lista autorizzati
+                _sb.rpc('is_autorizzato').then(function(chk) {
+                  var autorizzato = !(chk && chk.error) && chk && chk.data === true;
+                  if (autorizzato) {
+                    _supaAuthLog('ok-creata', email + ' | valida per la stretta RLS: SÌ');
+                    _supaAuthRimuoviOverlay();
+                  } else {
+                    // Account sbagliato: sessione eliminata SUBITO (solo su
+                    // questo dispositivo) e si richiede quello del reparto
+                    try { _sb.auth.signOut({ scope: 'local' }); } catch(e) {}
+                    _supaAuthLog('account-non-autorizzato', email);
+                    _supaAuthErroreOverlay('Account non autorizzato: ' + email +
+                      '. Usa l\'account del reparto: ' +
+                      (_emailConsentita || 'medicinadurgenza.ucsc@gmail.com'));
+                  }
+                }).catch(function() {
+                  // RPC non raggiungibile: in fase dual-run non blocchiamo
+                  _supaAuthLog('ok-creata', email + ' | verifica autorizzazione non riuscita');
+                  _supaAuthRimuoviOverlay();
+                });
               })
-              .catch(function(e) { _supaAuthLog('errore-signin', (e && e.message) || ''); });
+              .catch(function(e) {
+                _supaAuthLog('errore-signin', (e && e.message) || '');
+                _supaAuthErroreOverlay('Errore di accesso. Controlla la connessione e riprova.');
+              });
           }
         });
-        // Moment-callback: logga PERCHÉ il riquadro non è comparso o è
-        // stato chiuso (osservabilità per il rollout sui PC di reparto).
-        // Con FedCM i motivi possono essere limitati: tutto in try/catch.
-        google.accounts.id.prompt(function(moment) {
-          try {
-            if (moment && moment.isNotDisplayed && moment.isNotDisplayed()) {
-              _supaAuthLog('onetap-non-mostrato',
-                (moment.getNotDisplayedReason && moment.getNotDisplayedReason()) || 'motivo non disponibile (FedCM)');
-            } else if (moment && moment.isSkippedMoment && moment.isSkippedMoment()) {
-              _supaAuthLog('onetap-saltato',
-                (moment.getSkippedReason && moment.getSkippedReason()) || 'motivo non disponibile (FedCM)');
-            } else if (moment && moment.isDismissedMoment && moment.isDismissedMoment()) {
-              var mot = (moment.getDismissedReason && moment.getDismissedReason()) || '';
-              // credential_returned = l'utente HA scelto l'account: arriverà
-              // il callback con il credential → non è una chiusura
-              if (mot !== 'credential_returned') _supaAuthLog('onetap-chiuso', mot);
-            }
-          } catch(e) {}
-        });
+        _supaAuthMostraOverlay();
       } catch(e) { _supaAuthLog('errore-onetap', (e && e.message) || ''); }
+    }
+
+    // ── Overlay centrale: velo scuro + pannello con pulsante Google ────
+    // Richiesta utente: il riquadro deve comparire AL CENTRO annerendo
+    // tutto, così il collega è "quasi costretto" a scegliere l'account
+    // del reparto. Le schede caricano dietro il velo; al click giusto il
+    // velo svanisce e trova tutto pronto. Un PC con sessione già attiva
+    // non lo vede mai. "Salta per ora" resta come uscita di sicurezza
+    // (fase dual-run: l'app funziona comunque) e verrà rimosso alla
+    // stretta RLS definitiva.
+    function _supaAuthMostraOverlay() {
+      if (document.getElementById('supaAuthOverlay')) return;
+      var ov = document.createElement('div');
+      ov.id = 'supaAuthOverlay';
+      ov.style.cssText = 'position:fixed;inset:0;z-index:99990;background:rgba(15,23,30,0.82);display:flex;align-items:center;justify-content:center;backdrop-filter:blur(2px);';
+      ov.innerHTML =
+        '<div style="background:#fafaf7;border-radius:16px;box-shadow:0 12px 48px rgba(0,0,0,0.5);max-width:430px;width:92%;padding:30px 28px;text-align:center;font-family:Arial,sans-serif;">' +
+          '<div style="font-size:2rem;">🔐</div>' +
+          '<h5 style="margin:10px 0 6px;color:#263238;font-weight:bold;">Conferma l\'account del reparto</h5>' +
+          '<p style="font-size:0.9rem;color:#546e7a;margin:0 0 4px;">Per la protezione dei dati dei pazienti,<br>conferma l\'accesso con:</p>' +
+          '<p style="font-weight:bold;color:#1565c0;font-size:0.95rem;margin:0 0 18px;">' +
+            (_emailConsentita || 'medicinadurgenza.ucsc@gmail.com') + '</p>' +
+          '<div id="supaAuthBtn" style="display:flex;justify-content:center;"></div>' +
+          '<div id="supaAuthErr" style="display:none;margin-top:14px;padding:10px 12px;background:#fff3e0;border-left:4px solid #f57c00;border-radius:8px;color:#bf360c;font-size:0.82rem;text-align:left;"></div>' +
+          '<div style="margin-top:16px;"><a href="javascript:void(0)" id="supaAuthSalta" style="font-size:0.72rem;color:#90a4ae;">Salta per ora (temporaneo)</a></div>' +
+        '</div>';
+      document.body.appendChild(ov);
+      try {
+        google.accounts.id.renderButton(document.getElementById('supaAuthBtn'), {
+          type: 'standard', theme: 'filled_blue', size: 'large',
+          text: 'signin_with', shape: 'pill', logo_alignment: 'left',
+          width: 300, locale: 'it'
+        });
+      } catch(e) {
+        _supaAuthErroreOverlay('Impossibile mostrare il pulsante Google. Ricarica la pagina.');
+      }
+      var salta = document.getElementById('supaAuthSalta');
+      if (salta) salta.onclick = function() {
+        _supaAuthLog('saltato-manuale', 'l\'utente ha rimandato la conferma account');
+        _supaAuthRimuoviOverlay();
+      };
+    }
+
+    function _supaAuthErroreOverlay(msg) {
+      var e = document.getElementById('supaAuthErr');
+      if (e) { e.style.display = 'block'; e.textContent = msg; }
+    }
+
+    function _supaAuthRimuoviOverlay() {
+      var ov = document.getElementById('supaAuthOverlay');
+      if (ov) {
+        ov.style.transition = 'opacity 0.3s'; ov.style.opacity = '0';
+        setTimeout(function() { ov.remove(); }, 320);
+      }
     }
 
     function _avviaApp() {
       var ov = document.getElementById('loginOverlay');
       if (ov) { ov.style.transition = 'opacity 0.4s'; ov.style.opacity = '0'; setTimeout(function() { ov.style.display = 'none'; }, 420); }
       // Path A dual-run: avvio ritardato per non competere col boot dati
-      setTimeout(_supaAuthInit, 1500);
+      setTimeout(_supaAuthInit, 400);
       // Se eravamo in version update reload e il login ha temporaneamente
       // nascosto il versionUpdateOverlay (deadlock prevention), ripristinalo
       // ora che l'utente è loggato. Sarà chiuso da _avviaCaricamentoDati.
@@ -3855,7 +3924,7 @@
             // Path A dual-run: questo ramo (sessione ripristinata, il più
             // comune sui PC di reparto) NON passa da _avviaApp → aggancio
             // qui il login Supabase silenzioso
-            setTimeout(_supaAuthInit, 1500);
+            setTimeout(_supaAuthInit, 400);
             return;
           }
           // Sessione presente ma scaduta → flag per mostrare toast informativo
