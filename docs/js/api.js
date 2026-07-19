@@ -2084,19 +2084,42 @@ function _driveBackupConsegne(pazienti, ts) {
     '</body></html>';
 
   // Cerca o crea la cartella nella root, crea il file, poi pulisce i vecchi
-  return _driveGetOrCreateFolder('BACKUP CONSEGNE EMERGENZA')
-    .then(function(folderId) {
-      return _driveCreaGoogleDoc(nomeFile, html, folderId)
-        .then(function(file) {
-          _bkLog('info', 'success',
-            'File Drive creato: ' + (file && file.name),
-            'fileId=' + (file && file.id) + ' | folderId=' + folderId);
-          // Pulizia file vecchi con la stessa retention di Supabase archivio
-          return _sbGetGiorniConservazione().then(function(giorni) {
-            var cutoff = Number(ts) - (giorni * 86400000);
-            _driveEliminaVecchi(folderId, cutoff); // fire-and-forget
+  function _tentaBackupDrive() {
+    return _driveGetOrCreateFolder('BACKUP CONSEGNE EMERGENZA')
+      .then(function(folderId) {
+        return _driveCreaGoogleDoc(nomeFile, html, folderId)
+          .then(function(file) {
+            _bkLog('info', 'success',
+              'File Drive creato: ' + (file && file.name),
+              'fileId=' + (file && file.id) + ' | folderId=' + folderId);
+            // Pulizia file vecchi con la stessa retention di Supabase archivio
+            return _sbGetGiorniConservazione().then(function(giorni) {
+              var cutoff = Number(ts) - (giorni * 86400000);
+              _driveEliminaVecchi(folderId, cutoff); // fire-and-forget
+            });
           });
+      });
+  }
+  return _tentaBackupDrive()
+    .catch(function(e) {
+      // 401 = token Drive scaduto/revocato NONOSTANTE il pre-check (il
+      // rinnovo pre-backup era fallito in silenzio, o l'expiry salvato in
+      // localStorage era bugiardo — es. orologio del PC sballato). Il log
+      // storico mostrava proprio questo: token_drive_disponibile=true e poi
+      // "invalid authentication credentials". Rimedio: rinnovo FORZATO del
+      // token e UN solo retry. _driveCreaGoogleDoc rilegge
+      // window._googleDriveToken a ogni invocazione → usa il token nuovo.
+      var msg = (e && (e.message || e.error || e.toString())) || '';
+      var e401 = /invalid authentication|unauthorized|401/i.test(msg);
+      if (e401 && typeof window._rinnovaTokenSilenzioso === 'function') {
+        _bkLog('warning', 'retry-401',
+          'Token Drive scaduto: rinnovo silenzioso e riprovo',
+          'Il pre-check non aveva rinnovato il token (expiry localStorage inattendibile o refresh fallito).');
+        return window._rinnovaTokenSilenzioso().then(function() {
+          return _tentaBackupDrive();
         });
+      }
+      throw e;
     })
     .catch(function(e) {
       var msg = (e && (e.message || e.error || e.toString())) || 'errore sconosciuto';
