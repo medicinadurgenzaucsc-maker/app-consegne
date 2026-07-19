@@ -2729,32 +2729,82 @@ function _emergenzaCheckSeMutato() {
       }
       if (firma === _emergFirmaSync) return false;
 
-      console.log('[Emergenza] Modifica rilevata (' + firma + '), lancio full sync');
       _emergSyncInCorso = true;
       var ind = document.getElementById('syncIndicator');
       var st  = document.getElementById('syncStatus');
       if (ind) ind.className = 'badge bg-warning text-dark ms-2';
       if (st)  st.innerText  = 'Sync...';
 
-      return _sbGetPazienti().then(function(pazienti) {
-        if (typeof _applicaAggiornamentoCompleto === 'function') {
-          _applicaAggiornamentoCompleto(_renderCardsHtml(pazienti));
-        }
-        // ⚠ Baseline avanzata SOLO a sync RIUSCITO. Prima veniva avanzata
-        // subito dopo la detection: se il full sync falliva (rete instabile
-        // — esattamente il contesto in cui la modalità emergenza è attiva),
-        // la modifica era persa per sempre finché qualcos'altro non
-        // cambiava. Ora al tick successivo (30s) si riprova.
-        _emergFirmaSync = firma;
-        _emergSyncInCorso = false;
-        if (ind) ind.className = 'badge bg-success ms-2';
-        if (st)  st.innerText  = new Date().toLocaleTimeString('it-IT');
-        return true;
-      }).catch(function(e) {
+      // ── DELTA-SYNC (assicurazione egress, 19/07) ─────────────────────
+      // Full sync = ~190KB. Nel caso estremo (tutti i PC in emergenza H24
+      // per WS bloccato + editing intenso) il full sync a ogni tick
+      // sforerebbe la quota egress mensile (~12GB stimati). Se il COUNT è
+      // invariato (niente insert/delete) scarichiamo SOLO le righe con
+      // updated_at > vecchio max (~7-22KB: tipicamente 1 letto) e le
+      // applichiamo con _applicaDeltaUpdate. Caso estremo così ridotto a
+      // ~1.6GB/mese. Fallback al full sync se: count cambiato, delta
+      // vuoto/troppo grande (>15 righe, es. ripristino backup), card
+      // mancante nel DOM o letto NOTE.
+      var vecchi        = String(_emergFirmaSync).split('|');
+      var vecchioMax    = vecchi[0];
+      var vecchioCount  = vecchi[1];
+      var countInvariato = String(res.count) === String(vecchioCount);
+      var deltaPossibile = countInvariato && vecchioMax && vecchioMax !== 'null';
+
+      function _fullSync() {
+        return _sbGetPazienti().then(function(pazienti) {
+          if (typeof _applicaAggiornamentoCompleto === 'function') {
+            _applicaAggiornamentoCompleto(_renderCardsHtml(pazienti));
+          }
+          // ⚠ Baseline avanzata SOLO a sync RIUSCITO: se fallisce (rete
+          // instabile — proprio il contesto dell'emergenza) si riprova al
+          // tick successivo senza perdere la modifica.
+          _emergFirmaSync = firma;
+          _emergSyncInCorso = false;
+          if (ind) ind.className = 'badge bg-success ms-2';
+          if (st)  st.innerText  = new Date().toLocaleTimeString('it-IT');
+          return true;
+        });
+      }
+
+      var lavoro;
+      if (deltaPossibile) {
+        console.log('[Emergenza] Modifica rilevata (' + firma + '), tento delta sync');
+        lavoro = _sb.from('consegne').select('*').gt('updated_at', vecchioMax)
+          .then(function(dres) {
+            if (dres.error) throw dres.error;
+            var righe = dres.data || [];
+            if (!righe.length || righe.length > 15) {
+              console.log('[Emergenza] Delta non applicabile (' + righe.length + ' righe), full sync');
+              return _fullSync();
+            }
+            var okTutte = true;
+            righe.forEach(function(row) {
+              var ok = false;
+              try { ok = (typeof _applicaDeltaUpdate === 'function') && _applicaDeltaUpdate(row); } catch(e) {}
+              if (!ok) okTutte = false;
+            });
+            if (!okTutte) {
+              console.log('[Emergenza] Delta parziale (card mancante/NOTE), full sync');
+              return _fullSync();
+            }
+            console.log('[Emergenza] Delta sync applicato: ' + righe.length + ' letto/i');
+            _emergFirmaSync = firma;
+            _emergSyncInCorso = false;
+            if (ind) ind.className = 'badge bg-success ms-2';
+            if (st)  st.innerText  = new Date().toLocaleTimeString('it-IT');
+            return true;
+          });
+      } else {
+        console.log('[Emergenza] Modifica rilevata (' + firma + '), full sync (count variato o baseline assente)');
+        lavoro = _fullSync();
+      }
+
+      return lavoro.catch(function(e) {
         _emergSyncInCorso = false;
         if (ind) ind.className = 'badge bg-danger ms-2';
         if (st)  st.innerText  = 'Errore sync';
-        console.warn('[Emergenza] Full sync fallito, riprovo al prossimo tick:', e && e.message);
+        console.warn('[Emergenza] Sync fallito, riprovo al prossimo tick:', e && e.message);
         return false;
       });
     });

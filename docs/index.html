@@ -3671,9 +3671,84 @@
       });
     };
 
+    // ══════════════════════════════════════════════════════════════════
+    // PATH A (dual-run) — sessione Supabase Auth ACCANTO al login GIS
+    // ──────────────────────────────────────────────────────────────────
+    // FASE TRANSITORIA di sicurezza: l'app continua a funzionare come
+    // oggi (anon key); in parallelo creiamo la sessione Supabase (JWT
+    // reale legato all'account Google) e logghiamo l'esito per ogni PC
+    // nel Log di sistema (tipo 'supa-auth'). Quando i log confermeranno
+    // che TUTTI i PC hanno la sessione, le policy RLS verranno strette
+    // con is_autorizzato() e i dati smetteranno di essere pubblici.
+    // NON blocca MAI l'avvio: qualsiasi errore viene solo registrato.
+    // Primo accesso per PC: possibile riquadro Google One Tap (1 click,
+    // una tantum); dai boot successivi la sessione si ripristina da sola.
+    // ══════════════════════════════════════════════════════════════════
+    var _supaAuthLoggato = false;
+    function _supaAuthLog(esito, dettaglio) {
+      console.log('[SupaAuth] ' + esito + (dettaglio ? ' — ' + dettaglio : ''));
+      if (_supaAuthLoggato) return; // un solo log su DB per boot
+      _supaAuthLoggato = true;
+      try {
+        if (typeof window._log === 'function') {
+          window._log(esito.indexOf('ok') === 0 ? 'info' : 'warning', 'supa-auth',
+            'Sessione Supabase: ' + esito,
+            (dettaglio || '') + ' | Dual-run Path A: login Supabase silenzioso, non blocca l\'app.');
+        }
+      } catch(e) {}
+    }
+
+    function _supaAuthInit() {
+      try {
+        if (typeof _sb === 'undefined' || !_sb || !_sb.auth ||
+            typeof _sb.auth.getSession !== 'function') {
+          _supaAuthLog('errore-client', 'supabase-js senza modulo auth');
+          return;
+        }
+        _sb.auth.getSession().then(function(res) {
+          var sess = res && res.data && res.data.session;
+          if (sess && sess.user) {
+            _supaAuthLog('ok-ripristinata', sess.user.email || '');
+            return;
+          }
+          _supaAuthOneTap();
+        }).catch(function(e) { _supaAuthLog('errore-getsession', (e && e.message) || ''); });
+      } catch(e) { _supaAuthLog('errore-init', (e && e.message) || ''); }
+    }
+
+    function _supaAuthOneTap() {
+      // GIS è caricato async/defer: attende che google.accounts.id esista
+      if (typeof google === 'undefined' || !google.accounts || !google.accounts.id) {
+        _supaAuthOneTap._retry = (_supaAuthOneTap._retry || 0) + 1;
+        if (_supaAuthOneTap._retry <= 20) { setTimeout(_supaAuthOneTap, 500); return; }
+        _supaAuthLog('gis-id-assente', 'google.accounts.id non disponibile dopo 10s');
+        return;
+      }
+      try {
+        google.accounts.id.initialize({
+          client_id: GOOGLE_CLIENT_ID,
+          auto_select: true,             // silenzioso se 1 account già consentito
+          cancel_on_tap_outside: false,
+          use_fedcm_for_prompt: true,
+          callback: function(cred) {
+            if (!cred || !cred.credential) { _supaAuthLog('credential-vuoto', ''); return; }
+            _sb.auth.signInWithIdToken({ provider: 'google', token: cred.credential })
+              .then(function(r) {
+                if (r.error) _supaAuthLog('errore-signin', r.error.message || '');
+                else _supaAuthLog('ok-creata', (r.data && r.data.user && r.data.user.email) || '');
+              })
+              .catch(function(e) { _supaAuthLog('errore-signin', (e && e.message) || ''); });
+          }
+        });
+        google.accounts.id.prompt();
+      } catch(e) { _supaAuthLog('errore-onetap', (e && e.message) || ''); }
+    }
+
     function _avviaApp() {
       var ov = document.getElementById('loginOverlay');
       if (ov) { ov.style.transition = 'opacity 0.4s'; ov.style.opacity = '0'; setTimeout(function() { ov.style.display = 'none'; }, 420); }
+      // Path A dual-run: avvio ritardato per non competere col boot dati
+      setTimeout(_supaAuthInit, 1500);
       // Se eravamo in version update reload e il login ha temporaneamente
       // nascosto il versionUpdateOverlay (deadlock prevention), ripristinalo
       // ora che l'utente è loggato. Sarà chiuso da _avviaCaricamentoDati.
