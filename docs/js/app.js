@@ -214,6 +214,62 @@
         if (document.visibilityState === 'visible') _backupOrarioAutomatico();
       });
 
+      // ═══════════════════════════════════════════════════════════════════════
+      // AUTO-REFRESH NOTTURNO — prevenzione degrado browser
+      // ─────────────────────────────────────────────────────────────────────
+      // I PC di reparto restano accesi per giorni/settimane: il renderer del
+      // browser si degrada progressivamente (memoria, timer, compositor —
+      // osservato in lab il 19/07: scroll programmatico congelato su tab
+      // molto vecchie). Un reload notturno riparte ogni giorno con un
+      // browser "fresco" e con gli asset aggiornati (SW network-first).
+      //
+      // SICUREZZA (reparto attivo H24 — il reload NON deve mai interrompere
+      // il lavoro). Ricarica SOLO se TUTTE le condizioni valgono:
+      //   - ora tra le 04:00 e le 04:59 (finestra di minima attività)
+      //   - nessuna scheda in focus mode su questo PC
+      //   - nessun salvataggio pendente (_dirtyLetti vuoto, no save in volo)
+      //   - nessuna attività utente (mouse/tastiera/touch) da >= 30 minuti
+      //   - non già eseguito oggi (localStorage, sopravvive al reload)
+      // Se le condizioni non si verificano mai nella finestra → nessun
+      // refresh quel giorno (riprova la notte successiva).
+      // ═══════════════════════════════════════════════════════════════════════
+      window._lastUserActivityTs = Date.now();
+      ['pointerdown', 'keydown', 'wheel', 'touchstart'].forEach(function(ev) {
+        document.addEventListener(ev, function() {
+          window._lastUserActivityTs = Date.now();
+        }, { passive: true, capture: true });
+      });
+
+      function _autoRefreshNotturno() {
+        try {
+          if (new Date().getHours() !== 4) return;
+          var d = new Date();
+          var oggi = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+          if (localStorage.getItem('_ultimoAutoRefreshNotturno') === oggi) return;
+          if (typeof _focusCard !== 'undefined' && _focusCard) return;
+          if (typeof _dirtyLetti !== 'undefined' && _dirtyLetti && _dirtyLetti.size > 0) return;
+          if (typeof _syncPaused !== 'undefined' && _syncPaused) return;
+          if (Date.now() - (window._lastUserActivityTs || 0) < 30 * 60 * 1000) return;
+
+          // Tutte le condizioni ok: marca PRIMA del reload (il reload azzera
+          // il runtime, il localStorage sopravvive → max 1 refresh/giorno).
+          localStorage.setItem('_ultimoAutoRefreshNotturno', oggi);
+          if (typeof window._log === 'function') {
+            try {
+              window._log('info', 'auto-refresh',
+                'Riavvio notturno automatico della pagina',
+                'Prevenzione del degrado del browser sui PC sempre accesi. ' +
+                'Condizioni verificate: nessun editing in corso, nessun salvataggio pendente, ' +
+                'inattività >= 30 min, finestra 04:00-04:59.');
+            } catch(e) {}
+          }
+          // Piccolo delay: lascia partire l'insert del log prima del reload
+          setTimeout(function() { location.reload(); }, 800);
+        } catch(e) {}
+      }
+      window._autoRefreshNotturno = _autoRefreshNotturno; // esposta per test/diagnostica
+      setInterval(_autoRefreshNotturno, 10 * 60 * 1000);
+
       // ── Cleanup log vecchi (> 20 giorni) — eseguito una volta
       // all'avvio + ogni 6 ore se la pagina resta aperta.
       function _cleanupLogVecchi() {

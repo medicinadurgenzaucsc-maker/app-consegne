@@ -2851,6 +2851,18 @@ function _versionCheckPoll() {
         }
       }
     }).catch(function(){});
+
+  // ── SAFETY NET DATI (~60B) ──────────────────────────────────────────
+  // Prima questo poll controllava SOLO i deploy: un canale Realtime
+  // "joined ma sordo" (eventi persi in silenzio) su una tab sempre in
+  // foreground non veniva MAI risincronizzato. Ora la firma
+  // MAX(updated_at)|COUNT viene verificata anche qui: se il Realtime ha
+  // perso modifiche, entro max 5 minuti parte il full sync. In emergenza
+  // il check gira già ogni 30s: richiamarlo qui è innocuo (stessa
+  // funzione, guard interno _emergSyncInCorso).
+  if (typeof _emergenzaCheckSeMutato === 'function') {
+    _emergenzaCheckSeMutato().catch(function(){});
+  }
 }
 
 // Avvia il polling. Chiamato da app.js dopo il primo _versionCheckInit.
