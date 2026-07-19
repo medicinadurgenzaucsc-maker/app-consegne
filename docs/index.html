@@ -3818,6 +3818,10 @@
             var ov = document.getElementById('loginOverlay');
             if (ov) ov.style.display = 'none';
             if (typeof window._avviaFlussoApp === 'function') window._avviaFlussoApp();
+            // Path A dual-run: questo ramo (sessione ripristinata, il più
+            // comune sui PC di reparto) NON passa da _avviaApp → aggancio
+            // qui il login Supabase silenzioso
+            setTimeout(_supaAuthInit, 1500);
             return;
           }
           // Sessione presente ma scaduta → flag per mostrare toast informativo
