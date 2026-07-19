@@ -3841,10 +3841,15 @@
 
     function _supaAuthRimuoviOverlay() {
       var ov = document.getElementById('supaAuthOverlay');
-      if (ov) {
-        ov.style.transition = 'opacity 0.3s'; ov.style.opacity = '0';
-        setTimeout(function() { ov.remove(); }, 320);
-      }
+      if (!ov) return;
+      ov.style.transition = 'opacity 0.3s'; ov.style.opacity = '0';
+      // pointer-events subito spenti: la pagina è usabile immediatamente
+      ov.style.pointerEvents = 'none';
+      // remove con doppia rete: timer (estetica dissolvenza) + fallback
+      // sincrono a 1.2s — su PC con timer throttlati l'overlay non deve
+      // MAI restare appeso
+      setTimeout(function() { try { ov.remove(); } catch(e) {} }, 320);
+      setTimeout(function() { try { ov.remove(); } catch(e) {} }, 1200);
     }
 
     function _avviaApp() {
