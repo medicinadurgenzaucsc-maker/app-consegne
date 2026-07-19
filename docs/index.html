@@ -5648,7 +5648,7 @@
         mostraAttivaBtn=true;
       } else if (r.ws && !r.ws.ok) {
         tipoSwal='warning';
-        testo='Il WebSocket è bloccato dal sistema (firewall/antivirus). La modalità emergenza (polling ogni 5s) è <strong>consigliata</strong> per questo PC.';
+        testo='Il WebSocket è bloccato dal sistema (firewall/antivirus). La modalità emergenza (polling ogni 30s) è <strong>consigliata</strong> per questo PC.';
         mostraAttivaBtn=true;
       } else if (rischioSalvataggio >= 25) {
         tipoSwal='warning';
@@ -5817,7 +5817,7 @@
             _aggiornaBottoneEmergenza();
             Swal.fire({
               icon:'success', title:'Modalità emergenza attivata',
-              html:'Aggiornamento ogni <strong>5 secondi</strong> via polling.<br>'+
+              html:'Aggiornamento ogni <strong>30 secondi</strong> via polling.<br>'+
                    '<small class="text-muted">Premi "Polling ON" per disattivare.</small>',
               timer:3000, showConfirmButton:false, timerProgressBar:true
             });
@@ -5852,47 +5852,74 @@
           (r.cookies  && !r.cookies.ok)  ||
           (r.js       && !r.js.ok)       ||
           (r.lib      && !r.lib.ok);
-        // Boot-mode: criterio ristretto al solo 'Rischio bug salvataggio'
-        // diverso da NESSUNO (>= 10). Su richiesta dell'utente, all'avvio
-        // della pagina non vogliamo attivare l'emergenza per ws bloccato
-        // o critici di rete: solo per il rischio bug salvataggio effettivo.
+        // ── SEPARAZIONE DEI DUE RISCHI (fix 19/07) ───────────────────
+        // Prima "rischioSalvataggio >= 10" (es. solo CPU lenta) attivava
+        // l'INTERA emergenza: polling + badge "Polling ON" anche con
+        // Realtime perfetto. E il rientro auto richiedeva ZERO problemi
+        // (CPU inclusa) → i PC di reparto, cronicamente lenti, restavano
+        // in Polling ON per sempre (anche dopo reload: la diag di boot
+        // li riattivava). Ora:
+        //   - problemi di CONNESSIONE (rete/REST/ws/storage...) → polling
+        //   - rischio PC LENTO (CPU/timer/heap)                → SOLO
+        //     force-save locale (zero rete a riposo), niente polling,
+        //     niente badge giallo (c'è già il badge "PC LENTO")
+        var problemiConnessione = criticiVeri || (r.ws && !r.ws.ok);
+        var rischioPcLento      = (rischioSalvataggio >= 10);
+        // ciSonoProblemi resta il criterio per mostrare il REPORT
         var ciSonoProblemi = opzioni.soloRischioSalvataggio
-          ? (rischioSalvataggio >= 10)
-          : ((rischioSalvataggio >= 10) || criticiVeri || (r.ws && !r.ws.ok));
+          ? rischioPcLento
+          : (rischioPcLento || problemiConnessione);
 
-        // ── Auto-attivazione modalità emergenza ──────────────────────
-        // Se opzioni.autoAttivaEmergenza E ci sono problemi E l'emergenza
-        // NON è già attiva → attivala SILENZIOSAMENTE (no modal, solo
-        // pulsante navbar che diventa giallo "Polling ON").
-        // Imposta il flag globale _emergSourceAuto per ricordare che è
-        // stata attivata in automatico → potrà essere disattivata
-        // automaticamente al successivo check pulito.
-        if (opzioni.autoAttivaEmergenza && ciSonoProblemi &&
+        // ── Auto-attivazione POLLING (solo problemi di connessione) ──
+        // Al boot (soloRischioSalvataggio) il polling NON si attiva mai:
+        // vale l'intento originale "all'avvio niente emergenza per ws o
+        // critici di rete" — ci pensano i check periodici successivi.
+        if (opzioni.autoAttivaEmergenza && problemiConnessione &&
+            !opzioni.soloRischioSalvataggio &&
             typeof _emergenzaPollingAttivo === 'function' &&
             !_emergenzaPollingAttivo() &&
             typeof _emergenzaAvviaPolling === 'function') {
-          console.log('[Diag auto] Problemi rilevati, attivazione emergenza silenziosa');
+          console.log('[Diag auto] Problemi di connessione, attivazione emergenza silenziosa');
           window._emergSourceAuto = true;
           _emergenzaAvviaPolling();
           _aggiornaBottoneEmergenza();
         }
 
-        // ── Auto-DISATTIVAZIONE modalità emergenza ───────────────────
-        // Se opzioni.autoDisattivaEmergenza E NESSUN problema E l'emergenza
-        // era stata attivata in modo automatico (_emergSourceAuto === true)
-        // → la disattiviamo silenziosamente. La rete è tornata, possiamo
-        // tornare al Realtime standard.
+        // ── Auto-attivazione/spegnimento FORCE-SAVE standalone ───────
+        // Rischio salvataggio (PC lento) → scan locale 30s senza polling.
+        // Se l'emergenza vera è attiva, lo scan è già incluso lì.
+        if (opzioni.autoAttivaEmergenza && rischioPcLento &&
+            typeof _forceSaveStandaloneAvvia === 'function' &&
+            !(typeof _emergenzaPollingAttivo === 'function' && _emergenzaPollingAttivo())) {
+          _forceSaveStandaloneAvvia();
+        }
+        if (opzioni.autoDisattivaEmergenza && !rischioPcLento &&
+            typeof _forceSaveStandaloneAttivo === 'function' &&
+            _forceSaveStandaloneAttivo() &&
+            typeof _forceSaveStandaloneFerma === 'function') {
+          _forceSaveStandaloneFerma();
+        }
+
+        // ── Auto-DISATTIVAZIONE POLLING ──────────────────────────────
+        // Basta che i problemi di CONNESSIONE siano rientrati: un PC
+        // lento-ma-connesso torna al Realtime (il rischio salvataggio,
+        // se presente, resta coperto dal force-save standalone qui sopra
+        // riattivato al prossimo giro di diagnostica).
         // Se l'utente l'ha attivata manualmente (_emergSourceAuto === false)
         // NON la disattiviamo, rispettando la sua scelta.
-        if (opzioni.autoDisattivaEmergenza && !ciSonoProblemi &&
+        if (opzioni.autoDisattivaEmergenza && !problemiConnessione &&
             typeof _emergenzaPollingAttivo === 'function' &&
             _emergenzaPollingAttivo() &&
             window._emergSourceAuto === true &&
             typeof _emergenzaFermaPolling === 'function') {
-          console.log('[Diag auto] Nessun problema, disattivazione emergenza silenziosa (era auto-attivata)');
+          console.log('[Diag auto] Connessione ok, disattivazione emergenza silenziosa (era auto-attivata)');
           _emergenzaFermaPolling();
           window._emergSourceAuto = false;
           _aggiornaBottoneEmergenza();
+          // Se il PC resta lento, riattiva subito la protezione leggera
+          if (rischioPcLento && typeof _forceSaveStandaloneAvvia === 'function') {
+            _forceSaveStandaloneAvvia();
+          }
         }
 
         if (!ciSonoProblemi) {

@@ -2615,39 +2615,82 @@ function _emergenzaAvviaPolling() {
     }).catch(function(){});
   }, 30000);
 
-  // FORCE-SAVE SCAN — safety net per la modalità emergenza:
-  // ogni 30s, se ci sono letti in _dirtyLetti che NON hanno un retry esponenziale
-  // attivo (gestito nativamente da app.js) e NON sono in focus mode, forza il save.
-  // Utile quando: (a) i 3 retry esponenziali sono esauriti, (b) un save è stato
-  // bloccato dal _syncPaused di un altro ciclo, (c) un dirty rimane stagnante.
-  _emergenzaForceSaveId = setInterval(function() {
-    // Niente da fare se non ci sono letti dirty
-    if (typeof _dirtyLetti === 'undefined' || !_dirtyLetti.size) return;
-    // Salta se un save è già in corso a livello globale (riproveremo al prossimo ciclo)
-    if (typeof _syncPaused !== 'undefined' && _syncPaused) {
-      console.log('[Emergenza] Force-save: save in corso, salto ciclo');
-      return;
+  // FORCE-SAVE SCAN — safety net per la modalità emergenza (funzione
+  // condivisa _forceSaveScan, vedi sotto: usata anche dalla modalità
+  // standalone per PC lenti).
+  _emergenzaForceSaveId = setInterval(_forceSaveScan, 30000);
+
+  // Se era attivo il force-save standalone (PC lento), fermalo: il ciclo
+  // dell'emergenza lo include già (evita doppio scan).
+  _forceSaveStandaloneFerma();
+}
+
+// ── FORCE-SAVE SCAN (condiviso) ────────────────────────────────────────
+// Ogni 30s, se ci sono letti in _dirtyLetti che NON hanno un retry
+// esponenziale attivo (gestito nativamente da app.js) e NON sono in focus
+// mode, forza il save. Utile quando: (a) i 3 retry esponenziali sono
+// esauriti, (b) un save è stato bloccato dal _syncPaused di un altro
+// ciclo, (c) un dirty rimane stagnante (timer throttlato su PC lento).
+// COSTO RETE: zero quando non c'è nulla da salvare (esce subito).
+function _forceSaveScan() {
+  // Niente da fare se non ci sono letti dirty
+  if (typeof _dirtyLetti === 'undefined' || !_dirtyLetti.size) return;
+  // Salta se un save è già in corso a livello globale (riproveremo al prossimo ciclo)
+  if (typeof _syncPaused !== 'undefined' && _syncPaused) {
+    console.log('[Force-save] Save in corso, salto ciclo');
+    return;
+  }
+  console.log('[Force-save] Scan: '+_dirtyLetti.size+' letto/i dirty');
+  Array.from(_dirtyLetti).forEach(function(letto) {
+    // Salta se l'utente è in focus mode su questo letto (lo gestisce il flusso normale)
+    if (typeof _focusCard !== 'undefined' && _focusCard &&
+        _focusCard.getAttribute('data-bed') === letto) return;
+    // Salta se un retry esponenziale è già pianificato per questo letto (evita race
+    // tra force-save e retry nativo). Il retry nativo lo gestirà al delay previsto.
+    if (typeof _saveRetryTimer !== 'undefined' && _saveRetryTimer[letto]) return;
+    var card = document.querySelector('.patient-card[data-bed="' + letto + '"]');
+    if (!card) return;
+    // Annulla il debounce in corso (se presente) e forza il save adesso
+    if (typeof timerSalvataggioLetto !== 'undefined' && timerSalvataggioLetto[letto]) {
+      clearTimeout(timerSalvataggioLetto[letto]);
+      delete timerSalvataggioLetto[letto];
     }
-    console.log('[Emergenza] Force-save scan: '+_dirtyLetti.size+' letto/i dirty');
-    Array.from(_dirtyLetti).forEach(function(letto) {
-      // Salta se l'utente è in focus mode su questo letto (lo gestisce il flusso normale)
-      if (typeof _focusCard !== 'undefined' && _focusCard &&
-          _focusCard.getAttribute('data-bed') === letto) return;
-      // Salta se un retry esponenziale è già pianificato per questo letto (evita race
-      // tra force-save e retry nativo). Il retry nativo lo gestirà al delay previsto.
-      if (typeof _saveRetryTimer !== 'undefined' && _saveRetryTimer[letto]) return;
-      var card = document.querySelector('.patient-card[data-bed="' + letto + '"]');
-      if (!card) return;
-      // Annulla il debounce in corso (se presente) e forza il save adesso
-      if (typeof timerSalvataggioLetto !== 'undefined' && timerSalvataggioLetto[letto]) {
-        clearTimeout(timerSalvataggioLetto[letto]);
-        delete timerSalvataggioLetto[letto];
-      }
-      if (typeof eseguiSalvataggioLettoCompleto === 'function') {
-        eseguiSalvataggioLettoCompleto(letto, card);
-      }
-    });
-  }, 30000);
+    if (typeof eseguiSalvataggioLettoCompleto === 'function') {
+      eseguiSalvataggioLettoCompleto(letto, card);
+    }
+  });
+}
+
+// ── FORCE-SAVE STANDALONE — protezione "PC lento" SENZA polling ────────
+// Prima un PC con CPU/timer/memoria degradati ("rischio bug salvataggio")
+// attivava l'INTERA modalità emergenza: polling 30s + lock 30s + badge
+// "Polling ON" — anche con Realtime perfettamente funzionante. Risultato:
+// più carico di rete su un PC già lento, badge giallo perenne e (dato che
+// il rientro auto richiedeva ZERO problemi, CPU inclusa) non usciva MAI.
+//
+// Ora il rischio-salvataggio attiva SOLO questo scan locale (30s, zero
+// rete se non c'è nulla da salvare) — il rimedio che serve davvero a quel
+// problema — mentre il polling resta riservato ai problemi di
+// connessione/Realtime veri. Niente badge "Polling ON": c'è già il badge
+// "PC LENTO" del monitor prestazioni.
+var _forceSaveStandaloneId = null;
+
+function _forceSaveStandaloneAvvia() {
+  if (_forceSaveStandaloneId) return;               // già attivo
+  if (_emergenzaForceSaveId) return;                // emergenza già lo copre
+  console.log('[Force-save] Standalone attivato (rischio salvataggio PC): scan 30s, zero rete a riposo');
+  _forceSaveStandaloneId = setInterval(_forceSaveScan, 30000);
+}
+
+function _forceSaveStandaloneFerma() {
+  if (!_forceSaveStandaloneId) return;
+  clearInterval(_forceSaveStandaloneId);
+  _forceSaveStandaloneId = null;
+  console.log('[Force-save] Standalone disattivato');
+}
+
+function _forceSaveStandaloneAttivo() {
+  return !!_forceSaveStandaloneId;
 }
 
 // ── CHECK LEGGERO EMERGENZA — versione robusta ─────────────────────────
