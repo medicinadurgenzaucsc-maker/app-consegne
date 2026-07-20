@@ -1042,6 +1042,10 @@
         var _tbs = _ntFM.querySelectorAll(':scope > .terapia-box');
         if (!_tbs.length) { var _tb = document.createElement('div'); _tb.className = 'terapia-box'; _ntFM.insertBefore(_tb, _ntFM.firstChild); }
         else { for (var _bi = 1; _bi < _tbs.length; _bi++) _tbs[_bi].classList.remove('terapia-box'); } // una sola riga verde
+        // Box senza terapia (solo <br>/spazi residui) -> svuotalo davvero cosi
+        // torna :empty e ricompare la pillola cliccabile "clicca qui +".
+        var _b0 = _ntFM.querySelector(':scope > .terapia-box');
+        if (_b0 && typeof _terapiaBoxVuoto === 'function' && _terapiaBoxVuoto(_b0) && _b0.firstChild) _b0.innerHTML = '';
         if (typeof _assicuraEditabileDopoTerapia === 'function') _assicuraEditabileDopoTerapia(_ntFM);
       }
 
@@ -2663,6 +2667,9 @@
         campo.insertBefore(box, campo.firstChild);
       } else {
         for(var i=1;i<boxes.length;i++) boxes[i].classList.remove('terapia-box');
+        // Se sopra la riga non c'è più terapia (solo <br>/spazi residui), svuota
+        // davvero il box -> torna :empty -> ricompare la pillola cliccabile.
+        if(_terapiaBoxVuoto(boxes[0]) && boxes[0].firstChild) boxes[0].innerHTML='';
       }
     }, true);
 
