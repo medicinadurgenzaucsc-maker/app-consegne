@@ -1377,6 +1377,15 @@
         }
         return;
       }
+      if (cmd === 'terapiatrak') {
+        // Click sul pulsante "Terapia": importa la terapia copiata da
+        // TrakCare (bookmarklet) nel campo Note e Terapia della card.
+        var cardTk = tb.closest('.patient-card');
+        if (cardTk && typeof window._importaTerapiaTrak === 'function') {
+          window._importaTerapiaTrak(cardTk);
+        }
+        return;
+      }
       _tbRestoreSelection();
       if (fmult !== null) { _tbApplyFontMultiplier(parseFloat(fmult)); var p = tb.querySelector('[data-tb-submenu="fsmenu"]'); if (p) p.classList.remove('open'); return; }
       if (cmd) { document.execCommand(cmd, false, null); }

@@ -371,6 +371,9 @@
             + '</button>'
             + '<button class="tb-btn tb-scale" data-cmd="scale" title="Scale di valutazione mediche">'
             +   '<i class="bi bi-clipboard-pulse"></i><span class="tb-scale-label">Scale</span>'
+            + '</button>'
+            + '<button class="tb-btn tb-terapia" data-cmd="terapiatrak" title="Importa terapia da TrakCare">'
+            +   '<i class="bi bi-capsule-pill"></i><span class="tb-scale-label">Terapia</span>'
             + '</button>';
       // Da Fare: pulsante checkbox RIMOSSO su richiesta utente.
       // Il sistema dei caret + ordinamento automatico è disattivato.
@@ -2126,6 +2129,159 @@
       if (letto && typeof attivaSalvataggioRitardato === 'function') attivaSalvataggioRitardato(letto, card);
     }
 
+    // ══════════════════════════════════════════════════════════════════
+    // IMPORTA TERAPIA DA TRAKCARE — regione gestita "sopra la riga"
+    // Il bookmarklet (su TrakCare) copia negli appunti un payload:
+    //   ⟦TERAPIA-TRAK⟧ / paz=<nome> / ts=<epoch> / ⟦DATI⟧ / <terapia>
+    // Qui si legge, si confronta il paziente, si mostra l'anteprima e si
+    // inserisce in un box NON editabile in cima al campo NoteTerapia (come
+    // le scale): sopra = terapia importata (sostituita a ogni import),
+    // sotto = note libere del medico (mai toccate).
+    // ══════════════════════════════════════════════════════════════════
+
+    // Sorgente del bookmarklet: self-contained, gira su TrakCare. Il
+    // javascript: URL si genera da .toString() (niente escaping a mano).
+    function _bmTerapiaSorgente(){
+      try{
+        var VIA={ORALE:'OS',ENDOVENOSA:'EV',SOTTOCUTE:'SC',SOTTOCUTANEA:'SC',INTRAMUSCOLO:'IM',INTRAMUSCOLARE:'IM',AEROSOL:'Aerosol',INALATORIA:'Inalatoria'};
+        var HDR={EV:'Terapia EV',OS:'Terapia OS (orale)',SC:'Terapia SC (sottocute)',IM:'Terapia IM',Aerosol:'Aerosol',Inalatoria:'Inalatoria',ALTRO:'Altra terapia'};
+        var SEP=/\s+[—–-]\s+/;
+        var MAN=/\s+(Eg|Accord|Teva|Mylan|Doc|Sandoz|Zentiva|Aurobindo|Krka|Ratiopharm|Hexal|Pensa|Almus|Tecnigen|Fidia|Angenerico|Sun|Aristo|Germed|Sifar)\.?$/i;
+        var tc=function(s){return s?s.toLowerCase().replace(/\b[a-zà-ü]/g,function(c){return c.toUpperCase();}):s;};
+        var cd=function(v){return (v||'').replace(/(\d[\d.,]*)\s*Milligramm[io]/i,'$1mg').replace(/(\d[\d.,]*)\s*Millilitr[io]/i,'$1ml').replace(/(\d[\d.,]*)\s*Gramm[io]/i,'$1g').replace(/(\d)\.(\d)/g,'$1,$2').trim();};
+        var stg=function(s){var m=(s||'').match(/(\d[\d.,]*)\s*(MG|MCG|G|UI|ML)\b/i);return m?m[1]+m[2].toLowerCase():'';};
+        var nv=function(o){if(!o)return 1;if(/volta al giorno/i.test(o))return 1;var m=o.match(/\d{1,2}(?:[:.]\d{2})?/g);return m?m.length:1;};
+        var all=[].slice.call(document.querySelectorAll('*'));
+        var hdr=all.filter(function(e){return e.children.length<=2 && /^\s*Farmaci in corso\s*$/i.test(e.textContent);})[0];
+        var table=null;
+        if(hdr){var n=hdr;for(var i=0;i<8&&n;i++){if(n.querySelector&&n.querySelector('table.componentTable')){table=n.querySelector('table.componentTable');break;}n=n.parentElement;}}
+        if(!table)table=document.querySelector('table.componentTable');
+        if(!table){alert('TrakCare: apri prima la vista "Farmaci in corso".');return;}
+        var cellLab=function(tr,l){var cs=tr.querySelectorAll('td.layout-xs-column');for(var i=0;i<cs.length;i++){var x=cs[i].querySelector('.componentTableItemLabel');if(x&&new RegExp(l,'i').test(x.textContent))return cs[i];}return null;};
+        var G={};
+        [].slice.call(table.querySelectorAll('tr.componentTableRow')).forEach(function(tr){try{
+          var pc=cellLab(tr,'Prestazione')||tr.querySelector('td.layout-xs-column');if(!pc)return;
+          var t=(pc.innerText||'').replace(/ /g,' ').trim();if(!t)return;
+          var di=t.search(/\bDOSE\b/);var nl=(di>=0?t.slice(0,di):t).trim(),dl=(di>=0?t.slice(di).replace(/^DOSE/i,''):'').trim();
+          var np=nl.split(SEP),comRaw=(np[1]||np[0]||'').trim(),com=tc(comRaw.split('*')[0].trim()).replace(MAN,''),form=np[2]||'';
+          var dp=dl.split(SEP),dv=(dp[0]||'').trim(),via='',ora='';
+          dp.forEach(function(p){var u=p.trim().toUpperCase().split(' ')[0];if(VIA[u])via=VIA[u];if(/^\d/.test(p.trim())||/volta al giorno/i.test(p))ora=p.trim();});
+          var dose=/Milligramm|Millilitr|Gramm/i.test(dv)?cd(dv):(stg(form)||stg(comRaw)||cd(dv));
+          var cmp=t.match(/([A-ZÀ-Ü][A-Za-zÀ-ü]+)\*[^(]*\((\d[\d.,]*\s*Gramm[io]|\d[\d.,]*\s*mg)\)\s*in\s/i);
+          if(cmp){com=tc(cmp[1]);if(com==='Ampicillin')com='Ampicillina';dose=cd(cmp[2]);}
+          var nc=cellLab(tr,"Note all'ordine"),note=nc?(nc.innerText||'').replace(/Note all'ordine/i,'').trim():'';
+          var v=via||'ALTRO';(G[v]=G[v]||[]).push(com+(dose?' '+dose:'')+' ×'+nv(ora)+(note?' ('+note+')':''));
+        }catch(e){}});
+        var out=['EV','OS','SC','IM','Aerosol','Inalatoria','ALTRO'].filter(function(v){return G[v];}).map(function(v){return HDR[v]+'\n'+G[v].join('\n');}).join('\n\n');
+        if(!out){alert('Nessun farmaco in corso trovato.');return;}
+        var paz='';
+        try{var b=document.querySelector('.patientBannerName,[class*=patientName],[class*=PatientName]');if(b)paz=(b.innerText||b.textContent||'').trim().split('\n')[0];}catch(e){}
+        var payload='⟦TERAPIA-TRAK⟧\npaz='+paz+'\nts='+Date.now()+'\n⟦DATI⟧\n'+out;
+        var fin=function(){var d=document.createElement('div');d.style.cssText='position:fixed;top:18px;left:50%;transform:translateX(-50%);z-index:2147483647;background:#00695c;color:#fff;padding:14px 20px;border-radius:10px;font:600 15px system-ui,Arial;box-shadow:0 6px 24px rgba(0,0,0,.4);max-width:92vw;text-align:center';d.innerHTML='✅ Terapia copiata<br><span style="font-weight:400;font-size:13px">Vai nelle Consegne e premi l\'icona Terapia</span>';document.body.appendChild(d);setTimeout(function(){d.remove();},6000);};
+        if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(payload).then(fin,function(){window.prompt('Copia (Ctrl+C) e incolla nelle consegne:',payload);});}
+        else{window.prompt('Copia (Ctrl+C) e incolla nelle consegne:',payload);}
+      }catch(e){alert('Errore bookmarklet: '+e.message);}
+    }
+    var _BM_TERAPIA = 'javascript:(' + _bmTerapiaSorgente.toString().replace(/\n\s*/g,' ') + ')()';
+
+    function _norm(s){ return (s||'').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^A-Z\s]/g,' ').split(/\s+/).filter(Boolean); }
+    function _nomiCombaciano(a,b){
+      var A=_norm(a), B=_norm(b);
+      if(!A.length || !B.length) return true; // se un nome manca, non blocco (c'è l'anteprima)
+      var comuni=A.filter(function(w){return B.indexOf(w)>=0;});
+      return comuni.length>=2 || (A[0] && A[0]===B[0]); // 2+ parole in comune oppure stesso cognome
+    }
+
+    function _terapiaBox(campo){
+      var box=campo.querySelector(':scope > .terapia-box');
+      if(!box){ box=document.createElement('div'); box.className='terapia-box'; box.setAttribute('contenteditable','false'); campo.insertBefore(box, campo.firstChild); }
+      return box;
+    }
+    function _assicuraEditabileDopoTerapia(campo){
+      var box=campo.querySelector(':scope > .terapia-box'); if(!box) return;
+      var n=box.nextSibling, haEdit=false;
+      while(n){ if(n.nodeType===1 && !n.classList.contains('terapia-box')){haEdit=true;break;} if(n.nodeType===3 && n.textContent.replace(/\s| /g,'')!==''){haEdit=true;break;} n=n.nextSibling; }
+      if(!haEdit){ var d=document.createElement('div'); d.appendChild(document.createElement('br')); campo.appendChild(d); }
+    }
+    function _terapiaInserisci(card, terapia, paz, ts){
+      var campo=card.querySelector('[data-field="NoteTerapia"]'); if(!campo) return;
+      var box=_terapiaBox(campo);
+      var d=new Date(ts||Date.now());
+      var dataStr=('0'+d.getDate()).slice(-2)+'/'+('0'+(d.getMonth()+1)).slice(-2)+' '+('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2);
+      var vecchia = ts && (Date.now()-ts > 24*60*60*1000);
+      var righe=terapia.split('\n').map(function(l){
+        l=l.replace(/\s+$/,''); if(!l.trim()) return '';
+        var isHdr=/^(Terapia |Aerosol|Inalatoria|Altra terapia)/i.test(l.trim());
+        return '<div style="'+(isHdr?'font-weight:700;color:#00695c;margin-top:5px;':'padding-left:8px;')+'">'+_escIso(l)+'</div>';
+      }).join('');
+      box.innerHTML =
+        '<div class="terapia-box-head" style="font-size:0.72rem;font-weight:700;color:'+(vecchia?'#c62828':'#00796b')+';margin-bottom:3px;text-transform:uppercase;letter-spacing:0.03em;">'
+          + '● Terapia da TrakCare · ' + dataStr + (vecchia?' · ⚠ DA VERIFICARE':'') + '</div>'
+        + righe;
+      box.setAttribute('data-ts', String(ts||Date.now()));
+      _assicuraEditabileDopoTerapia(campo);
+      if (typeof window._placeholderCheck === 'function') window._placeholderCheck(campo);
+      var letto=card.getAttribute('data-bed');
+      if(letto && typeof attivaSalvataggioRitardato==='function') attivaSalvataggioRitardato(letto, card);
+    }
+    function _terapiaAnteprima(card, terapia, paz, ts){
+      Swal.fire({
+        title:'<i class="bi bi-capsule-pill me-2" style="color:#00695c;"></i>Anteprima terapia',
+        html:'<div style="text-align:left;font-size:0.88rem;">'
+          +(paz?'<div class="text-muted small mb-2">Paziente TrakCare: <b>'+_escIso(paz)+'</b></div>':'')
+          +'<div style="background:#f1f8f6;border:1px solid #b2dfdb;border-radius:6px;padding:10px;white-space:pre-wrap;line-height:1.5;">'+_escIso(terapia)+'</div>'
+          +'<div class="text-muted mt-2" style="font-size:0.75rem;">Sostituisce la terapia <b>sopra la riga</b>; i tuoi appunti sotto la riga restano.</div></div>',
+        showCancelButton:true, confirmButtonText:'<i class="bi bi-check-lg me-1"></i>Inserisci', cancelButtonText:'Annulla', confirmButtonColor:'#00695c',
+        width:'min(680px,94vw)'
+      }).then(function(r){ if(r.isConfirmed) _terapiaInserisci(card, terapia, paz, ts||Date.now()); });
+    }
+    function _terapiaProcessa(card, clip){
+      if(clip.indexOf('⟦TERAPIA-TRAK⟧')<0){ _terapiaGuidaInstallazione(card); return; }
+      var paz=(clip.match(/paz=(.*)/)||[])[1]||''; paz=paz.trim();
+      var ts=parseInt((clip.match(/ts=(\d+)/)||[])[1]||'0',10);
+      var terapia=(clip.split('⟦DATI⟧')[1]||'').replace(/^\s*\n?/,'').trim();
+      if(!terapia){ Swal.fire({icon:'warning',title:'Terapia vuota',text:'Il segnalibro non ha trovato farmaci in corso.'}); return; }
+      var nomeEl=card.querySelector('[data-field="Nome"]');
+      var pazC=nomeEl?(nomeEl.innerText||nomeEl.textContent||'').trim():'';
+      if(paz && pazC && !_nomiCombaciano(paz,pazC)){
+        Swal.fire({icon:'warning',title:'Paziente diverso?',
+          html:'La terapia copiata è di:<br><b>'+_escIso(paz)+'</b><br><br>ma questa scheda è di:<br><b>'+_escIso(pazC)+'</b><br><br>Vuoi procedere lo stesso?',
+          showCancelButton:true, confirmButtonText:'Sì, procedi', cancelButtonText:'Annulla', confirmButtonColor:'#c62828'
+        }).then(function(r){ if(r.isConfirmed) _terapiaAnteprima(card, terapia, paz, ts); });
+      } else _terapiaAnteprima(card, terapia, paz, ts);
+    }
+    function _terapiaGuidaInstallazione(card){
+      Swal.fire({
+        title:'<i class="bi bi-capsule-pill me-2" style="color:#00695c;"></i>Importa terapia da TrakCare',
+        html:'<div style="text-align:left;font-size:0.9rem;line-height:1.5;">'
+          +'<p>Non ho trovato una terapia copiata da TrakCare negli appunti.</p>'
+          +'<div style="background:#f1f8f6;border:1px solid #b2dfdb;border-radius:8px;padding:10px 12px;margin-bottom:12px;">'
+            +'<b>La prima volta</b> installa il segnalibro (una volta sola per PC):<br>'
+            +'1. Trascina questo bottone sulla <b>barra dei segnalibri</b> del browser:<br>'
+            +'<div style="text-align:center;margin:8px 0;"><a id="bmTerapiaLink" href="#" style="display:inline-block;background:#00695c;color:#fff;padding:8px 16px;border-radius:8px;text-decoration:none;font-weight:700;cursor:grab;">📋 Terapia → Consegne</a></div>'
+            +'2. Su TrakCare apri <b>Farmaci in corso</b> e clicca quel segnalibro.<br>'
+            +'3. Torna qui e premi di nuovo l\'icona <b>Terapia</b>.'
+          +'</div>'
+          +'<p style="margin:10px 0 4px;">Oppure incolla qui la terapia copiata (Ctrl+V):</p>'
+          +'<textarea id="terapiaPasteBox" style="width:100%;height:90px;border:1px solid #cfd8dc;border-radius:6px;padding:8px;font-size:0.82rem;" placeholder="Incolla qui…"></textarea>'
+        +'</div>',
+        showCancelButton:true, confirmButtonText:'Usa il testo incollato', cancelButtonText:'Chiudi', confirmButtonColor:'#00695c',
+        width:'min(640px,94vw)',
+        didOpen:function(){ var a=document.getElementById('bmTerapiaLink'); if(a){ a.setAttribute('href', _BM_TERAPIA); a.addEventListener('click',function(ev){ev.preventDefault();}); } },
+        preConfirm:function(){ var v=((document.getElementById('terapiaPasteBox')||{}).value)||''; if(v.indexOf('⟦TERAPIA-TRAK⟧')<0){ Swal.showValidationMessage('Il testo incollato non è una terapia copiata dal segnalibro.'); return false; } return v; }
+      }).then(function(r){ if(r.isConfirmed && r.value) _terapiaProcessa(card, r.value); });
+    }
+    window._importaTerapiaTrak = function(card){
+      if(!card || !card.classList.contains('focus-mode')) return;
+      var p;
+      try { p = (navigator.clipboard && navigator.clipboard.readText) ? navigator.clipboard.readText() : Promise.reject(); }
+      catch(e){ p = Promise.reject(e); }
+      Promise.resolve(p).then(function(clip){
+        if(clip && clip.indexOf('⟦TERAPIA-TRAK⟧')>=0) _terapiaProcessa(card, clip);
+        else _terapiaGuidaInstallazione(card);
+      }, function(){ _terapiaGuidaInstallazione(card); });
+    };
+
     // Modal riepilogo di una scala inserita: spiega cosa significa e permette
     // di cancellarne l'inserimento (con conferma). Aperto cliccando la riga.
     window._apriModalRiepilogoScala = function(rigaEl) {
@@ -2202,11 +2358,12 @@
     // cancellando/scrivendo sopra.
     function _campoProtetto(target) {
       if (!target || !target.closest) return null;
-      var campo = target.closest('[data-field="EsamiColturali"], [data-field="Diaria"]');
+      var campo = target.closest('[data-field="EsamiColturali"], [data-field="Diaria"], [data-field="NoteTerapia"]');
       if (!campo) return null;
-      var sel = campo.getAttribute('data-field') === 'EsamiColturali'
-        ? ':scope > .scale-box'
-        : ':scope > .diaria-status-box, :scope > .isolamento-banner, :scope > .rianimazione-banner';
+      var f = campo.getAttribute('data-field');
+      var sel = f === 'EsamiColturali' ? ':scope > .scale-box'
+              : f === 'NoteTerapia'    ? ':scope > .terapia-box'
+              : ':scope > .diaria-status-box, :scope > .isolamento-banner, :scope > .rianimazione-banner';
       var prot = campo.querySelectorAll(sel);
       return prot.length ? { campo: campo, protetti: Array.prototype.slice.call(prot) } : null;
     }

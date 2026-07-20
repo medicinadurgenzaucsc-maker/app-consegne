@@ -502,6 +502,19 @@ body { padding-top: 70px; background-color: #d4e6f1 !important; }
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
 }
+/* Terapia importata da TrakCare: box gestito in cima al campo NoteTerapia,
+   separato da una riga verde dal testo libero (appunti) sotto. Solo la
+   parte sopra la riga viene sostituita a ogni import. */
+.terapia-box {
+  border-bottom: 2px solid #26a69a;
+  margin-bottom: 6px;
+  padding-bottom: 5px;
+  background: #f1f8f6;
+  border-radius: 4px 4px 0 0;
+  padding: 4px 6px 5px;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
 /* Blocco isolamento/rianimazione in cima al campo Diaria: una linea lo separa
    dal testo libero sotto, che resta sempre scrivibile. */
 .diaria-status-box {
