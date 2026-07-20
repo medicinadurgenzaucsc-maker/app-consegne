@@ -2151,9 +2151,6 @@
         var tc=function(s){return s?s.toLowerCase().replace(/\b[a-zà-ü]/g,function(c){return c.toUpperCase();}):s;};
         var cd=function(v){return (v||'').replace(/(\d[\d.,]*)\s*Microgramm[io]/i,'$1mcg').replace(/(\d[\d.,]*)\s*Milligramm[io]/i,'$1mg').replace(/(\d[\d.,]*)\s*Millilitr[io]/i,'$1ml').replace(/(\d[\d.,]*)\s*Gramm[io]/i,'$1g').replace(/(\d)\.(\d)/g,'$1,$2').trim();};
         var stg=function(s){var m=(s||'').match(/(\d[\d.,]*)\s*(MG|MCG|G|UI|ML)\b/i);return m?m[1]+m[2].toLowerCase():'';};
-        // dose "intelligente": massa/volume espliciti → cd; insulina (Unità)→UI;
-        // gocce→gtt; conteggio unità (1 cpr/capsula/dose/soluzione)→forza dalla
-        // confezione; altrimenti volume "(N Millilitri)" dal nome; fallback grezzo.
         var dd=function(dv,form,comRaw){
           if(/Milligramm|Millilitr|Microgramm|Gramm/i.test(dv))return cd(dv);
           var u=dv.match(/(\d[\d.,]*)\s*Unit/i);if(u)return u[1].replace('.',',')+' UI';
@@ -2163,12 +2160,13 @@
           return cd(dv);
         };
         var nv=function(o){if(!o)return 1;var vg=o.match(/(\d+)\s*volt[ae]\s*al\s*giorno/i);if(vg)return parseInt(vg[1],10)||1;if(/volta al giorno/i.test(o))return 1;var m=o.match(/\d{1,2}(?:[:.]\d{2})?/g);return m?m.length:1;};
+        var banner=function(txt,bg,manuale){var d=document.createElement('div');d.style.cssText='position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:2147483647;background:'+bg+';color:#fff;padding:15px 22px;border-radius:12px;font:600 15px system-ui,Arial;box-shadow:0 8px 30px rgba(0,0,0,.5);max-width:92vw;text-align:center;cursor:pointer';d.innerHTML=txt+'<div style="font-weight:400;font-size:11px;margin-top:6px;opacity:.85">(tocca per chiudere)</div>';if(manuale){var ta=document.createElement('textarea');ta.value=manuale;ta.readOnly=true;ta.style.cssText='display:block;width:86vw;max-width:520px;height:64px;margin:10px auto 0;font-size:11px;border-radius:6px;padding:6px;color:#000';ta.addEventListener('click',function(ev){ev.stopPropagation();ta.focus();ta.select();});d.appendChild(ta);d.style.cursor='default';}d.addEventListener('click',function(){if(d.parentNode)d.remove();});document.body.appendChild(d);setTimeout(function(){if(d.parentNode)d.remove();},25000);};
         var all=[].slice.call(document.querySelectorAll('*'));
         var hdr=all.filter(function(e){return e.children.length<=2 && /^\s*Farmaci in corso\s*$/i.test(e.textContent);})[0];
         var table=null;
         if(hdr){var n=hdr;for(var i=0;i<8&&n;i++){if(n.querySelector&&n.querySelector('table.componentTable')){table=n.querySelector('table.componentTable');break;}n=n.parentElement;}}
         if(!table)table=document.querySelector('table.componentTable');
-        if(!table){alert('TrakCare: apri prima la vista "Farmaci in corso".');return;}
+        if(!table){banner('⚠️ Non trovo la terapia.<br><span style="font-weight:400;font-size:12px">Apri prima «Farmaci in corso» su TrakCare, poi ripremi il segnalibro.</span>','#c62828');return;}
         var cellLab=function(tr,l){var cs=tr.querySelectorAll('td.layout-xs-column');for(var i=0;i<cs.length;i++){var x=cs[i].querySelector('.componentTableItemLabel');if(x&&new RegExp(l,'i').test(x.textContent))return cs[i];}return null;};
         var G={};
         [].slice.call(table.querySelectorAll('tr.componentTableRow')).forEach(function(tr){try{
@@ -2185,14 +2183,15 @@
           var v=via||'ALTRO';(G[v]=G[v]||[]).push(com+(dose?' '+dose:'')+' ×'+nv(ora)+(note?' ('+note+')':''));
         }catch(e){}});
         var out=['EV','OS','SC','IM','Aerosol','Inalatoria','ALTRO'].filter(function(v){return G[v];}).map(function(v){return HDR[v]+'\n'+G[v].join('\n');}).join('\n\n');
-        if(!out){alert('Nessun farmaco in corso trovato.');return;}
+        if(!out){banner('⚠️ Nessun farmaco in corso trovato per questo paziente.','#e65100');return;}
         var paz='',cs='';
         try{var sur=document.querySelector('[id*=BANNERSurname]'),nam=document.querySelector('[id*=BANNERName]');paz=((sur?sur.textContent:'')+' '+(nam?nam.textContent:'')).replace(/\s+/g,' ').trim();}catch(e){}
         try{cs=(document.body.innerText.match(/ID Paz[.:\s]*([0-9]{4,})/i)||[])[1]||'';}catch(e){}
         var payload='⟦TERAPIA-TRAK⟧\npaz='+paz+'\ncs='+cs+'\nts='+Date.now()+'\n⟦DATI⟧\n'+out;
-        var fin=function(){var d=document.createElement('div');d.style.cssText='position:fixed;top:18px;left:50%;transform:translateX(-50%);z-index:2147483647;background:#00695c;color:#fff;padding:14px 20px;border-radius:10px;font:600 15px system-ui,Arial;box-shadow:0 6px 24px rgba(0,0,0,.4);max-width:92vw;text-align:center';d.innerHTML='✅ Terapia copiata<br><span style="font-weight:400;font-size:13px">Vai nelle Consegne e premi l\'icona Terapia</span>';document.body.appendChild(d);setTimeout(function(){d.remove();},6000);};
-        if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(payload).then(fin,function(){window.prompt('Copia (Ctrl+C) e incolla nelle consegne:',payload);});}
-        else{window.prompt('Copia (Ctrl+C) e incolla nelle consegne:',payload);}
+        var nF=out.split('\n').filter(function(x){return x && !/^(Terapia |Aerosol|Inalatoria|Altra)/.test(x);}).length;
+        var ok=function(){banner('✅ Terapia copiata'+(nF?' ('+nF+' farmaci)':'')+'<br><span style="font-weight:400;font-size:13px">Vai nelle Consegne e premi l\'icona «Terapia»</span>','#00695c');};
+        var ko=function(err){try{var t=document.createElement('textarea');t.value=payload;t.style.cssText='position:fixed;left:-9999px;top:0';document.body.appendChild(t);t.focus();t.select();var done=document.execCommand&&document.execCommand('copy');document.body.removeChild(t);if(done){ok();return;}}catch(e){err=(err||'errore')+' / '+e.message;}banner('⚠️ Impossibile copiare in automatico'+(err?':<br><span style="font-weight:400;font-size:12px">'+err+'</span>':'')+'<br><span style="font-weight:400;font-size:12px">Seleziona il testo qui sotto, copialo (Ctrl+C) e incollalo nelle Consegne</span>','#c62828',payload);};
+        try{if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(payload).then(ok,function(e){ko(e&&e.message?e.message:'permesso negato');});}else{ko('API appunti non disponibile');}}catch(e){ko(e.message);}
       }catch(e){alert('Errore bookmarklet: '+e.message);}
     }
     var _BM_TERAPIA = 'javascript:(' + _bmTerapiaSorgente.toString().replace(/\n\s*/g,' ') + ')()';
@@ -2330,8 +2329,8 @@
       } else {
         mostraDrag = true;
         var scorc = (os === 'mac')
-          ? 'premi insieme i tasti <b>⌘ Cmd</b> + <b>⇧ Maiusc</b> (la freccia in su ↑) + <b>B</b>'
-          : 'premi insieme i tasti <b>Ctrl</b> + <b>⇧ Maiusc</b> (la freccia in su ↑, sopra il Ctrl) + <b>B</b>';
+          ? 'premi insieme i tasti <b>⌘ Cmd</b> + <b>⇧ Maiusc</b> + <b>B</b>'
+          : 'premi insieme i tasti <b>Ctrl</b> + <b>⇧ Maiusc</b> + <b>B</b>';
         istruzioni = '<b>Su computer</b> (una volta sola per PC):'
           + passo(1,'Se non vedi la <b>barra dei segnalibri</b> in alto: '+scorc+'.')
           + passo(2,'<b>Trascina</b> questo bottone sulla barra dei segnalibri:'
