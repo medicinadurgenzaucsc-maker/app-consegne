@@ -1034,6 +1034,14 @@
       // col vecchio formato, così si può sempre scrivere sotto isolamento/rianim.
       var _diaFM = card.querySelector('[data-field="Diaria"]');
       if (_diaFM && typeof window._diariaNormalizza === 'function') window._diariaNormalizza(_diaFM);
+      // NoteTerapia: garantisci sempre il box (riga verde) + un'area scrivibile
+      // sotto la riga, anche se l'utente aveva cancellato le note in una sessione
+      // precedente (bug: dopo aver cancellato "NOTE" non si scriveva più sotto).
+      var _ntFM = card.querySelector('[data-field="NoteTerapia"]');
+      if (_ntFM) {
+        if (!_ntFM.querySelector(':scope > .terapia-box')) { var _tb = document.createElement('div'); _tb.className = 'terapia-box'; _ntFM.insertBefore(_tb, _ntFM.firstChild); }
+        if (typeof _assicuraEditabileDopoTerapia === 'function') _assicuraEditabileDopoTerapia(_ntFM);
+      }
 
       // Crea il badge di stato salvataggio dedicato al focus mode
       // (top-left fisso del viewport, fuori dalla card). _getBadges in
@@ -2233,7 +2241,7 @@
     function _assicuraEditabileDopoTerapia(campo){
       var box=campo.querySelector(':scope > .terapia-box'); if(!box) return;
       var n=box.nextSibling, haEdit=false;
-      while(n){ if(n.nodeType===1 && !n.classList.contains('terapia-box')){haEdit=true;break;} if(n.nodeType===3 && n.textContent.replace(/\s| /g,'')!==''){haEdit=true;break;} n=n.nextSibling; }
+      while(n){ if(n.nodeType===1 && !n.classList.contains('terapia-box') && (n.querySelector('br') || n.children.length || n.textContent.replace(/\s| /g,'')!=='')){haEdit=true;break;} if(n.nodeType===3 && n.textContent.replace(/\s| /g,'')!==''){haEdit=true;break;} n=n.nextSibling; }
       if(!haEdit){ var d=document.createElement('div'); d.appendChild(document.createElement('br')); campo.appendChild(d); }
     }
     function _terapiaInserisci(card, terapia, paz, ts){
@@ -2251,7 +2259,7 @@
         // Farmaco: trattino davanti + rientro appeso (le righe a capo rientrano
         // sotto il nome, così non sembrano un farmaco nuovo).
         l=l.replace(/^-\s*/,''); // evita doppio trattino se già presente nel testo
-        return '<div style="padding-left:14px;text-indent:-11px;">- '+_escIso(l)+'</div>';
+        return '<div style="padding-left:26px;text-indent:-22px;">- '+_escIso(l)+'</div>';
       }).join('');
       box.innerHTML =
         '<div class="terapia-box-head" style="font-size:0.72rem;font-weight:700;color:'+(vecchia?'#c62828':'#00796b')+';margin-bottom:3px;text-transform:uppercase;letter-spacing:0.03em;">'
