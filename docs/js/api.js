@@ -803,11 +803,11 @@ window._TEMPLATE_NOTETERAPIA = _TEMPLATE_NOTETERAPIA;
 // l'import terapia da TrakCare; sotto la riga "NOTE" (grassetto) dove
 // scrivere appunti che l'import non tocca. Il placeholder è NON editabile
 // e viene rimosso al primo import (vedi _terapiaInserisci).
+// Box terapia VUOTO (non cliccabile). La "pillola" appare solo come
+// indicazione via CSS (::before/::after) quando il box è vuoto E si è in
+// focus mode. La riga divisoria = bordo inferiore del box (sempre presente).
 var _TEMPLATE_NOTETERAPIA_VUOTO =
-  '<div class="terapia-placeholder" contenteditable="false" onclick="window._terapiaDaPlaceholder(this)">' +
-    '<div class="tp-pill"><i class="bi bi-capsule-pill"></i></div>' +
-    '<div class="tp-label">clicca qui +</div>' +
-  '</div>' +
+  '<div class="terapia-box"></div>' +
   '<div><b>NOTE</b></div><div><br></div>';
 window._TEMPLATE_NOTETERAPIA_VUOTO = _TEMPLATE_NOTETERAPIA_VUOTO;
 
@@ -836,8 +836,15 @@ window._verificaPianoCuraTutti = _verificaPianoCuraTutti;
 // salvati con contenteditable="false" (non modificabili). Al render li
 // normalizziamo togliendo l'attributo → il medico può correggerli/cancellarli.
 function _normalizzaTerapiaBox(root) {
-  (root || document).querySelectorAll('.terapia-box[contenteditable="false"]')
-    .forEach(function(b) { b.removeAttribute('contenteditable'); });
+  var r = root || document;
+  // Box vecchi salvati non-editabili → editabili
+  r.querySelectorAll('.terapia-box[contenteditable="false"]').forEach(function(b) { b.removeAttribute('contenteditable'); });
+  // Vecchio placeholder CLICCABILE → box vuoto (la pillola è ora solo CSS,
+  // non cliccabile, visibile solo in focus mode)
+  r.querySelectorAll('.terapia-placeholder').forEach(function(ph) {
+    var box = document.createElement('div'); box.className = 'terapia-box';
+    if (ph.parentNode) ph.parentNode.replaceChild(box, ph);
+  });
 }
 window._normalizzaTerapiaBox = _normalizzaTerapiaBox;
 

@@ -2463,11 +2463,10 @@
     // cancellando/scrivendo sopra.
     function _campoProtetto(target) {
       if (!target || !target.closest) return null;
-      var campo = target.closest('[data-field="EsamiColturali"], [data-field="Diaria"], [data-field="NoteTerapia"]');
+      var campo = target.closest('[data-field="EsamiColturali"], [data-field="Diaria"]');
       if (!campo) return null;
       var f = campo.getAttribute('data-field');
       var sel = f === 'EsamiColturali' ? ':scope > .scale-box'
-              : f === 'NoteTerapia'    ? ':scope > .terapia-placeholder'
               : ':scope > .diaria-status-box, :scope > .isolamento-banner, :scope > .rianimazione-banner';
       var prot = campo.querySelectorAll(sel);
       return prot.length ? { campo: campo, protetti: Array.prototype.slice.call(prot) } : null;
