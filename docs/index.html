@@ -2671,6 +2671,10 @@
         // davvero il box -> torna :empty -> ricompare la pillola cliccabile.
         if(_terapiaBoxVuoto(boxes[0]) && boxes[0].firstChild) boxes[0].innerHTML='';
       }
+      // Garantisci SEMPRE un'area scrivibile SUBITO sotto la riga, anche dopo un
+      // seleziona-tutto + Canc che azzera tutto (box + note): così si può sempre
+      // cliccare sotto la riga verde e scrivere le note.
+      if(typeof _assicuraEditabileDopoTerapia === 'function') _assicuraEditabileDopoTerapia(campo);
     }, true);
 
     document.addEventListener('visibilitychange', function() {
