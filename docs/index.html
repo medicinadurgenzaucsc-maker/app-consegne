@@ -6220,6 +6220,40 @@
       if (raw) window._snapshots = JSON.parse(raw) || {};
     } catch(e) { window._snapshots = {}; }
 
+    // ── PRIVACY: auto-pulizia snapshot vecchi (>7 giorni) ───────────
+    // Gli snapshot contengono l'INTERO contenuto delle schede (diagnosi,
+    // terapie, nomi...) e restano sul disco dei PC — spesso condivisi —
+    // anche per pazienti ormai dimessi. Il recupero da crash serve per
+    // ore/giorni, non per settimane: all'avvio eliminiamo tutto ciò che
+    // è più vecchio di 7 giorni (prima la pulizia scattava SOLO a quota
+    // localStorage piena → di fatto mai).
+    try {
+      var _cutoffSnap = Date.now() - 7 * 24 * 60 * 60 * 1000;
+      var _snapRimossi = false;
+      Object.keys(window._snapshots).forEach(function(letto) {
+        var s = window._snapshots[letto];
+        if (s.storico && s.storico.length) {
+          var primaLen = s.storico.length;
+          s.storico = s.storico.filter(function(sn) {
+            return (sn.tsClose || sn.tsUpdate || sn.tsOpen || 0) >= _cutoffSnap;
+          });
+          if (s.storico.length !== primaLen) _snapRimossi = true;
+        }
+        if (s.current) {
+          var tsCur = s.current.tsUpdate || s.current.tsOpen || 0;
+          if (tsCur < _cutoffSnap) { s.current = null; _snapRimossi = true; }
+        }
+        if ((!s.storico || !s.storico.length) && !s.current) {
+          delete window._snapshots[letto];
+          _snapRimossi = true;
+        }
+      });
+      if (_snapRimossi) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(window._snapshots));
+        console.log('[Snapshot] Pulizia privacy: rimossi snapshot più vecchi di 7 giorni');
+      }
+    } catch(e) {}
+
     // All'avvio, eventuali snapshot "current" rimasti orfani da sessioni
     // precedenti (crash, refresh accidentale) vengono CHIUSI come "interrupted"
     // e spostati nello storico — così l'utente li può recuperare.
