@@ -2365,14 +2365,14 @@
           + passo(1,'Tocca <b>«Copia codice segnalibro»</b> qui sotto.')
           + passo(2,'In basso tocca <b>Condividi</b> (quadrato con freccia ↑) → <b>Aggiungi ai preferiti</b> → Salva.')
           + passo(3,'Tocca l\'icona <b>Preferiti</b> (il libro aperto) → <b>Modifica</b> → apri il preferito appena creato.')
-          + passo(4,'Cancella l\'indirizzo, <b>tieni premuto → Incolla</b> il codice, rinominalo «Terapia → Consegne», Salva.')
-          + passo(5,'Da TrakCare (Farmaci in corso): Preferiti → tocca <b>«Terapia → Consegne»</b>.');
+          + passo(4,'Cancella l\'indirizzo, <b>tieni premuto → Incolla</b> il codice, rinominalo «Prendi Terapia Trak», Salva.')
+          + passo(5,'Da TrakCare (Farmaci in corso): Preferiti → tocca <b>«Prendi Terapia Trak»</b>.');
       } else if (os === 'android') {
         istruzioni = '<b>Su Android</b> (Chrome) non si trascina — si crea un preferito (una volta sola):'
           + passo(1,'Tocca <b>«Copia codice segnalibro»</b> qui sotto.')
           + passo(2,'Aggiungi questa pagina ai preferiti: menu <b>⋮</b> → <b>⭐</b>.')
           + passo(3,'Menu <b>⋮</b> → <b>Preferiti</b> → tieni premuto il preferito → <b>Modifica</b>.')
-          + passo(4,'Nel campo indirizzo cancella tutto e <b>incolla</b> il codice; rinomina «Terapia». Salva.')
+          + passo(4,'Nel campo indirizzo cancella tutto e <b>incolla</b> il codice; rinomina «Prendi Terapia Trak». Salva.')
           + passo(5,'Per usarlo: scrivi <b>Terapia</b> nella barra degli indirizzi e tocca il suggerimento del preferito.');
       } else {
         mostraDrag = true;
@@ -2382,12 +2382,12 @@
         istruzioni = '<b>Su computer</b> (una volta sola per PC):'
           + passo(1,'Se non vedi la <b>barra dei preferiti</b> in alto: '+scorc+'.')
           + passo(2,'<b>Solo se il bottone non è già</b> nella barra dei preferiti, <b>trascinalo</b> lassù:'
-              + '<div style="text-align:center;margin:8px 0;"><a id="bmTerapiaLink" href="#" style="display:inline-block;background:#00695c;color:#fff;padding:8px 16px;border-radius:8px;text-decoration:none;font-weight:700;cursor:grab;">📋 Terapia → Consegne</a></div>')
+              + '<div style="text-align:center;margin:8px 0;"><a id="bmTerapiaLink" href="#" style="display:inline-block;background:#00695c;color:#fff;padding:8px 16px;border-radius:8px;text-decoration:none;font-weight:700;cursor:grab;">💊➜🗒️ Prendi Terapia Trak</a></div>')
           + passo(3,'Su TrakCare vai in <b>Terapia → Farmaci in corso</b> e premi il pulsante nella <b>barra dei preferiti</b>.');
       }
       var mostraPaste = !mostraDrag; // copia-codice + incolla servono solo dove NON si può trascinare (iOS/Android)
       Swal.fire({
-        title:'<i class="bi bi-capsule-pill me-2" style="color:#00695c;"></i>Installa «Terapia → Consegne»',
+        title:'<i class="bi bi-capsule-pill me-2" style="color:#00695c;"></i>Installa «Prendi Terapia Trak»',
         html:'<div style="text-align:left;font-size:0.88rem;line-height:1.5;">'
           + '<p style="margin:0 0 8px;">Non ho trovato una terapia copiata da TrakCare.</p>'
           + '<div style="background:#f1f8f6;border:1px solid #b2dfdb;border-radius:8px;padding:10px 12px;margin-bottom:10px;">' + istruzioni + '</div>'
@@ -2602,6 +2602,24 @@
       r.setStartAfter(box);
       try { r.setEnd(range.startContainer, range.startOffset); } catch(e){ return; }
       if(r.collapsed || r.toString().replace(/\s| /g,'') === '') ev.preventDefault();
+    }, true);
+
+    // Gemello per il tasto CANC (Delete in avanti): se il cursore è DENTRO il box
+    // (sopra la riga) e non c'è più nulla da cancellare in avanti nel box, il Canc
+    // fonderebbe il blocco sotto la riga -> blocca. Così la riga è un confine
+    // invalicabile in ENTRAMBE le direzioni (Backspace dal basso, Canc dall'alto).
+    document.addEventListener('keydown', function(ev){
+      if(ev.key !== 'Delete') return;
+      var campo = ev.target.closest ? ev.target.closest('[data-field="NoteTerapia"]') : null;
+      if(!campo) return;
+      var box = campo.querySelector(':scope > .terapia-box'); if(!box) return;
+      var sel = window.getSelection(); if(!sel || !sel.rangeCount) return;
+      var range = sel.getRangeAt(0);
+      if(!range.collapsed) return;
+      if(!box.contains(range.startContainer)) return; // cursore nelle note -> Canc normale
+      var r = document.createRange();
+      try { r.selectNodeContents(box); r.setStart(range.startContainer, range.startOffset); } catch(e){ return; }
+      if(r.collapsed || r.toString().replace(/\s| /g,'') === '') ev.preventDefault();
     }, true);
 
     // Self-heal: se malgrado tutto il .terapia-box viene rimosso (es. Ctrl+A +
