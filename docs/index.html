@@ -2189,7 +2189,7 @@
         var out=['EV','OS','SC','IM','Aerosol','Inalatoria','ALTRO'].filter(function(v){return G[v];}).map(function(v){return HDR[v]+'\n'+G[v].join('\n');}).join('\n\n');
         if(!out){banner('⚠️ Nessun farmaco in corso trovato per questo paziente.','#e65100');return;}
         var paz='',cs='';
-        try{var sur=document.querySelector('[id*=BANNERSurname]'),nam=document.querySelector('[id*=BANNERName]');paz=((sur?sur.textContent:'')+' '+(nam?nam.textContent:'')).replace(/\s+/g,' ').trim();if(/^\s*(cognome\s+nome|nome\s+cognome)\s*$/i.test(paz))paz='';}catch(e){}
+        try{var sur=document.querySelector('[id$=BANNERSurname]')||document.querySelector('[id*=BANNERSurname]:not([id*=label])'),nam=document.querySelector('[id$=BANNERName2]')||document.querySelector('[id$=BANNERName]')||document.querySelector('[id*=BANNERName]:not([id*=label]):not([id*=Surname])');paz=((sur?sur.textContent:'')+' '+(nam?nam.textContent:'')).replace(/\s+/g,' ').trim();if(/^\s*(cognome\s+nome|nome\s+cognome)\s*$/i.test(paz))paz='';}catch(e){}
         try{cs=(document.body.innerText.match(/ID Paz[.:\s]*([0-9]{4,})/i)||[])[1]||'';}catch(e){}
         var payload='⟦TERAPIA-TRAK⟧\npaz='+paz+'\ncs='+cs+'\nts='+Date.now()+'\n⟦DATI⟧\n'+out;
         var nF=out.split('\n').filter(function(x){return x && !/^(Terapia |Aerosol|Inalatoria|Altra)/.test(x);}).length;
