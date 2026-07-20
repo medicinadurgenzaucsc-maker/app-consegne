@@ -2329,9 +2329,11 @@
           + passo(5,'Per usarlo: scrivi <b>Terapia</b> nella barra degli indirizzi e tocca il suggerimento del preferito.');
       } else {
         mostraDrag = true;
-        var scorc = (os === 'mac') ? '⌘+⇧+B' : 'Ctrl+Shift+B';
+        var scorc = (os === 'mac')
+          ? 'premi insieme i tasti <b>⌘ Cmd</b> + <b>⇧ Maiusc</b> (la freccia in su ↑) + <b>B</b>'
+          : 'premi insieme i tasti <b>Ctrl</b> + <b>⇧ Maiusc</b> (la freccia in su ↑, sopra il Ctrl) + <b>B</b>';
         istruzioni = '<b>Su computer</b> (una volta sola per PC):'
-          + passo(1,'Se non vedi la <b>barra dei segnalibri</b>, mostrala con <b>'+scorc+'</b>.')
+          + passo(1,'Se non vedi la <b>barra dei segnalibri</b> in alto: '+scorc+'.')
           + passo(2,'<b>Trascina</b> questo bottone sulla barra dei segnalibri:'
               + '<div style="text-align:center;margin:8px 0;"><a id="bmTerapiaLink" href="#" style="display:inline-block;background:#00695c;color:#fff;padding:8px 16px;border-radius:8px;text-decoration:none;font-weight:700;cursor:grab;">📋 Terapia → Consegne</a></div>')
           + passo(3,'Su TrakCare (Farmaci in corso) clicca il segnalibro → torna qui e premi l\'icona <b>Terapia</b>.');
