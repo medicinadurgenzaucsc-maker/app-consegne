@@ -2507,6 +2507,59 @@
       if (r.collapsed || r.toString().replace(/\s| /g, '') === '') ev.preventDefault();
     }, true);
 
+    // ── Pillola terapia (letto vuoto, SOLO focus mode): CLICCABILE → avvia la
+    // sincronizzazione. La pillola è lo pseudo-elemento del .terapia-box vuoto;
+    // il click sul box (vuoto) apre la procedura di import (come il pulsante).
+    function _terapiaBoxVuoto(box){
+      return !!box && !box.querySelector('.terapia-box-head') && box.textContent.replace(/\s| /g,'')==='';
+    }
+    document.addEventListener('click', function(ev){
+      var box = ev.target.closest ? ev.target.closest('.terapia-box') : null;
+      if(!box) return;
+      var campo = box.closest('[data-field="NoteTerapia"]'); if(!campo) return;
+      var card = box.closest('.patient-card'); if(!card || !card.classList.contains('focus-mode')) return;
+      if(!_terapiaBoxVuoto(box)) return; // se c'è gia terapia -> edit normale, niente import
+      ev.preventDefault(); ev.stopPropagation();
+      if(typeof window._importaTerapiaTrak === 'function') window._importaTerapiaTrak(card);
+    }, true);
+
+    // ── Riga divisoria terapia (bordo del .terapia-box) NON cancellabile ─────
+    // E il confine tra la parte "sincronizzata da TrakCare" (sopra) e le NOTE a
+    // mano (sotto). Le due parti restano editabili singolarmente, ma il Backspace
+    // tenuto premuto dalle note NON deve fondere/eliminare il box (= la riga).
+    document.addEventListener('keydown', function(ev){
+      if(ev.key !== 'Backspace') return;
+      var campo = ev.target.closest ? ev.target.closest('[data-field="NoteTerapia"]') : null;
+      if(!campo) return;
+      var box = campo.querySelector(':scope > .terapia-box'); if(!box) return;
+      var sel = window.getSelection(); if(!sel || !sel.rangeCount) return;
+      var range = sel.getRangeAt(0);
+      if(!range.collapsed) return; // selezioni: le gestisce il self-heal su input
+      if(box.contains(range.startContainer)){
+        // cursore DENTRO il box: edit consentito; ma se il box e vuoto e sei a
+        // inizio, non lasciare cancellare il box vuoto (sparirebbe la riga).
+        if(_terapiaBoxVuoto(box)) ev.preventDefault();
+        return;
+      }
+      // cursore nelle NOTE (dopo il box): se tra fine-box e cursore non c'e nulla
+      // di editabile, il Backspace fonderebbe le note nel box -> blocca.
+      var r = document.createRange();
+      r.setStartAfter(box);
+      try { r.setEnd(range.startContainer, range.startOffset); } catch(e){ return; }
+      if(r.collapsed || r.toString().replace(/\s| /g,'') === '') ev.preventDefault();
+    }, true);
+
+    // Self-heal: se malgrado tutto il .terapia-box viene rimosso (es. Ctrl+A +
+    // Canc), lo ricrea vuoto in cima -> la riga divisoria non sparisce mai.
+    document.addEventListener('input', function(ev){
+      var campo = ev.target.closest ? ev.target.closest('[data-field="NoteTerapia"]') : null;
+      if(!campo) return;
+      if(!campo.querySelector(':scope > .terapia-box')){
+        var box = document.createElement('div'); box.className = 'terapia-box';
+        campo.insertBefore(box, campo.firstChild);
+      }
+    }, true);
+
     document.addEventListener('visibilitychange', function() {
       if (document.hidden) {
         if (!_focusCard) {

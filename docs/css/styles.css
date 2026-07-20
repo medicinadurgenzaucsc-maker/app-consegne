@@ -521,7 +521,7 @@ body { padding-top: 70px; background-color: #d4e6f1 !important; }
    La riga divisoria è il bordo inferiore di .terapia-box (sempre presente). */
 .terapia-box:empty { min-height: 4px; background: transparent; }
 .patient-card.focus-mode .terapia-box:empty {
-  text-align: center; padding: 12px 6px 14px; pointer-events: none; user-select: none;
+  text-align: center; padding: 12px 6px 14px; cursor: pointer; user-select: none; pointer-events: auto;
 }
 .patient-card.focus-mode .terapia-box:empty::before {
   content: "\f7de";
