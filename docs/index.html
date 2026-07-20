@@ -925,6 +925,39 @@
     var _focusOrigRect      = null;
     var _lastMousedownInCard = false;
 
+    // Calcola e applica le dimensioni della card in focus mode dal viewport
+    // CORRENTE. Idempotente: richiamabile su resize/rotazione per far
+    // seguire alla card le nuove dimensioni della finestra.
+    function _applicaDimensioniFocus(card) {
+      if (!card) return;
+      var vw = window.innerWidth;
+      var vh = window.innerHeight;
+      var newTop = Math.max(60, Math.round(vh * 0.05));   // almeno sotto la navbar
+      card.style.position  = 'fixed';
+      card.style.top       = newTop + 'px';
+      card.style.left      = Math.round(vw * 0.03) + 'px';        // 3% margine/lato
+      card.style.width     = Math.round(vw * 0.94) + 'px';
+      card.style.height    = '';                                  // cresce col contenuto
+      card.style.maxHeight = Math.round(vh - newTop - vh * 0.05) + 'px'; // 5% sotto
+      card.style.margin    = '0';
+    }
+
+    // Rotazione schermo / ridimensionamento finestra: senza questo la card
+    // resta della misura calcolata all'apertura e "non segue" la finestra.
+    // Debounce perché su mobile innerHeight subito dopo orientationchange
+    // può essere ancora quello vecchio.
+    var _focusResizeTimer = null;
+    function _onFocusViewportChange() {
+      if (!_focusCard) return;
+      if (_focusResizeTimer) clearTimeout(_focusResizeTimer);
+      _focusResizeTimer = setTimeout(function() {
+        _focusResizeTimer = null;
+        if (_focusCard) _applicaDimensioniFocus(_focusCard);
+      }, 180);
+    }
+    window.addEventListener('resize', _onFocusViewportChange);
+    window.addEventListener('orientationchange', _onFocusViewportChange);
+
     function _attivaFocusMode(card) {
       if (_focusCard === card) return;
       if (_focusCard) _disattivaFocusMode(false);
@@ -985,21 +1018,9 @@
         left: rect.left
       };
 
-      // Focus mode: centrata con 3% margine laterale e 5% margine verticale
-      var vw       = window.innerWidth;
-      var vh       = window.innerHeight;
-      var newWidth = Math.round(vw * 0.94);                 // 3% margine per lato
-      var newLeft  = Math.round(vw * 0.03);
-      var newTop   = Math.max(60, Math.round(vh * 0.05));   // almeno sotto la navbar
-      var newMaxH  = Math.round(vh - newTop - vh * 0.05);   // 5% margine inferiore fisso
-
-      card.style.position  = 'fixed';
-      card.style.top       = newTop + 'px';
-      card.style.left      = newLeft + 'px';
-      card.style.width     = newWidth + 'px';
-      card.style.height    = '';             // nessuna altezza fissa: la card cresce
-      card.style.maxHeight = newMaxH + 'px'; // ma non supera mai il margine inferiore
-      card.style.margin    = '0';
+      // Focus mode: dimensioni dal viewport corrente. Estratto in
+      // _applicaDimensioniFocus così si può ri-applicare su rotazione/resize.
+      _applicaDimensioniFocus(card);
 
       // Blocca scroll pagina mentre focus mode è attivo
       // (impedisce che l'overlay scivoli e lo sfondo si muova)
