@@ -23,8 +23,8 @@ body { padding-top: 70px; background-color: #d4e6f1 !important; }
 .column-box { border-right: 2px solid #333; display: flex; flex-direction: column; }
 .column-box:last-child { border-right: none; }
 
-.col-terapia { width: 17.5%; }
-.col-diaria { width: 65%; }
+.col-terapia { width: 20.1%; }   /* +15% rispetto al 17,5% originale (spazio preso dalla diaria/epicrisi) */
+.col-diaria { width: 62.4%; }
 .col-da-fare { width: 17.5%; }
 
 .piano-terapeutico-row { display: flex; flex-direction: column; width: 100%; min-height: 80px; }

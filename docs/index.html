@@ -2174,18 +2174,22 @@
           var t=(pc.innerText||'').replace(/ /g,' ').trim();if(!t)return;
           var di=t.search(/\bDOSE\b/);var nl=(di>=0?t.slice(0,di):t).trim(),dl=(di>=0?t.slice(di).replace(/^DOSE/i,''):'').trim();
           var np=nl.split(SEP),comRaw=(np[1]||np[0]||'').trim(),com=tc(comRaw.split('*')[0].trim()).replace(MAN,''),form=np[2]||'';
+          var princ=tc((np[0]||'').trim().split(/\s+/)[0]||'');
           var dp=dl.split(SEP),dv=(dp[0]||'').trim(),via='',ora='';
           dp.forEach(function(p){var u=p.trim().toUpperCase().split(' ')[0];if(VIA[u])via=VIA[u];if(/^\d/.test(p.trim())||/volta al giorno/i.test(p))ora=p.trim();});
           var dose=dd(dv,form,comRaw);
           var cmp=t.match(/([A-ZÀ-Ü][A-Za-zÀ-ü]+)\*[^(]*\((\d[\d.,]*\s*Gramm[io]|\d[\d.,]*\s*mg)\)\s*in\s/i);
-          if(cmp){com=tc(cmp[1]);if(com==='Ampicillin')com='Ampicillina';dose=cd(cmp[2]);}
+          if(cmp){var veicolo=/SODIO\s+CLORURO|GLUCOS|FISIOLOGIC|RINGER|PER\s+COMPOSTI|ELETTROLIT|ACQUA\s+PER/i.test(np[0]||'');com=veicolo?tc(cmp[1]).replace(MAN,''):(princ||tc(cmp[1]).replace(MAN,''));if(com==='Ampicillin')com='Ampicillina';dose=cd(cmp[2]);}
           var nc=cellLab(tr,"Note all'ordine"),note=nc?(nc.innerText||'').replace(/Note all'ordine/i,'').trim():'';
-          var v=via||'ALTRO';(G[v]=G[v]||[]).push(com+(dose?' '+dose:'')+' ×'+nv(ora)+(note?' ('+note+')':''));
+          var dic=cellLab(tr,'Data inizio'),dstr=dic?(dic.innerText||'').replace(/Data inizio/i,'').trim():'';var dm=dstr.match(/(\d{2})\/(\d{2})\/\d{2,4}/),dal=dm?dm[1]+'/'+dm[2]:'';
+          var prn=/al bisogno|\bSOS\b|\bPRN\b|se necessario|all'occorrenza/i.test(t+' '+note);
+          var extra=[];if(dal)extra.push('dal '+dal);if(note)extra.push(note);
+          var v=via||'ALTRO';(G[v]=G[v]||[]).push(com+(dose?' '+dose:'')+' ×'+nv(ora)+(prn?' a/b':'')+(extra.length?' ('+extra.join(' · ')+')':''));
         }catch(e){}});
         var out=['EV','OS','SC','IM','Aerosol','Inalatoria','ALTRO'].filter(function(v){return G[v];}).map(function(v){return HDR[v]+'\n'+G[v].join('\n');}).join('\n\n');
         if(!out){banner('⚠️ Nessun farmaco in corso trovato per questo paziente.','#e65100');return;}
         var paz='',cs='';
-        try{var sur=document.querySelector('[id*=BANNERSurname]'),nam=document.querySelector('[id*=BANNERName]');paz=((sur?sur.textContent:'')+' '+(nam?nam.textContent:'')).replace(/\s+/g,' ').trim();}catch(e){}
+        try{var sur=document.querySelector('[id*=BANNERSurname]'),nam=document.querySelector('[id*=BANNERName]');paz=((sur?sur.textContent:'')+' '+(nam?nam.textContent:'')).replace(/\s+/g,' ').trim();if(/^\s*(cognome\s+nome|nome\s+cognome)\s*$/i.test(paz))paz='';}catch(e){}
         try{cs=(document.body.innerText.match(/ID Paz[.:\s]*([0-9]{4,})/i)||[])[1]||'';}catch(e){}
         var payload='⟦TERAPIA-TRAK⟧\npaz='+paz+'\ncs='+cs+'\nts='+Date.now()+'\n⟦DATI⟧\n'+out;
         var nF=out.split('\n').filter(function(x){return x && !/^(Terapia |Aerosol|Inalatoria|Altra)/.test(x);}).length;
@@ -2243,11 +2247,15 @@
       var righe=terapia.split('\n').map(function(l){
         l=l.replace(/\s+$/,''); if(!l.trim()) return '';
         var isHdr=/^(Terapia |Aerosol|Inalatoria|Altra terapia)/i.test(l.trim());
-        return '<div style="'+(isHdr?'font-weight:700;color:#00695c;margin-top:5px;':'padding-left:8px;')+'">'+_escIso(l)+'</div>';
+        if(isHdr) return '<div style="font-weight:700;color:#00695c;margin-top:5px;">'+_escIso(l)+'</div>';
+        // Farmaco: trattino davanti + rientro appeso (le righe a capo rientrano
+        // sotto il nome, così non sembrano un farmaco nuovo).
+        l=l.replace(/^-\s*/,''); // evita doppio trattino se già presente nel testo
+        return '<div style="padding-left:14px;text-indent:-11px;">- '+_escIso(l)+'</div>';
       }).join('');
       box.innerHTML =
         '<div class="terapia-box-head" style="font-size:0.72rem;font-weight:700;color:'+(vecchia?'#c62828':'#00796b')+';margin-bottom:3px;text-transform:uppercase;letter-spacing:0.03em;">'
-          + '● Terapia da TrakCare · ' + dataStr + (vecchia?' · ⚠ DA VERIFICARE':'') + '</div>'
+          + 'Aggiornata da TrakCare il ' + dataStr + (vecchia?' · ⚠ DA VERIFICARE':'') + '</div>'
         + righe;
       box.setAttribute('data-ts', String(ts||Date.now()));
       _assicuraEditabileDopoTerapia(campo);
