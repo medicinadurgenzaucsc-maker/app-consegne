@@ -808,7 +808,7 @@ window._TEMPLATE_NOTETERAPIA = _TEMPLATE_NOTETERAPIA;
 // focus mode. La riga divisoria = bordo inferiore del box (sempre presente).
 var _TEMPLATE_NOTETERAPIA_VUOTO =
   '<div class="terapia-box"></div>' +
-  '<div><b>NOTE</b></div><div><br></div>';
+  '<div class="note-hdr" contenteditable="false">NOTE</div><div><br></div>';
 window._TEMPLATE_NOTETERAPIA_VUOTO = _TEMPLATE_NOTETERAPIA_VUOTO;
 
 // ── Controllo "Piano di Cura mancante" ──────────────────────────────────

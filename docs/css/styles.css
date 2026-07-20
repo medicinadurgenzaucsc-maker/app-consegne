@@ -515,6 +515,16 @@ body { padding-top: 70px; background-color: #d4e6f1 !important; }
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
 }
+/* Etichetta "NOTE" sotto la riga verde: incancellabile (contenteditable=false),
+   non selezionabile col cursore. Confine del blocco appunti. */
+.note-hdr {
+  font-weight: 700;
+  color: #37474f;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+  margin-bottom: 2px;
+}
 /* Pillola-INDICAZIONE (NON cliccabile) mostrata SOLO in focus mode quando la
    terapia sincronizzata è vuota: ricorda di premere il pulsante «Terapia».
    Fuori dal focus non si vede; sparisce appena c'è terapia (box non vuoto).
