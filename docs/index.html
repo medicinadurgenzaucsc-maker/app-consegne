@@ -1039,7 +1039,9 @@
       // precedente (bug: dopo aver cancellato "NOTE" non si scriveva più sotto).
       var _ntFM = card.querySelector('[data-field="NoteTerapia"]');
       if (_ntFM) {
-        if (!_ntFM.querySelector(':scope > .terapia-box')) { var _tb = document.createElement('div'); _tb.className = 'terapia-box'; _ntFM.insertBefore(_tb, _ntFM.firstChild); }
+        var _tbs = _ntFM.querySelectorAll(':scope > .terapia-box');
+        if (!_tbs.length) { var _tb = document.createElement('div'); _tb.className = 'terapia-box'; _ntFM.insertBefore(_tb, _ntFM.firstChild); }
+        else { for (var _bi = 1; _bi < _tbs.length; _bi++) _tbs[_bi].classList.remove('terapia-box'); } // una sola riga verde
         if (typeof _assicuraEditabileDopoTerapia === 'function') _assicuraEditabileDopoTerapia(_ntFM);
       }
 
@@ -2218,9 +2220,20 @@
     }
     function _assicuraEditabileDopoTerapia(campo){
       var box=campo.querySelector(':scope > .terapia-box'); if(!box) return;
-      var n=box.nextSibling, haEdit=false;
-      while(n){ if(n.nodeType===1 && !n.classList.contains('terapia-box') && (n.querySelector('br') || n.children.length || n.textContent.replace(/\s| /g,'')!=='')){haEdit=true;break;} if(n.nodeType===3 && n.textContent.replace(/\s| /g,'')!==''){haEdit=true;break;} n=n.nextSibling; }
-      if(!haEdit){ var d=document.createElement('div'); d.appendChild(document.createElement('br')); campo.appendChild(d); }
+      // L'elemento SUBITO dopo la riga verde deve essere scrivibile: un <div></div>
+      // vuoto ha altezza 0 e non e cliccabile. Se il primo elemento sotto la riga
+      // non e scrivibile, inserisco un <div><br></div> SUBITO dopo il box -> cosi
+      // si puo sempre scrivere DIRETTAMENTE sotto la riga verde.
+      var next=box.nextSibling;
+      while(next && next.nodeType===3 && next.textContent.replace(/\s| /g,'')==='') next=next.nextSibling;
+      var scrivibile = !!next && (
+        (next.nodeType===3 && next.textContent.replace(/\s| /g,'')!=='') ||
+        (next.nodeType===1 && !next.classList.contains('terapia-box') && (!!next.querySelector('br') || next.children.length>0 || next.textContent.replace(/\s| /g,'')!==''))
+      );
+      if(!scrivibile){
+        var d=document.createElement('div'); d.appendChild(document.createElement('br'));
+        if(box.nextSibling) campo.insertBefore(d, box.nextSibling); else campo.appendChild(d);
+      }
     }
     function _terapiaInserisci(card, terapia, paz, ts){
       var campo=card.querySelector('[data-field="NoteTerapia"]'); if(!campo) return;
@@ -2622,14 +2635,34 @@
       if(r.collapsed || r.toString().replace(/\s| /g,'') === '') ev.preventDefault();
     }, true);
 
-    // Self-heal: se malgrado tutto il .terapia-box viene rimosso (es. Ctrl+A +
-    // Canc), lo ricrea vuoto in cima -> la riga divisoria non sparisce mai.
+    // Enter DENTRO il box terapia: di default spezzerebbe il box in due -> DUE
+    // righe verdi (una impossibile da togliere). Blocco lo split: box vuoto
+    // (pillola) -> ignora l'a-capo; box con terapia -> a-capo "soft" (<br>) nello
+    // stesso box.
+    document.addEventListener('keydown', function(ev){
+      if(ev.key !== 'Enter' || ev.shiftKey || ev.ctrlKey || ev.metaKey || ev.altKey) return;
+      var campo = ev.target.closest ? ev.target.closest('[data-field="NoteTerapia"]') : null;
+      if(!campo) return;
+      var box = campo.querySelector(':scope > .terapia-box'); if(!box) return;
+      var sel = window.getSelection(); if(!sel || !sel.rangeCount) return;
+      if(!box.contains(sel.getRangeAt(0).startContainer)) return; // fuori dal box -> Enter normale
+      ev.preventDefault();
+      if(_terapiaBoxVuoto(box)) return;
+      try{ document.execCommand('insertLineBreak'); }catch(e){}
+    }, true);
+
+    // Self-heal su input: (a) se il .terapia-box e' stato rimosso lo ricrea in cima;
+    // (b) se esistono PIU' .terapia-box (es. un a-capo che ha spezzato il box) toglie
+    // la classe a tutti tranne il primo -> resta UNA SOLA riga verde.
     document.addEventListener('input', function(ev){
       var campo = ev.target.closest ? ev.target.closest('[data-field="NoteTerapia"]') : null;
       if(!campo) return;
-      if(!campo.querySelector(':scope > .terapia-box')){
+      var boxes = campo.querySelectorAll(':scope > .terapia-box');
+      if(!boxes.length){
         var box = document.createElement('div'); box.className = 'terapia-box';
         campo.insertBefore(box, campo.firstChild);
+      } else {
+        for(var i=1;i<boxes.length;i++) boxes[i].classList.remove('terapia-box');
       }
     }, true);
 
