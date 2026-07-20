@@ -127,12 +127,14 @@
       // (Sostituisce la chiamata async che poteva non completare in chiusura rapida.)
       if (_lettoLockAtt) {
         try {
+          // Bearer = token di SESSIONE (post-stretta RLS l'anon key non
+          // può più scrivere); fallback anon solo se sessione assente
           fetch(SUPABASE_URL + '/rest/v1/locks?letto=eq.' + encodeURIComponent(_lettoLockAtt) + '&token=eq.' + encodeURIComponent(_mioToken), {
             method: 'DELETE',
             keepalive: true,
             headers: {
               'apikey': SUPABASE_ANON_KEY,
-              'Authorization': 'Bearer ' + SUPABASE_ANON_KEY
+              'Authorization': 'Bearer ' + (window._supaAccessToken || SUPABASE_ANON_KEY)
             }
           });
         } catch(_e) { /* fallback silenzioso: il TTL DB-side rilascerà comunque */ }
@@ -165,7 +167,7 @@
             keepalive: true,
             headers: {
               'apikey': SUPABASE_ANON_KEY,
-              'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+              'Authorization': 'Bearer ' + (window._supaAccessToken || SUPABASE_ANON_KEY),
               'Content-Type': 'application/json',
               'Prefer': 'return=minimal'
             },
@@ -1762,14 +1764,34 @@
     function _scaleRenderLista(card, scale) {
       var body = document.getElementById('scaleModalBody');
       if (!body) return;
-      var righe = scale.map(function(s) {
+
+      // ── Raggruppa per AREA CLINICA (colonna 'categoria' dal DB) ─────
+      // Le scale arrivano già ordinate per 'ordine': i gruppi nascono
+      // nell'ordine in cui compaiono e mantengono l'ordine interno.
+      var gruppi = [], perCat = {};
+      scale.forEach(function(s) {
+        var cat = s.categoria || 'Altre scale';
+        if (!perCat[cat]) { perCat[cat] = { titolo: cat, scale: [] }; gruppi.push(perCat[cat]); }
+        perCat[cat].scale.push(s);
+      });
+
+      function _btnScala(s) {
         return '<button type="button" class="cl-scala-item" data-scala-id="' + _escIso(s.id) + '" ' +
           'style="display:block;width:100%;text-align:left;border:1px solid #e0e0e0;border-radius:6px;' +
           'background:#fff;padding:8px 10px;margin:0 0 6px 0;cursor:pointer;">' +
           '<span style="font-weight:600;color:#37474f;">' + _escIso(s.nome) + '</span>' +
           '<span class="cl-scala-sub">' + _escIso((s.definizione && s.definizione.sottotitolo) || s.descrizione || '') + '</span>' +
         '</button>';
+      }
+      var righe = gruppi.map(function(g, i) {
+        return '<div class="sc-gruppo">' +
+          '<div class="sc-gruppo-titolo" style="font-size:0.72rem;font-weight:700;text-transform:uppercase;' +
+            'letter-spacing:0.06em;color:#1565c0;margin:' + (i === 0 ? '0' : '14px') + ' 0 6px;' +
+            'padding-bottom:3px;border-bottom:2px solid #e3f2fd;">' + _escIso(g.titolo) + '</div>' +
+          g.scale.map(_btnScala).join('') +
+        '</div>';
       }).join('');
+
       body.innerHTML =
         '<input id="scaleSearch" class="form-control form-control-sm mb-2" placeholder="Cerca una scala (es. HAS-BLED, Wells, GFR…)">' +
         '<div id="scaleLista" style="max-height:380px;overflow-y:auto;">' + righe + '</div>';
@@ -1780,6 +1802,13 @@
           document.querySelectorAll('#scaleLista .cl-scala-item').forEach(function(it) {
             var txt = it.textContent.toLowerCase();
             it.style.display = (!q || txt.indexOf(q) !== -1) ? '' : 'none';
+          });
+          // Un gruppo senza scale visibili nasconde anche il proprio titolo
+          document.querySelectorAll('#scaleLista .sc-gruppo').forEach(function(g) {
+            var visibili = Array.prototype.some.call(
+              g.querySelectorAll('.cl-scala-item'),
+              function(it) { return it.style.display !== 'none'; });
+            g.style.display = visibili ? '' : 'none';
           });
         });
         search.focus();
@@ -2723,8 +2752,11 @@
          il pulsante GIS è renderizzato con successo. -->
     <div id="loginUnifBox" style="display:flex;justify-content:center;margin-bottom:6px;"></div>
 
+    <!-- Pulsante classico (flusso access-token): NASCOSTO di default.
+         Post-stretta RLS un login senza sessione Supabase mostrerebbe
+         un'app vuota: il login valido è SOLO il pulsante GIS qui sopra. -->
     <button id="btnGoogleLogin" onclick="_avviaLoginGoogle()"
-      style="display:flex;align-items:center;justify-content:center;gap:12px;width:100%;
+      style="display:none;align-items:center;justify-content:center;gap:12px;width:100%;
              padding:13px 20px;border:2px solid #e0e0e0;border-radius:10px;
              background:#fff;color:#3c4043;font-size:0.97rem;font-weight:600;
              cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.12);transition:box-shadow 0.2s;"
@@ -3737,8 +3769,9 @@
       if (typeof google === 'undefined' || !google.accounts || !google.accounts.id) {
         _montaPulsanteUnificato._retry = (_montaPulsanteUnificato._retry || 0) + 1;
         if (_montaPulsanteUnificato._retry <= 20) { setTimeout(_montaPulsanteUnificato, 500); return; }
-        _supaAuthLog('gis-id-assente', 'login unificato non disponibile: resta il pulsante classico');
-        return; // fallback: il pulsante classico è già visibile
+        _supaAuthLog('gis-id-assente', 'script Google non caricato dopo 10s');
+        _mostraErroreLogin('Impossibile caricare l\'accesso Google.\nControlla la connessione a internet e ricarica la pagina (F5).');
+        return;
       }
       try {
         google.accounts.id.initialize({
@@ -3910,10 +3943,21 @@
         }
       } catch(e) {}
 
+      // Token di sessione sempre disponibile in modo SINCRONO per i fetch
+      // keepalive di chiusura pagina (beforeunload non può aspettare una
+      // Promise). Aggiornato a ogni login/refresh automatico del token.
+      window._supaAccessToken = null;
+      try {
+        _sb.auth.onAuthStateChange(function(ev, sess) {
+          window._supaAccessToken = (sess && sess.access_token) || null;
+        });
+      } catch(e) {}
+
       // 2. Gate: sessione Supabase presente → dentro, zero interazioni
       _sb.auth.getSession().then(function(res) {
         var s = res && res.data && res.data.session;
         if (s && s.user) {
+          window._supaAccessToken = s.access_token || null;
           var ov = document.getElementById('loginOverlay');
           if (ov) ov.style.display = 'none';
           if (typeof window._avviaFlussoApp === 'function') window._avviaFlussoApp();
