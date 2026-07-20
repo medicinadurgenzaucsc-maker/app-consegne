@@ -2329,7 +2329,9 @@
         if(/Milligramm|Millilitr|Microgramm|Gramm/i.test(dv))return cd(dv);
         var u=dv.match(/(\d[\d.,]*)\s*Unit/i);if(u)return u[1].replace('.',',')+' UI';
         var g=dv.match(/(\d[\d.,]*)\s*(GOCC|GTT)/i);if(g)return g[1]+' gtt';
-        var s=stg(form)||stg(comRaw);if(s)return s;
+        var sf=stg(form),sc=stg(comRaw);
+        if(sf&&sc&&parseFloat(sf)===parseFloat(sc)&&/mcg$/.test(sc)&&/mg$/.test(sf))return sc;
+        var s=sf||sc;if(s)return s;
         var vv=(form+' '+comRaw).match(/(\d[\d.,]*)\s*Millilitr/i);if(vv)return vv[1]+'ml';
         return cd(dv);
       };
@@ -2337,6 +2339,7 @@
       var G={};
       (righe||[]).forEach(function(row){try{
         var t=((row&&row.p)||'').replace(/ /g,' ').trim(); if(!t)return;
+        if(/\bparafarmaco\b/i.test(t) || /\bimmediat[ao]\b/i.test(t)) return; // salta parafarmaci ed estemporanee ("Immediata")
         var note=((row&&row.n)||'').trim();
         var dstr=((row&&row.d)||'').trim();
         var full=((row&&row.r)||(t+' '+note));
@@ -2345,6 +2348,9 @@
         var princ=tc((np[0]||'').trim().split(/\s+/)[0]||'');
         var dp=dl.split(SEP),dv=(dp[0]||'').trim(),via='',ora='';
         dp.forEach(function(p){var u=p.trim().toUpperCase().split(' ')[0];if(VIA[u])via=VIA[u];if(/^\d/.test(p.trim())||/volta al giorno/i.test(p))ora=p.trim();});
+        // Via non trovata dopo DOSE (es. infusioni continue senza "DOSE"): cercala
+        // in tutta la prestazione (ENDOVENOSA/ORALE/... ovunque compaia).
+        if(!via){ t.split(SEP).forEach(function(p){var u=p.trim().toUpperCase().split(' ')[0];if(VIA[u])via=VIA[u];}); }
         var dose=dd(dv,form,comRaw);
         var cmp=t.match(/([A-ZÀ-Ü][A-Za-zÀ-ü]+)\*[^(]*\((\d[\d.,]*\s*Gramm[io]|\d[\d.,]*\s*mg)\)\s*in\s/i);
         if(cmp){var veic=/SODIO\s+CLORURO|GLUCOS|FISIOLOGIC|RINGER|PER\s+COMPOSTI|ELETTROLIT|ACQUA\s+PER/i.test(np[0]||'');com=veic?tc(cmp[1]).replace(MAN,''):(princ||tc(cmp[1]).replace(MAN,''));if(com==='Ampicillin')com='Ampicillina';dose=cd(cmp[2]);}
