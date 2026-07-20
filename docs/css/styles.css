@@ -515,6 +515,51 @@ body { padding-top: 70px; background-color: #d4e6f1 !important; }
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
 }
+/* Placeholder "clicca qui +" del letto vuoto: pillola grande trasparente,
+   cliccabile per avviare l'import terapia. Riga verde separa dalle NOTE. */
+.terapia-placeholder {
+  border-bottom: 2px solid #26a69a;
+  margin-bottom: 6px;
+  padding: 12px 6px 14px;
+  text-align: center;
+  cursor: pointer;
+  user-select: none;
+  border-radius: 6px 6px 0 0;
+  transition: background 0.15s;
+}
+.terapia-placeholder:hover { background: #e0f2f1; }
+.terapia-placeholder .tp-pill {
+  font-size: 2.7rem;
+  line-height: 1;
+  color: #26a69a;
+  opacity: 0.38;
+}
+.terapia-placeholder .tp-label {
+  font-weight: 700;
+  color: #00897b;
+  font-size: 0.92rem;
+  margin-top: 3px;
+}
+/* Piano di Cura non compilato (scheda occupata, fuori focus): bordo rosso
+   + scritta "COMPILARE IL PIANO DI CURA". In focus mode il bordo sparisce. */
+.editable-area.piano-mancante {
+  border: 2px solid #e53935 !important;
+  border-radius: 5px;
+  background: #ffebee;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.editable-area[data-placeholder].piano-mancante:empty::before,
+.editable-area[data-placeholder].piano-mancante.is-empty::before {
+  content: "COMPILARE IL PIANO DI CURA" !important;
+  color: #c62828 !important;
+  font-weight: 700 !important;
+  font-style: normal !important;
+}
+.patient-card.focus-mode .editable-area.piano-mancante {
+  border-color: transparent !important;
+  background: transparent !important;
+}
 /* Blocco isolamento/rianimazione in cima al campo Diaria: una linea lo separa
    dal testo libero sotto, che resta sempre scrivibile. */
 .diaria-status-box {

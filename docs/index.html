@@ -1397,6 +1397,7 @@
       document.body.style.overflow = '';
       document.documentElement.style.overflow = '';
       card.classList.remove('focus-mode');
+      if (typeof window._verificaPianoCura === 'function') window._verificaPianoCura(card);
 
       if (document.activeElement && card.contains(document.activeElement)) {
         document.activeElement.blur();
@@ -2220,6 +2221,8 @@
     }
     function _terapiaInserisci(card, terapia, paz, ts){
       var campo=card.querySelector('[data-field="NoteTerapia"]'); if(!campo) return;
+      // Al primo import rimuovi il placeholder "clicca qui +" del letto vuoto
+      var _ph=campo.querySelector(':scope > .terapia-placeholder'); if(_ph) _ph.remove();
       var box=_terapiaBox(campo);
       var d=new Date(ts||Date.now());
       var dataStr=('0'+d.getDate()).slice(-2)+'/'+('0'+(d.getMonth()+1)).slice(-2)+' '+('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2);
@@ -2247,15 +2250,14 @@
       var coincide = !paz || !pazC || _nomiCombaciano(paz, pazC);
       var pazT = paz || '(nome non letto da TrakCare)';
       var pazCard = pazC || '(scheda letto senza nome)';
-      var reminder = coincide
-        ? '<div style="background:#e8f5e9;border:1px solid #a5d6a7;border-left:4px solid #43a047;border-radius:6px;padding:9px 12px;margin-bottom:10px;font-size:0.86rem;color:#1b5e20;">'
-            + 'Stai aggiornando la terapia di <b>' + _escIso(pazT) + '</b>' + (cs ? ' <span style="color:#558b2f;">(CS ' + _escIso(cs) + ')</span>' : '')
-            + ' nella scheda letto di <b>' + _escIso(pazCard) + '</b>.</div>'
-        : '<div style="background:#fff3e0;border:1px solid #ffb74d;border-left:4px solid #e65100;border-radius:6px;padding:9px 12px;margin-bottom:10px;font-size:0.86rem;color:#bf360c;">'
-            + '<b>⚠️ ATTENZIONE — i nomi non coincidono.</b><br>'
-            + 'Terapia di <b>' + _escIso(pazT) + '</b>' + (cs ? ' (CS ' + _escIso(cs) + ')' : '')
-            + ' → scheda letto di <b>' + _escIso(pazCard) + '</b>.<br>'
-            + 'Controlla di essere sulla scheda giusta. Puoi comunque procedere.</div>';
+      // Promemoria SOLO quando i nomi NON coincidono (scelta utente): se
+      // coincidono si va dritti all'anteprima della terapia.
+      var reminder = coincide ? '' :
+        '<div style="background:#fff3e0;border:1px solid #ffb74d;border-left:4px solid #e65100;border-radius:6px;padding:9px 12px;margin-bottom:10px;font-size:0.86rem;color:#bf360c;">'
+          + '<b>⚠️ ATTENZIONE — i nomi non coincidono.</b><br>'
+          + 'Stai aggiornando la terapia di <b>' + _escIso(pazT) + '</b>' + (cs ? ' (CS ' + _escIso(cs) + ')' : '')
+          + ' nella scheda letto di <b>' + _escIso(pazCard) + '</b>.<br>'
+          + 'Controlla di essere sulla scheda giusta. Puoi comunque procedere.</div>';
       Swal.fire({
         title:'<i class="bi bi-capsule-pill me-2" style="color:#00695c;"></i>Aggiorna terapia',
         html:'<div style="text-align:left;font-size:0.88rem;">'
@@ -2310,6 +2312,24 @@
         if(clip && clip.indexOf('⟦TERAPIA-TRAK⟧')>=0) _terapiaProcessa(card, clip);
         else _terapiaGuidaInstallazione(card);
       }, function(){ _terapiaGuidaInstallazione(card); });
+    };
+
+    // Click sulla pillola-placeholder di un letto vuoto: se non siamo già
+    // in focus mode entra (come la matita) e poi avvia l'import — perché
+    // l'import richiede il focus mode (edit + lock DB).
+    window._terapiaDaPlaceholder = function(el){
+      var card = (el && el.closest) ? el.closest('.patient-card') : el;
+      if(!card) return;
+      if(card.classList.contains('focus-mode')){ window._importaTerapiaTrak(card); return; }
+      if(typeof _attivaFocusMode === 'function'){
+        _attivaFocusMode(card);
+        var tries=0, iv=setInterval(function(){
+          tries++;
+          if(card.classList.contains('focus-mode') && !document.getElementById('lockCheckOverlay')){
+            clearInterval(iv); setTimeout(function(){ if(card.classList.contains('focus-mode')) window._importaTerapiaTrak(card); }, 150);
+          } else if(tries>50){ clearInterval(iv); }
+        }, 100);
+      }
     };
 
     // Modal riepilogo di una scala inserita: spiega cosa significa e permette
@@ -2392,7 +2412,7 @@
       if (!campo) return null;
       var f = campo.getAttribute('data-field');
       var sel = f === 'EsamiColturali' ? ':scope > .scale-box'
-              : f === 'NoteTerapia'    ? ':scope > .terapia-box'
+              : f === 'NoteTerapia'    ? ':scope > .terapia-box, :scope > .terapia-placeholder'
               : ':scope > .diaria-status-box, :scope > .isolamento-banner, :scope > .rianimazione-banner';
       var prot = campo.querySelectorAll(sel);
       return prot.length ? { campo: campo, protetti: Array.prototype.slice.call(prot) } : null;

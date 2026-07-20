@@ -1558,6 +1558,7 @@
 
       // ── 3c. SCAN PLACEHOLDER (aggiunge/rimuove .is-empty su tutti i campi) ──
       if (typeof window._aggiornaTuttiPlaceholders === 'function') window._aggiornaTuttiPlaceholders();
+      if (typeof window._verificaPianoCuraTutti === 'function') window._verificaPianoCuraTutti();
 
       // ── 4. MESSAGGIO "NESSUN LETTO" ───────────────────────────────────────
       var _nessunLetto = document.querySelectorAll('.patient-card[data-bed]').length === 0;

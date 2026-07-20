@@ -798,6 +798,40 @@ var _TEMPLATE_NOTETERAPIA =
   '<b>AEROSOL</b><br>';
 window._TEMPLATE_NOTETERAPIA = _TEMPLATE_NOTETERAPIA;
 
+// Template Note e Terapia per un letto VUOTO (nuovo o svuotato): pillola
+// grande e trasparente cliccabile ("clicca qui +") sopra una riga → avvia
+// l'import terapia da TrakCare; sotto la riga "NOTE" (grassetto) dove
+// scrivere appunti che l'import non tocca. Il placeholder è NON editabile
+// e viene rimosso al primo import (vedi _terapiaInserisci).
+var _TEMPLATE_NOTETERAPIA_VUOTO =
+  '<div class="terapia-placeholder" contenteditable="false" onclick="window._terapiaDaPlaceholder(this)">' +
+    '<div class="tp-pill"><i class="bi bi-capsule-pill"></i></div>' +
+    '<div class="tp-label">clicca qui +</div>' +
+  '</div>' +
+  '<div><b>NOTE</b></div><div><br></div>';
+window._TEMPLATE_NOTETERAPIA_VUOTO = _TEMPLATE_NOTETERAPIA_VUOTO;
+
+// ── Controllo "Piano di Cura mancante" ──────────────────────────────────
+// Scheda occupata (ha un Nome) ma Piano di Cura vuoto → bordo rosso +
+// scritta "COMPILARE IL PIANO DI CURA" quando NON in focus mode (in focus
+// il bordo sparisce, ricompare all'uscita se resta vuoto).
+function _verificaPianoCura(card) {
+  if (!card || !card.querySelector) return;
+  var piano = card.querySelector('[data-field="PianoTerapeutico"]');
+  if (!piano) return;
+  var nomeEl = card.querySelector('[data-field="Nome"]');
+  var occupata = !!(nomeEl && (nomeEl.innerText || nomeEl.textContent || '').replace(/ /g,' ').trim());
+  var pianoVuoto = !((piano.innerText || piano.textContent || '').replace(/ /g,' ').replace(/\s/g,'') !== '');
+  var inFocus = card.classList.contains('focus-mode');
+  if (occupata && pianoVuoto && !inFocus) piano.classList.add('piano-mancante');
+  else piano.classList.remove('piano-mancante');
+}
+function _verificaPianoCuraTutti() {
+  document.querySelectorAll('#cardsContainer .patient-card[data-bed]').forEach(_verificaPianoCura);
+}
+window._verificaPianoCura = _verificaPianoCura;
+window._verificaPianoCuraTutti = _verificaPianoCuraTutti;
+
 function _sbAggiungiLetto(numeroLetto) {
   return _q(_sb.from('consegne').select('letto').eq('letto', String(numeroLetto)).maybeSingle())
     .then(function(existing) {
@@ -806,7 +840,7 @@ function _sbAggiungiLetto(numeroLetto) {
         letto:           String(numeroLetto),
         tipologia_letto: 'STANDARD',
         da_fare:         _TEMPLATE_DAFARE,
-        note_terapia:    _TEMPLATE_NOTETERAPIA
+        note_terapia:    _TEMPLATE_NOTETERAPIA_VUOTO
       }))
         .then(function() { return { success: true, message: 'Letto aggiunto.' }; });
     });
@@ -829,7 +863,7 @@ function _sbDimettiLetto(numeroLetto) {
   // preimpostato al template di scaletta (DA FARE / RICHIESTI / ESEGUITI / NOTE)
   var campiVuoti = {
     nome:'', eta:'', data_nascita:'', data_ricovero:'', diagnosi:'',
-    note_terapia: _TEMPLATE_NOTETERAPIA, diaria:'', da_fare: _TEMPLATE_DAFARE,
+    note_terapia: _TEMPLATE_NOTETERAPIA_VUOTO, diaria:'', da_fare: _TEMPLATE_DAFARE,
     piano_terapeutico:'', esami_colturali:'',
     allergie:'', codice_sanitario:'', ossigeno:'', vitto:'',
     dimissibile:'', sesso:'',
@@ -2305,7 +2339,7 @@ function _applicaDeltaUpdate(row) {
   var cards = document.querySelectorAll('.patient-card[data-bed="' + letto + '"]');
   if (!cards.length) return false; // card non esistente in DOM → full sync
 
-  cards.forEach(function(card) { _aggiornaCardDaPaziente(card, p); });
+  cards.forEach(function(card) { _aggiornaCardDaPaziente(card, p); if (typeof _verificaPianoCura === 'function') _verificaPianoCura(card); });
 
   // Aggiorna sync indicator (come fa _scheduleRealtimeSync alla fine)
   var ind = document.getElementById('syncIndicator');
@@ -2539,7 +2573,7 @@ function _scheduleRealtimeSync(lettoSpecifico) {
           // Applica direttamente alla card senza full re-render
           var cards = document.querySelectorAll('.patient-card[data-bed="' + lettoTarget + '"]');
           if (cards.length && typeof _aggiornaCardDaPaziente === 'function') {
-            cards.forEach(function(card) { _aggiornaCardDaPaziente(card, p); });
+            cards.forEach(function(card) { _aggiornaCardDaPaziente(card, p); if (typeof _verificaPianoCura === 'function') _verificaPianoCura(card); });
             if (typeof window._aggiornaBadgePrincipali === 'function') {
               try { window._aggiornaBadgePrincipali(); } catch(e) {}
             }
