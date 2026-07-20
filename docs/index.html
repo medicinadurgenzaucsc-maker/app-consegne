@@ -2329,6 +2329,7 @@
         if(/Milligramm|Millilitr|Microgramm|Gramm/i.test(dv))return cd(dv);
         var u=dv.match(/(\d[\d.,]*)\s*Unit/i);if(u)return u[1].replace('.',',')+' UI';
         var g=dv.match(/(\d[\d.,]*)\s*(GOCC|GTT)/i);if(g)return g[1]+' gtt';
+        var ab=dv.match(/(\d[\d.,]*)\s*(mcg|mg|ml|g)\b/i);if(ab)return ab[1].replace(/\./g,',')+ab[2].toLowerCase();
         var sf=stg(form),sc=stg(comRaw);
         if(sf&&sc&&parseFloat(sf)===parseFloat(sc)&&/mcg$/.test(sc)&&/mg$/.test(sf))return sc;
         var s=sf||sc;if(s)return s;
