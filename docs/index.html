@@ -2577,7 +2577,7 @@
     // sincronizzazione. La pillola è lo pseudo-elemento del .terapia-box vuoto;
     // il click sul box (vuoto) apre la procedura di import (come il pulsante).
     function _terapiaBoxVuoto(box){
-      return !!box && !box.querySelector('.terapia-box-head') && box.textContent.replace(/\s| /g,'')==='';
+      return !!box && box.textContent.replace(/\s| /g,'')==='';
     }
     document.addEventListener('click', function(ev){
       // Click sulla pillola -> avvia la sincronizzazione. Uso le COORDINATE
