@@ -2515,11 +2515,17 @@
       return !!box && !box.querySelector('.terapia-box-head') && box.textContent.replace(/\s| /g,'')==='';
     }
     document.addEventListener('click', function(ev){
-      var box = ev.target.closest ? ev.target.closest('.terapia-box') : null;
-      if(!box) return;
-      var campo = box.closest('[data-field="NoteTerapia"]'); if(!campo) return;
-      var card = box.closest('.patient-card'); if(!card || !card.classList.contains('focus-mode')) return;
-      if(!_terapiaBoxVuoto(box)) return; // se c'è gia terapia -> edit normale, niente import
+      // Click sulla pillola -> avvia la sincronizzazione. Uso le COORDINATE
+      // dentro il rettangolo del box (non il solo target): così funziona sia se
+      // il box riceve il click, sia se — per una CSS vecchia in cache
+      // (pointer-events:none) — il click "cade" sul campo NoteTerapia.
+      var campo = ev.target.closest ? ev.target.closest('[data-field="NoteTerapia"]') : null;
+      if(!campo) return;
+      var card = campo.closest('.patient-card'); if(!card || !card.classList.contains('focus-mode')) return;
+      var box = campo.querySelector(':scope > .terapia-box');
+      if(!box || !_terapiaBoxVuoto(box)) return; // niente pillola o già terapia -> edit normale
+      var r = box.getBoundingClientRect();
+      if(!r.height || ev.clientX < r.left || ev.clientX > r.right || ev.clientY < r.top || ev.clientY > r.bottom) return;
       ev.preventDefault(); ev.stopPropagation();
       if(typeof window._importaTerapiaTrak === 'function') window._importaTerapiaTrak(card);
     }, true);
