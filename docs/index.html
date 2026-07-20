@@ -2239,14 +2239,33 @@
       var letto=card.getAttribute('data-bed');
       if(letto && typeof attivaSalvataggioRitardato==='function') attivaSalvataggioRitardato(letto, card);
     }
-    function _terapiaAnteprima(card, terapia, paz, ts, cs){
+    function _terapiaAnteprima(card, terapia, paz, ts, cs, pazC){
+      // Promemoria SEMPRE presente: ricorda al medico di CHI è la terapia
+      // (dal TrakCare) e in QUALE scheda la sta mettendo. Se i nomi non
+      // coincidono → avviso arancione ben visibile, ma si può procedere
+      // comunque (potrebbe essere una scheda nuova o un caso legittimo).
+      var coincide = !paz || !pazC || _nomiCombaciano(paz, pazC);
+      var pazT = paz || '(nome non letto da TrakCare)';
+      var pazCard = pazC || '(scheda letto senza nome)';
+      var reminder = coincide
+        ? '<div style="background:#e8f5e9;border:1px solid #a5d6a7;border-left:4px solid #43a047;border-radius:6px;padding:9px 12px;margin-bottom:10px;font-size:0.86rem;color:#1b5e20;">'
+            + 'Stai aggiornando la terapia di <b>' + _escIso(pazT) + '</b>' + (cs ? ' <span style="color:#558b2f;">(CS ' + _escIso(cs) + ')</span>' : '')
+            + ' nella scheda letto di <b>' + _escIso(pazCard) + '</b>.</div>'
+        : '<div style="background:#fff3e0;border:1px solid #ffb74d;border-left:4px solid #e65100;border-radius:6px;padding:9px 12px;margin-bottom:10px;font-size:0.86rem;color:#bf360c;">'
+            + '<b>⚠️ ATTENZIONE — i nomi non coincidono.</b><br>'
+            + 'Terapia di <b>' + _escIso(pazT) + '</b>' + (cs ? ' (CS ' + _escIso(cs) + ')' : '')
+            + ' → scheda letto di <b>' + _escIso(pazCard) + '</b>.<br>'
+            + 'Controlla di essere sulla scheda giusta. Puoi comunque procedere.</div>';
       Swal.fire({
-        title:'<i class="bi bi-capsule-pill me-2" style="color:#00695c;"></i>Anteprima terapia',
+        title:'<i class="bi bi-capsule-pill me-2" style="color:#00695c;"></i>Aggiorna terapia',
         html:'<div style="text-align:left;font-size:0.88rem;">'
-          +((paz||cs)?'<div class="text-muted small mb-2">Paziente TrakCare: <b>'+_escIso(paz||'—')+'</b>'+(cs?' · CS '+_escIso(cs):'')+'</div>':'')
-          +'<div style="background:#f1f8f6;border:1px solid #b2dfdb;border-radius:6px;padding:10px;white-space:pre-wrap;line-height:1.5;">'+_escIso(terapia)+'</div>'
-          +'<div class="text-muted mt-2" style="font-size:0.75rem;">Sostituisce la terapia <b>sopra la riga</b>; i tuoi appunti sotto la riga restano.</div></div>',
-        showCancelButton:true, confirmButtonText:'<i class="bi bi-check-lg me-1"></i>Inserisci', cancelButtonText:'Annulla', confirmButtonColor:'#00695c',
+          + reminder
+          + '<div style="background:#f1f8f6;border:1px solid #b2dfdb;border-radius:6px;padding:10px;white-space:pre-wrap;line-height:1.5;">'+_escIso(terapia)+'</div>'
+          + '<div class="text-muted mt-2" style="font-size:0.75rem;">Sostituisce la terapia <b>sopra la riga</b>; i tuoi appunti sotto la riga restano.</div></div>',
+        showCancelButton:true,
+        confirmButtonText:'<i class="bi bi-check-lg me-1"></i>' + (coincide ? 'Inserisci' : 'Inserisci comunque'),
+        cancelButtonText:'Annulla',
+        confirmButtonColor: coincide ? '#00695c' : '#e65100',
         width:'min(680px,94vw)'
       }).then(function(r){ if(r.isConfirmed) _terapiaInserisci(card, terapia, paz, ts||Date.now()); });
     }
@@ -2259,12 +2278,7 @@
       if(!terapia){ Swal.fire({icon:'warning',title:'Terapia vuota',text:'Il segnalibro non ha trovato farmaci in corso.'}); return; }
       var nomeEl=card.querySelector('[data-field="Nome"]');
       var pazC=nomeEl?(nomeEl.innerText||nomeEl.textContent||'').trim():'';
-      if(paz && pazC && !_nomiCombaciano(paz,pazC)){
-        Swal.fire({icon:'warning',title:'⚠️ Paziente diverso?',
-          html:'La terapia copiata da TrakCare è di:<br><b>'+_escIso(paz)+'</b>'+(cs?' <span class="text-muted">(CS '+_escIso(cs)+')</span>':'')+'<br><br>ma questa scheda è di:<br><b>'+_escIso(pazC)+'</b><br><br>Vuoi procedere lo stesso?',
-          showCancelButton:true, confirmButtonText:'Sì, procedi', cancelButtonText:'Annulla', confirmButtonColor:'#c62828'
-        }).then(function(r){ if(r.isConfirmed) _terapiaAnteprima(card, terapia, paz, ts, cs); });
-      } else _terapiaAnteprima(card, terapia, paz, ts, cs);
+      _terapiaAnteprima(card, terapia, paz, ts, cs, pazC);
     }
     function _terapiaGuidaInstallazione(card){
       Swal.fire({
