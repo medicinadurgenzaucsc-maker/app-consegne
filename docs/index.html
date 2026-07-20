@@ -2201,7 +2201,10 @@
       var A=_norm(a), B=_norm(b);
       if(!A.length || !B.length) return true; // se un nome manca, non blocco (c'è l'anteprima)
       var comuni=A.filter(function(w){return B.indexOf(w)>=0;});
-      return comuni.length>=2 || (A[0] && A[0]===B[0]); // 2+ parole in comune oppure stesso cognome
+      // Servono ALMENO 2 parole in comune (cognome + nome): il solo cognome
+      // uguale NON basta, così due pazienti omonimi di cognome fanno scattare
+      // l'avviso. Se un nome ha una sola parola, richiede quella parola comune.
+      return comuni.length>=2 || (A.length===1 && comuni.length>=1) || (B.length===1 && comuni.length>=1);
     }
 
     function _terapiaBox(campo){
