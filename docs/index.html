@@ -2143,14 +2143,25 @@
     // javascript: URL si genera da .toString() (niente escaping a mano).
     function _bmTerapiaSorgente(){
       try{
-        var VIA={ORALE:'OS',ENDOVENOSA:'EV',SOTTOCUTE:'SC',SOTTOCUTANEA:'SC',INTRAMUSCOLO:'IM',INTRAMUSCOLARE:'IM',AEROSOL:'Aerosol',INALATORIA:'Inalatoria'};
-        var HDR={EV:'Terapia EV',OS:'Terapia OS (orale)',SC:'Terapia SC (sottocute)',IM:'Terapia IM',Aerosol:'Aerosol',Inalatoria:'Inalatoria',ALTRO:'Altra terapia'};
+        var VIA={ORALE:'OS',ENDOVENOSA:'EV',SOTTOCUTE:'SC',SOTTOCUTANEA:'SC',INTRAMUSCOLO:'IM',INTRAMUSCOLARE:'IM',AEROSOL:'Aerosol',AEROSOLICA:'Aerosol',INALATORIA:'Inalatoria',LOCALE:'Locale',TOPICA:'Locale'};
+        var HDR={EV:'Terapia EV',OS:'Terapia OS (orale)',SC:'Terapia SC (sottocute)',IM:'Terapia IM',Aerosol:'Aerosol',Inalatoria:'Inalatoria',Locale:'Terapia locale/topica',ALTRO:'Altra terapia'};
         var SEP=/\s+[—–-]\s+/;
         var MAN=/\s+(Eg|Accord|Teva|Mylan|Doc|Sandoz|Zentiva|Aurobindo|Krka|Ratiopharm|Hexal|Pensa|Almus|Tecnigen|Fidia|Angenerico|Sun|Aristo|Germed|Sifar)\.?$/i;
         var tc=function(s){return s?s.toLowerCase().replace(/\b[a-zà-ü]/g,function(c){return c.toUpperCase();}):s;};
-        var cd=function(v){return (v||'').replace(/(\d[\d.,]*)\s*Milligramm[io]/i,'$1mg').replace(/(\d[\d.,]*)\s*Millilitr[io]/i,'$1ml').replace(/(\d[\d.,]*)\s*Gramm[io]/i,'$1g').replace(/(\d)\.(\d)/g,'$1,$2').trim();};
+        var cd=function(v){return (v||'').replace(/(\d[\d.,]*)\s*Microgramm[io]/i,'$1mcg').replace(/(\d[\d.,]*)\s*Milligramm[io]/i,'$1mg').replace(/(\d[\d.,]*)\s*Millilitr[io]/i,'$1ml').replace(/(\d[\d.,]*)\s*Gramm[io]/i,'$1g').replace(/(\d)\.(\d)/g,'$1,$2').trim();};
         var stg=function(s){var m=(s||'').match(/(\d[\d.,]*)\s*(MG|MCG|G|UI|ML)\b/i);return m?m[1]+m[2].toLowerCase():'';};
-        var nv=function(o){if(!o)return 1;if(/volta al giorno/i.test(o))return 1;var m=o.match(/\d{1,2}(?:[:.]\d{2})?/g);return m?m.length:1;};
+        // dose "intelligente": massa/volume espliciti → cd; insulina (Unità)→UI;
+        // gocce→gtt; conteggio unità (1 cpr/capsula/dose/soluzione)→forza dalla
+        // confezione; altrimenti volume "(N Millilitri)" dal nome; fallback grezzo.
+        var dd=function(dv,form,comRaw){
+          if(/Milligramm|Millilitr|Microgramm|Gramm/i.test(dv))return cd(dv);
+          var u=dv.match(/(\d[\d.,]*)\s*Unit/i);if(u)return u[1].replace('.',',')+' UI';
+          var g=dv.match(/(\d[\d.,]*)\s*(GOCC|GTT)/i);if(g)return g[1]+' gtt';
+          var s=stg(form)||stg(comRaw);if(s)return s;
+          var vv=(form+' '+comRaw).match(/(\d[\d.,]*)\s*Millilitr/i);if(vv)return vv[1]+'ml';
+          return cd(dv);
+        };
+        var nv=function(o){if(!o)return 1;var vg=o.match(/(\d+)\s*volt[ae]\s*al\s*giorno/i);if(vg)return parseInt(vg[1],10)||1;if(/volta al giorno/i.test(o))return 1;var m=o.match(/\d{1,2}(?:[:.]\d{2})?/g);return m?m.length:1;};
         var all=[].slice.call(document.querySelectorAll('*'));
         var hdr=all.filter(function(e){return e.children.length<=2 && /^\s*Farmaci in corso\s*$/i.test(e.textContent);})[0];
         var table=null;
@@ -2166,7 +2177,7 @@
           var np=nl.split(SEP),comRaw=(np[1]||np[0]||'').trim(),com=tc(comRaw.split('*')[0].trim()).replace(MAN,''),form=np[2]||'';
           var dp=dl.split(SEP),dv=(dp[0]||'').trim(),via='',ora='';
           dp.forEach(function(p){var u=p.trim().toUpperCase().split(' ')[0];if(VIA[u])via=VIA[u];if(/^\d/.test(p.trim())||/volta al giorno/i.test(p))ora=p.trim();});
-          var dose=/Milligramm|Millilitr|Gramm/i.test(dv)?cd(dv):(stg(form)||stg(comRaw)||cd(dv));
+          var dose=dd(dv,form,comRaw);
           var cmp=t.match(/([A-ZÀ-Ü][A-Za-zÀ-ü]+)\*[^(]*\((\d[\d.,]*\s*Gramm[io]|\d[\d.,]*\s*mg)\)\s*in\s/i);
           if(cmp){com=tc(cmp[1]);if(com==='Ampicillin')com='Ampicillina';dose=cd(cmp[2]);}
           var nc=cellLab(tr,"Note all'ordine"),note=nc?(nc.innerText||'').replace(/Note all'ordine/i,'').trim():'';
@@ -2174,9 +2185,10 @@
         }catch(e){}});
         var out=['EV','OS','SC','IM','Aerosol','Inalatoria','ALTRO'].filter(function(v){return G[v];}).map(function(v){return HDR[v]+'\n'+G[v].join('\n');}).join('\n\n');
         if(!out){alert('Nessun farmaco in corso trovato.');return;}
-        var paz='';
-        try{var b=document.querySelector('.patientBannerName,[class*=patientName],[class*=PatientName]');if(b)paz=(b.innerText||b.textContent||'').trim().split('\n')[0];}catch(e){}
-        var payload='⟦TERAPIA-TRAK⟧\npaz='+paz+'\nts='+Date.now()+'\n⟦DATI⟧\n'+out;
+        var paz='',cs='';
+        try{var sur=document.querySelector('[id*=BANNERSurname]'),nam=document.querySelector('[id*=BANNERName]');paz=((sur?sur.textContent:'')+' '+(nam?nam.textContent:'')).replace(/\s+/g,' ').trim();}catch(e){}
+        try{cs=(document.body.innerText.match(/ID Paz[.:\s]*([0-9]{4,})/i)||[])[1]||'';}catch(e){}
+        var payload='⟦TERAPIA-TRAK⟧\npaz='+paz+'\ncs='+cs+'\nts='+Date.now()+'\n⟦DATI⟧\n'+out;
         var fin=function(){var d=document.createElement('div');d.style.cssText='position:fixed;top:18px;left:50%;transform:translateX(-50%);z-index:2147483647;background:#00695c;color:#fff;padding:14px 20px;border-radius:10px;font:600 15px system-ui,Arial;box-shadow:0 6px 24px rgba(0,0,0,.4);max-width:92vw;text-align:center';d.innerHTML='✅ Terapia copiata<br><span style="font-weight:400;font-size:13px">Vai nelle Consegne e premi l\'icona Terapia</span>';document.body.appendChild(d);setTimeout(function(){d.remove();},6000);};
         if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(payload).then(fin,function(){window.prompt('Copia (Ctrl+C) e incolla nelle consegne:',payload);});}
         else{window.prompt('Copia (Ctrl+C) e incolla nelle consegne:',payload);}
@@ -2224,11 +2236,11 @@
       var letto=card.getAttribute('data-bed');
       if(letto && typeof attivaSalvataggioRitardato==='function') attivaSalvataggioRitardato(letto, card);
     }
-    function _terapiaAnteprima(card, terapia, paz, ts){
+    function _terapiaAnteprima(card, terapia, paz, ts, cs){
       Swal.fire({
         title:'<i class="bi bi-capsule-pill me-2" style="color:#00695c;"></i>Anteprima terapia',
         html:'<div style="text-align:left;font-size:0.88rem;">'
-          +(paz?'<div class="text-muted small mb-2">Paziente TrakCare: <b>'+_escIso(paz)+'</b></div>':'')
+          +((paz||cs)?'<div class="text-muted small mb-2">Paziente TrakCare: <b>'+_escIso(paz||'—')+'</b>'+(cs?' · CS '+_escIso(cs):'')+'</div>':'')
           +'<div style="background:#f1f8f6;border:1px solid #b2dfdb;border-radius:6px;padding:10px;white-space:pre-wrap;line-height:1.5;">'+_escIso(terapia)+'</div>'
           +'<div class="text-muted mt-2" style="font-size:0.75rem;">Sostituisce la terapia <b>sopra la riga</b>; i tuoi appunti sotto la riga restano.</div></div>',
         showCancelButton:true, confirmButtonText:'<i class="bi bi-check-lg me-1"></i>Inserisci', cancelButtonText:'Annulla', confirmButtonColor:'#00695c',
@@ -2238,17 +2250,18 @@
     function _terapiaProcessa(card, clip){
       if(clip.indexOf('⟦TERAPIA-TRAK⟧')<0){ _terapiaGuidaInstallazione(card); return; }
       var paz=(clip.match(/paz=(.*)/)||[])[1]||''; paz=paz.trim();
+      var cs=(clip.match(/cs=(.*)/)||[])[1]||''; cs=cs.trim();
       var ts=parseInt((clip.match(/ts=(\d+)/)||[])[1]||'0',10);
       var terapia=(clip.split('⟦DATI⟧')[1]||'').replace(/^\s*\n?/,'').trim();
       if(!terapia){ Swal.fire({icon:'warning',title:'Terapia vuota',text:'Il segnalibro non ha trovato farmaci in corso.'}); return; }
       var nomeEl=card.querySelector('[data-field="Nome"]');
       var pazC=nomeEl?(nomeEl.innerText||nomeEl.textContent||'').trim():'';
       if(paz && pazC && !_nomiCombaciano(paz,pazC)){
-        Swal.fire({icon:'warning',title:'Paziente diverso?',
-          html:'La terapia copiata è di:<br><b>'+_escIso(paz)+'</b><br><br>ma questa scheda è di:<br><b>'+_escIso(pazC)+'</b><br><br>Vuoi procedere lo stesso?',
+        Swal.fire({icon:'warning',title:'⚠️ Paziente diverso?',
+          html:'La terapia copiata da TrakCare è di:<br><b>'+_escIso(paz)+'</b>'+(cs?' <span class="text-muted">(CS '+_escIso(cs)+')</span>':'')+'<br><br>ma questa scheda è di:<br><b>'+_escIso(pazC)+'</b><br><br>Vuoi procedere lo stesso?',
           showCancelButton:true, confirmButtonText:'Sì, procedi', cancelButtonText:'Annulla', confirmButtonColor:'#c62828'
-        }).then(function(r){ if(r.isConfirmed) _terapiaAnteprima(card, terapia, paz, ts); });
-      } else _terapiaAnteprima(card, terapia, paz, ts);
+        }).then(function(r){ if(r.isConfirmed) _terapiaAnteprima(card, terapia, paz, ts, cs); });
+      } else _terapiaAnteprima(card, terapia, paz, ts, cs);
     }
     function _terapiaGuidaInstallazione(card){
       Swal.fire({
