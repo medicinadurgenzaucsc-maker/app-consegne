@@ -832,6 +832,15 @@ function _verificaPianoCuraTutti() {
 window._verificaPianoCura = _verificaPianoCura;
 window._verificaPianoCuraTutti = _verificaPianoCuraTutti;
 
+// Rende editabile la terapia importata: i box .terapia-box vecchi erano
+// salvati con contenteditable="false" (non modificabili). Al render li
+// normalizziamo togliendo l'attributo → il medico può correggerli/cancellarli.
+function _normalizzaTerapiaBox(root) {
+  (root || document).querySelectorAll('.terapia-box[contenteditable="false"]')
+    .forEach(function(b) { b.removeAttribute('contenteditable'); });
+}
+window._normalizzaTerapiaBox = _normalizzaTerapiaBox;
+
 function _sbAggiungiLetto(numeroLetto) {
   return _q(_sb.from('consegne').select('letto').eq('letto', String(numeroLetto)).maybeSingle())
     .then(function(existing) {
@@ -2339,7 +2348,7 @@ function _applicaDeltaUpdate(row) {
   var cards = document.querySelectorAll('.patient-card[data-bed="' + letto + '"]');
   if (!cards.length) return false; // card non esistente in DOM → full sync
 
-  cards.forEach(function(card) { _aggiornaCardDaPaziente(card, p); if (typeof _verificaPianoCura === 'function') _verificaPianoCura(card); });
+  cards.forEach(function(card) { _aggiornaCardDaPaziente(card, p); if (typeof _verificaPianoCura === 'function') _verificaPianoCura(card); if (typeof _normalizzaTerapiaBox === 'function') _normalizzaTerapiaBox(card); });
 
   // Aggiorna sync indicator (come fa _scheduleRealtimeSync alla fine)
   var ind = document.getElementById('syncIndicator');
@@ -2573,7 +2582,7 @@ function _scheduleRealtimeSync(lettoSpecifico) {
           // Applica direttamente alla card senza full re-render
           var cards = document.querySelectorAll('.patient-card[data-bed="' + lettoTarget + '"]');
           if (cards.length && typeof _aggiornaCardDaPaziente === 'function') {
-            cards.forEach(function(card) { _aggiornaCardDaPaziente(card, p); if (typeof _verificaPianoCura === 'function') _verificaPianoCura(card); });
+            cards.forEach(function(card) { _aggiornaCardDaPaziente(card, p); if (typeof _verificaPianoCura === 'function') _verificaPianoCura(card); if (typeof _normalizzaTerapiaBox === 'function') _normalizzaTerapiaBox(card); });
             if (typeof window._aggiornaBadgePrincipali === 'function') {
               try { window._aggiornaBadgePrincipali(); } catch(e) {}
             }

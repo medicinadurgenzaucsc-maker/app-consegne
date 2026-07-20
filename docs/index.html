@@ -2197,6 +2197,16 @@
     }
     var _BM_TERAPIA = 'javascript:(' + _bmTerapiaSorgente.toString().replace(/\n\s*/g,' ') + ')()';
 
+    // Vero SOLO se il testo negli appunti è un payload terapia REALE (inizia
+    // col marcatore + contiene ⟦DATI⟧). NB: il CODICE del bookmarklet contiene
+    // anch'esso la stringa ⟦TERAPIA-TRAK⟧ (nel payload che genera), ma NON
+    // all'inizio (inizia con "javascript:") → così non viene scambiato per una
+    // terapia quando l'utente copia il codice del segnalibro.
+    function _isPayloadTerapia(clip){
+      var c = (clip || '').trim();
+      return c.indexOf('⟦TERAPIA-TRAK⟧') === 0 && c.indexOf('⟦DATI⟧') > 0;
+    }
+
     function _norm(s){ return (s||'').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^A-Z\s]/g,' ').split(/\s+/).filter(Boolean); }
     function _nomiCombaciano(a,b){
       var A=_norm(a), B=_norm(b);
@@ -2210,7 +2220,11 @@
 
     function _terapiaBox(campo){
       var box=campo.querySelector(':scope > .terapia-box');
-      if(!box){ box=document.createElement('div'); box.className='terapia-box'; box.setAttribute('contenteditable','false'); campo.insertBefore(box, campo.firstChild); }
+      if(!box){ box=document.createElement('div'); box.className='terapia-box'; campo.insertBefore(box, campo.firstChild); }
+      // Box EDITABILE (eredita da NoteTerapia): il medico può correggere/
+      // cancellare a mano; il re-import sostituisce comunque il contenuto.
+      // Rende editabili anche i box vecchi salvati con contenteditable=false.
+      else if(box.getAttribute('contenteditable')==='false'){ box.removeAttribute('contenteditable'); }
       return box;
     }
     function _assicuraEditabileDopoTerapia(campo){
@@ -2272,7 +2286,7 @@
       }).then(function(r){ if(r.isConfirmed) _terapiaInserisci(card, terapia, paz, ts||Date.now()); });
     }
     function _terapiaProcessa(card, clip){
-      if(clip.indexOf('⟦TERAPIA-TRAK⟧')<0){ _terapiaGuidaInstallazione(card); return; }
+      if(!_isPayloadTerapia(clip)){ _terapiaGuidaInstallazione(card); return; }
       var paz=(clip.match(/paz=(.*)/)||[])[1]||''; paz=paz.trim();
       var cs=(clip.match(/cs=(.*)/)||[])[1]||''; cs=cs.trim();
       var ts=parseInt((clip.match(/ts=(\d+)/)||[])[1]||'0',10);
@@ -2344,7 +2358,7 @@
             try{ (navigator.clipboard&&navigator.clipboard.writeText)? navigator.clipboard.writeText(_BM_TERAPIA).then(ok,ko) : ko(); }catch(e){ ko(); }
           });
         },
-        preConfirm:function(){ var v=((document.getElementById('terapiaPasteBox')||{}).value)||''; if(v.indexOf('⟦TERAPIA-TRAK⟧')<0){ Swal.showValidationMessage('Il testo incollato non è una terapia copiata dal segnalibro.'); return false; } return v; }
+        preConfirm:function(){ var v=((document.getElementById('terapiaPasteBox')||{}).value)||''; if(!_isPayloadTerapia(v)){ Swal.showValidationMessage('Il testo incollato non è una terapia copiata dal segnalibro (dev\'essere il risultato del bookmarklet, non il suo codice).'); return false; } return v; }
       }).then(function(r){ if(r.isConfirmed && r.value) _terapiaProcessa(card, r.value); });
     }
     window._importaTerapiaTrak = function(card){
@@ -2353,7 +2367,7 @@
       try { p = (navigator.clipboard && navigator.clipboard.readText) ? navigator.clipboard.readText() : Promise.reject(); }
       catch(e){ p = Promise.reject(e); }
       Promise.resolve(p).then(function(clip){
-        if(clip && clip.indexOf('⟦TERAPIA-TRAK⟧')>=0) _terapiaProcessa(card, clip);
+        if(_isPayloadTerapia(clip)) _terapiaProcessa(card, clip);
         else _terapiaGuidaInstallazione(card);
       }, function(){ _terapiaGuidaInstallazione(card); });
     };
@@ -2364,16 +2378,11 @@
     window._terapiaDaPlaceholder = function(el){
       var card = (el && el.closest) ? el.closest('.patient-card') : el;
       if(!card) return;
-      if(card.classList.contains('focus-mode')){ window._importaTerapiaTrak(card); return; }
-      if(typeof _attivaFocusMode === 'function'){
-        _attivaFocusMode(card);
-        var tries=0, iv=setInterval(function(){
-          tries++;
-          if(card.classList.contains('focus-mode') && !document.getElementById('lockCheckOverlay')){
-            clearInterval(iv); setTimeout(function(){ if(card.classList.contains('focus-mode')) window._importaTerapiaTrak(card); }, 150);
-          } else if(tries>50){ clearInterval(iv); }
-        }, 100);
-      }
+      // Come tutto il resto, la pillola agisce SOLO in focus mode: se non ci
+      // siamo apre solo il focus mode (come la matita); un secondo click
+      // sulla pillola (ora in focus) avvia l'import terapia.
+      if(card.classList.contains('focus-mode')) window._importaTerapiaTrak(card);
+      else if(typeof _attivaFocusMode === 'function') _attivaFocusMode(card);
     };
 
     // Modal riepilogo di una scala inserita: spiega cosa significa e permette
@@ -2456,7 +2465,7 @@
       if (!campo) return null;
       var f = campo.getAttribute('data-field');
       var sel = f === 'EsamiColturali' ? ':scope > .scale-box'
-              : f === 'NoteTerapia'    ? ':scope > .terapia-box, :scope > .terapia-placeholder'
+              : f === 'NoteTerapia'    ? ':scope > .terapia-placeholder'
               : ':scope > .diaria-status-box, :scope > .isolamento-banner, :scope > .rianimazione-banner';
       var prot = campo.querySelectorAll(sel);
       return prot.length ? { campo: campo, protetti: Array.prototype.slice.call(prot) } : null;
