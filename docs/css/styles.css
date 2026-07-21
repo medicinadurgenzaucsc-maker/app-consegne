@@ -23,9 +23,11 @@ body { padding-top: 70px; background-color: #d4e6f1 !important; }
 .column-box { border-right: 2px solid #333; display: flex; flex-direction: column; }
 .column-box:last-child { border-right: none; }
 
-.col-terapia { width: 20.1%; }   /* +15% rispetto al 17,5% originale (spazio preso dalla diaria/epicrisi) */
-.col-diaria { width: 62.4%; }
-.col-da-fare { width: 17.5%; }
+/* NB: .col-terapia/.col-diaria/.col-da-fare RIMOSSE il 22/07/2026 — erano
+   residui della "vista standard" eliminata il 2026-05-11 (_renderMainCard).
+   L'app usa solo la vista a righe compatte (.alt-col-*, vedi sotto).
+   ⚠️ In print.html quelle classi vanno LASCIATE: le usa renderMain, che è il
+   layout di default se print.html viene aperto senza ?layout=alt. */
 
 .piano-terapeutico-row { display: flex; flex-direction: column; width: 100%; min-height: 80px; }
 
@@ -36,8 +38,8 @@ body { padding-top: 70px; background-color: #d4e6f1 !important; }
 .editable-area:focus { background-color: #ffffff; box-shadow: inset 0 0 5px rgba(0,0,0,0.05); }
 .editable-area-piano { min-height: 50px; }
 /* Allergie e Ossigeno: si adattano al contenuto senza crescere */
-.col-terapia .editable-area[data-field="Allergie"] { flex-grow: 0; min-height: 0; overflow-y: visible; }
-.col-terapia .editable-area[data-field="Ossigeno"] { flex-grow: 0; min-height: 0; overflow-y: visible; }
+/* (rimosse anche le due regole .col-terapia .editable-area[Allergie/Ossigeno]:
+   selettori discendenti di una classe che l'app non genera più) */
 
 .date-wrapper { position: relative; display: inline-flex; align-items: center; width: 120px; height: 30px;}
 .date-input-hidden { position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; z-index: 10; }
@@ -764,10 +766,13 @@ body { padding-top: 70px; background-color: #d4e6f1 !important; }
 }
 .alt-col:last-child { border-right: none; }
 
+/* Larghezze colonne della vista (unica) a righe compatte. Allineate a
+   print.html: terapia allargata (12% -> 15%) a scapito di diaria/epicrisi,
+   così la terapia importata da TrakCare va meno a capo. Somma = 100%. */
 .alt-col-info    { width: 12%; background-color: #f2efe9; }
 .alt-col-diag    { width: 18%; }
-.alt-col-diaria  { width: 58%; }
-.alt-col-terapia { width: 12%; }
+.alt-col-diaria  { width: 55%; }
+.alt-col-terapia { width: 15%; }
 
 .alt-col-header {
   background-color: #e8e6e1;
