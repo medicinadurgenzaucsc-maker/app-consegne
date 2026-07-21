@@ -2421,7 +2421,7 @@
       var MAN=/\s+(Eg|Accord|Teva|Mylan|Doc|Sandoz|Zentiva|Aurobindo|Krka|Ratiopharm|Hexal|Pensa|Almus|Tecnigen|Fidia|Angenerico|Sun|Aristo|Germed|Sifar)\.?$/i;
       var tc=function(s){return s?s.toLowerCase().replace(/\b[a-zà-ü]/g,function(c){return c.toUpperCase();}):s;};
       var cd=function(v){return (v||'').replace(/(\d[\d.,]*)\s*Microgramm[io]/i,'$1mcg').replace(/(\d[\d.,]*)\s*Milligramm[io]/i,'$1mg').replace(/(\d[\d.,]*)\s*Millilitr[io]/i,'$1ml').replace(/(\d[\d.,]*)\s*Gramm[io]/i,'$1g').replace(/(\d)\.(\d)/g,'$1,$2').trim();};
-      var stg=function(s){var m=(s||'').match(/(\d[\d.,]*)\s*(MG|MCG|G|UI|ML)\b/i);return m?m[1]+m[2].toLowerCase():'';};
+      var stg=function(s){var m=(s||'').match(/(\d[\d.,]*)\s*(MG|MCG|G|UI|ML)\b/i);return m?m[1]+(m[2].toUpperCase()==='UI'?' UI':m[2].toLowerCase()):'';};
       var dd=function(dv,form,comRaw){
         if(/Milligramm|Millilitr|Microgramm|Gramm/i.test(dv))return cd(dv);
         var u=dv.match(/(\d[\d.,]*)\s*Unit/i);if(u)return u[1].replace('.',',')+' UI';
@@ -2526,7 +2526,7 @@
       var MAN=/\s+(Eg|Accord|Teva|Mylan|Doc|Sandoz|Zentiva|Aurobindo|Krka|Ratiopharm|Hexal|Pensa|Almus|Tecnigen|Fidia|Angenerico|Sun|Aristo|Germed|Sifar)\.?$/i;
       var tc=function(s){return s?s.toLowerCase().replace(/\b[a-zà-ü]/g,function(c){return c.toUpperCase();}):s;};
       var cd=function(v){return (v||'').replace(/(\d[\d.,]*)\s*Microgramm[io]/i,'$1mcg').replace(/(\d[\d.,]*)\s*Milligramm[io]/i,'$1mg').replace(/(\d[\d.,]*)\s*Millilitr[io]/i,'$1ml').replace(/(\d[\d.,]*)\s*Gramm[io]/i,'$1g').replace(/(\d)\.(\d)/g,'$1,$2').trim();};
-      var stg=function(s){var m=(s||'').match(/(\d[\d.,]*)\s*(MG|MCG|G|UI|ML)\b/i);return m?m[1]+m[2].toLowerCase():'';};
+      var stg=function(s){var m=(s||'').match(/(\d[\d.,]*)\s*(MG|MCG|G|UI|ML)\b/i);return m?m[1]+(m[2].toUpperCase()==='UI'?' UI':m[2].toLowerCase()):'';};
       var dd=function(dv,form,comRaw){
         if(/Milligramm|Millilitr|Microgramm|Gramm/i.test(dv))return cd(dv);
         var u=dv.match(/(\d[\d.,]*)\s*Unit/i);if(u)return u[1].replace('.',',')+' UI';
@@ -2562,6 +2562,21 @@
         var cmp=t.match(/([A-ZÀ-Ü][A-Za-zÀ-ü]+)\*[^(]*\((\d[\d.,]*\s*Gramm[io]|\d[\d.,]*\s*mg)\)\s*in\s/i);
         if(cmp){var veic=/SODIO\s+CLORURO|GLUCOS|FISIOLOGIC|RINGER|PER\s+COMPOSTI|ELETTROLIT|ACQUA\s+PER/i.test(np[0]||'');com=veic?tc(cmp[1]).replace(MAN,''):(princ||tc(cmp[1]).replace(MAN,''));if(com==='Ampicillin')com='Ampicillina';dose=cd(cmp[2]);}
         dose=_numFix(dose);
+        // INFUSIONE CONTINUA: il Trak ne scrive la VELOCITÀ ("infondere a 0.8
+        // Millilitri/ora"). Presa da sola sembra una dose assurda ("Sodio
+        // Cloruro 0,8ml"), e il solo volume della sacca non dice come sta
+        // andando: si mostrano entrambi -> "Sodio Cloruro 50ml a 0,8ml/h".
+        var _UM={millilitr:'ml',milligramm:'mg',microgramm:'mcg',ml:'ml',mg:'mg',mcg:'mcg'};
+        var _UT={ora:'h',ore:'h',h:'h',giorno:'die',die:'die',minuto:'min',min:'min'};
+        var vel=t.match(/infondere\s+a\s+(\d[\d.,]*)\s*(Millilitr[io]|Milligramm[io]|Microgramm[io]|ml|mg|mcg)\s*\/\s*(ora|ore|h|giorno|die|minuto|min)\b/i);
+        if(vel){
+          var _u=_UM[vel[2].toLowerCase().replace(/[io]$/,'')]||'ml';
+          var _t=_UT[vel[3].toLowerCase()]||vel[3].toLowerCase();
+          var _v=_numFix(vel[1])+_u+'/'+_t;
+          var _senza=t.replace(/infondere\s+a\s+[\d.,]+\s*[^\/\s]+\s*\/\s*\S+/ig,'');
+          var _vm=_senza.match(/Volume del composto:\s*(\d[\d.,]*)\s*Millilitr/i)||_senza.match(/\((\d[\d.,]*)\s*Millilitr/i);
+          dose=_vm?(_numFix(_vm[1])+'ml a '+_v):_v;
+        }
         // CORREZIONE DEL POTASSIO: il Trak la prescrive come sacca di sodio
         // cloruro addizionata di KCl ("SODIO CLORURO KCL*0,9+0,3% 500", forma
         // "1,5G+4,5G/500ML"). La massa del primo sale non dice nulla e confonde
@@ -2580,7 +2595,7 @@
         }
         var full=(row._r||'')+' '+t+' '+note;
         var prn=/al bisogno|\bSOS\b|\bPRN\b|se necessario|all'occorrenza/i.test(full);
-        return {t:t, com:com, dose:dose, via:via, ora:ora, note:note, prn:prn, kcl:kcl, conferma:/conferma\s*medica/i.test(dv)};
+        return {t:t, com:com, dose:dose, via:via, ora:ora, note:note, prn:prn, kcl:kcl, cont:!!vel, conferma:/conferma\s*medica/i.test(dv)};
       }
       var G={}, pregMap={}, ordine=[];
       (sezioni||[]).forEach(function(sez){
@@ -2609,7 +2624,12 @@
           // porta una nota è LEI la prescrizione vera (es. "1 fiala Tranex per
           // via AEREOSOLICA") e va importata.
           var isPara=/\bparafarmaco\b/i.test(t);
-          if(isPara && !nota) return;
+          // Il "parafarmaco" è una voce generica buona per tutto: vale solo se
+          // la nota descrive una somministrazione vera, e in tal caso ne nomina
+          // sempre la via. Gli ordini di reparto infilati lì dentro
+          // ("monitoraggio diuresi", "ossigenoterapia in CN 2 lpm") non sono
+          // terapia e vengono scartati (scelta utente).
+          if(isPara && !_viaDaNota(nota)) return;
           // Il motivo della chiusura sta nel tooltip dello stato ("Reason: …"):
           // è lì che si riconosce l'errore di inserimento, mai somministrato.
           if(/errore\s*(di\s*)?inserimento/i.test(dInt+' '+(row._r||'')+' '+(row.StatoInfo||''))) return;
@@ -2628,8 +2648,9 @@
             var extra=[]; if(gi)extra.push('dal '+gi.d); if(f.conferma)extra.push('dose da confermare'); if(nota&&!isPara)extra.push(nota);
             var v=f.via||'ALTRO';
             if(isPara){ var vn=_viaDaNota(nota); if(vn) v=vn; }
-            // Per il KCl il conteggio è già nella dose ("2 soluzioni"): niente ×N.
-            (G[v]=G[v]||[]).push(etich+(f.kcl?'':' ×'+nv(f.ora))+(f.prn?' a/b':'')+(extra.length?' ('+extra.join(' · ')+')':''));
+            // Niente ×N dove il ritmo è già nella dose: KCl ("2 soluzioni") e
+            // infusioni continue ("a 0,8ml/h").
+            (G[v]=G[v]||[]).push(etich+(f.kcl||f.cont?'':' ×'+nv(f.ora))+(f.prn?' a/b':'')+(extra.length?' ('+extra.join(' · ')+')':''));
           } else {
             var nome=etich;
             var key=nome.toLowerCase();
