@@ -2170,7 +2170,7 @@
                 var inf='';
                 [].slice.call(tds[1].querySelectorAll('[title]')).forEach(function(el){ var v=norm(el.getAttribute('title')); if(!inf && /Data inizio/i.test(v)) inf=v; });
                 var ce=tds[1].querySelector('.clsCeasedClinProfDesc');
-                rgh.push({Prestazione:c1,Gruppo:gr,Giorni:gg.join(' '),Info:inf,Stato:ce?norm(ce.textContent):'',_r:c1});
+                rgh.push({Prestazione:c1,Gruppo:gr,Giorni:gg.join(' '),Info:inf,Stato:ce?norm(ce.textContent):'',StatoInfo:ce?norm(ce.getAttribute('title')||''):'',_r:c1});
               }catch(e){}
             });
             if(rgh.length) sezioni.push({t:'Pannello terapia',righe:rgh});
@@ -2199,7 +2199,7 @@
         var paz='',cs='';
         try{var sur=document.querySelector('[id$=BANNERSurname]')||document.querySelector('[id*=BANNERSurname]:not([id*=label])'),nam=document.querySelector('[id$=BANNERName2]')||document.querySelector('[id$=BANNERName]')||document.querySelector('[id*=BANNERName]:not([id*=label]):not([id*=Surname])');paz=((sur?sur.textContent:'')+' '+(nam?nam.textContent:'')).replace(/\s+/g,' ').trim();if(/^\s*(cognome\s+nome|nome\s+cognome)\s*$/i.test(paz))paz='';}catch(e){}
         try{var reg=document.querySelector('[id$=BANNERRegistrationNo]');cs=reg?norm(reg.textContent):((document.body.innerText.match(/ID Paz[.:\s]*([0-9]{4,})/i)||[])[1]||'');}catch(e){}
-        var payload='⟦TERAPIA-TRAK⟧\n'+JSON.stringify({v:5,paz:paz,cs:cs,ts:Date.now(),sezioni:sezioni});
+        var payload='⟦TERAPIA-TRAK⟧\n'+JSON.stringify({v:6,paz:paz,cs:cs,ts:Date.now(),sezioni:sezioni});
         var nF=0; sezioni.forEach(function(s){nF+=s.righe.length;});
         var ok=function(){banner('✅ Terapia copiata'+(nF?' ('+nF+' righe)':'')+'<br><span style="font-weight:400;font-size:13px">Vai nelle Consegne e premi l\'icona «Terapia»</span>','#00695c');};
         var ko=function(err){try{var t=document.createElement('textarea');t.value=payload;t.style.cssText='position:fixed;left:-9999px;top:0';document.body.appendChild(t);t.focus();t.select();var done=document.execCommand&&document.execCommand('copy');document.body.removeChild(t);if(done){ok();return;}}catch(e){err=(err||'errore')+' / '+e.message;}banner('⚠️ Impossibile copiare in automatico'+(err?':<br><span style="font-weight:400;font-size:12px">'+err+'</span>':'')+'<br><span style="font-weight:400;font-size:12px">Seleziona il testo qui sotto, copialo (Ctrl+C) e incollalo nelle Consegne</span>','#c62828',payload);};
@@ -2207,7 +2207,7 @@
       }catch(e){alert('Errore bookmarklet: '+e.message);}
     }
     var _BM_TERAPIA = 'javascript:(' + _bmTerapiaSorgente.toString().replace(/\n\s*/g,' ') + ')()';
-    var _BM_VERSIONE = 5; // versione del segnalibro generato qui (deve combaciare con v: nel payload)
+    var _BM_VERSIONE = 6; // versione del segnalibro generato qui (deve combaciare con v: nel payload)
 
     // Vero SOLO se il testo negli appunti è un payload terapia REALE (inizia
     // col marcatore + contiene ⟦DATI⟧). NB: il CODICE del bookmarklet contiene
@@ -2575,7 +2575,9 @@
           // via AEREOSOLICA") e va importata.
           var isPara=/\bparafarmaco\b/i.test(t);
           if(isPara && !nota) return;
-          if(/errore\s*(di\s*)?inserimento/i.test(dInt+' '+(row._r||''))) return;
+          // Il motivo della chiusura sta nel tooltip dello stato ("Reason: …"):
+          // è lì che si riconosce l'errore di inserimento, mai somministrato.
+          if(/errore\s*(di\s*)?inserimento/i.test(dInt+' '+(row._r||'')+' '+(row.StatoInfo||''))) return;
           var dest=tipo;
           if(tipo==='pregressi' && /in\s*corso/i.test(stato)) dest='corso';
           // Pannello Terapia: sezione unica. Va nella storia ciò che è chiuso —
@@ -2611,8 +2613,18 @@
                 else if(gf3) ets.push('al '+gf3.d);
                 ord = gf3?gf3.ord:(gi3?gi3.ord:'0');
               }
-              // Lo stato (sospeso/interrotto/completato) è l'informazione utile.
-              if(row.Stato) ets.push((row.Stato+'').toLowerCase());
+              // Stato + data di chiusura: "sospeso il 20/07". La data sta nel
+              // tooltip dello stato ("… sospeso da <medico> il gg/mm/aaaa hh:mm",
+              // di cui si prende SOLO la data); i "Completato" non ce l'hanno,
+              // per loro vale l'ultimo giorno somministrato in griglia.
+              if(row.Stato){
+                var st=(row.Stato+'').toLowerCase();
+                var mS=(row.StatoInfo||'').match(/\bil\s+(\d{2}\/\d{2}\/\d{2,4})/i);
+                var gS=mS?gg(mS[1]):null;
+                if(!gS){ var gl=(row.Giorni||'').split(/\s+/).map(gg).filter(Boolean); gS=gl.length?gl[gl.length-1]:null; }
+                if(gS){ st+=' il '+gS.d; if(gS.ord>ord) ord=gS.ord; }
+                ets.push(st);
+              }
             } else {
               var gi2=gg(dIni), gf=gg(dInt);
               var et = gf ? ('dal '+(gi2?gi2.d:'?')+' al '+gf.d) : (gi2?gi2.d:'');
