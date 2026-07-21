@@ -76,8 +76,10 @@
     .content-row  { display: flex; }
     .column-box   { border-right: 2px solid #000; display: flex; flex-direction: column; }
     .column-box:last-child { border-right: none; }
-    .col-terapia  { width: 17.5%; }
-    .col-diaria   { width: 65%; }
+    /* Larghezze allineate a styles.css (app): terapia +15% (spazio preso alla
+       diaria/epicrisi), così la stampa rispecchia quello che si vede a schermo. */
+    .col-terapia  { width: 20.1%; }
+    .col-diaria   { width: 62.4%; }
     .col-da-fare  { width: 17.5%; }
     .piano-row    { display: flex; flex-direction: column; width: 100%; }
     .col-header {
