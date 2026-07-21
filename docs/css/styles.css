@@ -515,6 +515,22 @@ body { padding-top: 70px; background-color: #d4e6f1 !important; }
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
 }
+/* FARMACI PREGRESSI: box sotto la terapia in corso, chiuso da una riga ROSSO
+   PASTELLO (incancellabile come la verde). Contenuto ADDITIVO: si accumula. */
+.pregressi-box {
+  border-bottom: 2px solid #ef9a9a;
+  margin-bottom: 6px;
+  background: #fdf4f4;
+  border-radius: 4px 4px 0 0;
+  padding: 4px 6px 5px;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.pregressi-box:empty { min-height: 4px; background: transparent; padding: 0 6px 2px; }
+.pregressi-head {
+  font-size: 0.72rem; font-weight: 700; color: #b71c1c;
+  margin-bottom: 3px; text-transform: uppercase; letter-spacing: 0.03em;
+}
 /* Etichetta "NOTE" sotto la riga verde: incancellabile (contenteditable=false),
    non selezionabile col cursore. Confine del blocco appunti. */
 .note-hdr {
