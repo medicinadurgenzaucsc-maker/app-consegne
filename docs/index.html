@@ -2427,6 +2427,20 @@
       if(/^farmaci pregressi/.test(t)) return 'pregressi';
       return 'skip';
     }
+    // Sali/qualificatori da togliere dal principio attivo per ottenere il nome utile.
+    var _SALI=/\b(SODIC[AO]|POTASSIC[AO]|CALCIC[AO]|CLORIDRAT[AO]|DICLORIDRAT[AO]|BROMURO|SOLFAT[AO]|ACETAT[AO]|FOSFAT[AO]|NITRAT[AO]|TARTRAT[AO]|MALEAT[AO]|SUCCINAT[AO]|DIIDRAT[AO]|MONOIDRAT[AO]|ANIDR[AO]|TRIFENATAT[AO]|FUROAT[AO]|DIPROPIONAT[AO]|XINAFOAT[AO]|EMIIDRAT[AO])\b/gi;
+    // "PIPERACILLINA SODICA/TAZOBACTAM SODICO" -> "Piperacillina/Tazobactam"
+    function _principioPulito(p0){
+      return (p0||'').split('/').map(function(x){
+        return (x||'').replace(/\(.*?\)/g,'').replace(_SALI,'').replace(/\s+/g,' ').trim();
+      }).filter(Boolean).map(function(x){
+        return x.toLowerCase().replace(/\b[a-zà-ü]/g,function(c){return c.toUpperCase();});
+      }).join('/');
+    }
+    // Numeri: "2.000" (migliaia) -> 2000 ; "4.5" (decimale) -> 4,5
+    function _numFix(s){
+      return (s||'').replace(/(\d)\.(\d{3})(?!\d)/g,'$1$2').replace(/(\d)\.(\d{1,2})(?!\d)/g,'$1,$2');
+    }
     // Legge una cella della riga grezza cercando l'etichetta per regex.
     function _terapiaCella(row, re){
       if(!row) return '';
@@ -2469,6 +2483,13 @@
         var nl=(di>=0?t.slice(0,di):t).trim(), dl=(di>=0?t.slice(di).replace(/^DOSE/i,''):'').trim();
         var np=nl.split(SEP), comRaw=(np[1]||np[0]||'').trim();
         var com=tc(comRaw.split('*')[0].trim()).replace(MAN,''), form=np[2]||'';
+        // Se la confezione ripete il principio attivo (es. "PIPERACILLINA TA AU")
+        // non e' un vero nome commerciale: usa il principio pulito dai sali
+        // -> "Piperacillina/Tazobactam". Se invece e' un brand (Nexium, Coumadin,
+        // Isolyte...) lo si lascia com'e'.
+        var _cf=((comRaw.split('*')[0]||'').trim().split(/\s+/)[0]||'').toUpperCase();
+        var _pf=((np[0]||'').trim().split(/\s+/)[0]||'').toUpperCase();
+        if(_cf && _cf===_pf){ var _pp=_principioPulito(np[0]); if(_pp) com=_pp; }
         var princ=tc((np[0]||'').trim().split(/\s+/)[0]||'');
         var dp=dl.split(SEP), dv=(dp[0]||'').trim(), via='', ora='';
         dp.forEach(function(p){var u=p.trim().toUpperCase().split(' ')[0];if(VIA[u])via=VIA[u];if(/^\d/.test(p.trim())||/volta al giorno/i.test(p))ora=p.trim();});
@@ -2476,6 +2497,7 @@
         var dose=dd(dv,form,comRaw);
         var cmp=t.match(/([A-ZÀ-Ü][A-Za-zÀ-ü]+)\*[^(]*\((\d[\d.,]*\s*Gramm[io]|\d[\d.,]*\s*mg)\)\s*in\s/i);
         if(cmp){var veic=/SODIO\s+CLORURO|GLUCOS|FISIOLOGIC|RINGER|PER\s+COMPOSTI|ELETTROLIT|ACQUA\s+PER/i.test(np[0]||'');com=veic?tc(cmp[1]).replace(MAN,''):(princ||tc(cmp[1]).replace(MAN,''));if(com==='Ampicillin')com='Ampicillina';dose=cd(cmp[2]);}
+        dose=_numFix(dose);
         var full=(row._r||'')+' '+t+' '+note;
         var prn=/al bisogno|\bSOS\b|\bPRN\b|se necessario|all'occorrenza/i.test(full);
         return {t:t, com:com, dose:dose, via:via, ora:ora, note:note, prn:prn};
