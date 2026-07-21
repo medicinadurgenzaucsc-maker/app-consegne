@@ -2573,6 +2573,17 @@
         var _cf=((comRaw.split('*')[0]||'').trim().split(/\s+/)[0]||'').toUpperCase();
         var _pf=((np[0]||'').trim().split(/\s+/)[0]||'').toUpperCase();
         if(_cf && _cf===_pf){ var _pp=_principioPulito(np[0]); if(_pp) com=_pp; }
+        // RIGHE DESCRITTIVE (niente asterisco = nessuna confezione, niente DOSE):
+        // non sono farmaci ma prescrizioni a testo libero, es.
+        // "Ossigenoterapia 2 L/minuto — via Cannula nasale — Continuo".
+        // Qui il secondo segmento NON è un nome commerciale ("via Cannula
+        // nasale") e prenderlo come tale buttava via la prescrizione.
+        var descr=(t.indexOf('*')<0 && di<0), dett='';
+        if(descr){
+          var _rz=(np[0]||'').replace(/\bPER\s+COMPOSTI\b/gi,'').replace(/\s+/g,' ').trim();
+          com=(_rz===_rz.toUpperCase())?tc(_rz):_rz;   // le maiuscole del Trak si ammorbidiscono, il resto si lascia
+          dett=(np[1]||'').trim();
+        }
         var princ=tc((np[0]||'').trim().split(/\s+/)[0]||'');
         var dp=dl.split(SEP), dv=(dp[0]||'').trim(), via='', ora='';
         // dp[0] è il VALORE della dose, mai un orario: senza questo controllo un
@@ -2624,7 +2635,7 @@
         var _MX={grammi:'g',milligrammi:'mg',microgrammi:'mcg',millilitri:'ml',unita:' UI',fiale:' fiale',fiala:' fiala',gocce:' gtt'};
         var mx=t.match(/Dose\s*massima\s*(\d[\d.,]*)\s*([A-Za-zà-ü]+)[^)]*?in\s*(\d+)\s*ore/i);
         var maxDie=mx?('max '+_numFix(mx[1])+(_MX[mx[2].toLowerCase().replace(/à/g,'a')]||(' '+mx[2].toLowerCase()))+'/'+mx[3]+'h'):'';
-        return {t:t, com:com, dose:dose, via:via, ora:ora, note:note, prn:prn, max:maxDie, kcl:kclSol, cont:!!vel, conferma:/conferma\s*medica/i.test(dv)};
+        return {t:t, com:com, dose:dose, via:via, ora:ora, note:note, prn:prn, max:maxDie, kcl:kclSol, cont:!!vel, descr:(descr&&!ora), dett:dett, conferma:/conferma\s*medica/i.test(dv)};
       }
       var G={}, pregMap={}, ordine=[];
       (sezioni||[]).forEach(function(sez){
@@ -2674,12 +2685,12 @@
           var etich=(isPara?nota:(f.com+(f.dose?' '+f.dose:''))).trim();
           if(dest==='corso'){
             var gi=gg(dIni);
-            var extra=[]; if(gi)extra.push('dal '+gi.d); if(f.prn&&f.max)extra.push(f.max); if(f.conferma)extra.push('dose da confermare'); if(nota&&!isPara)extra.push(nota);
+            var extra=[]; if(gi)extra.push('dal '+gi.d); if(f.dett)extra.push(f.dett); if(f.prn&&f.max)extra.push(f.max); if(f.conferma)extra.push('dose da confermare'); if(nota&&!isPara)extra.push(nota);
             var v=f.via||'ALTRO';
             if(isPara){ var vn=_viaDaNota(nota); if(vn) v=vn; }
             // Niente ×N dove il ritmo è già nella dose: KCl ("2 soluzioni") e
             // infusioni continue ("a 0,8ml/h").
-            (G[v]=G[v]||[]).push(etich+(f.kcl||f.cont?'':' '+frq(f.ora))+(f.prn?' a/b':'')+(extra.length?' ('+extra.join(' · ')+')':''));
+            (G[v]=G[v]||[]).push(etich+(f.kcl||f.cont||f.descr?'':' '+frq(f.ora))+(f.prn?' a/b':'')+(extra.length?' ('+extra.join(' · ')+')':''));
           } else {
             var nome=etich;
             var key=nome.toLowerCase();
