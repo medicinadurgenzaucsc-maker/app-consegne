@@ -2345,6 +2345,12 @@
             return '<div data-preg="1" data-ord="'+_escIso(String(v.ord))+'" style="padding-left:26px;text-indent:-22px;">- '+_escIso(testo)+'</div>';
           }).join('');
     }
+    // Intestazioni di via: UNICA fonte di verità, condivisa fra i parser (che
+    // le scrivono) e il render (che le riconosce). Prima il render le indovinava
+    // dall'inizio della riga e un farmaco chiamato "AEROSOL CON 1 FIALA DI
+    // TRANEX" finiva in grassetto come se fosse un'intestazione.
+    var _TERAPIA_HDR={EV:'Terapia EV',OS:'Terapia OS (orale)',SC:'Terapia SC (sottocute)',IM:'Terapia IM',Aerosol:'Aerosol',Inalatoria:'Inalatoria',Locale:'Terapia locale/topica',ALTRO:'Altra terapia'};
+    var _TERAPIA_HDR_SET={}; Object.keys(_TERAPIA_HDR).forEach(function(k){ _TERAPIA_HDR_SET[_TERAPIA_HDR[k]]=1; });
     function _terapiaInserisci(card, terapia, paz, ts, pregressi){
       var campo=card.querySelector('[data-field="NoteTerapia"]'); if(!campo) return;
       // Al primo import rimuovi il placeholder "clicca qui +" del letto vuoto
@@ -2356,7 +2362,7 @@
       if(terapia){
         var righe=terapia.split('\n').map(function(l){
           l=l.replace(/\s+$/,''); if(!l.trim()) return '';
-          var isHdr=/^(Terapia |Aerosol|Inalatoria|Altra terapia)/i.test(l.trim());
+          var isHdr=_TERAPIA_HDR_SET[l.trim()]===1;
           if(isHdr) return '<div style="font-weight:700;color:#00695c;margin-top:5px;">'+_escIso(l)+'</div>';
           l=l.replace(/^-\s*/,'');
           return '<div style="padding-left:26px;text-indent:-22px;">- '+_escIso(l)+'</div>';
@@ -2410,7 +2416,7 @@
     // nell'app → si può aggiornare senza far reinstallare il segnalibro.
     function _parseTerapiaRaw(righe){
       var VIA={ORALE:'OS',ENDOVENOSA:'EV',SOTTOCUTE:'SC',SOTTOCUTANEA:'SC',INTRAMUSCOLO:'IM',INTRAMUSCOLARE:'IM',AEROSOL:'Aerosol',AEROSOLICA:'Aerosol',INALATORIA:'Inalatoria',LOCALE:'Locale',TOPICA:'Locale'};
-      var HDR={EV:'Terapia EV',OS:'Terapia OS (orale)',SC:'Terapia SC (sottocute)',IM:'Terapia IM',Aerosol:'Aerosol',Inalatoria:'Inalatoria',Locale:'Terapia locale/topica',ALTRO:'Altra terapia'};
+      var HDR=_TERAPIA_HDR;
       var SEP=/\s+[—–-]\s+/;
       var MAN=/\s+(Eg|Accord|Teva|Mylan|Doc|Sandoz|Zentiva|Aurobindo|Krka|Ratiopharm|Hexal|Pensa|Almus|Tecnigen|Fidia|Angenerico|Sun|Aristo|Germed|Sifar)\.?$/i;
       var tc=function(s){return s?s.toLowerCase().replace(/\b[a-zà-ü]/g,function(c){return c.toUpperCase();}):s;};
@@ -2499,7 +2505,7 @@
     //  - Ordine pregressi: dal più recentemente interrotto/somministrato al più vecchio.
     function _parseTerapiaTrak(sezioni){
       var VIA={ORALE:'OS',ENDOVENOSA:'EV',SOTTOCUTE:'SC',SOTTOCUTANEA:'SC',INTRAMUSCOLO:'IM',INTRAMUSCOLARE:'IM',AEROSOL:'Aerosol',AEROSOLICA:'Aerosol',INALATORIA:'Inalatoria',LOCALE:'Locale',TOPICA:'Locale'};
-      var HDR={EV:'Terapia EV',OS:'Terapia OS (orale)',SC:'Terapia SC (sottocute)',IM:'Terapia IM',Aerosol:'Aerosol',Inalatoria:'Inalatoria',Locale:'Terapia locale/topica',ALTRO:'Altra terapia'};
+      var HDR=_TERAPIA_HDR;
       var SEP=/\s+[—–-]\s+/;
       var MAN=/\s+(Eg|Accord|Teva|Mylan|Doc|Sandoz|Zentiva|Aurobindo|Krka|Ratiopharm|Hexal|Pensa|Almus|Tecnigen|Fidia|Angenerico|Sun|Aristo|Germed|Sifar)\.?$/i;
       var tc=function(s){return s?s.toLowerCase().replace(/\b[a-zà-ü]/g,function(c){return c.toUpperCase();}):s;};
