@@ -2438,7 +2438,7 @@
         var extra=[];if(dal)extra.push('dal '+dal);if(note)extra.push(note);
         var v=via||'ALTRO';(G[v]=G[v]||[]).push(com+(dose?' '+dose:'')+' ×'+nv(ora)+(prn?' a/b':'')+(extra.length?' ('+extra.join(' · ')+')':''));
       }catch(e){}});
-      return ['EV','OS','SC','IM','Aerosol','Inalatoria','ALTRO'].filter(function(v){return G[v];}).map(function(v){return HDR[v]+'\n'+G[v].join('\n');}).join('\n\n');
+      return ['EV','OS','SC','IM','Aerosol','Inalatoria','Locale','ALTRO'].filter(function(v){return G[v];}).map(function(v){return HDR[v]+'\n'+G[v].join('\n');}).join('\n\n');
     }
 
     // Tipo di sezione TrakCare dal titolo: 'corso' | 'pregressi' | 'skip'
@@ -2592,7 +2592,7 @@
           }
         }catch(e){} });
       });
-      var corso=['EV','OS','SC','IM','Aerosol','Inalatoria','ALTRO'].filter(function(v){return G[v];}).map(function(v){return HDR[v]+'\n'+G[v].join('\n');}).join('\n\n');
+      var corso=['EV','OS','SC','IM','Aerosol','Inalatoria','Locale','ALTRO'].filter(function(v){return G[v];}).map(function(v){return HDR[v]+'\n'+G[v].join('\n');}).join('\n\n');
       var pregressi=ordine.map(function(k){return pregMap[k];}).sort(function(a,b){return b.ord.localeCompare(a.ord);});
       return {corso:corso, pregressi:pregressi};
     }
