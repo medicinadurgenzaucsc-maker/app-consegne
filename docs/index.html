@@ -2618,7 +2618,13 @@
         }
         var full=(row._r||'')+' '+t+' '+note;
         var prn=/al bisogno|\bSOS\b|\bPRN\b|se necessario|all'occorrenza/i.test(full);
-        return {t:t, com:com, dose:dose, via:via, ora:ora, note:note, prn:prn, kcl:kclSol, cont:!!vel, conferma:/conferma\s*medica/i.test(dv)};
+        // Su un farmaco al bisogno il tetto nelle 24 ore è informazione di
+        // sicurezza (insulina, paracetamolo): il Trak lo scrive fra parentesi
+        // nella riga degli orari, dove andava perso.
+        var _MX={grammi:'g',milligrammi:'mg',microgrammi:'mcg',millilitri:'ml',unita:'UI',fiale:' fiale',fiala:' fiala',gocce:' gtt'};
+        var mx=t.match(/Dose\s*massima\s*(\d[\d.,]*)\s*([A-Za-zà-ü]+)[^)]*?in\s*(\d+)\s*ore/i);
+        var maxDie=mx?('max '+_numFix(mx[1])+(_MX[mx[2].toLowerCase().replace(/à/g,'a')]||(' '+mx[2].toLowerCase()))+'/'+mx[3]+'h'):'';
+        return {t:t, com:com, dose:dose, via:via, ora:ora, note:note, prn:prn, max:maxDie, kcl:kclSol, cont:!!vel, conferma:/conferma\s*medica/i.test(dv)};
       }
       var G={}, pregMap={}, ordine=[];
       (sezioni||[]).forEach(function(sez){
@@ -2668,7 +2674,7 @@
           var etich=(isPara?nota:(f.com+(f.dose?' '+f.dose:''))).trim();
           if(dest==='corso'){
             var gi=gg(dIni);
-            var extra=[]; if(gi)extra.push('dal '+gi.d); if(f.conferma)extra.push('dose da confermare'); if(nota&&!isPara)extra.push(nota);
+            var extra=[]; if(gi)extra.push('dal '+gi.d); if(f.prn&&f.max)extra.push(f.max); if(f.conferma)extra.push('dose da confermare'); if(nota&&!isPara)extra.push(nota);
             var v=f.via||'ALTRO';
             if(isPara){ var vn=_viaDaNota(nota); if(vn) v=vn; }
             // Niente ×N dove il ritmo è già nella dose: KCl ("2 soluzioni") e
