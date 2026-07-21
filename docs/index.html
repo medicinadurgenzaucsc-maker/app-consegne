@@ -2349,7 +2349,7 @@
     // le scrivono) e il render (che le riconosce). Prima il render le indovinava
     // dall'inizio della riga e un farmaco chiamato "AEROSOL CON 1 FIALA DI
     // TRANEX" finiva in grassetto come se fosse un'intestazione.
-    var _TERAPIA_HDR={EV:'Terapia EV',OS:'Terapia OS (orale)',SC:'Terapia SC (sottocute)',IM:'Terapia IM',Aerosol:'Aerosol',Inalatoria:'Inalatoria',Locale:'Terapia locale/topica',ALTRO:'Altra terapia'};
+    var _TERAPIA_HDR={EV:'Terapia EV',OS:'Terapia OS (orale)',SC:'Terapia SC (sottocute)',IM:'Terapia IM',Aerosol:'Aerosol',Inalatoria:'Inalatoria',Transdermica:'Cerotti (transdermica)',Locale:'Terapia locale/topica',ALTRO:'Altra terapia'};
     var _TERAPIA_HDR_SET={}; Object.keys(_TERAPIA_HDR).forEach(function(k){ _TERAPIA_HDR_SET[_TERAPIA_HDR[k]]=1; });
     function _terapiaInserisci(card, terapia, paz, ts, pregressi){
       var campo=card.querySelector('[data-field="NoteTerapia"]'); if(!campo) return;
@@ -2415,7 +2415,7 @@
     // Tutta la logica di interpretazione (dosi, composti, ×N, a/b, date) vive QUI
     // nell'app → si può aggiornare senza far reinstallare il segnalibro.
     function _parseTerapiaRaw(righe){
-      var VIA={ORALE:'OS',ENDOVENOSA:'EV',SOTTOCUTE:'SC',SOTTOCUTANEA:'SC',INTRAMUSCOLO:'IM',INTRAMUSCOLARE:'IM',AEROSOL:'Aerosol',AEROSOLICA:'Aerosol',INALATORIA:'Inalatoria',LOCALE:'Locale',TOPICA:'Locale'};
+      var VIA={ORALE:'OS',ENDOVENOSA:'EV',SOTTOCUTE:'SC',SOTTOCUTANEA:'SC',INTRAMUSCOLO:'IM',INTRAMUSCOLARE:'IM',AEROSOL:'Aerosol',AEROSOLICA:'Aerosol',INALATORIA:'Inalatoria',TRANSDERMICA:'Transdermica',TRANSDERMICO:'Transdermica',LOCALE:'Locale',TOPICA:'Locale'};
       var HDR=_TERAPIA_HDR;
       var SEP=/\s+[—–-]\s+/;
       var MAN=/\s+(Eg|Accord|Teva|Mylan|Doc|Sandoz|Zentiva|Aurobindo|Krka|Ratiopharm|Hexal|Pensa|Almus|Tecnigen|Fidia|Angenerico|Sun|Aristo|Germed|Sifar)\.?$/i;
@@ -2451,7 +2451,7 @@
         // dp[0] è il VALORE della dose, mai un orario: senza questo controllo un
         // farmaco settimanale ("Ciclo 1 volta alla settimana") prendeva la dose
         // come orario e da "30000 Unita" contava 30/00/0 = tre somministrazioni.
-        dp.forEach(function(p,i){var u=p.trim().toUpperCase().split(' ')[0];if(VIA[u])via=VIA[u];if(i>0&&(/^\d/.test(p.trim())||/volt[ae]\s+(?:al|alla)\s+/i.test(p)))ora=p.trim();});
+        dp.forEach(function(p,i){var u=p.trim().toUpperCase().split(' ')[0];if(VIA[u])via=VIA[u];if(i>0&&(/^\d/.test(p.trim())||/volt[ae]\s+(?:al|alla)\s+/i.test(p)||/^ogni\s+\d+/i.test(p.trim())))ora=p.trim();});
         // Via non trovata dopo DOSE (es. infusioni continue senza "DOSE"): cercala
         // in tutta la prestazione (ENDOVENOSA/ORALE/... ovunque compaia).
         if(!via){ t.split(SEP).forEach(function(p){var u=p.trim().toUpperCase().split(' ')[0];if(VIA[u])via=VIA[u];}); }
@@ -2463,7 +2463,7 @@
         var extra=[];if(dal)extra.push('dal '+dal);if(note)extra.push(note);
         var v=via||'ALTRO';(G[v]=G[v]||[]).push(com+(dose?' '+dose:'')+' ×'+nv(ora)+(prn?' a/b':'')+(extra.length?' ('+extra.join(' · ')+')':''));
       }catch(e){}});
-      return ['EV','OS','SC','IM','Aerosol','Inalatoria','Locale','ALTRO'].filter(function(v){return G[v];}).map(function(v){return HDR[v]+'\n'+G[v].join('\n');}).join('\n\n');
+      return ['EV','OS','SC','IM','Aerosol','Inalatoria','Transdermica','Locale','ALTRO'].filter(function(v){return G[v];}).map(function(v){return HDR[v]+'\n'+G[v].join('\n');}).join('\n\n');
     }
 
     // Tipo di sezione TrakCare dal titolo: 'corso' | 'pregressi' | 'skip'
@@ -2526,7 +2526,7 @@
     //  - Pregressi raggruppati per farmaco: stesse date elencate tra parentesi.
     //  - Ordine pregressi: dal più recentemente interrotto/somministrato al più vecchio.
     function _parseTerapiaTrak(sezioni){
-      var VIA={ORALE:'OS',ENDOVENOSA:'EV',SOTTOCUTE:'SC',SOTTOCUTANEA:'SC',INTRAMUSCOLO:'IM',INTRAMUSCOLARE:'IM',AEROSOL:'Aerosol',AEROSOLICA:'Aerosol',INALATORIA:'Inalatoria',LOCALE:'Locale',TOPICA:'Locale'};
+      var VIA={ORALE:'OS',ENDOVENOSA:'EV',SOTTOCUTE:'SC',SOTTOCUTANEA:'SC',INTRAMUSCOLO:'IM',INTRAMUSCOLARE:'IM',AEROSOL:'Aerosol',AEROSOLICA:'Aerosol',INALATORIA:'Inalatoria',TRANSDERMICA:'Transdermica',TRANSDERMICO:'Transdermica',LOCALE:'Locale',TOPICA:'Locale'};
       var HDR=_TERAPIA_HDR;
       var SEP=/\s+[—–-]\s+/;
       var MAN=/\s+(Eg|Accord|Teva|Mylan|Doc|Sandoz|Zentiva|Aurobindo|Krka|Ratiopharm|Hexal|Pensa|Almus|Tecnigen|Fidia|Angenerico|Sun|Aristo|Germed|Sifar)\.?$/i;
@@ -2553,6 +2553,10 @@
       // o mensile va scritto per esteso (Binocrit 1 volta a settimana).
       var frq=function(o){
         var s=o||'';
+        // "ogni 72 Ore" (cerotti): il ×N sottintende "al giorno" e su un cerotto
+        // da cambiare ogni 3 giorni sarebbe fuorviante.
+        var og=s.match(/ogni\s+(\d+)\s*or[ae]/i); if(og) return 'ogni '+og[1]+'h';
+        og=s.match(/ogni\s+(\d+)\s*giorn[io]/i); if(og) return 'ogni '+og[1]+'gg';
         var w=s.match(/(\d+)\s*volt[ae]\s*(?:a|alla)\s*settimana/i); if(w) return '×'+w[1]+'/sett';
         if(/volt[ae]\s*(?:a|alla)\s*settimana/i.test(s)) return '×1/sett';
         var m=s.match(/(\d+)\s*volt[ae]\s*(?:a|al)\s*mese/i); if(m) return '×'+m[1]+'/mese';
@@ -2589,7 +2593,7 @@
         // dp[0] è il VALORE della dose, mai un orario: senza questo controllo un
         // farmaco settimanale ("Ciclo 1 volta alla settimana") prendeva la dose
         // come orario e da "30000 Unita" contava 30/00/0 = tre somministrazioni.
-        dp.forEach(function(p,i){var u=p.trim().toUpperCase().split(' ')[0];if(VIA[u])via=VIA[u];if(i>0&&(/^\d/.test(p.trim())||/volt[ae]\s+(?:al|alla)\s+/i.test(p)))ora=p.trim();});
+        dp.forEach(function(p,i){var u=p.trim().toUpperCase().split(' ')[0];if(VIA[u])via=VIA[u];if(i>0&&(/^\d/.test(p.trim())||/volt[ae]\s+(?:al|alla)\s+/i.test(p)||/^ogni\s+\d+/i.test(p.trim())))ora=p.trim();});
         if(!via){ t.split(SEP).forEach(function(p){var u=p.trim().toUpperCase().split(' ')[0];if(VIA[u])via=VIA[u];}); }
         var dose=dd(dv,form,comRaw);
         var cmp=t.match(/([A-ZÀ-Ü][A-Za-zÀ-ü]+)\*[^(]*\((\d[\d.,]*\s*Gramm[io]|\d[\d.,]*\s*mg)\)\s*in\s/i);
@@ -2655,7 +2659,7 @@
             // Se contiene un asterisco non è una nota ma la riga del COMPOSTO
             // ("TAZOPENIL*EV FL 4G+0,5G ... in SODIO CLORURO 0,9%"): si scarta.
             if(/\*/.test(nota)) nota='';
-            nota=nota.slice(0,70);
+            nota=nota.replace(/^[—–-]\s*/,'').slice(0,70);   // il Trak a volte la introduce con un trattino
             // Le date stanno nel tooltip del farmaco (Info), non in colonna.
             var mI=(row.Info||'').match(/Data inizio\s*(\d{2}\/\d{2}\/\d{2,4})/i); if(mI) dIni=mI[1];
             var mF=(row.Info||'').match(/Data fine\s*(\d{2}\/\d{2}\/\d{2,4})/i); if(mF) dInt=mF[1];
@@ -2734,7 +2738,7 @@
           }
         }catch(e){} });
       });
-      var corso=['EV','OS','SC','IM','Aerosol','Inalatoria','Locale','ALTRO'].filter(function(v){return G[v];}).map(function(v){return HDR[v]+'\n'+G[v].join('\n');}).join('\n\n');
+      var corso=['EV','OS','SC','IM','Aerosol','Inalatoria','Transdermica','Locale','ALTRO'].filter(function(v){return G[v];}).map(function(v){return HDR[v]+'\n'+G[v].join('\n');}).join('\n\n');
       var pregressi=ordine.map(function(k){return pregMap[k];}).sort(function(a,b){return b.ord.localeCompare(a.ord);});
       return {corso:corso, pregressi:pregressi};
     }
