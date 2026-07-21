@@ -2167,7 +2167,10 @@
                 var c1=tds[1]?norm(tds[1].innerText):'';
                 if(!c1 || c1.indexOf('—')<0) return;
                 var gg=[]; tds.forEach(function(td,k){ if(dcol[k] && norm(td.innerText)) gg.push(dcol[k]); });
-                rgh.push({Prestazione:c1,Gruppo:gr,Giorni:gg.join(' '),_r:c1});
+                var inf='';
+                [].slice.call(tds[1].querySelectorAll('[title]')).forEach(function(el){ var v=norm(el.getAttribute('title')); if(!inf && /Data inizio/i.test(v)) inf=v; });
+                var ce=tds[1].querySelector('.clsCeasedClinProfDesc');
+                rgh.push({Prestazione:c1,Gruppo:gr,Giorni:gg.join(' '),Info:inf,Stato:ce?norm(ce.textContent):'',_r:c1});
               }catch(e){}
             });
             if(rgh.length) sezioni.push({t:'Pannello terapia',righe:rgh});
@@ -2196,7 +2199,7 @@
         var paz='',cs='';
         try{var sur=document.querySelector('[id$=BANNERSurname]')||document.querySelector('[id*=BANNERSurname]:not([id*=label])'),nam=document.querySelector('[id$=BANNERName2]')||document.querySelector('[id$=BANNERName]')||document.querySelector('[id*=BANNERName]:not([id*=label]):not([id*=Surname])');paz=((sur?sur.textContent:'')+' '+(nam?nam.textContent:'')).replace(/\s+/g,' ').trim();if(/^\s*(cognome\s+nome|nome\s+cognome)\s*$/i.test(paz))paz='';}catch(e){}
         try{var reg=document.querySelector('[id$=BANNERRegistrationNo]');cs=reg?norm(reg.textContent):((document.body.innerText.match(/ID Paz[.:\s]*([0-9]{4,})/i)||[])[1]||'');}catch(e){}
-        var payload='⟦TERAPIA-TRAK⟧\n'+JSON.stringify({v:4,paz:paz,cs:cs,ts:Date.now(),sezioni:sezioni});
+        var payload='⟦TERAPIA-TRAK⟧\n'+JSON.stringify({v:5,paz:paz,cs:cs,ts:Date.now(),sezioni:sezioni});
         var nF=0; sezioni.forEach(function(s){nF+=s.righe.length;});
         var ok=function(){banner('✅ Terapia copiata'+(nF?' ('+nF+' righe)':'')+'<br><span style="font-weight:400;font-size:13px">Vai nelle Consegne e premi l\'icona «Terapia»</span>','#00695c');};
         var ko=function(err){try{var t=document.createElement('textarea');t.value=payload;t.style.cssText='position:fixed;left:-9999px;top:0';document.body.appendChild(t);t.focus();t.select();var done=document.execCommand&&document.execCommand('copy');document.body.removeChild(t);if(done){ok();return;}}catch(e){err=(err||'errore')+' / '+e.message;}banner('⚠️ Impossibile copiare in automatico'+(err?':<br><span style="font-weight:400;font-size:12px">'+err+'</span>':'')+'<br><span style="font-weight:400;font-size:12px">Seleziona il testo qui sotto, copialo (Ctrl+C) e incollalo nelle Consegne</span>','#c62828',payload);};
@@ -2204,7 +2207,7 @@
       }catch(e){alert('Errore bookmarklet: '+e.message);}
     }
     var _BM_TERAPIA = 'javascript:(' + _bmTerapiaSorgente.toString().replace(/\n\s*/g,' ') + ')()';
-    var _BM_VERSIONE = 4; // versione del segnalibro generato qui (deve combaciare con v: nel payload)
+    var _BM_VERSIONE = 5; // versione del segnalibro generato qui (deve combaciare con v: nel payload)
 
     // Vero SOLO se il testo negli appunti è un payload terapia REALE (inizia
     // col marcatore + contiene ⟦DATI⟧). NB: il CODICE del bookmarklet contiene
@@ -2534,36 +2537,49 @@
         if(tipo==='skip') return;
         ((sez&&sez.righe)||[]).forEach(function(row){ try{
           var t=(_terapiaCella(row,/prestazione/i)||row._r||'').trim(); if(!t) return;
-          if(/\bparafarmaco\b/i.test(t)) return;
           var stato=_terapiaCella(row,/stato\s*ordine/i);
           var dInt=_terapiaCella(row,/data\s*interruzione/i);
           var dIni=_terapiaCella(row,/data\s*inizio/i);
+          // Nel Pannello la nota del medico (icona gialla) segue "Continuativo"/
+          // "Per N Giorni"; il timbro "Ultima modifica" può stare prima o dopo.
+          var nota='';
+          if(tipo==='pannello'){
+            var mN=t.match(/(?:Continuativo|Per\s+\d+\s+Giorn[io])\s+(.+)$/i);
+            if(mN) nota=mN[1].replace(/Ultima modifica:\s*\d{2}\/\d{2}\/\d{2,4}\s*@\s*\d{1,2}[:.]\d{2}/ig,'').replace(/\s+/g,' ').trim().slice(0,70);
+            // Le date stanno nel tooltip del farmaco (Info), non in colonna.
+            var mI=(row.Info||'').match(/Data inizio\s*(\d{2}\/\d{2}\/\d{2,4})/i); if(mI) dIni=mI[1];
+            var mF=(row.Info||'').match(/Data fine\s*(\d{2}\/\d{2}\/\d{2,4})/i); if(mF) dInt=mF[1];
+          }
+          // Il "parafarmaco" è una voce generica: da solo non dice nulla, ma se
+          // porta una nota è LEI la prescrizione vera (es. "1 fiala Tranex per
+          // via AEREOSOLICA") e va importata.
+          var isPara=/\bparafarmaco\b/i.test(t);
+          if(isPara && !nota) return;
           if(/errore\s*(di\s*)?inserimento/i.test(dInt+' '+(row._r||''))) return;
           var dest=tipo;
           if(tipo==='pregressi' && /in\s*corso/i.test(stato)) dest='corso';
-          // Pannello Terapia: sezione unica, il discriminante è "Immediata"
-          // (somministrazione una-tantum già eseguita) -> storia, non terapia.
-          if(tipo==='pannello') dest = /\bimmediat[ao]\b/i.test(t) ? 'pregressi' : 'corso';
+          // Pannello Terapia: sezione unica. Va nella storia ciò che è chiuso —
+          // "Immediata" (una-tantum) o con stato "Completato"/sospeso.
+          if(tipo==='pannello') dest = (/\bimmediat[ao]\b/i.test(t) || (row.Stato||'')) ? 'pregressi' : 'corso';
           if(dest==='corso' && /\bimmediat[ao]\b/i.test(t)) return;
           var f=farmaco(row);
-          // Nel Pannello la nota del medico segue "Continuativo"/"Per N Giorni".
-          var nota=f.note;
-          if(!nota && tipo==='pannello'){
-            var mN=t.match(/(?:Continuativo|Per\s+\d+\s+Giorn[io])\s+(.+)$/i);
-            if(mN) nota=mN[1].replace(/Ultima modifica:.*$/i,'').trim().slice(0,70);
-          }
+          if(!nota) nota=f.note;
+          // Il parafarmaco si presenta con la sua nota al posto del nome.
+          var etich=(isPara?nota:(f.com+(f.dose?' '+f.dose:''))).trim();
           if(dest==='corso'){
             var gi=gg(dIni);
-            var extra=[]; if(gi)extra.push('dal '+gi.d); if(f.conferma)extra.push('dose da confermare'); if(nota)extra.push(nota);
+            var extra=[]; if(gi)extra.push('dal '+gi.d); if(f.conferma)extra.push('dose da confermare'); if(nota&&!isPara)extra.push(nota);
             var v=f.via||'ALTRO';
-            (G[v]=G[v]||[]).push(f.com+(f.dose?' '+f.dose:'')+' ×'+nv(f.ora)+(f.prn?' a/b':'')+(extra.length?' ('+extra.join(' · ')+')':''));
+            (G[v]=G[v]||[]).push(etich+' ×'+nv(f.ora)+(f.prn?' a/b':'')+(extra.length?' ('+extra.join(' · ')+')':''));
           } else {
-            var nome=(f.com+(f.dose?' '+f.dose:'')).trim();
+            var nome=etich;
             var key=nome.toLowerCase();
             var ets=[], ord='0';
             if(tipo==='pannello'){
-              // Le date di somministrazione sono le colonne-giorno riempite.
+              // Le date di somministrazione sono le colonne-giorno riempite;
+              // se la griglia non le mostra si ripiega su fine/inizio.
               (row.Giorni||'').split(/\s+/).forEach(function(d){ var g=gg(d); if(g){ ets.push(g.d); if(g.ord>ord) ord=g.ord; } });
+              if(!ets.length){ var gx=gg(dInt)||gg(dIni); if(gx){ ets.push(gx.d); ord=gx.ord; } }
             } else {
               var gi2=gg(dIni), gf=gg(dInt);
               var et = gf ? ('dal '+(gi2?gi2.d:'?')+' al '+gf.d) : (gi2?gi2.d:'');
