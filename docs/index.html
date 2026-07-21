@@ -2433,7 +2433,10 @@
         var vv=(form+' '+comRaw).match(/(\d[\d.,]*)\s*Millilitr/i);if(vv)return vv[1]+'ml';
         return cd(dv);
       };
-      var nv=function(o){if(!o)return 1;var vg=o.match(/(\d+)\s*volt[ae]\s*al\s*giorno/i);if(vg)return parseInt(vg[1],10)||1;if(/volta al giorno/i.test(o))return 1;var m=o.match(/\d{1,2}(?:[:.]\d{2})?/g);return m?m.length:1;};
+      // Conta SOLO l'elenco di orari iniziale ("8-12-18"): la coda contiene
+      // numeri che orari non sono ("Al bisogno (Dose massima 10 Unita in 24
+      // ore)" faceva contare 5 somministrazioni invece di 3).
+      var nv=function(o){if(!o)return 1;var vg=o.match(/(\d+)\s*volt[ae]\s*al\s*giorno/i);if(vg)return parseInt(vg[1],10)||1;if(/volta al giorno/i.test(o))return 1;var testa=(o.match(/^[\d\s:.,\-]+/)||[''])[0];var m=(testa||o).match(/\d{1,2}(?:[:.]\d{2})?/g);return m?m.length:1;};
       var G={};
       (righe||[]).forEach(function(row){try{
         var t=((row&&row.p)||'').replace(/ /g,' ').trim(); if(!t)return;
@@ -2541,7 +2544,10 @@
         var vv=(form+' '+comRaw).match(/(\d[\d.,]*)\s*Millilitr/i);if(vv)return vv[1]+'ml';
         return cd(dv);
       };
-      var nv=function(o){if(!o)return 1;var vg=o.match(/(\d+)\s*volt[ae]\s*al\s*giorno/i);if(vg)return parseInt(vg[1],10)||1;if(/volta al giorno/i.test(o))return 1;var m=o.match(/\d{1,2}(?:[:.]\d{2})?/g);return m?m.length:1;};
+      // Conta SOLO l'elenco di orari iniziale ("8-12-18"): la coda contiene
+      // numeri che orari non sono ("Al bisogno (Dose massima 10 Unita in 24
+      // ore)" faceva contare 5 somministrazioni invece di 3).
+      var nv=function(o){if(!o)return 1;var vg=o.match(/(\d+)\s*volt[ae]\s*al\s*giorno/i);if(vg)return parseInt(vg[1],10)||1;if(/volta al giorno/i.test(o))return 1;var testa=(o.match(/^[\d\s:.,\-]+/)||[''])[0];var m=(testa||o).match(/\d{1,2}(?:[:.]\d{2})?/g);return m?m.length:1;};
       var gg=function(s){var m=(s||'').match(/(\d{2})\/(\d{2})\/(\d{2,4})/);if(!m)return null;var y=(m[3].length===2?'20'+m[3]:m[3]);return {d:m[1]+'/'+m[2], ord:y+m[2]+m[1]};};
       // Frequenza: "×3" è sottinteso "al giorno", quindi un farmaco settimanale
       // o mensile va scritto per esteso (Binocrit 1 volta a settimana).
