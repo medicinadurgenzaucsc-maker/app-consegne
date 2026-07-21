@@ -2456,7 +2456,7 @@
     // "PIPERACILLINA SODICA/TAZOBACTAM SODICO" -> "Piperacillina/Tazobactam"
     function _principioPulito(p0){
       return (p0||'').split('/').map(function(x){
-        return (x||'').replace(/\(.*?\)/g,'').replace(_SALI,'').replace(/\s+/g,' ').trim();
+        return (x||'').replace(/\(.*?\)/g,'').replace(/\bPER\s+COMPOSTI\b/gi,'').replace(_SALI,'').replace(/\s+/g,' ').trim();
       }).filter(Boolean).map(function(x){
         return x.toLowerCase().replace(/\b[a-zà-ü]/g,function(c){return c.toUpperCase();});
       }).join('/');
@@ -2545,7 +2545,11 @@
           var nota='';
           if(tipo==='pannello'){
             var mN=t.match(/(?:Continuativo|Per\s+\d+\s+Giorn[io])\s+(.+)$/i);
-            if(mN) nota=mN[1].replace(/Ultima modifica:\s*\d{2}\/\d{2}\/\d{2,4}\s*@\s*\d{1,2}[:.]\d{2}/ig,'').replace(/\s+/g,' ').trim().slice(0,70);
+            if(mN) nota=mN[1].replace(/Ultima modifica:\s*\d{2}\/\d{2}\/\d{2,4}\s*@\s*\d{1,2}[:.]\d{2}/ig,'').replace(/\s+/g,' ').trim();
+            // Se contiene un asterisco non è una nota ma la riga del COMPOSTO
+            // ("TAZOPENIL*EV FL 4G+0,5G ... in SODIO CLORURO 0,9%"): si scarta.
+            if(/\*/.test(nota)) nota='';
+            nota=nota.slice(0,70);
             // Le date stanno nel tooltip del farmaco (Info), non in colonna.
             var mI=(row.Info||'').match(/Data inizio\s*(\d{2}\/\d{2}\/\d{2,4})/i); if(mI) dIni=mI[1];
             var mF=(row.Info||'').match(/Data fine\s*(\d{2}\/\d{2}\/\d{2,4})/i); if(mF) dInt=mF[1];
@@ -2576,10 +2580,22 @@
             var key=nome.toLowerCase();
             var ets=[], ord='0';
             if(tipo==='pannello'){
-              // Le date di somministrazione sono le colonne-giorno riempite;
-              // se la griglia non le mostra si ripiega su fine/inizio.
-              (row.Giorni||'').split(/\s+/).forEach(function(d){ var g=gg(d); if(g){ ets.push(g.d); if(g.ord>ord) ord=g.ord; } });
-              if(!ets.length){ var gx=gg(dInt)||gg(dIni); if(gx){ ets.push(gx.d); ord=gx.ord; } }
+              if(/\bimmediat[ao]\b/i.test(t)){
+                // Una-tantum: le colonne-giorno riempite SONO le somministrazioni.
+                (row.Giorni||'').split(/\s+/).forEach(function(d){ var g=gg(d); if(g){ ets.push(g.d); if(g.ord>ord) ord=g.ord; } });
+                if(!ets.length){ var gx=gg(dInt)||gg(dIni); if(gx){ ets.push(gx.d); ord=gx.ord; } }
+              } else {
+                // Sospeso/interrotto: la griglia mostra anche le somministrazioni
+                // ancora PROGRAMMATE, quindi non dice quando si è smesso: si usano
+                // solo le date del tooltip (spesso c'è solo quella d'inizio).
+                var gi3=gg(dIni), gf3=gg(dInt);
+                if(gi3&&gf3) ets.push('dal '+gi3.d+' al '+gf3.d);
+                else if(gi3) ets.push('dal '+gi3.d);
+                else if(gf3) ets.push('al '+gf3.d);
+                ord = gf3?gf3.ord:(gi3?gi3.ord:'0');
+              }
+              // Lo stato (sospeso/interrotto/completato) è l'informazione utile.
+              if(row.Stato) ets.push((row.Stato+'').toLowerCase());
             } else {
               var gi2=gg(dIni), gf=gg(dInt);
               var et = gf ? ('dal '+(gi2?gi2.d:'?')+' al '+gf.d) : (gi2?gi2.d:'');
