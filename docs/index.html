@@ -2323,6 +2323,19 @@
         (n.date||[]).forEach(function(d){ if(mappa[k].date.indexOf(d)<0) mappa[k].date.push(d); });
         if(String(n.ord||'0')>mappa[k].ord) mappa[k].ord=String(n.ord||'0');
       });
+      // Lo stato (sospeso/interrotto/completato) NON è una data: la fusione
+      // additiva lo accumulava a ogni import ("interrotto, interrotto il
+      // 20/07"). Ne resta uno solo, preferendo quello che porta la data.
+      var _STATO=/^(sospes|interrott|complet|eseguit)/i;
+      Object.keys(mappa).forEach(function(k){
+        var stati=[], altre=[];
+        (mappa[k].date||[]).forEach(function(d){ (_STATO.test(d)?stati:altre).push(d); });
+        if(stati.length){
+          var conData=stati.filter(function(s){return /\sil\s/.test(s);});
+          altre.push(conData.length?conData[conData.length-1]:stati[stati.length-1]);
+        }
+        mappa[k].date=altre;
+      });
       var voci=Object.keys(mappa).map(function(k){return mappa[k];})
         .sort(function(a,b){return String(b.ord).localeCompare(String(a.ord));});
       if(!voci.length){ box.innerHTML=''; return; }
