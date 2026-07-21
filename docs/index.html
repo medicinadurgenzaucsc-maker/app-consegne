@@ -2621,7 +2621,7 @@
         // Su un farmaco al bisogno il tetto nelle 24 ore è informazione di
         // sicurezza (insulina, paracetamolo): il Trak lo scrive fra parentesi
         // nella riga degli orari, dove andava perso.
-        var _MX={grammi:'g',milligrammi:'mg',microgrammi:'mcg',millilitri:'ml',unita:'UI',fiale:' fiale',fiala:' fiala',gocce:' gtt'};
+        var _MX={grammi:'g',milligrammi:'mg',microgrammi:'mcg',millilitri:'ml',unita:' UI',fiale:' fiale',fiala:' fiala',gocce:' gtt'};
         var mx=t.match(/Dose\s*massima\s*(\d[\d.,]*)\s*([A-Za-zà-ü]+)[^)]*?in\s*(\d+)\s*ore/i);
         var maxDie=mx?('max '+_numFix(mx[1])+(_MX[mx[2].toLowerCase().replace(/à/g,'a')]||(' '+mx[2].toLowerCase()))+'/'+mx[3]+'h'):'';
         return {t:t, com:com, dose:dose, via:via, ora:ora, note:note, prn:prn, max:maxDie, kcl:kclSol, cont:!!vel, conferma:/conferma\s*medica/i.test(dv)};
