@@ -177,6 +177,30 @@
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
     }
+    /* Terapia da TrakCare: riga VERDE che separa la terapia in corso da cio' che
+       sta sotto (pregressi/note). Il contenuto viaggia nell'HTML del campo. */
+    .terapia-box {
+      border-bottom: 1.5px solid #26a69a;
+      margin-bottom: 4px;
+      padding-bottom: 3px;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    /* Farmaci pregressi: riga ROSSO PASTELLO sotto lo storico. */
+    .pregressi-box {
+      border-bottom: 1.5px solid #ef9a9a;
+      margin-bottom: 4px;
+      padding-bottom: 3px;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .pregressi-head {
+      font-size: 0.72rem; font-weight: bold; color: #b71c1c;
+      text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 2px;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .note-hdr { font-weight: bold; color: #37474f; margin-bottom: 2px; }
     .alt-nome        { font-weight: bold; font-size: 0.80rem; text-align: center;
                        text-transform: uppercase; width: 100%; padding: 2px;
                        border-bottom: 1px solid #ccc; word-break: break-word; }
