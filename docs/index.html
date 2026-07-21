@@ -2540,13 +2540,14 @@
     }
     // Avviso "segnalibro vecchio": il payload porta la versione, quindi l'app sa
     // riconoscere un segnalibro obsoleto e guidare il collega a sostituirlo.
-    function _terapiaAvvisoVersione(card, ver, onProcedi){
+    function _terapiaAvvisoVersione(card, ver){
       Swal.fire({
         icon:'warning',
         title:'Segnalibro da aggiornare',
         html:'<div style="text-align:left;font-size:0.9rem;line-height:1.55;">'
           +'<p style="margin:0 0 8px;">Il segnalibro <b>«Prendi Terapia Trak»</b> che hai premuto è una <b>versione vecchia</b> (v'+ver+', l\'attuale è v'+_BM_VERSIONE+').</p>'
           +'<p style="margin:0 0 10px;">Con la versione vecchia <b>mancano dei dati</b> — per esempio i <b>farmaci pregressi</b> non vengono letti.</p>'
+          +'<p style="margin:0 0 10px;background:#ffebee;border-left:4px solid #c62828;border-radius:4px;padding:7px 10px;color:#b71c1c;"><b>Importazione bloccata.</b> Inserire dati incompleti nella scheda sarebbe peggio che non inserirli: sostituisci il segnalibro e riprova.</p>'
           +'<div style="background:#f1f8f6;border:1px solid #b2dfdb;border-radius:8px;padding:10px 12px;">'
             +'<div style="font-weight:700;margin-bottom:6px;">Come sostituirlo (30 secondi):</div>'
             +'<div style="margin:5px 0;"><b>1.</b> Nella barra dei preferiti fai <b>tasto destro</b> sul vecchio «Prendi Terapia Trak» → <b>Elimina</b>.</div>'
@@ -2554,16 +2555,14 @@
             +'<div style="text-align:center;margin:8px 0;"><a id="bmTerapiaLinkUpd" href="#" style="display:inline-block;background:#00695c;color:#fff;padding:8px 16px;border-radius:8px;text-decoration:none;font-weight:700;cursor:grab;">💊➜🗒️ Prendi Terapia Trak</a></div>'
             +'<div style="margin:5px 0;"><b>3.</b> Ripremi il segnalibro su TrakCare, poi torna qui e premi di nuovo l\'icona <b>«Terapia»</b>.</div>'
           +'</div></div>',
-        showCancelButton:true,
-        confirmButtonText:'Continua comunque',
-        cancelButtonText:'Chiudi',
+        confirmButtonText:'Ho capito',
         confirmButtonColor:'#00695c',
         width:'min(660px,95vw)',
         didOpen:function(){
           var a=document.getElementById('bmTerapiaLinkUpd');
           if(a){ a.setAttribute('href', _BM_TERAPIA); a.addEventListener('click',function(ev){ev.preventDefault();}); }
         }
-      }).then(function(r){ if(r.isConfirmed && typeof onProcedi==='function') onProcedi(); });
+      });
     }
     function _terapiaProcessa(card, clip){
       if(!_isPayloadTerapia(clip)){ _terapiaGuidaInstallazione(card); return; }
@@ -2588,14 +2587,13 @@
         ts=parseInt((clip.match(/ts=(\d+)/)||[])[1]||'0',10)||Date.now();
         terapia=(clip.split('⟦DATI⟧')[1]||'').replace(/^\s*\n?/,'').trim();
       }
+      // Segnalibro vecchio -> importazione BLOCCATA (nessun "continua comunque"):
+      // inserire dati incompleti nella scheda e' peggio che non inserirli.
+      if(ver < _BM_VERSIONE){ _terapiaAvvisoVersione(card, ver); return; }
       if(!terapia && !(pregressi && pregressi.length)){ Swal.fire({icon:'warning',title:'Terapia vuota',text:'Il segnalibro non ha trovato farmaci.'}); return; }
-      var procedi=function(){
-        var nomeEl=card.querySelector('[data-field="Nome"]');
-        var pazC=nomeEl?(nomeEl.innerText||nomeEl.textContent||'').trim():'';
-        _terapiaAnteprima(card, terapia, paz, ts, cs, pazC, pregressi);
-      };
-      if(ver < _BM_VERSIONE){ _terapiaAvvisoVersione(card, ver, procedi); return; }
-      procedi();
+      var nomeEl=card.querySelector('[data-field="Nome"]');
+      var pazC=nomeEl?(nomeEl.innerText||nomeEl.textContent||'').trim():'';
+      _terapiaAnteprima(card, terapia, paz, ts, cs, pazC, pregressi);
     }
     // Rileva il sistema operativo per mostrare la procedura giusta di
     // installazione del segnalibro (su desktop si trascina; su iPad/iPhone
