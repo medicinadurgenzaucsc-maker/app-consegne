@@ -2152,7 +2152,27 @@
         var banner=function(txt,bg,manuale){var d=document.createElement('div');d.style.cssText='position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:2147483647;background:'+bg+';color:#fff;padding:15px 22px;border-radius:12px;font:600 15px system-ui,Arial;box-shadow:0 8px 30px rgba(0,0,0,.5);max-width:92vw;text-align:center;cursor:pointer';d.innerHTML=txt+'<div style="font-weight:400;font-size:11px;margin-top:6px;opacity:.85">(tocca per chiudere)</div>';if(manuale){var ta=document.createElement('textarea');ta.value=manuale;ta.readOnly=true;ta.style.cssText='display:block;width:86vw;max-width:520px;height:64px;margin:10px auto 0;font-size:11px;border-radius:6px;padding:6px;color:#000';ta.addEventListener('click',function(ev){ev.stopPropagation();ta.focus();ta.select();});d.appendChild(ta);d.style.cursor='default';}d.addEventListener('click',function(){if(d.parentNode)d.remove();});document.body.appendChild(d);setTimeout(function(){if(d.parentNode)d.remove();},25000);};
         var norm=function(s){return (s||'').replace(/ /g,' ').replace(/\s+/g,' ').trim();};
         var sezioni=[];
+        var GNOFARM=/^(Piano infermier|PARAMETRI)/i;
         [].slice.call(document.querySelectorAll('table.componentTable')).forEach(function(t){
+          if(t.querySelector('tr.componentTableRowGroup')){
+            var dcol={},hr=t.querySelector('tr');
+            if(hr) [].slice.call(hr.querySelectorAll('td,th')).forEach(function(td,k){ var d=norm(td.innerText); if(/^\d{2}\/\d{2}\/\d{2,4}$/.test(d)) dcol[k]=d; });
+            var gr='',rgh=[];
+            [].slice.call(t.querySelectorAll('tr')).forEach(function(tr){
+              try{
+                var cl=(tr.className||'')+'';
+                if(cl.indexOf('RowGroup')>=0){ gr=norm(tr.innerText); return; }
+                if(cl.indexOf('componentTableRow')<0 || GNOFARM.test(gr)) return;
+                var tds=[].slice.call(tr.querySelectorAll('td,th'));
+                var c1=tds[1]?norm(tds[1].innerText):'';
+                if(!c1 || c1.indexOf('—')<0) return;
+                var gg=[]; tds.forEach(function(td,k){ if(dcol[k] && norm(td.innerText)) gg.push(dcol[k]); });
+                rgh.push({Prestazione:c1,Gruppo:gr,Giorni:gg.join(' '),_r:c1});
+              }catch(e){}
+            });
+            if(rgh.length) sezioni.push({t:'Pannello terapia',righe:rgh});
+            return;
+          }
           var tit='',n=t;
           for(var k=0;k<6&&n.parentElement;k++){ n=n.parentElement; var txt=norm(n.innerText); if(/^Farmaci/i.test(txt)){ tit=txt.slice(0,140); break; } }
           if(!tit) return;
@@ -2172,11 +2192,11 @@
           });
           if(righe.length) sezioni.push({t:tit,righe:righe});
         });
-        if(!sezioni.length){ banner('⚠️ Non trovo la terapia.<br><span style="font-weight:400;font-size:12px">Apri prima «Farmaci in corso» su TrakCare, poi ripremi il segnalibro.</span>','#c62828'); return; }
+        if(!sezioni.length){ banner('⚠️ Non trovo la terapia.<br><span style="font-weight:400;font-size:12px">Apri prima «Terapia → Pannello Terapia» su TrakCare, poi ripremi il segnalibro.</span>','#c62828'); return; }
         var paz='',cs='';
         try{var sur=document.querySelector('[id$=BANNERSurname]')||document.querySelector('[id*=BANNERSurname]:not([id*=label])'),nam=document.querySelector('[id$=BANNERName2]')||document.querySelector('[id$=BANNERName]')||document.querySelector('[id*=BANNERName]:not([id*=label]):not([id*=Surname])');paz=((sur?sur.textContent:'')+' '+(nam?nam.textContent:'')).replace(/\s+/g,' ').trim();if(/^\s*(cognome\s+nome|nome\s+cognome)\s*$/i.test(paz))paz='';}catch(e){}
         try{var reg=document.querySelector('[id$=BANNERRegistrationNo]');cs=reg?norm(reg.textContent):((document.body.innerText.match(/ID Paz[.:\s]*([0-9]{4,})/i)||[])[1]||'');}catch(e){}
-        var payload='⟦TERAPIA-TRAK⟧\n'+JSON.stringify({v:3,paz:paz,cs:cs,ts:Date.now(),sezioni:sezioni});
+        var payload='⟦TERAPIA-TRAK⟧\n'+JSON.stringify({v:4,paz:paz,cs:cs,ts:Date.now(),sezioni:sezioni});
         var nF=0; sezioni.forEach(function(s){nF+=s.righe.length;});
         var ok=function(){banner('✅ Terapia copiata'+(nF?' ('+nF+' righe)':'')+'<br><span style="font-weight:400;font-size:13px">Vai nelle Consegne e premi l\'icona «Terapia»</span>','#00695c');};
         var ko=function(err){try{var t=document.createElement('textarea');t.value=payload;t.style.cssText='position:fixed;left:-9999px;top:0';document.body.appendChild(t);t.focus();t.select();var done=document.execCommand&&document.execCommand('copy');document.body.removeChild(t);if(done){ok();return;}}catch(e){err=(err||'errore')+' / '+e.message;}banner('⚠️ Impossibile copiare in automatico'+(err?':<br><span style="font-weight:400;font-size:12px">'+err+'</span>':'')+'<br><span style="font-weight:400;font-size:12px">Seleziona il testo qui sotto, copialo (Ctrl+C) e incollalo nelle Consegne</span>','#c62828',payload);};
@@ -2184,7 +2204,7 @@
       }catch(e){alert('Errore bookmarklet: '+e.message);}
     }
     var _BM_TERAPIA = 'javascript:(' + _bmTerapiaSorgente.toString().replace(/\n\s*/g,' ') + ')()';
-    var _BM_VERSIONE = 3; // versione del segnalibro generato qui (deve combaciare con v: nel payload)
+    var _BM_VERSIONE = 4; // versione del segnalibro generato qui (deve combaciare con v: nel payload)
 
     // Vero SOLO se il testo negli appunti è un payload terapia REALE (inizia
     // col marcatore + contiene ⟦DATI⟧). NB: il CODICE del bookmarklet contiene
@@ -2425,6 +2445,7 @@
       if(t.indexOf('tutti gli episodi')>=0) return 'skip';
       if(/^farmaci in corso/.test(t)) return 'corso';
       if(/^farmaci pregressi/.test(t)) return 'pregressi';
+      if(/^pannello/.test(t)) return 'pannello';
       return 'skip';
     }
     // Sali/qualificatori da togliere dal principio attivo per ottenere il nome utile.
@@ -2449,6 +2470,11 @@
     }
     // PARSER COMPLETO (app-side): sezioni grezze -> { corso:'<testo>', pregressi:[{nome,date[],ord}] }
     // Regole (decise con l'utente):
+    //  - Sorgente ufficiale = "Pannello Terapia" (griglia farmaco × giorno): una
+    //    sola sezione, righe-farmaco = quelle con " — "; gruppi "Piano
+    //    infermieristico"/"PARAMETRI CLINICI" scartati dal segnalibro; le date
+    //    di somministrazione sono le colonne-giorno riempite (row.Giorni).
+    //    Le sezioni "Farmaci in corso/pregressi" restano supportate (v3).
     //  - "Parafarmaco" mai importato.
     //  - Riga con data interruzione "Errore inserimento" -> ignorata (mai somministrata).
     //  - Nei pregressi, Stato ordine "In corso" -> il farmaco va nella terapia IN CORSO.
@@ -2500,7 +2526,7 @@
         dose=_numFix(dose);
         var full=(row._r||'')+' '+t+' '+note;
         var prn=/al bisogno|\bSOS\b|\bPRN\b|se necessario|all'occorrenza/i.test(full);
-        return {t:t, com:com, dose:dose, via:via, ora:ora, note:note, prn:prn};
+        return {t:t, com:com, dose:dose, via:via, ora:ora, note:note, prn:prn, conferma:/conferma\s*medica/i.test(dv)};
       }
       var G={}, pregMap={}, ordine=[];
       (sezioni||[]).forEach(function(sez){
@@ -2515,21 +2541,37 @@
           if(/errore\s*(di\s*)?inserimento/i.test(dInt+' '+(row._r||''))) return;
           var dest=tipo;
           if(tipo==='pregressi' && /in\s*corso/i.test(stato)) dest='corso';
+          // Pannello Terapia: sezione unica, il discriminante è "Immediata"
+          // (somministrazione una-tantum già eseguita) -> storia, non terapia.
+          if(tipo==='pannello') dest = /\bimmediat[ao]\b/i.test(t) ? 'pregressi' : 'corso';
           if(dest==='corso' && /\bimmediat[ao]\b/i.test(t)) return;
           var f=farmaco(row);
+          // Nel Pannello la nota del medico segue "Continuativo"/"Per N Giorni".
+          var nota=f.note;
+          if(!nota && tipo==='pannello'){
+            var mN=t.match(/(?:Continuativo|Per\s+\d+\s+Giorn[io])\s+(.+)$/i);
+            if(mN) nota=mN[1].replace(/Ultima modifica:.*$/i,'').trim().slice(0,70);
+          }
           if(dest==='corso'){
             var gi=gg(dIni);
-            var extra=[]; if(gi)extra.push('dal '+gi.d); if(f.note)extra.push(f.note);
+            var extra=[]; if(gi)extra.push('dal '+gi.d); if(f.conferma)extra.push('dose da confermare'); if(nota)extra.push(nota);
             var v=f.via||'ALTRO';
             (G[v]=G[v]||[]).push(f.com+(f.dose?' '+f.dose:'')+' ×'+nv(f.ora)+(f.prn?' a/b':'')+(extra.length?' ('+extra.join(' · ')+')':''));
           } else {
             var nome=(f.com+(f.dose?' '+f.dose:'')).trim();
             var key=nome.toLowerCase();
-            var gi2=gg(dIni), gf=gg(dInt);
-            var et = gf ? ('dal '+(gi2?gi2.d:'?')+' al '+gf.d) : (gi2?gi2.d:'');
-            var ord = gf?gf.ord:(gi2?gi2.ord:'0');
+            var ets=[], ord='0';
+            if(tipo==='pannello'){
+              // Le date di somministrazione sono le colonne-giorno riempite.
+              (row.Giorni||'').split(/\s+/).forEach(function(d){ var g=gg(d); if(g){ ets.push(g.d); if(g.ord>ord) ord=g.ord; } });
+            } else {
+              var gi2=gg(dIni), gf=gg(dInt);
+              var et = gf ? ('dal '+(gi2?gi2.d:'?')+' al '+gf.d) : (gi2?gi2.d:'');
+              if(et) ets.push(et);
+              ord = gf?gf.ord:(gi2?gi2.ord:'0');
+            }
             if(!pregMap[key]){ pregMap[key]={nome:nome, date:[], ord:ord}; ordine.push(key); }
-            if(et && pregMap[key].date.indexOf(et)<0) pregMap[key].date.push(et);
+            ets.forEach(function(et){ if(pregMap[key].date.indexOf(et)<0) pregMap[key].date.push(et); });
             if(ord>pregMap[key].ord) pregMap[key].ord=ord;
           }
         }catch(e){} });
@@ -2618,7 +2660,7 @@
           + passo(2,'In basso tocca <b>Condividi</b> (quadrato con freccia ↑) → <b>Aggiungi ai preferiti</b> → Salva.')
           + passo(3,'Tocca l\'icona <b>Preferiti</b> (il libro aperto) → <b>Modifica</b> → apri il preferito appena creato.')
           + passo(4,'Cancella l\'indirizzo, <b>tieni premuto → Incolla</b> il codice, rinominalo «Prendi Terapia Trak», Salva.')
-          + passo(5,'Da TrakCare (Farmaci in corso): Preferiti → tocca <b>«Prendi Terapia Trak»</b>.');
+          + passo(5,'Da TrakCare (Terapia → Pannello Terapia): Preferiti → tocca <b>«Prendi Terapia Trak»</b>.');
       } else if (os === 'android') {
         istruzioni = '<b>Su Android</b> (Chrome) non si trascina — si crea un preferito (una volta sola):'
           + passo(1,'Tocca <b>«Copia codice segnalibro»</b> qui sotto.')
@@ -2635,7 +2677,7 @@
           + passo(1,'Se non vedi la <b>barra dei preferiti</b> in alto: '+scorc+'.')
           + passo(2,'<b>Solo se il bottone non è già</b> nella barra dei preferiti, <b>trascinalo</b> lassù:'
               + '<div style="text-align:center;margin:8px 0;"><a id="bmTerapiaLink" href="#" style="display:inline-block;background:#00695c;color:#fff;padding:8px 16px;border-radius:8px;text-decoration:none;font-weight:700;cursor:grab;">💊➜🗒️ Prendi Terapia Trak</a></div>')
-          + passo(3,'Su TrakCare vai in <b>Terapia → Farmaci in corso</b> e premi il pulsante nella <b>barra dei preferiti</b>.')
+          + passo(3,'Su TrakCare vai in <b>Terapia → Pannello Terapia</b> e premi il pulsante nella <b>barra dei preferiti</b>.')
           + passo(4,'Torna qui e premi di nuovo l\'icona <b>«Terapia»</b>: aggiungi i farmaci letti dall\'anteprima.');
       }
       var mostraPaste = !mostraDrag; // copia-codice + incolla servono solo dove NON si può trascinare (iOS/Android)
