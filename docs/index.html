@@ -2490,6 +2490,22 @@
       for(var k in row){ if(k!=='_r' && row.hasOwnProperty(k) && re.test(k)) return (row[k]||'').trim(); }
       return '';
     }
+    // Nel "parafarmaco" la via indicata sul Trak è una scorciatoia di
+    // inserimento (spesso ORALE per default) e non descrive la prescrizione,
+    // che sta tutta nella nota — la quale di solito dice anche COME si
+    // somministra ("AEROSOL CON 1 FIALA DI TRANEX", "1 fiala per via
+    // AEREOSOLICA"). Vale SOLO per i parafarmaci, mai per i farmaci veri.
+    function _viaDaNota(n){
+      var s=(n||'').toLowerCase();
+      if(/aereosol|aerosol/.test(s)) return 'Aerosol';
+      if(/inalator|inalazion|puff/.test(s)) return 'Inalatoria';
+      if(/topic|cutane|pomat|crem|unguent|collir|\blocale\b/.test(s)) return 'Locale';
+      if(/endovenos|\bflebo\b/.test(s)) return 'EV';
+      if(/sottocut/.test(s)) return 'SC';
+      if(/intramuscol/.test(s)) return 'IM';
+      if(/\borale\b|per os/.test(s)) return 'OS';
+      return '';
+    }
     // PARSER COMPLETO (app-side): sezioni grezze -> { corso:'<testo>', pregressi:[{nome,date[],ord}] }
     // Regole (decise con l'utente):
     //  - Sorgente ufficiale = "Pannello Terapia" (griglia farmaco × giorno): una
@@ -2611,6 +2627,7 @@
             var gi=gg(dIni);
             var extra=[]; if(gi)extra.push('dal '+gi.d); if(f.conferma)extra.push('dose da confermare'); if(nota&&!isPara)extra.push(nota);
             var v=f.via||'ALTRO';
+            if(isPara){ var vn=_viaDaNota(nota); if(vn) v=vn; }
             // Per il KCl il conteggio è già nella dose ("2 soluzioni"): niente ×N.
             (G[v]=G[v]||[]).push(etich+(f.kcl?'':' ×'+nv(f.ora))+(f.prn?' a/b':'')+(extra.length?' ('+extra.join(' · ')+')':''));
           } else {
