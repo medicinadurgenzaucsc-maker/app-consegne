@@ -2445,7 +2445,10 @@
         var np=nl.split(SEP),comRaw=(np[1]||np[0]||'').trim(),com=tc(comRaw.split('*')[0].trim()).replace(MAN,''),form=np[2]||'';
         var princ=tc((np[0]||'').trim().split(/\s+/)[0]||'');
         var dp=dl.split(SEP),dv=(dp[0]||'').trim(),via='',ora='';
-        dp.forEach(function(p){var u=p.trim().toUpperCase().split(' ')[0];if(VIA[u])via=VIA[u];if(/^\d/.test(p.trim())||/volta al giorno/i.test(p))ora=p.trim();});
+        // dp[0] è il VALORE della dose, mai un orario: senza questo controllo un
+        // farmaco settimanale ("Ciclo 1 volta alla settimana") prendeva la dose
+        // come orario e da "30000 Unita" contava 30/00/0 = tre somministrazioni.
+        dp.forEach(function(p,i){var u=p.trim().toUpperCase().split(' ')[0];if(VIA[u])via=VIA[u];if(i>0&&(/^\d/.test(p.trim())||/volt[ae]\s+(?:al|alla)\s+/i.test(p)))ora=p.trim();});
         // Via non trovata dopo DOSE (es. infusioni continue senza "DOSE"): cercala
         // in tutta la prestazione (ENDOVENOSA/ORALE/... ovunque compaia).
         if(!via){ t.split(SEP).forEach(function(p){var u=p.trim().toUpperCase().split(' ')[0];if(VIA[u])via=VIA[u];}); }
@@ -2540,6 +2543,16 @@
       };
       var nv=function(o){if(!o)return 1;var vg=o.match(/(\d+)\s*volt[ae]\s*al\s*giorno/i);if(vg)return parseInt(vg[1],10)||1;if(/volta al giorno/i.test(o))return 1;var m=o.match(/\d{1,2}(?:[:.]\d{2})?/g);return m?m.length:1;};
       var gg=function(s){var m=(s||'').match(/(\d{2})\/(\d{2})\/(\d{2,4})/);if(!m)return null;var y=(m[3].length===2?'20'+m[3]:m[3]);return {d:m[1]+'/'+m[2], ord:y+m[2]+m[1]};};
+      // Frequenza: "×3" è sottinteso "al giorno", quindi un farmaco settimanale
+      // o mensile va scritto per esteso (Binocrit 1 volta a settimana).
+      var frq=function(o){
+        var s=o||'';
+        var w=s.match(/(\d+)\s*volt[ae]\s*(?:a|alla)\s*settimana/i); if(w) return '×'+w[1]+'/sett';
+        if(/volt[ae]\s*(?:a|alla)\s*settimana/i.test(s)) return '×1/sett';
+        var m=s.match(/(\d+)\s*volt[ae]\s*(?:a|al)\s*mese/i); if(m) return '×'+m[1]+'/mese';
+        if(/volt[ae]\s*(?:a|al)\s*mese/i.test(s)) return '×1/mese';
+        return '×'+nv(s);
+      };
       function farmaco(row){
         var t=(_terapiaCella(row,/prestazione/i)||row._r||'').trim();
         var note=_terapiaCella(row,/note.*ordine/i);
@@ -2556,7 +2569,10 @@
         if(_cf && _cf===_pf){ var _pp=_principioPulito(np[0]); if(_pp) com=_pp; }
         var princ=tc((np[0]||'').trim().split(/\s+/)[0]||'');
         var dp=dl.split(SEP), dv=(dp[0]||'').trim(), via='', ora='';
-        dp.forEach(function(p){var u=p.trim().toUpperCase().split(' ')[0];if(VIA[u])via=VIA[u];if(/^\d/.test(p.trim())||/volta al giorno/i.test(p))ora=p.trim();});
+        // dp[0] è il VALORE della dose, mai un orario: senza questo controllo un
+        // farmaco settimanale ("Ciclo 1 volta alla settimana") prendeva la dose
+        // come orario e da "30000 Unita" contava 30/00/0 = tre somministrazioni.
+        dp.forEach(function(p,i){var u=p.trim().toUpperCase().split(' ')[0];if(VIA[u])via=VIA[u];if(i>0&&(/^\d/.test(p.trim())||/volt[ae]\s+(?:al|alla)\s+/i.test(p)))ora=p.trim();});
         if(!via){ t.split(SEP).forEach(function(p){var u=p.trim().toUpperCase().split(' ')[0];if(VIA[u])via=VIA[u];}); }
         var dose=dd(dv,form,comRaw);
         var cmp=t.match(/([A-ZÀ-Ü][A-Za-zÀ-ü]+)\*[^(]*\((\d[\d.,]*\s*Gramm[io]|\d[\d.,]*\s*mg)\)\s*in\s/i);
@@ -2566,9 +2582,9 @@
         // Millilitri/ora"). Presa da sola sembra una dose assurda ("Sodio
         // Cloruro 0,8ml"), e il solo volume della sacca non dice come sta
         // andando: si mostrano entrambi -> "Sodio Cloruro 50ml a 0,8ml/h".
-        var _UM={millilitr:'ml',milligramm:'mg',microgramm:'mcg',ml:'ml',mg:'mg',mcg:'mcg'};
+        var _UM={millilitr:'ml',milligramm:'mg',microgramm:'mcg',ml:'ml',mg:'mg',mcg:'mcg',meq:'mEq'};
         var _UT={ora:'h',ore:'h',h:'h',giorno:'die',die:'die',minuto:'min',min:'min'};
-        var vel=t.match(/infondere\s+a\s+(\d[\d.,]*)\s*(Millilitr[io]|Milligramm[io]|Microgramm[io]|ml|mg|mcg)\s*\/\s*(ora|ore|h|giorno|die|minuto|min)\b/i);
+        var vel=t.match(/infondere\s+a\s+(\d[\d.,]*)\s*(Millilitr[io]|Milligramm[io]|Microgramm[io]|mEq|ml|mg|mcg)\s*\/\s*(ora|ore|h|giorno|die|minuto|min)\b/i);
         if(vel){
           var _u=_UM[vel[2].toLowerCase().replace(/[io]$/,'')]||'ml';
           var _t=_UT[vel[3].toLowerCase()]||vel[3].toLowerCase();
@@ -2583,19 +2599,20 @@
         // due sacche diverse: quello che conta è il potassio, quante soluzioni
         // e in che volume -> "KCl 2 soluzioni in 500ml". Se invece la
         // correzione è espressa in milliequivalenti si usa quella.
-        var kcl=/POTASSIO\s+CLORURO/i.test(np[0]||'');
+        // I milliequivalenti si prendono SOLO dalla prescrizione ("infondere a
+        // 40 mEq/giorno", gestito sopra): il nome della confezione ne contiene
+        // uno suo ("POTASSIO CLORURO*10F 2MEQ 10ML") che non c'entra nulla.
+        var kcl=/POTASSIO\s+CLORURO/i.test(np[0]||''), kclSol=false;
         if(kcl){
-          com='KCl';
-          var meq=t.match(/(\d[\d.,]*)\s*(?:mEq|milliequivalent)/i);
-          if(meq){ dose=_numFix(meq[1])+' mEq'; }
-          else {
+          com=vel?'KCl':com.replace(/\bKcl\b/g,'KCl');
+          if(!vel){
             var ns=t.match(/(?:infondere a|DOSE)\s*(\d[\d.,]*)\s*SOLUZION/i), vol=t.match(/\((\d[\d.,]*)\s*Millilitr/i);
-            if(ns&&vol) dose=ns[1]+(parseFloat(ns[1].replace(',','.'))===1?' soluzione':' soluzioni')+' in '+_numFix(vol[1])+'ml';
+            if(ns&&vol){ dose=ns[1]+(parseFloat(ns[1].replace(',','.'))===1?' soluzione':' soluzioni')+' in '+_numFix(vol[1])+'ml'; com='KCl'; kclSol=true; }
           }
         }
         var full=(row._r||'')+' '+t+' '+note;
         var prn=/al bisogno|\bSOS\b|\bPRN\b|se necessario|all'occorrenza/i.test(full);
-        return {t:t, com:com, dose:dose, via:via, ora:ora, note:note, prn:prn, kcl:kcl, cont:!!vel, conferma:/conferma\s*medica/i.test(dv)};
+        return {t:t, com:com, dose:dose, via:via, ora:ora, note:note, prn:prn, kcl:kclSol, cont:!!vel, conferma:/conferma\s*medica/i.test(dv)};
       }
       var G={}, pregMap={}, ordine=[];
       (sezioni||[]).forEach(function(sez){
@@ -2650,7 +2667,7 @@
             if(isPara){ var vn=_viaDaNota(nota); if(vn) v=vn; }
             // Niente ×N dove il ritmo è già nella dose: KCl ("2 soluzioni") e
             // infusioni continue ("a 0,8ml/h").
-            (G[v]=G[v]||[]).push(etich+(f.kcl||f.cont?'':' ×'+nv(f.ora))+(f.prn?' a/b':'')+(extra.length?' ('+extra.join(' · ')+')':''));
+            (G[v]=G[v]||[]).push(etich+(f.kcl||f.cont?'':' '+frq(f.ora))+(f.prn?' a/b':'')+(extra.length?' ('+extra.join(' · ')+')':''));
           } else {
             var nome=etich;
             var key=nome.toLowerCase();
