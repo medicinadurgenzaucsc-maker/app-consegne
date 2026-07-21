@@ -2527,9 +2527,25 @@
         var cmp=t.match(/([A-ZÀ-Ü][A-Za-zÀ-ü]+)\*[^(]*\((\d[\d.,]*\s*Gramm[io]|\d[\d.,]*\s*mg)\)\s*in\s/i);
         if(cmp){var veic=/SODIO\s+CLORURO|GLUCOS|FISIOLOGIC|RINGER|PER\s+COMPOSTI|ELETTROLIT|ACQUA\s+PER/i.test(np[0]||'');com=veic?tc(cmp[1]).replace(MAN,''):(princ||tc(cmp[1]).replace(MAN,''));if(com==='Ampicillin')com='Ampicillina';dose=cd(cmp[2]);}
         dose=_numFix(dose);
+        // CORREZIONE DEL POTASSIO: il Trak la prescrive come sacca di sodio
+        // cloruro addizionata di KCl ("SODIO CLORURO KCL*0,9+0,3% 500", forma
+        // "1,5G+4,5G/500ML"). La massa del primo sale non dice nulla e confonde
+        // due sacche diverse: quello che conta è il potassio, quante soluzioni
+        // e in che volume -> "KCl 2 soluzioni in 500ml". Se invece la
+        // correzione è espressa in milliequivalenti si usa quella.
+        var kcl=/POTASSIO\s+CLORURO/i.test(np[0]||'');
+        if(kcl){
+          com='KCl';
+          var meq=t.match(/(\d[\d.,]*)\s*(?:mEq|milliequivalent)/i);
+          if(meq){ dose=_numFix(meq[1])+' mEq'; }
+          else {
+            var ns=t.match(/(?:infondere a|DOSE)\s*(\d[\d.,]*)\s*SOLUZION/i), vol=t.match(/\((\d[\d.,]*)\s*Millilitr/i);
+            if(ns&&vol) dose=ns[1]+(parseFloat(ns[1].replace(',','.'))===1?' soluzione':' soluzioni')+' in '+_numFix(vol[1])+'ml';
+          }
+        }
         var full=(row._r||'')+' '+t+' '+note;
         var prn=/al bisogno|\bSOS\b|\bPRN\b|se necessario|all'occorrenza/i.test(full);
-        return {t:t, com:com, dose:dose, via:via, ora:ora, note:note, prn:prn, conferma:/conferma\s*medica/i.test(dv)};
+        return {t:t, com:com, dose:dose, via:via, ora:ora, note:note, prn:prn, kcl:kcl, conferma:/conferma\s*medica/i.test(dv)};
       }
       var G={}, pregMap={}, ordine=[];
       (sezioni||[]).forEach(function(sez){
@@ -2574,7 +2590,8 @@
             var gi=gg(dIni);
             var extra=[]; if(gi)extra.push('dal '+gi.d); if(f.conferma)extra.push('dose da confermare'); if(nota&&!isPara)extra.push(nota);
             var v=f.via||'ALTRO';
-            (G[v]=G[v]||[]).push(etich+' ×'+nv(f.ora)+(f.prn?' a/b':'')+(extra.length?' ('+extra.join(' · ')+')':''));
+            // Per il KCl il conteggio è già nella dose ("2 soluzioni"): niente ×N.
+            (G[v]=G[v]||[]).push(etich+(f.kcl?'':' ×'+nv(f.ora))+(f.prn?' a/b':'')+(extra.length?' ('+extra.join(' · ')+')':''));
           } else {
             var nome=etich;
             var key=nome.toLowerCase();
