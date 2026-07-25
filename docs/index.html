@@ -2424,6 +2424,10 @@
       var stg=function(s){var m=(s||'').match(/(\d[\d.,]*)\s*(MG|MCG|G|UI|ML)\b/i);return m?m[1]+(m[2].toUpperCase()==='UI'?' UI':m[2].toLowerCase()):'';};
       var dd=function(dv,form,comRaw){
         if(/Milligramm|Millilitr|Microgramm|Gramm/i.test(dv))return cd(dv);
+        // I milliequivalenti (correzione del potassio) vanno letti dal campo
+        // DOSE: altrimenti si ripiega sul volume della fiala ("10ml") e si
+        // perde di vista quanti mEq sta ricevendo il paziente.
+        var me=dv.match(/(\d[\d.,]*)\s*mEq\b/i);if(me)return _numFix(me[1])+' mEq';
         var u=dv.match(/(\d[\d.,]*)\s*Unit/i);if(u)return u[1].replace('.',',')+' UI';
         var g=dv.match(/(\d[\d.,]*)\s*(GOCC|GTT)/i);if(g)return g[1]+' gtt';
         var ab=dv.match(/(\d[\d.,]*)\s*(mcg|mg|ml|g)\b/i);if(ab)return ab[1].replace(/\./g,',')+ab[2].toLowerCase();
@@ -2512,6 +2516,12 @@
       if(/\borale\b|per os/.test(s)) return 'OS';
       return '';
     }
+    // Un parafarmaco è terapia se la nota descrive una somministrazione: la via
+    // (sopra) oppure la forma/l'atto ("1 applicazione per narice", "1 fiala").
+    // Restano fuori gli ordini di reparto ("monitoraggio diuresi").
+    function _formaDaNota(n){
+      return /\bfial[ae]\b|applicazion|\bpuff\b|\bspray\b|cerott|suppost|bustin|compress|capsul|\bgocc|\bgtt\b|collir|pomat|\bcrem|unguent|somministr|flacon|\bnaric/i.test(n||'');
+    }
     // PARSER COMPLETO (app-side): sezioni grezze -> { corso:'<testo>', pregressi:[{nome,date[],ord}] }
     // Regole (decise con l'utente):
     //  - Sorgente ufficiale = "Pannello Terapia" (griglia farmaco × giorno): una
@@ -2535,6 +2545,10 @@
       var stg=function(s){var m=(s||'').match(/(\d[\d.,]*)\s*(MG|MCG|G|UI|ML)\b/i);return m?m[1]+(m[2].toUpperCase()==='UI'?' UI':m[2].toLowerCase()):'';};
       var dd=function(dv,form,comRaw){
         if(/Milligramm|Millilitr|Microgramm|Gramm/i.test(dv))return cd(dv);
+        // I milliequivalenti (correzione del potassio) vanno letti dal campo
+        // DOSE: altrimenti si ripiega sul volume della fiala ("10ml") e si
+        // perde di vista quanti mEq sta ricevendo il paziente.
+        var me=dv.match(/(\d[\d.,]*)\s*mEq\b/i);if(me)return _numFix(me[1])+' mEq';
         var u=dv.match(/(\d[\d.,]*)\s*Unit/i);if(u)return u[1].replace('.',',')+' UI';
         var g=dv.match(/(\d[\d.,]*)\s*(GOCC|GTT)/i);if(g)return g[1]+' gtt';
         var ab=dv.match(/(\d[\d.,]*)\s*(mcg|mg|ml|g)\b/i);if(ab)return ab[1].replace(/\./g,',')+ab[2].toLowerCase();
@@ -2647,6 +2661,12 @@
             var ns=t.match(/(?:infondere a|DOSE)\s*(\d[\d.,]*)\s*SOLUZION/i), vol=t.match(/\((\d[\d.,]*)\s*Millilitr/i);
             if(ns&&vol){ dose=ns[1]+(parseFloat(ns[1].replace(',','.'))===1?' soluzione':' soluzioni')+' in '+_numFix(vol[1])+'ml'; com='KCl'; kclSol=true; }
           }
+          // Correzione in mEq: conta quanti mEq e in quanto tempo passano.
+          if(/mEq/i.test(dose)){
+            com='KCl';
+            var _hh=t.match(/\bIn\s+(\d+)\s*hrs?\b/i);
+            if(_hh) dose+=' in '+_hh[1]+'h';
+          }
         }
         var full=(row._r||'')+' '+t+' '+note;
         var prn=/al bisogno|\bSOS\b|\bPRN\b|se necessario|all'occorrenza/i.test(full);
@@ -2692,31 +2712,31 @@
           // sempre la via. Gli ordini di reparto infilati lì dentro
           // ("monitoraggio diuresi", "ossigenoterapia in CN 2 lpm") non sono
           // terapia e vengono scartati (scelta utente).
-          if(isPara && !_viaDaNota(nota)) return;
+          if(isPara && !_viaDaNota(nota) && !_formaDaNota(nota)) return;
           // Il motivo della chiusura sta nel tooltip dello stato ("Reason: …"):
           // è lì che si riconosce l'errore di inserimento, mai somministrato.
           if(/errore\s*(di\s*)?inserimento/i.test(dInt+' '+(row._r||'')+' '+(row.StatoInfo||''))) return;
           var dest=tipo;
           if(tipo==='pregressi' && /in\s*corso/i.test(stato)) dest='corso';
-          // Pannello Terapia: sezione unica, decide lo STATO. Chiuso
-          // (completato/sospeso/interrotto) -> storia. Aperto -> terapia in
-          // corso: una dose "Immediata" ancora senza stato NON è stata
-          // somministrata, quindi è terapia da fare, non storia.
+          // Pannello Terapia: sezione unica. Va nella storia ciò che non è
+          // terapia in corso: le "Immediata" (estemporanee, scelta utente) e
+          // tutto ciò che ha uno stato di chiusura (completato/sospeso/
+          // interrotto).
           var imm=/\bimmediat[ao]\b/i.test(t);
-          if(tipo==='pannello') dest = (row.Stato||'') ? 'pregressi' : 'corso';
-          if(dest==='corso' && imm && tipo!=='pannello') return;
+          if(tipo==='pannello') dest = (imm || (row.Stato||'')) ? 'pregressi' : 'corso';
+          if(dest==='corso' && imm) return;
           var f=farmaco(row);
           if(!nota) nota=f.note;
           // Il parafarmaco si presenta con la sua nota al posto del nome.
           var etich=(isPara?nota:(f.com+(f.dose?' '+f.dose:''))).trim();
           if(dest==='corso'){
             var gi=gg(dIni);
-            var extra=[]; if(gi)extra.push('dal '+gi.d); if(f.dett)extra.push(f.dett); if(imm)extra.push('immediata, da eseguire'); if(f.prn&&f.max)extra.push(f.max); if(f.conferma)extra.push('dose da confermare'); if(nota&&!isPara)extra.push(nota);
+            var extra=[]; if(gi)extra.push('dal '+gi.d); if(f.dett)extra.push(f.dett); if(f.prn&&f.max)extra.push(f.max); if(f.conferma)extra.push('dose da confermare'); if(nota&&!isPara)extra.push(nota);
             var v=f.via||'ALTRO';
             if(isPara){ var vn=_viaDaNota(nota); if(vn) v=vn; }
             // Niente ×N dove il ritmo è già nella dose: KCl ("2 soluzioni") e
             // infusioni continue ("a 0,8ml/h").
-            (G[v]=G[v]||[]).push(etich+(f.kcl||f.cont||f.descr||imm?'':' '+frq(f.ora))+(f.prn?' a/b':'')+(extra.length?' ('+extra.join(' · ')+')':''));
+            (G[v]=G[v]||[]).push(etich+(f.kcl||f.cont||f.descr?'':' '+frq(f.ora))+(f.prn?' a/b':'')+(extra.length?' ('+extra.join(' · ')+')':''));
           } else {
             var nome=etich;
             var key=nome.toLowerCase();
