@@ -2499,6 +2499,21 @@
     function _numFix(s){
       return (s||'').replace(/(\d)\.(\d{3})(?!\d)/g,'$1$2').replace(/(\d)\.(\d{1,2})(?!\d)/g,'$1,$2');
     }
+    // Dose di un'ASSOCIAZIONE: il Trak scrive il dosaggio pieno come somma dei
+    // due principi ("4G+0,5G" per piperacillina/tazobactam) nella confezione o
+    // nella formulazione, mentre il campo DOSE per questi è spesso sbagliato
+    // (mg al posto di g). Somma i due addendi (stessa classe di unità di massa)
+    // -> "4,5g". Ritorna '' se non c'è il pattern.
+    function _doseAssociazione(s){
+      var m=(s||'').match(/(\d[\d.,]*)\s*(g|mg|mcg)\s*\+\s*(\d[\d.,]*)\s*(g|mg|mcg)\b/i);
+      if(!m) return '';
+      var f={g:1000,mg:1,mcg:0.001};
+      var tot=parseFloat(m[1].replace(',','.'))*f[m[2].toLowerCase()]
+             +parseFloat(m[3].replace(',','.'))*f[m[4].toLowerCase()];   // totale in mg
+      var val,un;
+      if(tot>=1000){ val=tot/1000; un='g'; } else if(tot>=1){ val=tot; un='mg'; } else { val=tot*1000; un='mcg'; }
+      return (Math.round(val*1000)/1000).toString().replace('.',',')+un;
+    }
     // Legge una cella della riga grezza cercando l'etichetta per regex.
     function _terapiaCella(row, re){
       if(!row) return '';
@@ -2631,8 +2646,16 @@
           // La quantità fra parentesi non è sempre una dose ("1SOLUZIONE PER
           // INFUSIONE POLV"): in quel caso vale il dosaggio della confezione.
           var _dq=/Gramm|Milligramm|Microgramm|Unit|Millilitr|\d\s*(?:mg|mcg|ml|UI)\b/i.test(cmp[3])?cd(cmp[3]):'';
-          dose=_dq||stg(cmp[2])||dose;
+          dose=_dq||_doseAssociazione(cmp[2])||stg(cmp[2])||dose;
           if(cmp[5]) dett=(dett?dett+' · ':'')+'in '+_numFix(cmp[5])+'ml';
+        }
+        // ASSOCIAZIONE (pip/tazo, amoxi/clav…): dose piena = somma dei due
+        // principi ("4G+0,5G" -> 4,5g), il campo DOSE per questi è inaffidabile.
+        // Riconosciuta dal "/" nel principio o nel nome; il potassio è escluso
+        // (ha una regola sua più sotto).
+        if((/\//.test(np[0]||'')||/\//.test(com||'')) && !/POTASSIO\s+CLORURO/i.test(np[0]||'')){
+          var _da=_doseAssociazione(comRaw+' '+form);
+          if(_da) dose=_da;
         }
         dose=_numFix(dose);
         // INFUSIONE CONTINUA: il Trak ne scrive la VELOCITÀ ("infondere a 0.8
@@ -2659,7 +2682,12 @@
         // I milliequivalenti si prendono SOLO dalla prescrizione ("infondere a
         // 40 mEq/giorno", gestito sopra): il nome della confezione ne contiene
         // uno suo ("POTASSIO CLORURO*10F 2MEQ 10ML") che non c'entra nulla.
-        var kcl=/POTASSIO\s+CLORURO/i.test(np[0]||''), kclSol=false;
+        // KCl = correzione del potassio SOLO se il principio è cloruro di
+        // potassio puro (eventualmente con sodio cloruro): "POTASSIO CLORURO",
+        // "POTASSIO CLORURO/SODIO CLORURO". Le soluzioni bilanciate (Isolyte,
+        // Ringer) contengono anch'esse potassio cloruro fra i tanti sali ma NON
+        // sono una correzione → restano col loro nome commerciale.
+        var kcl=/POTASSIO\s+CLORURO/i.test(np[0]||'') && /^(?:\s*(?:POTASSIO|SODIO)\s+CLORURO\s*\/?)+$/i.test((np[0]||'').trim()), kclSol=false;
         if(kcl){
           com=vel?'KCl':com.replace(/\bKcl\b/g,'KCl');
           if(!vel){

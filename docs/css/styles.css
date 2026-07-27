@@ -794,8 +794,8 @@ body { padding-top: 70px; background-color: #d4e6f1 !important; }
    così la terapia importata da TrakCare va meno a capo. Somma = 100%. */
 .alt-col-info    { width: 12%; background-color: #f2efe9; }
 .alt-col-diag    { width: 18%; }
-.alt-col-diaria  { width: 55%; }
-.alt-col-terapia { width: 15%; }
+.alt-col-diaria  { width: 53.5%; }
+.alt-col-terapia { width: 16.5%; }
 
 .alt-col-header {
   background-color: #e8e6e1;
