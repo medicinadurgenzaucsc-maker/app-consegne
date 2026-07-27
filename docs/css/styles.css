@@ -436,6 +436,29 @@ body { padding-top: 70px; background-color: #d4e6f1 !important; }
 }
 .rianimazione-banner svg { vertical-align: -4px; margin-right: 6px; }
 
+/* ═════ TERAPIA DA AGGIORNARE (obsoleta >24h) ═════ */
+/* Barra gialla con sveglia in cima al campo NoteTerapia, stile banner come
+   isolamento/rianimazione. È uno stato derivato dall'età del timbro
+   "Aggiornata da TrakCare": pseudo-elemento (nessun contenuto salvato),
+   attivato dalla classe .terapia-scaduta via _verificaTerapiaObsoleta. */
+[data-field="NoteTerapia"].terapia-scaduta::before {
+  content: "\23F0  Terapia da aggiornare (ultimo import da TrakCare oltre 24h fa)";
+  display: block;
+  font-size: 0.92em;
+  font-weight: 700;
+  background: #fff176;              /* giallo */
+  color: #4e3b00;
+  border-left: 5px solid #f9a825;  /* ambra */
+  border-radius: 4px;
+  padding: 3px 8px;
+  margin: 0 0 6px 0;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  user-select: none;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
 /* ═════ ICONE DI STATO accanto al numero letto ═════ */
 /* Contenitore condiviso in alto a sinistra (speculare alla matita, che
    sta a destra). Le icone isolamento e rianimazione stanno AFFIANCATE.

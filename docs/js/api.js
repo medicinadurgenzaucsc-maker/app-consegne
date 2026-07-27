@@ -832,6 +832,37 @@ function _verificaPianoCuraTutti() {
 window._verificaPianoCura = _verificaPianoCura;
 window._verificaPianoCuraTutti = _verificaPianoCuraTutti;
 
+// ── Promemoria "terapia da aggiornare" (obsoleta >24h) ──────────────────
+// Barra gialla con sveglia in cima al campo NoteTerapia quando la terapia
+// importata da TrakCare è più vecchia di 24h. L'età si legge dal data-ts
+// del .terapia-box (scritto da _terapiaInserisci al momento dell'import) —
+// che è salvato NELL'HTML del campo, quindi ogni PC la calcola in locale,
+// senza dover propagare nulla. Se non c'è il timbro (terapia scritta a
+// mano) non si sa l'età → nessuna barra. È uno stato DERIVATO: solo una
+// classe CSS (come .piano-mancante), mai contenuto salvato nel campo.
+var _TERAPIA_MAX_ETA = 24 * 60 * 60 * 1000;
+function _verificaTerapiaObsoleta(card) {
+  if (!card || !card.querySelector) return;
+  var campo = card.querySelector('[data-field="NoteTerapia"]');
+  if (!campo) return;
+  var box = campo.querySelector('.terapia-box[data-ts]');
+  var ts = box ? parseInt(box.getAttribute('data-ts'), 10) : 0;
+  var scaduta = ts && !isNaN(ts) && (Date.now() - ts > _TERAPIA_MAX_ETA);
+  campo.classList.toggle('terapia-scaduta', !!scaduta);
+}
+function _verificaTerapiaObsoletaTutti() {
+  document.querySelectorAll('#cardsContainer .patient-card[data-bed]').forEach(_verificaTerapiaObsoleta);
+}
+window._verificaTerapiaObsoleta = _verificaTerapiaObsoleta;
+window._verificaTerapiaObsoletaTutti = _verificaTerapiaObsoletaTutti;
+// Rete di sicurezza: un check globale lento (ogni 2h) fa scattare la barra
+// sulle terapie che "invecchiano" mentre la pagina resta aperta, senza
+// alcun polling continuo. Gli altri controlli sono event-driven (render,
+// apertura/uscita focus, import, delta realtime).
+setInterval(function () {
+  if (typeof _verificaTerapiaObsoletaTutti === 'function') _verificaTerapiaObsoletaTutti();
+}, 2 * 60 * 60 * 1000);
+
 // Rende editabile la terapia importata: i box .terapia-box vecchi erano
 // salvati con contenteditable="false" (non modificabili). Al render li
 // normalizziamo togliendo l'attributo → il medico può correggerli/cancellarli.
@@ -2355,7 +2386,7 @@ function _applicaDeltaUpdate(row) {
   var cards = document.querySelectorAll('.patient-card[data-bed="' + letto + '"]');
   if (!cards.length) return false; // card non esistente in DOM → full sync
 
-  cards.forEach(function(card) { _aggiornaCardDaPaziente(card, p); if (typeof _verificaPianoCura === 'function') _verificaPianoCura(card); if (typeof _normalizzaTerapiaBox === 'function') _normalizzaTerapiaBox(card); });
+  cards.forEach(function(card) { _aggiornaCardDaPaziente(card, p); if (typeof _verificaPianoCura === 'function') _verificaPianoCura(card); if (typeof _verificaTerapiaObsoleta === 'function') _verificaTerapiaObsoleta(card); if (typeof _normalizzaTerapiaBox === 'function') _normalizzaTerapiaBox(card); });
 
   // Aggiorna sync indicator (come fa _scheduleRealtimeSync alla fine)
   var ind = document.getElementById('syncIndicator');
@@ -2589,7 +2620,7 @@ function _scheduleRealtimeSync(lettoSpecifico) {
           // Applica direttamente alla card senza full re-render
           var cards = document.querySelectorAll('.patient-card[data-bed="' + lettoTarget + '"]');
           if (cards.length && typeof _aggiornaCardDaPaziente === 'function') {
-            cards.forEach(function(card) { _aggiornaCardDaPaziente(card, p); if (typeof _verificaPianoCura === 'function') _verificaPianoCura(card); if (typeof _normalizzaTerapiaBox === 'function') _normalizzaTerapiaBox(card); });
+            cards.forEach(function(card) { _aggiornaCardDaPaziente(card, p); if (typeof _verificaPianoCura === 'function') _verificaPianoCura(card); if (typeof _verificaTerapiaObsoleta === 'function') _verificaTerapiaObsoleta(card); if (typeof _normalizzaTerapiaBox === 'function') _normalizzaTerapiaBox(card); });
             if (typeof window._aggiornaBadgePrincipali === 'function') {
               try { window._aggiornaBadgePrincipali(); } catch(e) {}
             }

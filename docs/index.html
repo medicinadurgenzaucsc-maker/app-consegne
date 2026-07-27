@@ -1039,6 +1039,8 @@
       // precedente (bug: dopo aver cancellato "NOTE" non si scriveva più sotto).
       var _ntFM = card.querySelector('[data-field="NoteTerapia"]');
       if (_ntFM && typeof _terapiaNormalizzaStruttura === 'function') _terapiaNormalizzaStruttura(_ntFM);
+      // Promemoria "terapia da aggiornare": ricontrolla all'apertura della scheda.
+      if (typeof window._verificaTerapiaObsoleta === 'function') window._verificaTerapiaObsoleta(card);
 
       // Crea il badge di stato salvataggio dedicato al focus mode
       // (top-left fisso del viewport, fuori dalla card). _getBadges in
@@ -1403,6 +1405,7 @@
       document.documentElement.style.overflow = '';
       card.classList.remove('focus-mode');
       if (typeof window._verificaPianoCura === 'function') window._verificaPianoCura(card);
+      if (typeof window._verificaTerapiaObsoleta === 'function') window._verificaTerapiaObsoleta(card);
 
       if (document.activeElement && card.contains(document.activeElement)) {
         document.activeElement.blur();
@@ -2377,6 +2380,8 @@
       if(pregressi && pregressi.length) _pregressiRender(campo, pregressi);
       _terapiaNormalizzaStruttura(campo);
       if (typeof window._placeholderCheck === 'function') window._placeholderCheck(campo);
+      // Terapia appena aggiornata: il timbro è fresco, la barra gialla sparisce.
+      if (typeof window._verificaTerapiaObsoleta === 'function') window._verificaTerapiaObsoleta(card);
       var letto=card.getAttribute('data-bed');
       if(letto && typeof attivaSalvataggioRitardato==='function') attivaSalvataggioRitardato(letto, card);
     }
