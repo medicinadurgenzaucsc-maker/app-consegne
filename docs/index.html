@@ -8747,10 +8747,17 @@
         Swal.fire({ icon: 'error', title: 'Funzione Gmail non disponibile', confirmButtonColor: '#d33' });
         return;
       }
-      window._richiediGmailToken(function(ok) {
+      window._richiediGmailToken(function(ok, motivo) {
         if (!ok) {
+          var spiega =
+            motivo === 'popup_bloccato'
+              ? 'Il browser ha bloccato la finestra di Google.<br><small class="text-muted">Consenti i popup per questo sito e riprova.</small>'
+            : motivo === 'popup_chiuso'
+              ? 'La finestra di Google è stata chiusa prima di dare il permesso.'
+              : 'Non è stato possibile ottenere il permesso per inviare email.' +
+                (motivo ? '<br><small class="text-muted">' + _esc(String(motivo)) + '</small>' : '');
           Swal.fire({ icon: 'error', title: 'Accesso Gmail negato',
-            text: 'Non è stato possibile ottenere il permesso per inviare email.', confirmButtonColor: '#d33' });
+            html: spiega, confirmButtonColor: '#d33' });
           return;
         }
         var token = window._googleGmailTokenSafe;
@@ -8791,9 +8798,22 @@
             });
           })
           .catch(function(e) {
+            var msg = e.message || String(e);
+            var nota = '';
+            // Permesso scaduto o revocato da Google: butto via il token salvato,
+            // così il tentativo successivo lo richiede di nuovo invece di
+            // ripresentare per sempre lo stesso errore.
+            if (/invalid credentials|unauthorized|invalid_token|401/i.test(msg)) {
+              try {
+                var s = JSON.parse(sessionStorage.getItem('appSession') || '{}');
+                delete s.gmailToken; delete s.gmailExpiry;
+                sessionStorage.setItem('appSession', JSON.stringify(s));
+              } catch(_) {}
+              nota = '<br><br>Il permesso di Google era scaduto: riprova, te lo chiederà di nuovo.';
+            }
             Swal.fire({
               icon: 'error', title: 'Errore invio',
-              html: '<div class="text-start small">' + _esc(e.message || String(e)) + '</div>',
+              html: '<div class="text-start small">' + _esc(msg) + nota + '</div>',
               confirmButtonColor: '#d33'
             });
           });

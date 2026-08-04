@@ -2082,11 +2082,23 @@
         }
       } catch(e) {}
 
+      // Il callback deve arrivare UNA volta sola e SEMPRE: se la finestra di
+      // Google viene bloccata dal browser o chiusa a mano, senza error_callback
+      // non risponde nessuno e la schermata "Invio in corso" resta appesa.
+      var risposto = false;
+      function _rispondi(ok, motivo) {
+        if (risposto) return;
+        risposto = true;
+        callback(ok, motivo);
+      }
       _gmailTokenClient = google.accounts.oauth2.initTokenClient({
         client_id: GOOGLE_CLIENT_ID,
         scope: 'https://www.googleapis.com/auth/gmail.send',
         callback: function(resp) {
-          if (resp.error || !resp.access_token) { callback(false); return; }
+          if (resp.error || !resp.access_token) {
+            _rispondi(false, resp.error_description || resp.error || 'negato');
+            return;
+          }
           _googleGmailToken = resp.access_token;
           try {
             var sess = JSON.parse(sessionStorage.getItem('appSession') || '{}');
@@ -2094,10 +2106,20 @@
             sess.gmailExpiry = Date.now() + 3500000;
             sessionStorage.setItem('appSession', JSON.stringify(sess));
           } catch(e) {}
-          callback(true);
+          _rispondi(true);
+        },
+        error_callback: function(err) {
+          var t = (err && err.type) || '';
+          _rispondi(false,
+            t === 'popup_failed_to_open' ? 'popup_bloccato' :
+            t === 'popup_closed'         ? 'popup_chiuso'   : (t || 'errore'));
         }
       });
-      _gmailTokenClient.requestAccessToken({ prompt: 'consent' });
+      try {
+        _gmailTokenClient.requestAccessToken({ prompt: 'consent' });
+      } catch(e) {
+        _rispondi(false, 'popup_bloccato');
+      }
     }
     window._richiediGmailToken = _richiediGmailToken;
     Object.defineProperty(window, '_googleGmailTokenSafe', {
