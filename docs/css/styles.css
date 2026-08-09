@@ -1384,6 +1384,9 @@ hr.cl-separator {
   .focus-toolbar { gap: 4px; padding: 8px; }
   .focus-toolbar .tb-btn { padding: 7px 10px; font-size: 0.95rem; }
   .dim-checkbox { width: 20px; height: 20px; }
+  /* le caselline delle checklist (esami, cose da fare) sono da spuntare
+     col dito: senza un po' di spazio intorno si sbaglia il tocco */
+  .cl-check { padding: 5px 7px; font-size: 1.2em; }
 
   /* ── 6. Spazio guadagnato ai bordi ───────────────────────────── */
   #cardsContainer.container-fluid { padding-left: 8px; padding-right: 8px; }
