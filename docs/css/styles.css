@@ -1275,3 +1275,167 @@ hr.cl-separator {
   font-size: 1.0rem;
 }
 
+/* ================================================================
+   TELEFONO IN VERTICALE (fino a 767px)
+   ================================================================
+   Sul telefono le quattro colonne affiancate diventano illeggibili:
+   su un iPhone da 375px la colonna Info è larga 42px, la Terapia 57px
+   e i valori vengono scritti a 7,7px. Qui sotto la riga si SPACCHETTA
+   in blocchi impilati a piena larghezza, nell'ordine in cui servono:
+   Info → Diagnosi/Piano/Esami/Da fare → Diaria → Terapia.
+   Da 768px in su (tablet, telefono in orizzontale, PC) non cambia
+   nulla: resta il layout a colonne di sempre.
+   ================================================================ */
+@media (max-width: 767.98px) {
+
+  /* ── 1. Le colonne si impilano ──────────────────────────────── */
+  .alt-col {
+    width: 100% !important;
+    border-right: none;
+    border-bottom: 2px solid #333;
+  }
+  .alt-col-terapia,
+  .alt-col:last-of-type { border-bottom: none; }
+
+  /* ── 2. Intestazioni di blocco: allineate a sinistra e leggibili ─ */
+  .alt-col-header,
+  .alt-col-header-split {
+    font-size: 0.8rem;
+    text-align: left;
+    padding: 7px 12px;
+    letter-spacing: 0.03em;
+  }
+  .alt-col-header-split { border-top: 1px solid #b0bec5; }
+
+  /* ── 3. Blocco Info: due colonne di dati invece di una striscia ─ */
+  .alt-info-box {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 2px 12px;
+    align-items: start;
+    padding: 8px 12px 10px;
+  }
+  /* letto a sinistra, tipologia a destra, sulla stessa riga.
+     La riga è alta quanto la matita (46px) e il badge le lascia il posto:
+     altrimenti il tasto "Modifica" ci finisce sopra. */
+  .alt-info-box > .bed-number-flex {
+    grid-column: 1;
+    justify-self: start;
+    min-height: 52px;
+    align-items: center;
+  }
+  .alt-info-box > .tipo-badge-wrap {
+    grid-column: 2;
+    justify-self: end;
+    align-self: center;
+    padding-right: 58px;
+  }
+  /* isolamento / rianimazione: in alto a sinistra, con la loro fascia,
+     così non coprono il numero del letto */
+  .bed-status-icons { top: 10px; left: 12px; }
+  .bed-status-ico { width: 34px; height: 34px; }
+  .bed-status-icons .bed-status-ico:not(:only-child) { width: 30px; height: 30px; }
+  .alt-col-info:has(.bed-status-icons) .alt-info-box { padding-top: 52px; }
+  /* nome, allergie e "dimissibile" prendono tutta la larghezza */
+  .alt-info-box > .alt-nome,
+  .alt-info-box > .alt-allergie-label,
+  .alt-info-box > .alt-allergie-val,
+  .alt-info-box > .dim-row { grid-column: 1 / -1; }
+  /* anche ossigeno e vitto: sono frasi, non due cifre */
+  .alt-info-box > .alt-info-row:has([data-field="Ossigeno"]),
+  .alt-info-box > .alt-info-row:has([data-field="Vitto"]) { grid-column: 1 / -1; }
+
+  .alt-bed-number { font-size: 2.2rem; }
+  .alt-nome { font-size: 1.3rem; padding: 4px 0 6px; }
+  .alt-allergie-label { font-size: 0.9rem; margin-top: 6px; }
+  .alt-allergie-val { font-size: 1rem; padding: 3px; }
+
+  /* etichetta piccola, VALORE leggibile (era 7,7px) */
+  .alt-info-label { font-size: 0.72rem; color: #546e7a; }
+  .alt-info-val { font-size: 1rem; }
+  /* 16px sugli input: sotto questa misura iOS ingrandisce la pagina
+     appena si tocca il campo, e poi resta tutto sbilanciato */
+  .alt-col-info input.alt-info-val { font-size: 16px; }
+
+  /* ── 4. Testo clinico: corpo leggibile, campi non sterminati ──── */
+  .alt-col-diag .alt-editable,
+  .alt-col-diaria .alt-editable,
+  .alt-col-terapia .alt-editable {
+    font-size: 0.95rem;
+    line-height: 1.45;
+    padding: 10px 12px;
+  }
+  .alt-col-diag .alt-editable[data-field="Diagnosi"] { font-size: 1.05rem; }
+  .editable-area { min-height: 80px; }
+  .alt-diag-top .alt-editable,
+  .alt-diag-bottom .alt-editable,
+  .alt-diag-fourth .alt-editable,
+  .alt-diag-third .alt-editable { min-height: 56px; }
+
+  /* In sola lettura ogni campo si ferma a mezzo schermo e scorre da sé:
+     senza questo un solo paziente occupava più di due metri di scroll. */
+  .alt-row:not(.focus-mode) .alt-col-diaria .alt-editable { max-height: 50vh; }
+  .alt-row:not(.focus-mode) .alt-col-terapia .alt-editable,
+  .alt-row:not(.focus-mode) .alt-col-diag .alt-editable { max-height: 40vh; }
+  /* in modifica invece si vede tutto, la card scrolla intera */
+  .alt-row.focus-mode .alt-editable { max-height: none !important; }
+
+  /* ── 5. Si tocca con le dita, non col mouse ──────────────────── */
+  .focus-toolbar { gap: 4px; padding: 8px; }
+  .focus-toolbar .tb-btn { padding: 7px 10px; font-size: 0.95rem; }
+  .dim-checkbox { width: 20px; height: 20px; }
+
+  /* ── 6. Spazio guadagnato ai bordi ───────────────────────────── */
+  #cardsContainer.container-fluid { padding-left: 8px; padding-right: 8px; }
+  .alt-row { margin-bottom: 16px; }
+
+  /* ── 7. Finestre e riquadri che erano tagliati fuori schermo ─── */
+  /* La rubrica telefonica è un pannello fisso da 480×785: su un
+     telefono finiva mezza fuori. Qui riempie lo schermo (e non serve
+     più trascinarla). */
+  #rubricaPanel {
+    top: 62px !important;
+    left: 8px !important;
+    right: 8px !important;
+    bottom: calc(8px + env(safe-area-inset-bottom, 0px)) !important;
+    width: auto !important;
+    height: auto !important;
+  }
+  /* tabelle dentro i modali (log, archivio): si scorrono invece di
+     sfondare la finestra */
+  .modal-body { overflow-x: auto; }
+}
+
+/* ── Schermi che si toccano (telefono e tablet, in qualsiasi verso) ──
+   La matita "Modifica" compariva solo al passaggio del mouse: dove il
+   mouse non c'è restava invisibile e la scheda non si poteva aprire.
+   Qui vale per tutti i dispositivi touch, non solo per il telefono in
+   verticale. ─────────────────────────────────────────────────────── */
+@media (hover: none) {
+  .patient-card .focus-pencil-btn { display: flex !important; }
+  .patient-card.card-locked .focus-pencil-btn,
+  .alt-row.focus-mode .focus-pencil-btn,
+  .patient-card.focus-mode .focus-pencil-btn { display: none !important; }
+}
+
+/* Telefono in orizzontale e tablet: restano le colonne affiancate (lì
+   ci stanno), ma i valori della colonna Info scendevano fino a 8px.
+   Sotto i 10px non si leggono. Il telefono in verticale ha già la sua
+   misura piena nel blocco qui sopra. */
+@media (hover: none) and (min-width: 768px) {
+  .alt-info-val,
+  .alt-col-info input.alt-info-val { font-size: clamp(0.62rem, 0.95vw, 0.72rem); }
+}
+
+/* ── iPhone col notch: non finire sotto l'orologio né sotto la
+   barra di sistema (vale solo con viewport-fit=cover) ─────────── */
+@supports (padding: env(safe-area-inset-top)) {
+  .navbar.fixed-top { padding-top: calc(0.5rem + env(safe-area-inset-top, 0px)); }
+  body {
+    padding-top: calc(70px + env(safe-area-inset-top, 0px));
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+}
+
