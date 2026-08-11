@@ -179,9 +179,9 @@
         if (typeof _sbArchiviaGiornoCorrente !== 'function') return;
 
         // Refresh silenzioso del token Drive PRIMA del backup.
-        // Usa GIS prompt:'none' che e' STRETTAMENTE silenzioso: niente popup,
-        // niente UI. Se la sessione e' valida, ritorna nuovo token. Se serve
-        // interazione, ritorna errore senza mostrare nulla.
+        // Dalla v139 passa da un IFRAME NASCOSTO (davvero invisibile); il
+        // popup GIS lampeggiante resta solo come fallback se l'iframe non
+        // riesce (vedi _rinnovaTokenSilenzioso in index.html).
         // Strategia anticipata: rinnova quando mancano <15 min alla scadenza,
         // cosi' il backup orario trova sempre token valido e crea il file Drive.
         var refreshNeeded = false;

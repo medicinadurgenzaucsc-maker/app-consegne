@@ -4613,17 +4613,96 @@
     // quindi un reload entro quel tempo non richiede nuovo login.
 
     // ── REFRESH TOKEN SILENZIOSO ─────────────────────────────────────
-    // Rinnova access token Google senza popup né interazione utente.
-    // Funziona solo se l'utente ha già concesso il consent una volta
-    // (= dopo il primo login). prompt:'' indica a GIS di non mostrare UI:
-    // se Google può rinnovare → restituisce nuovo token; se serve
-    // interazione (account scollegato, consent revocato), restituisce
-    // errore 'login_required' che gestiamo senza disturbare l'utente.
-    //
-    // Tecnica: salviamo il callback principale, ne installiamo uno
-    // temporaneo per questa specifica richiesta, e ripristiniamo l'orig
-    // al termine. Lock con flag locale anti-concorrenza.
-    window._rinnovaTokenSilenzioso = function() {
+    // Rinnova l'access token Google senza interazione. ⚠️ Il token client
+    // GIS (requestAccessToken) apre SEMPRE una finestrella popup, anche
+    // con prompt:'none': si chiude da sola in una frazione di secondo ma
+    // interrompe digitazione/lettura (la "finestrella di Google che si
+    // apre e si richiude" segnalata dall'utente). Perciò il rinnovo tenta
+    // PRIMA un IFRAME NASCOSTO (flusso OAuth classico con prompt=none):
+    // se la sessione Google è valida, Google risponde con un redirect
+    // immediato alla nostra oauth-silent.html col token nel fragment —
+    // nessuna pagina renderizzata, nessuna finestra, non si vede nulla.
+    // Se l'iframe fallisce (redirect URI non ancora registrato sul client,
+    // cookie di terze parti bloccati, sessione scaduta, timeout) si passa
+    // al popup GIS di sempre: comportamento identico a prima, mai peggio.
+    // REQUISITO una-tantum (Google Cloud Console → Credenziali → client
+    // OAuth → "URI di reindirizzamento autorizzati"): aggiungere
+    //   https://medicinadurgenzaucsc-maker.github.io/app-consegne/oauth-silent.html
+    var _SILENT_SCOPE = 'email profile https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/documents';
+    var _silentPending = null; // promise condivisa: chiamate concorrenti riusano lo stesso rinnovo
+
+    function _salvaTokenRinnovato(tok, expiresInSec) {
+      window._googleAccessToken = tok;
+      window._googleDriveToken  = tok;
+      try {
+        var sess = JSON.parse(localStorage.getItem('appSession') || '{}');
+        sess.token  = tok;
+        // margine di 2 min sulla scadenza dichiarata da Google (default ~58')
+        sess.expiry = Date.now() + (expiresInSec ? Math.max(60, expiresInSec - 120) * 1000 : 3500000);
+        localStorage.setItem('appSession', JSON.stringify(sess));
+      } catch (e) {}
+    }
+
+    // Tentativo 1: iframe nascosto — zero finestre.
+    function _rinnovaTokenViaIframe() {
+      return new Promise(function(resolve, reject) {
+        if (typeof GOOGLE_CLIENT_ID === 'undefined' || GOOGLE_CLIENT_ID.startsWith('INSERISCI')) { reject(new Error('client id mancante')); return; }
+        if (!document.body) { reject(new Error('DOM non pronto')); return; }
+        // login_hint: l'account già in uso (evita l'account chooser)
+        var email = '';
+        try { email = (JSON.parse(localStorage.getItem('appSession') || '{}').email) || ''; } catch (e) {}
+        if (!email) email = _emailConsentita || '';
+        var state = 'sil_' + Math.random().toString(36).slice(2);
+        var redirect = location.origin + location.pathname.replace(/[^\/]*$/, '') + 'oauth-silent.html';
+        var url = 'https://accounts.google.com/o/oauth2/v2/auth'
+          + '?client_id='    + encodeURIComponent(GOOGLE_CLIENT_ID)
+          + '&redirect_uri=' + encodeURIComponent(redirect)
+          + '&response_type=token'
+          + '&scope='        + encodeURIComponent(_SILENT_SCOPE)
+          + '&prompt=none'
+          + '&state='        + encodeURIComponent(state)
+          + (email ? '&login_hint=' + encodeURIComponent(email) : '');
+        var ifr = document.createElement('iframe');
+        // Invisibile e inerte: fuori schermo, 1×1, niente eventi, niente layout.
+        ifr.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;border:0;visibility:hidden;pointer-events:none;';
+        ifr.setAttribute('aria-hidden', 'true');
+        ifr.setAttribute('tabindex', '-1');
+        var done = false, tmr = null;
+        function fine(err, tok, exp) {
+          if (done) return; done = true;
+          clearTimeout(tmr);
+          window.removeEventListener('message', onMsg);
+          if (ifr.parentNode) ifr.parentNode.removeChild(ifr);
+          if (err) reject(err); else resolve({ token: tok, expiresIn: exp });
+        }
+        // Se Google NON reindirizza (es. redirect URI non registrato → pagina
+        // d'errore, comunque invisibile) scatta il timeout e si va di fallback.
+        tmr = setTimeout(function() { fine(new Error('timeout iframe')); }, 8000);
+        function onMsg(ev) {
+          if (ev.origin !== location.origin) return;   // solo la nostra oauth-silent.html
+          var d = ev.data;
+          if (!d || d.tipo !== 'oauth-silent-return') return;
+          var p = {};
+          String(d.hash || '').replace(/^#/, '').split('&').forEach(function(kv) {
+            var i = kv.indexOf('=');
+            if (i > 0) { try { p[decodeURIComponent(kv.slice(0, i))] = decodeURIComponent(kv.slice(i + 1)); } catch (e) {} }
+          });
+          if (p.state !== state) return;               // risposta di un altro tentativo
+          if (p.error) { fine(new Error(p.error)); return; }
+          if (!p.access_token) { fine(new Error('nessun token nella risposta')); return; }
+          fine(null, p.access_token, parseInt(p.expires_in, 10) || 0);
+        }
+        window.addEventListener('message', onMsg);
+        document.body.appendChild(ifr);
+        ifr.src = url;
+      });
+    }
+
+    // Tentativo 2 (fallback): popup GIS — il comportamento storico.
+    // Tecnica: si salva il callback principale, se ne installa uno
+    // temporaneo per questa richiesta, e si ripristina l'originale al
+    // termine.
+    function _rinnovaTokenViaPopup() {
       return new Promise(function(resolve, reject) {
         if (!_tokenClient && !_inizializzaGoogleClient()) {
           reject(new Error('Client OAuth non pronto'));
@@ -4646,27 +4725,14 @@
             reject(new Error(resp.error));
             return;
           }
-          // Aggiorna token in memoria + localStorage (mantiene compat
-          // con la sessione persistente già esistente).
-          window._googleAccessToken = resp.access_token;
-          window._googleDriveToken  = resp.access_token;
-          try {
-            var sess = JSON.parse(localStorage.getItem('appSession') || '{}');
-            sess.token = resp.access_token;
-            sess.expiry = Date.now() + 3500000; // ~58 minuti
-            localStorage.setItem('appSession', JSON.stringify(sess));
-          } catch(e){}
+          _salvaTokenRinnovato(resp.access_token, 0);
           console.log('[Token refresh] Rinnovo silenzioso OK (validita ~58 min)');
           resolve(resp.access_token);
         };
         try {
-          // prompt:'none' è la modalità STRETTAMENTE silenziosa:
-          // - se l'utente è già autenticato e ha già consentito gli scope,
-          //   Google restituisce un nuovo token senza alcuna UI
-          // - se serve interazione, restituisce errore (es. login_required,
-          //   interaction_required) SENZA mostrare popup
-          // Diverso da prompt:'' che lasciava decidere a Google e a volte
-          // faceva lampeggiare il popup (bloccato da alcuni anti-popup).
+          // prompt:'none': nessuna UI dentro la finestra; la finestrella
+          // però GIS la apre comunque — è il motivo per cui questo è solo
+          // il fallback quando l'iframe non riesce.
           _tokenClient.requestAccessToken({
             prompt: 'none',
             hint: _emailConsentita || ''
@@ -4680,6 +4746,23 @@
           }
         }
       });
+    }
+
+    window._rinnovaTokenSilenzioso = function() {
+      if (_silentPending) return _silentPending;       // rinnovo già in corso: agganciati
+      _silentPending = _rinnovaTokenViaIframe()
+        .then(function(r) {
+          _salvaTokenRinnovato(r.token, r.expiresIn);
+          console.log('[Token refresh] Rinnovo via iframe nascosto OK (nessuna finestra, validità ~' + Math.round((r.expiresIn || 3500) / 60) + ' min)');
+          return r.token;
+        })
+        .catch(function(e1) {
+          console.log('[Token refresh] Iframe non disponibile (' + ((e1 && e1.message) || e1) + ') → fallback popup GIS');
+          return _rinnovaTokenViaPopup();
+        });
+      var _clear = function() { _silentPending = null; };
+      _silentPending.then(_clear, _clear);
+      return _silentPending;
     };
 
     // ══════════════════════════════════════════════════════════════════

@@ -6,13 +6,14 @@
 // v83: fix privacy — la cache non deve MAI contenere risposte Supabase/Google
 // (dati pazienti a riposo su disco). Il bump cancella anche le cache
 // precedenti che li contenevano (handler 'activate').
-var CACHE_NAME = 'consegne-v138';
+var CACHE_NAME = 'consegne-v139';
 
 // Asset statici da pre-cachare all'installazione
 var PRECACHE_ASSETS = [
   './',
   './index.html',
   './print.html',
+  './oauth-silent.html',
   './favicon.png',
   './favicon-16.png',
   './favicon-32.png',
