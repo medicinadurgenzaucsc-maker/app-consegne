@@ -1037,6 +1037,38 @@ function _labBottoniAggiorna(forza) {
 window._labBottoniAggiorna = _labBottoniAggiorna;
 window._labBottoniApplica  = _labBottoniApplica;
 
+// ── Laboratorio dentro il backup ───────────────────────────────────────
+// Lo snapshot va in una COLONNA A PARTE di `archivio` (archivio.lab): il
+// campo `dati` resta l'array dei pazienti di sempre, quindi i backup già
+// esistenti e tutto il codice di anteprima/ripristino non cambiano.
+function _labSnapshot() {
+  return _q(_sb.from('lab_esami').select('letto,paziente,dati,allarme_giorni,ultimo_esame,n_esami,allarme_visto'))
+    .then(function(rows) { return rows || []; })
+    .catch(function() { return []; });
+}
+// Ripristina gli esami dei SOLI letti ripristinati: chi nel backup non
+// aveva esami torna senza esami (coerente con la scheda che si ripristina).
+function _labRipristina(letti, labBackup) {
+  if (!letti || !letti.length || !labBackup) return Promise.resolve();
+  var ts = new Date().toISOString();
+  var voluti = {};
+  letti.forEach(function(l) { voluti[String(l)] = true; });
+  var righe = labBackup.filter(function(r) { return voluti[String(r.letto)]; }).map(function(r) {
+    return { letto: String(r.letto), paziente: r.paziente || '', dati: r.dati || {},
+             allarme_giorni: r.allarme_giorni, ultimo_esame: r.ultimo_esame,
+             n_esami: r.n_esami || 0, allarme_visto: r.allarme_visto, updated_at: ts };
+  });
+  var conEsami = {};
+  righe.forEach(function(r) { conEsami[r.letto] = true; });
+  var daSvuotare = letti.map(String).filter(function(l) { return !conEsami[l]; });
+  var ops = [];
+  if (righe.length)      ops.push(_q(_sb.from('lab_esami').upsert(righe)));
+  if (daSvuotare.length) ops.push(_q(_sb.from('lab_esami').delete().in('letto', daSvuotare)));
+  return Promise.all(ops)
+    .then(function() { if (typeof window._labBottoniAggiorna === 'function') window._labBottoniAggiorna(true); })
+    .catch(function() {});
+}
+
 // ── Ciclo di vita esami di laboratorio (tabella lab_esami) ─────────────
 // Gli esami seguono il PAZIENTE, non il letto: svuotare/eliminare un letto
 // li cancella, spostare un paziente li porta con sé. Best-effort: un
@@ -1301,12 +1333,13 @@ function _sbArchiviaGiornoCorrente() {
 
         // ── Step 3: esegui il backup (siamo gli unici autorizzati) ──────────
         var _pazientiBackup;
-        return _sbGetPazienti().then(function(pazienti) {
-          _pazientiBackup = pazienti;
+        return Promise.all([_sbGetPazienti(), _labSnapshot()]).then(function(res) {
+          _pazientiBackup = res[0];
           return _q(_sb.from('archivio').insert({
             data_str: dataStr,
             ts: now,
-            dati: pazienti
+            dati: res[0],
+            lab: res[1]        // esami di laboratorio: colonna a parte
           }));
         }).then(function() {
           // Log del backup DB orario riuscito: include info sul token Drive
@@ -1324,6 +1357,11 @@ function _sbArchiviaGiornoCorrente() {
           return _sbGetGiorniConservazione().then(function(giorni) {
             var limit = now - (giorni * 86400000);
             _q(_sb.from('archivio').delete().lt('ts', limit)).catch(function() {});
+            // Gli esami pesano: nei backup più vecchi di 7 giorni si azzera
+            // la colonna lab (il resto del backup resta intero, e gli esami
+            // sono comunque ancora su TrakCare).
+            _q(_sb.from('archivio').update({ lab: null })
+                 .lt('ts', now - (7 * 86400000)).not('lab', 'is', null)).catch(function() {});
             return { inCorso: false };
           });
         }).catch(function() {
@@ -1520,8 +1558,9 @@ window._gmailInviaMail              = _gmailInviaMail;
 function _sbBackupForzato() {
   var dataStr = _oggiStr();
   var now = Date.now();
-  return _sbGetPazienti().then(function(pazienti) {
-    return _q(_sb.from('archivio').insert({ data_str: dataStr, ts: now, dati: pazienti }))
+  return Promise.all([_sbGetPazienti(), _labSnapshot()]).then(function(res) {
+    var pazienti = res[0];
+    return _q(_sb.from('archivio').insert({ data_str: dataStr, ts: now, dati: pazienti, lab: res[1] }))
       .then(function() {
         return _q(_sb.from('impostazioni')
           .upsert({ chiave: 'ULTIMO_BACKUP', valore: String(now) }, { onConflict: 'chiave' }));
@@ -1534,7 +1573,7 @@ function _sbBackupForzato() {
 
 // Ripristina i dati di uno o più letti dal backup.
 // Aggiorna solo letti che esistono nel DB corrente; salta quelli rimossi.
-function _sbRipristinaLetti(pazientiDaRipristinare) {
+function _sbRipristinaLetti(pazientiDaRipristinare, labBackup) {
   return _q(_sb.from('consegne').select('letto')).then(function(rows) {
     var lettiEsistenti = {};
     (rows || []).forEach(function(r) { lettiEsistenti[r.letto] = true; });
@@ -1548,7 +1587,11 @@ function _sbRipristinaLetti(pazientiDaRipristinare) {
       row.updated_at = new Date().toISOString();
       return _q(_sb.from('consegne').update(row).eq('letto', String(p.Letto)));
     });
-    return Promise.all(promises).then(function() { return { success: true, count: validi.length }; });
+    return Promise.all(promises).then(function() {
+      // Insieme alla scheda torna anche il laboratorio di quel letto.
+      return _labRipristina(validi.map(function(p) { return String(p.Letto); }), labBackup)
+        .then(function() { return { success: true, count: validi.length }; });
+    });
   });
 }
 
@@ -1577,16 +1620,16 @@ function _sbGetDatiArchivioGiorno(key) {
   var sKey = String(key || '');
   // Supporta sia epoch ms numerico (nuovo) sia data stringa YYYY-MM-DD (legacy)
   if (/^\d{10,13}$/.test(sKey)) {
-    return _q(_sb.from('archivio').select('dati,ts').eq('ts', Number(sKey)).maybeSingle())
+    return _q(_sb.from('archivio').select('dati,ts,lab').eq('ts', Number(sKey)).maybeSingle())
       .then(function(row) {
-        return row ? { pazienti: row.dati || [], timestamp: row.ts } : null;
+        return row ? { pazienti: row.dati || [], timestamp: row.ts, lab: row.lab || null } : null;
       });
   }
   // Legacy: prende il backup più recente per quella data
-  return _q(_sb.from('archivio').select('dati,ts').eq('data_str', sKey.substring(0, 10)).order('ts', { ascending: false }))
+  return _q(_sb.from('archivio').select('dati,ts,lab').eq('data_str', sKey.substring(0, 10)).order('ts', { ascending: false }))
     .then(function(rows) {
       var row = rows && rows[0];
-      return row ? { pazienti: row.dati || [], timestamp: row.ts } : null;
+      return row ? { pazienti: row.dati || [], timestamp: row.ts, lab: row.lab || null } : null;
     });
 }
 

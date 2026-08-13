@@ -3235,13 +3235,14 @@
     }
     // Tabella dei valori sotto il grafico: stesse colonne/ordine del grafico.
     function _labTabValori(series, date){
-      var h='<table class="lab-tab lab-tab-mini"><thead><tr><th class="lab-nome">Esame</th><th>U.M.</th>';
+      var h='<table class="lab-tab lab-tab-mini"><thead><tr><th class="lab-nome">Esame</th><th>Rif.</th><th>U.M.</th>';
       date.forEach(function(d){ h+='<th class="lab-dt" title="'+_escIso(d)+'">'+_labDataHtml(d)+'</th>'; });
       h+='</tr></thead><tbody>';
       series.forEach(function(se){
         var m={}; se.punti.forEach(function(p){ m[p.d]=p; });
         h+='<tr><td class="lab-nome"><span class="lab-dot" style="background:'+se.colore+'"></span>'+_escIso(se.n)+'</td>'
-          +'<td>'+_escIso(se.um||'')+'</td>';
+          +'<td class="lab-rif">'+_escIso(se.range||'')+'</td>'
+          +'<td class="lab-um">'+_escIso(se.um||'')+'</td>';
         date.forEach(function(d){
           var p=m[d];
           h+='<td'+(p&&p.flag?' class="lab-'+p.flag+'"':'')+'>'+(p?_labTesto(p.txt):'')+'</td>';
@@ -5986,6 +5987,7 @@
     var _ripristinaGiornoSelezionato = null;
     var _riprisinaTsSelezionato = null;
     var _ripristinaPazientiBackup = [];
+    var _ripristinaLabBackup = null;   // snapshot lab_esami dello stesso backup
 
     function _mostraSpinner(msg) {
       ['ripristinaViewGiorni','ripristinaViewOrari','ripristinaViewLetti'].forEach(function(id) {
@@ -6014,6 +6016,7 @@
       _ripristinaGiornoSelezionato = null;
       _riprisinaTsSelezionato = null;
       _ripristinaPazientiBackup = [];
+      _ripristinaLabBackup = null;
     };
 
     window._apriRipristina = function() {
@@ -6125,6 +6128,8 @@
           _ripristinaPazientiBackup = (dati && dati.pazienti) ? dati.pazienti.map(function(r) {
             return typeof _fromDb === 'function' ? _fromDb(r) : r;
           }) : [];
+          // Esami di laboratorio dello stesso backup (null nei backup vecchi)
+          _ripristinaLabBackup = (dati && dati.lab) ? dati.lab : null;
           _renderRipristinaLetti();
         })
         .catch(function() {
@@ -6260,7 +6265,7 @@
           html: '<div class="d-flex align-items-center justify-content-center gap-3 py-2"><div class="spinner-border text-danger"></div><span>Aggiornamento dati...</span></div>',
           allowOutsideClick: false, showConfirmButton: false
         });
-        _sbRipristinaLetti(pazientiDaRipristinare)
+        _sbRipristinaLetti(pazientiDaRipristinare, _ripristinaLabBackup)
           .then(function(res) {
             _sincronizzaEPoiFai(function() {
               Swal.fire({
