@@ -473,6 +473,7 @@ body { padding-top: 70px; background-color: #d4e6f1 !important; }
   box-shadow: 0 12px 48px rgba(0,0,0,.45);
   width: 80vw; height: 80vh; min-width: 360px;
   display: flex; flex-direction: column; overflow: hidden;
+  position: relative;              /* ancora per la finestrella allarmi */
 }
 .lab-modal-bar {
   display: flex; align-items: center; gap: 8px;
@@ -480,9 +481,36 @@ body { padding-top: 70px; background-color: #d4e6f1 !important; }
   flex: 0 0 auto;
 }
 .lab-modal-tit {
-  font-weight: 700; color: #37474f; font-size: 1rem; flex: 1; min-width: 0;
+  font-weight: 700; color: #37474f; font-size: 1rem; flex: 0 1 auto; min-width: 0;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+.lab-bar-spazio { flex: 1 1 auto; }
+/* Tendina "Ricerca esame…": subito a destra del numero del letto */
+.lab-cerca {
+  flex: 0 1 210px; max-width: 210px; padding: 6px 8px; font-size: 0.84rem;
+  border: 1px solid #b0bec5; border-radius: 8px; background: #fff; color: #37474f; cursor: pointer;
+}
+.lab-btn-all { background: #6d4c41; color: #fff; }
+.lab-btn-all:hover { background: #795548; }
+/* Riga di gruppo raggiunta dalla ricerca: lampeggia per farsi trovare */
+@keyframes labFlash { 0%,100% { background: #e8f5e9; } 35% { background: #ffe082; } }
+.lab-tab tr.lab-flash td { animation: labFlash 1.4s ease-in-out 1; }
+
+/* ── Finestrella "Imposta allarmi" (dentro il modal: non tocca il focus) ── */
+.lab-allarmi {
+  position: absolute; top: 52px; left: 18px; z-index: 6; width: 320px;
+  background: #fff; border: 1px solid #cfd8dc; border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.3); padding: 12px 14px; font-size: 0.86rem;
+}
+.lab-all-tit { font-weight: 700; color: #37474f; margin-bottom: 8px; }
+.lab-all-tit .bi { color: #6d4c41; margin-right: 4px; }
+.lab-all-row { margin-bottom: 8px; }
+.lab-all-row input { width: 62px; padding: 4px 6px; border: 1px solid #b0bec5; border-radius: 6px; font-size: 0.95rem; text-align: center; }
+.lab-all-quick { display: flex; gap: 5px; margin-bottom: 8px; }
+.lab-all-q { border: 1px solid #b0bec5; background: #eceff1; border-radius: 6px; padding: 3px 11px; cursor: pointer; font-weight: 600; }
+.lab-all-q:hover { background: #cfd8dc; }
+.lab-all-info { color: #78909c; font-size: 0.78rem; line-height: 1.4; margin-bottom: 10px; }
+.lab-all-btns { display: flex; gap: 6px; justify-content: flex-end; }
 .lab-modal-tit .bi { color: #c62828; margin-right: 4px; }
 .lab-btn { border: none; border-radius: 8px; padding: 7px 13px; font-weight: 600; cursor: pointer; white-space: nowrap; }
 .lab-btn .bi { margin-right: 4px; }
@@ -564,13 +592,26 @@ body { padding-top: 70px; background-color: #d4e6f1 !important; }
 
 /* ── Alambicco nel campo Esami Colturali (apre il Laboratorio) ── */
 .lab-apri-btn {
-  display: block; width: 100%; margin: 1px 0 3px; padding: 1px 0;
+  display: flex; align-items: center; justify-content: flex-start; gap: 7px;
+  width: 100%; margin: 1px 0 3px; padding: 2px 8px;
   background: #f1f8f6; border: 1px solid #b2dfdb; border-radius: 5px;
-  cursor: pointer; line-height: 0; text-align: center;
+  cursor: pointer; text-align: left; line-height: 1.1;
 }
 .lab-apri-btn:hover { background: #e0f2f1; border-color: #26a69a; }
+.lab-apri-btn svg { flex: 0 0 auto; }
+.lab-apri-txt { font-weight: 700; font-size: 0.82em; color: #00695c; letter-spacing: .01em; }
 .patient-card:not(.focus-mode) .lab-apri-btn { cursor: default; opacity: .8; }
-@media print { .lab-apri-btn { display: none !important; } }
+/* Promemoria "richiedi esami": sta SOTTO il bottone, mai da solo. */
+.lab-remind {
+  display: block; margin: 0 0 3px; padding: 2px 8px;
+  background: #fff176; color: #4e3b00; border-left: 4px solid #f9a825;
+  border-radius: 4px; font-size: 0.78em; font-weight: 700; line-height: 1.25;
+  user-select: none;
+}
+.lab-remind-off { background: #ffcdd2; color: #7f1d1d; border-left-color: #c62828; }
+/* Sotto bottone e promemoria deve SEMPRE restare dove scrivere a mano. */
+.alt-diag-fourth .alt-editable { min-height: 2.2em; }
+@media print { .lab-apri-btn, .lab-remind { display: none !important; } }
 
 /* ═════ ICONE DI STATO accanto al numero letto ═════ */
 /* Contenitore condiviso in alto a sinistra (speculare alla matita, che

@@ -3115,6 +3115,29 @@
     // utente), resta solo il colore.
     function _labFlag(v){ return /\bH\s*$/.test(v||'') ? 'alto' : (/\bL\s*$/.test(v||'') ? 'basso' : ''); }
     function _labPulito(v){ return String(v==null?'':v).replace(/\s*[HL]\s*$/,'').trim(); }
+    // Esiti a parole ("Nei limiti della norma", "campione insufficiente"):
+    // vanno a capo per tenere le colonne strette. Regola dell'utente: una
+    // parola per riga, salvo quando la parola è più corta di 9 lettere e
+    // insieme alla successiva non supera le 13 — con la riga che comunque non
+    // supera le 16 lettere, altrimenti non andrebbe mai a capo.
+    //   "Nei limiti della norma"  -> "Nei limiti della" + "norma"
+    //   "campione insufficiente"  -> "campione" + "insufficiente"
+    function _labTesto(v){
+      var t=String(v==null?'':v).trim();
+      if(!t) return '';
+      if(/^[-+]?[\d.,]+$/.test(t)) return _escIso(t);      // numeri: mai spezzati
+      var w=t.split(/\s+/);
+      if(w.length<2) return _escIso(t);
+      var righe=[], cur=[w[0]], len=w[0].length;
+      for(var i=1;i<w.length;i++){
+        var ult=cur[cur.length-1], nx=w[i];
+        if(ult.length<9 && (ult.length+nx.length)<=13 && (len+nx.length)<=16){
+          cur.push(nx); len+=nx.length;
+        } else { righe.push(cur.join(' ')); cur=[nx]; len=nx.length; }
+      }
+      righe.push(cur.join(' '));
+      return righe.map(function(r){ return _escIso(r); }).join('<br>');
+    }
     function _labSerie(e){
       return Object.keys((e&&e.v)||{})
         .sort(function(a,b){ return _labDataKey(a).localeCompare(_labDataKey(b)); })
@@ -3219,7 +3242,7 @@
           +'<td>'+_escIso(se.um||'')+'</td>';
         date.forEach(function(d){
           var p=m[d];
-          h+='<td'+(p&&p.flag?' class="lab-'+p.flag+'"':'')+'>'+(p?_escIso(p.txt):'')+'</td>';
+          h+='<td'+(p&&p.flag?' class="lab-'+p.flag+'"':'')+'>'+(p?_labTesto(p.txt):'')+'</td>';
         });
         h+='</tr>';
       });
@@ -3315,12 +3338,22 @@
         date.forEach(function(d){
           var raw=(e.v||{})[d]||'';
           var f=_labFlag(raw);
-          h+='<td'+(f?' class="lab-'+f+'"':'')+'>'+_escIso(_labPulito(raw))+'</td>';
+          h+='<td'+(f?' class="lab-'+f+'"':'')+'>'+_labTesto(_labPulito(raw))+'</td>';
         });
         h+='</tr>';
       });
       h+='</tbody></table>';
       body.innerHTML='<div class="lab-tabwrap">'+h+'</div>';
+      // Tendina "Ricerca esame…": titoli dei gruppi in ordine alfabetico.
+      var sel=ui.ov && ui.ov.querySelector('#labCerca');
+      if(sel){
+        var gruppi=[];
+        ord.forEach(function(k){ var g=((doc.esami[k]||{}).g||'').trim(); if(g && gruppi.indexOf(g)<0) gruppi.push(g); });
+        gruppi.sort(function(a,b){ return a.localeCompare(b,'it'); });
+        sel.innerHTML='<option value="">🔎 Ricerca esame…</option>'
+          + gruppi.map(function(g){ return '<option value="'+_escIso(g)+'">'+_escIso(g)+'</option>'; }).join('');
+        sel.style.display = gruppi.length ? '' : 'none';
+      }
       _labBarra(ui);
     }
     // ── Persistenza (tabella lab_esami, on-demand) ─────────────────────
@@ -3328,9 +3361,33 @@
       return _sb.from('lab_esami').select('dati,paziente').eq('letto', String(letto)).maybeSingle()
         .then(function(res){ if(res.error) throw new Error(res.error.message); return res.data||null; });
     }
+    // Riepiloghi salvati INSIEME al documento: sono quelli che permettono alla
+    // scheda di disegnare bottone e promemoria senza scaricare gli esami.
+    function _labStat(doc){
+      var ks=(doc&&doc.ord)||[], max='';
+      ks.forEach(function(k){
+        var e=doc.esami[k]; if(!e) return;
+        Object.keys(e.v||{}).forEach(function(d){ var c=_labDataKey(d); if(c>max) max=c; });
+      });
+      return { n:ks.length, ultimo:(max&&max.length>=8) ? (max.slice(0,4)+'-'+max.slice(4,6)+'-'+max.slice(6,8)) : null };
+    }
     function _labSalva(letto, doc, paz){
-      return _sb.from('lab_esami').upsert({ letto:String(letto), dati:doc, paziente:paz||'', updated_at:new Date().toISOString() })
+      var st=_labStat(doc);
+      return _sb.from('lab_esami').upsert({ letto:String(letto), dati:doc, paziente:paz||'',
+                n_esami:st.n, ultimo_esame:st.ultimo, updated_at:new Date().toISOString() })
         .then(function(res){ if(res.error) throw new Error(res.error.message); return true; });
+    }
+    // Allarme del letto: giorni=null torna al predefinito della tipologia.
+    function _labSalvaAllarme(ui, giorni){
+      return _sb.from('lab_esami').upsert({ letto:String(ui.letto), allarme_giorni:giorni })
+        .then(function(res){
+          if(res.error) throw new Error(res.error.message);
+          _labAvviso(ui, giorni==null
+            ? '⏰ Allarme riportato al predefinito del letto.'
+            : '⏰ Allarme impostato: esami da richiedere ogni <b>'+giorni+'</b> '+(giorni===1?'giorno':'giorni')+'.','ok');
+          if(typeof window._labBottoniAggiorna==='function') window._labBottoniAggiorna(true);
+        })
+        .catch(function(e){ _labAvviso(ui,'Errore nel salvataggio dell\'allarme: '+_escIso((e&&e.message)||e),'err'); });
     }
 
     function _labAvviso(ui, html, tipo){
@@ -3440,6 +3497,9 @@
       ov.innerHTML='<div class="lab-modal" role="dialog" aria-label="Esami di laboratorio">'
         +'<div class="lab-modal-bar">'
         +'<span class="lab-modal-tit"><i class="bi bi-droplet-half"></i> Laboratorio'+(pazC?' — '+_escIso(pazC):'')+(letto?' <span style="font-weight:400;color:#78909c">(letto '+_escIso(letto)+')</span>':'')+'</span>'
+        +'<select class="lab-cerca" id="labCerca" title="Vai a un esame"><option value="">🔎 Ricerca esame…</option></select>'
+        +'<button type="button" class="lab-btn lab-btn-all" id="labBtnAllarmi" title="Ogni quanto richiedere gli esami"><i class="bi bi-alarm"></i> Imposta allarmi</button>'
+        +'<span class="lab-bar-spazio"></span>'
         +'<button type="button" class="lab-btn lab-btn-graf" id="labBtnGraf" style="display:none"><i class="bi bi-graph-up"></i> Visualizza grafico</button>'
         +'<button type="button" class="lab-btn lab-btn-multi" id="labBtnMulti"><i class="bi bi-check2-square"></i> Selezione multipla</button>'
         +'<button type="button" class="lab-btn lab-btn-agg" id="labBtnAggiorna"><i class="bi bi-arrow-repeat"></i> Aggiorna Esami</button>'
@@ -3447,6 +3507,18 @@
         +'</div>'
         +'<div id="labAvvisi"></div>'
         +'<div class="lab-modal-body" id="labBody"><div class="lab-vuoto">Carico…</div></div>'
+        // Finestrella allarmi: vive DENTRO il modal, così è già coperta dalla
+        // guardia che protegge il focus mode (nessun overlay nuovo nel body).
+        +'<div class="lab-allarmi" id="labAllarmi" style="display:none">'
+        +'<div class="lab-all-tit"><i class="bi bi-alarm"></i> Ogni quanto richiedere gli esami</div>'
+        +'<div class="lab-all-row">Richiedili ogni <input type="number" id="labAllGiorni" min="1" max="60" step="1"> giorni</div>'
+        +'<div class="lab-all-quick">'+[1,2,3,5,7].map(function(n){ return '<button type="button" class="lab-all-q" data-n="'+n+'">'+n+'</button>'; }).join('')+'</div>'
+        +'<div class="lab-all-info" id="labAllInfo"></div>'
+        +'<div class="lab-all-btns">'
+        +'<button type="button" class="lab-btn lab-btn-mini lab-btn-no" id="labAllAnnulla">Annulla</button>'
+        +'<button type="button" class="lab-btn lab-btn-mini lab-btn-no" id="labAllDefault">Usa predefinito</button>'
+        +'<button type="button" class="lab-btn lab-btn-mini lab-btn-si" id="labAllSalva">Salva</button>'
+        +'</div></div>'
         +'</div>';
       // Il focus mode non deve accorgersi di NULLA: ogni evento muore qui
       // (i suoi handler globali non vedono né click né tasti del modal).
@@ -3480,6 +3552,52 @@
           [].slice.call(ui.body.querySelectorAll('tr.lab-sel')).forEach(function(r){ r.classList.remove('lab-sel'); });
         }
         _labBarra(ui);
+      });
+      // Tendina "Ricerca esame…": porta al titolo verde scelto.
+      ov.querySelector('#labCerca').addEventListener('change', function(){
+        var g=this.value; this.value='';
+        if(!g) return;
+        if(!ui.body.querySelector('.lab-tab-main')) _labRender(ui, ui.doc);
+        var tr=null;
+        [].slice.call(ui.body.querySelectorAll('tr.lab-gruppo')).forEach(function(r){
+          if(!tr && (r.getAttribute('data-g')||'')===g) tr=r;
+        });
+        if(!tr) return;
+        var rb=ui.body.getBoundingClientRect(), rt=tr.getBoundingClientRect();
+        ui.body.scrollTop += (rt.top-rb.top)-36;   // -36: sotto l'intestazione sticky
+        tr.classList.add('lab-flash');
+        setTimeout(function(){ tr.classList.remove('lab-flash'); }, 1500);
+      });
+      // Finestrella allarmi
+      var pan=ov.querySelector('#labAllarmi');
+      var inp=ov.querySelector('#labAllGiorni');
+      var tipo=(card.getAttribute('data-tipologia')||'').toUpperCase();
+      var predef=_labGiorniDefault(tipo);
+      function apriPannello(){
+        var info=(window._labInfoLetti||{})[letto]||{};
+        inp.value = info.a || predef;
+        ov.querySelector('#labAllInfo').innerHTML =
+          'Predefinito per questo letto: <b>'+predef+' '+(predef===1?'giorno':'giorni')+'</b>'
+          + (tipo?' ('+_escIso(tipo)+')':'')
+          + (info.u?'<br>Ultimo prelievo: <b>'+_escIso(info.u.split('-').reverse().join('/'))+'</b>':'<br>Nessun prelievo registrato: importa gli esami per attivare il promemoria.');
+        pan.style.display='block';
+        inp.focus(); inp.select();
+      }
+      function chiudiPannello(){ pan.style.display='none'; }
+      ov.querySelector('#labBtnAllarmi').addEventListener('click', function(){
+        (pan.style.display==='block') ? chiudiPannello() : apriPannello();
+      });
+      ov.querySelector('#labAllAnnulla').addEventListener('click', chiudiPannello);
+      [].slice.call(pan.querySelectorAll('.lab-all-q')).forEach(function(b){
+        b.addEventListener('click', function(){ inp.value=this.getAttribute('data-n'); });
+      });
+      ov.querySelector('#labAllDefault').addEventListener('click', function(){
+        _labSalvaAllarme(ui, null).then(chiudiPannello);
+      });
+      ov.querySelector('#labAllSalva').addEventListener('click', function(){
+        var n=parseInt(inp.value,10);
+        if(!n || n<1 || n>60){ _labAvviso(ui,'Inserisci un numero di giorni fra 1 e 60.','err'); return; }
+        _labSalvaAllarme(ui, n).then(chiudiPannello);
       });
       ov.querySelector('#labBtnGraf').addEventListener('click', function(){
         var ks=[].slice.call(ui.body.querySelectorAll('tr.lab-sel[data-num="1"]'))

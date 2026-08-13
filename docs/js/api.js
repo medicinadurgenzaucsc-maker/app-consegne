@@ -915,7 +915,7 @@ function _sbEliminaLetto(numeroLetto) {
 // `letto`, con cache di 5 minuti — il contratto "niente esami nel sync"
 // resta intatto). Cliccabile solo in focus mode, mai stampato.
 var _LAB_ICONA =
-  '<svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true">' +
+  '<svg viewBox="0 0 24 24" width="27" height="27" aria-hidden="true">' +
     '<path d="M10.4 3.6v5.8L5.6 18.3c-.8 1.5.3 3.3 2 3.3h8.8c1.7 0 2.8-1.8 2-3.3L13.6 9.4V3.6z" fill="#fff" stroke="#37474f" stroke-width="1.2" stroke-linejoin="round"/>' +
     '<path d="M8.15 14h7.7l2.55 4.3c.8 1.5-.3 3.3-2 3.3H7.6c-1.7 0-2.8-1.8-2-3.3L8.15 14z" fill="#43a047"/>' +
     '<circle cx="10.3" cy="17.9" r="1" fill="#c8e6c9"/>' +
@@ -924,13 +924,54 @@ var _LAB_ICONA =
     '<path d="M9.4 3.6h5.2" stroke="#37474f" stroke-width="1.7" stroke-linecap="round"/>' +
   '</svg>';
 function _labBottoneHtml() {
-  return '<button type="button" class="lab-apri-btn" title="Esami di laboratorio (TrakCare)" style="display:none">' + _LAB_ICONA + '</button>';
+  return '<button type="button" class="lab-apri-btn" title="Esami di laboratorio (TrakCare)" style="display:none">' +
+    _LAB_ICONA + '<span class="lab-apri-txt">Esami di Laboratorio</span></button>';
+}
+// Ogni quanto richiedere gli esami se il letto non ha un valore suo.
+// SUB-INTENSIVA: 1 giorno. MEDICINA / APPOGGIO / STANDARD: 3 giorni.
+function _labGiorniDefault(tip) {
+  var t = String(tip || '').toUpperCase();
+  if (t.indexOf('SUB') === 0) return 1;
+  return 3;
+}
+// Giorni di CALENDARIO fra una data 'YYYY-MM-DD' e oggi — NON 24h esatte:
+// un prelievo di ieri sera conta come 1 giorno, non come 0.
+function _labGiorniDa(iso) {
+  if (!iso) return null;
+  var p = String(iso).slice(0, 10).split('-');
+  if (p.length !== 3) return null;
+  var a = new Date(+p[0], +p[1] - 1, +p[2]);
+  var o = new Date();
+  var b = new Date(o.getFullYear(), o.getMonth(), o.getDate());
+  if (isNaN(a.getTime())) return null;
+  return Math.round((b - a) / 86400000);
 }
 function _labBottoniApplica() {
-  var set = window._labLettiConEsami || {};
-  document.querySelectorAll('.patient-card[data-bed] .lab-apri-btn').forEach(function(b) {
-    var c = b.closest('.patient-card');
-    b.style.display = (c && set[c.getAttribute('data-bed')]) ? '' : 'none';
+  var info = window._labInfoLetti || {};
+  document.querySelectorAll('.patient-card[data-bed]').forEach(function(c) {
+    var b = c.querySelector('.lab-apri-btn');
+    if (!b) return;
+    var i = info[c.getAttribute('data-bed')];
+    var haEsami = !!(i && i.n > 0);
+    b.style.display = haEsami ? '' : 'none';
+    // Il promemoria vive SOTTO il bottone: senza bottone non esiste.
+    var vecchio = b.nextElementSibling;
+    if (vecchio && vecchio.classList && vecchio.classList.contains('lab-remind')) vecchio.remove();
+    if (!haEsami) return;
+    var giorni  = (i.a != null ? i.a : _labGiorniDefault(c.getAttribute('data-tipologia')));
+    var passati = _labGiorniDa(i.u);
+    // Compare il GIORNO PRIMA della scadenza e resta finché non si aggiorna.
+    if (passati === null || passati < giorni - 1) return;
+    var gg = giorni + (giorni === 1 ? ' giorno' : ' giorni');
+    var scaduto = passati >= giorni;
+    var d = document.createElement('div');
+    d.className = 'lab-remind' + (scaduto ? ' lab-remind-off' : '');
+    d.setAttribute('contenteditable', 'false');
+    d.title = 'Ultimo prelievo: ' + String(i.u).split('-').reverse().join('/');
+    d.innerHTML = '⏰ ' + (scaduto
+      ? 'Esami più vecchi di ' + gg + ': richiederli'
+      : 'Domani gli esami superano i ' + gg + ': richiederli');
+    b.parentNode.insertBefore(d, b.nextSibling);
   });
 }
 var _labBottoniTs = 0;
@@ -938,11 +979,13 @@ function _labBottoniAggiorna(forza) {
   _labBottoniApplica();                        // subito con quello che si sa già
   if (!forza && Date.now() - _labBottoniTs < 300000) return Promise.resolve();
   _labBottoniTs = Date.now();
-  return _q(_sb.from('lab_esami').select('letto'))
+  return _q(_sb.from('lab_esami').select('letto,allarme_giorni,ultimo_esame,n_esami'))
     .then(function(rows) {
-      var set = {};
-      (rows || []).forEach(function(r) { set[String(r.letto)] = 1; });
-      window._labLettiConEsami = set;
+      var m = {};
+      (rows || []).forEach(function(r) {
+        m[String(r.letto)] = { a: r.allarme_giorni, u: r.ultimo_esame, n: r.n_esami || 0 };
+      });
+      window._labInfoLetti = m;
       _labBottoniApplica();
     })
     .catch(function() {});
@@ -959,7 +1002,7 @@ function _labPulisci(letto) {
 }
 function _labScambia(a, b) {
   try {
-    _q(_sb.from('lab_esami').select('letto,dati,paziente').in('letto', [String(a), String(b)]))
+    _q(_sb.from('lab_esami').select('letto,dati,paziente,allarme_giorni,ultimo_esame,n_esami').in('letto', [String(a), String(b)]))
       .then(function(rows) {
         rows = rows || [];
         var ra = rows.find(function(r){ return r.letto === String(a); });
@@ -969,8 +1012,9 @@ function _labScambia(a, b) {
           .then(function() {
             var ins = [];
             var ts = new Date().toISOString();
-            if (ra) ins.push({ letto: String(b), dati: ra.dati, paziente: ra.paziente, updated_at: ts });
-            if (rb) ins.push({ letto: String(a), dati: rb.dati, paziente: rb.paziente, updated_at: ts });
+            // Esami, allarme e riepiloghi seguono il paziente, non il letto.
+            if (ra) ins.push({ letto: String(b), dati: ra.dati, paziente: ra.paziente, allarme_giorni: ra.allarme_giorni, ultimo_esame: ra.ultimo_esame, n_esami: ra.n_esami, updated_at: ts });
+            if (rb) ins.push({ letto: String(a), dati: rb.dati, paziente: rb.paziente, allarme_giorni: rb.allarme_giorni, ultimo_esame: rb.ultimo_esame, n_esami: rb.n_esami, updated_at: ts });
             if (ins.length) return _q(_sb.from('lab_esami').insert(ins));
           });
       }).catch(function(){});
