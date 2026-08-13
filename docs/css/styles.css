@@ -495,6 +495,7 @@ body { padding-top: 70px; background-color: #d4e6f1 !important; }
 .lab-guida { font-size: 0.88rem; max-width: 560px; line-height: 1.5; }
 .lab-avviso { padding: 7px 14px; font-size: 0.86rem; border-bottom: 1px solid #e0e0e0; }
 .lab-avviso-ok   { background: #e8f5e9; color: #1b5e20; }
+.lab-avviso-info { background: #e3f2fd; color: #0d47a1; }
 .lab-avviso-warn { background: #fff3e0; color: #6d4c00; }
 .lab-avviso-err  { background: #ffebee; color: #b71c1c; }
 .lab-tab { border-collapse: collapse; font-size: 0.82rem; }

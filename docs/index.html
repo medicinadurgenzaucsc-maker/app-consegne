@@ -3251,7 +3251,17 @@
           +'<button type="button" class="lab-btn lab-btn-mini lab-btn-no">Annulla</button>','warn');
         ui.avvisi.querySelector('.lab-btn-si').addEventListener('click', procedi);
         ui.avvisi.querySelector('.lab-btn-no').addEventListener('click', function(){ _labAvviso(ui,''); });
-      } else procedi();
+      } else {
+        // Nome che combacia (o mancante): come per la terapia si chiede
+        // SEMPRE conferma prima di inserire.
+        _labAvviso(ui,
+          '📥 Trovati esami di <b>'+_escIso(pazT||ui.pazC||'?')+'</b> negli appunti. Inserirli'
+          +(ui.pazC?' nella scheda di <b>'+_escIso(ui.pazC)+'</b>':'')+'? '
+          +'<button type="button" class="lab-btn lab-btn-mini lab-btn-si">Inserisci</button> '
+          +'<button type="button" class="lab-btn lab-btn-mini lab-btn-no">Annulla</button>','info');
+        ui.avvisi.querySelector('.lab-btn-si').addEventListener('click', procedi);
+        ui.avvisi.querySelector('.lab-btn-no').addEventListener('click', function(){ _labAvviso(ui,''); });
+      }
     }
 
     function _labGuida(ui, card){
@@ -3264,20 +3274,12 @@
         +'<div style="margin:5px 0;"><b>3.</b> Premi il pulsante nella <b>barra dei preferiti</b> e aspetta «Esami copiati».</div>'
         +'<div style="margin:5px 0;"><b>4.</b> Torna qui e premi di nuovo <b>«Aggiorna Esami»</b>.</div>'
         +'</div>'
-        +'<p style="margin:10px 0 4px;">Oppure incolla qui gli esami già copiati:</p>'
-        +'<textarea id="labPasteBox" style="width:100%;height:70px;border:1px solid #cfd8dc;border-radius:6px;padding:8px;font-size:0.8rem;" placeholder="Incolla qui…"></textarea>'
-        +'<div style="margin-top:8px;text-align:right;">'
-        +'<button type="button" class="lab-btn lab-btn-mini lab-btn-torna">Torna alla tabella</button> '
-        +'<button type="button" class="lab-btn lab-btn-mini lab-btn-agg lab-btn-usa">Usa il testo incollato</button>'
+        +'<div style="margin-top:10px;text-align:right;">'
+        +'<button type="button" class="lab-btn lab-btn-mini lab-btn-torna">Torna alla tabella</button>'
         +'</div></div>';
       var a=ui.body.querySelector('#bmLabLink');
       if(a){ a.setAttribute('href', _BM_LAB); a.addEventListener('click', function(ev){ev.preventDefault();}); }
       ui.body.querySelector('.lab-btn-torna').addEventListener('click', function(){ _labRicarica(ui); });
-      ui.body.querySelector('.lab-btn-usa').addEventListener('click', function(){
-        var v=(ui.body.querySelector('#labPasteBox')||{}).value||'';
-        if(_isPayloadLab(v)) _labProcessa(card, ui, v);
-        else _labAvviso(ui,'Il testo incollato non è una copia del segnalibro (deve iniziare col marcatore degli esami).','err');
-      });
     }
 
     function _labRicarica(ui){
