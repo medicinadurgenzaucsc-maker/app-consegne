@@ -3171,11 +3171,21 @@
       return '<svg viewBox="0 0 60 19" width="52" height="17" aria-hidden="true">'
         +'<polyline points="'+pts+'" fill="none" stroke="#00695c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
     }
-    // Colori della legenda: tinte diverse a ogni apertura (angolo aureo).
+    // Colori: con PIÙ serie servono tinte distinte (e la legenda le spiega),
+    // quindi si sorteggiano a ogni apertura; con UNA sola serie il colore non
+    // porta informazione → sempre il teal dell'app, così lo stesso esame ha
+    // sempre lo stesso aspetto.
     function _labColori(n){
+      if(n<=1) return ['#00695c'];
       var base=Math.random()*360, out=[];
       for(var i=0;i<n;i++) out.push('hsl('+Math.round((base+i*137.508)%360)+',68%,40%)');
       return out;
+    }
+    // Freccia accanto ai valori fuori range: eredita il colore del testo
+    // (rosso in alto, blu in basso).
+    function _labFreccia(flag){
+      return flag==='alto'  ? ' <span class="lab-fr">&#8593;</span>'
+           : flag==='basso' ? ' <span class="lab-fr">&#8595;</span>' : '';
     }
     // Grafico. Con PIÙ serie i valori si normalizzano ciascuno sulla propria
     // scala (Hb ~8 e Piastrine ~250 sullo stesso asse sarebbero illeggibili):
@@ -3220,7 +3230,9 @@
         var pts=se.punti.map(function(p){ return X(idx[p.d]).toFixed(1)+','+yy(p.val).toFixed(1); }).join(' ');
         s+='<polyline points="'+pts+'" fill="none" stroke="'+se.colore+'" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>';
         se.punti.forEach(function(p){
-          var col = p.flag==='alto' ? '#c62828' : (p.flag==='basso' ? '#1565c0' : se.colore);
+          // Pallini dello stesso colore della linea: il fuori-range si legge
+          // dai numeri (rossi/blu con la freccia) nella tabella sotto.
+          var col = se.colore;
           var m=String(p.d).match(/(\d{1,2}\/\d{1,2})(?:\/\d{2,4})?(?:\s+(\d{1,2}[:.]\d{2}))?/);
           var quando=(m?m[1]:String(p.d))+((m&&m[2])?' '+m[2]:'');
           s+='<circle class="lab-pt" cx="'+X(idx[p.d]).toFixed(1)+'" cy="'+yy(p.val).toFixed(1)+'" r="4.2" fill="'+col+'"'
@@ -3245,7 +3257,7 @@
           +'<td class="lab-um">'+_escIso(se.um||'')+'</td>';
         date.forEach(function(d){
           var p=m[d];
-          h+='<td'+(p&&p.flag?' class="lab-'+p.flag+'"':'')+'>'+(p?_labTesto(p.txt):'')+'</td>';
+          h+='<td'+(p&&p.flag?' class="lab-'+p.flag+'"':'')+'>'+(p?_labTesto(p.txt)+_labFreccia(p.flag):'')+'</td>';
         });
         h+='</tr>';
       });
@@ -3345,7 +3357,7 @@
         date.forEach(function(d){
           var raw=(e.v||{})[d]||'';
           var f=_labFlag(raw);
-          h+='<td'+(f?' class="lab-'+f+'"':'')+'>'+_labTesto(_labPulito(raw))+'</td>';
+          h+='<td'+(f?' class="lab-'+f+'"':'')+'>'+_labTesto(_labPulito(raw))+_labFreccia(f)+'</td>';
         });
         h+='</tr>';
       });
