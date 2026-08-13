@@ -2986,11 +2986,11 @@
           });
           return {int:int,righe:righe};
         };
-        var primaCol=function(){ var h=[].slice.call(TAB().querySelector('tr').querySelectorAll('td,th')).map(function(c){return norm(c.innerText);}).filter(Boolean); return h[4]||''; };
+        var primaCol=function(){ try{ var h=[].slice.call(TAB().querySelector('tr').querySelectorAll('td,th')).map(function(c){return norm(c.innerText);}).filter(Boolean); return h[4]||''; }catch(e){ return ''; } };
         var vis=function(id){ var e=document.getElementById(id); if(!e) return null; var r=e.getBoundingClientRect(); return (r.width>0&&r.height>0)?e:null; };
         var NEXT='OEOrdItem_ListLabCummEMRList_0-column-DynamicData-nextPageIcon';
         var PREV='OEOrdItem_ListLabCummEMRList_0-column-DynamicData-prevPageIcon';
-        var attesa=function(test,ms){ return new Promise(function(res){ var t0=Date.now(); var iv=setInterval(function(){ if(test()||Date.now()-t0>ms){ clearInterval(iv); res(test()); } },300); }); };
+        var attesa=function(test,ms){ return new Promise(function(res){ var t0=Date.now(); var iv=setInterval(function(){ if(Date.now()-t0>ms){ clearInterval(iv); res(false); return; } var ok=false; try{ ok=!!test(); }catch(e){} if(ok){ clearInterval(iv); res(true); } },300); }); };
         (async function(){
           var pagine=[dump()], giri=0;
           while(giri<15){
@@ -2999,19 +2999,20 @@
               var ic=vis(NEXT); if(!ic){ senzaFreccia=true; break; }
               ic.click();
               banner('⏳ Leggo lo storico esami… pagina '+(giri+2),'#455a64');
-              avanzato=await attesa(function(){ return primaCol()!==p; },9000);
+              avanzato=await attesa(function(){ var c=primaCol(); return c!=='' && c!==p; },9000);
             }
             if(senzaFreccia || !avanzato) break;
             giri++;
             await attesa(function(){ return false; },600);
             pagine.push(dump());
           }
-          var back=0;
-          while(back<20){
+          var back=0, fermi=0;
+          while(back<25 && fermi<2){
             var ip=vis(PREV); if(!ip) break;
             var q=primaCol();
             ip.click(); back++;
-            await attesa(function(){ return primaCol()!==q; },6000);
+            var okb=await attesa(function(){ var c=primaCol(); return c!=='' && c!==q; },4000);
+            fermi = okb ? 0 : (fermi+1);
           }
           var paz='',cs2='';
           try{var sur=document.querySelector('[id$=BANNERSurname]')||document.querySelector('[id*=BANNERSurname]:not([id*=label])'),nam=document.querySelector('[id$=BANNERName2]')||document.querySelector('[id$=BANNERName]')||document.querySelector('[id*=BANNERName]:not([id*=label]):not([id*=Surname])');paz=((sur?sur.textContent:'')+' '+(nam?nam.textContent:'')).replace(/\s+/g,' ').trim();if(/^\s*(cognome\s+nome|nome\s+cognome)\s*$/i.test(paz))paz='';}catch(e){}
