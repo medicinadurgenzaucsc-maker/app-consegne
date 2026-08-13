@@ -564,9 +564,13 @@ body { padding-top: 70px; background-color: #d4e6f1 !important; }
 /* Fuori range: il Trak appende H/L, noi togliamo la lettera e coloriamo */
 .lab-tab td.lab-alto  { color: #c62828; font-weight: 700; }
 .lab-tab td.lab-basso { color: #1565c0; font-weight: 700; }
-/* Freccia accanto ai valori fuori range: alta quanto il testo, piena e
-   spessa (SVG con currentColor → eredita il rosso/blu del numero) */
-.lab-fr { width: .62em; height: 1em; vertical-align: -.12em; margin-left: 2px; }
+/* Freccia ↑/↓ accanto ai valori fuori range: eredita il colore del testo.
+   Appena più alta del numero e ispessita di circa un terzo col tratto, così
+   si legge a colpo d'occhio anche con molte colonne. */
+.lab-fr {
+  font-size: 1.02em; line-height: 1; font-weight: 700;
+  -webkit-text-stroke: .38px currentColor;
+}
 /* Bottoncino-sparkline sotto il nome dell'esame (≥2 valori numerici) */
 .lab-spark {
   display: inline-block; margin-top: 1px; padding: 0 3px;
@@ -622,13 +626,15 @@ body { padding-top: 70px; background-color: #d4e6f1 !important; }
 .patient-card:not(.focus-mode) .lab-remind:hover { filter: none; }
 /* Promemoria "richiedi esami": sta SOTTO il bottone, mai da solo. */
 .lab-remind {
-  display: block; margin: 0 0 3px; padding: 2px 8px;
-  background: #fff176; color: #4e3b00; border-left: 4px solid #f9a825;
-  border-radius: 4px; font-size: 0.78em; font-weight: 700; line-height: 1.25;
+  display: block; margin: 0 0 3px; padding: 3px 9px;
+  background: #fff176; color: #4e3b00; border-left: 5px solid #f9a825;
+  border-radius: 4px; font-size: 1.09em; font-weight: 700; line-height: 1.25;
   user-select: none; cursor: pointer;
 }
 .lab-remind:hover { filter: brightness(0.96); }
-.lab-remind-off { background: #ffcdd2; color: #7f1d1d; border-left-color: #c62828; }
+/* Scaduto: resta giallo (si deve leggere come promemoria), il ritardo lo
+   segnala la barretta rossa a sinistra. */
+.lab-remind-off { border-left-color: #c62828; }
 /* Sotto la riga del blocco deve SEMPRE restare dove scrivere a mano. */
 .alt-diag-fourth .alt-editable { min-height: 2.6em; }
 @media print { .lab-box { display: none !important; } }

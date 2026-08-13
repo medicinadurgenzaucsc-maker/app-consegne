@@ -3186,10 +3186,8 @@
     // SVG (le frecce dei font sono troppo sottili) e usa currentColor, quindi
     // eredita il colore del numero: rosso in alto, blu in basso.
     function _labFreccia(flag){
-      if(flag!=='alto' && flag!=='basso') return '';
-      var d = flag==='alto' ? 'M5 0.4 L9.4 5.8 H6.7 V11.6 H3.3 V5.8 H0.6 Z'
-                            : 'M5 11.6 L0.6 6.2 H3.3 V0.4 H6.7 V6.2 H9.4 Z';
-      return '<svg class="lab-fr" viewBox="0 0 10 12" aria-hidden="true"><path d="'+d+'" fill="currentColor"/></svg>';
+      return flag==='alto'  ? ' <span class="lab-fr">&#8593;</span>'
+           : flag==='basso' ? ' <span class="lab-fr">&#8595;</span>' : '';
     }
     // Grafico. Con PIÙ serie i valori si normalizzano ciascuno sulla propria
     // scala (Hb ~8 e Piastrine ~250 sullo stesso asse sarebbero illeggibili):
