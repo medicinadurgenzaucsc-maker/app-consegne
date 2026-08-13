@@ -1045,6 +1045,16 @@ function _labBottoniAggiorna(forza) {
 }
 window._labBottoniAggiorna = _labBottoniAggiorna;
 window._labBottoniApplica  = _labBottoniApplica;
+// Richiesta raggruppata: un giro di sincronizzazione può toccare più letti,
+// ma la rilettura del riepilogo deve restare una sola.
+var _labRichiestaTimer = null;
+function _labRiepilogoRichiedi() {
+  if (_labRichiestaTimer) return;
+  _labRichiestaTimer = setTimeout(function() {
+    _labRichiestaTimer = null;
+    try { _labBottoniAggiorna(true); } catch (e) {}
+  }, 1500);
+}
 
 // ── Laboratorio dentro il backup ───────────────────────────────────────
 // Lo snapshot va in una COLONNA A PARTE di `archivio` (archivio.lab): il
@@ -2660,6 +2670,8 @@ function _applicaDeltaDelete(letto) {
 // lavorando sull'oggetto JS senza DOMParser. Preserva caret position.
 function _aggiornaCardDaPaziente(card, p) {
   var activeEl = document.activeElement;
+  var _nomeEl = card.querySelector('[data-field="Nome"]');
+  var _nomePrima = _nomeEl ? (_nomeEl.innerText || '').trim() : null;
 
   // Campi testuali (11 campi — include EsamiColturali aggiunto 2026-05-11)
   var campi = ['Nome','Diagnosi','Eta','NoteTerapia','Diaria','DaFare',
@@ -2694,6 +2706,14 @@ function _aggiornaCardDaPaziente(card, p) {
   // va ricostruito, altrimenti sparisce a ogni aggiornamento della scheda
   // — compreso il fresh-fetch all'apertura del focus mode.
   try { _labBottoniApplica(card); } catch(e) {}
+
+  // Se il letto ha cambiato paziente — spostamento o svuotamento eseguiti da
+  // un ALTRO computer — il riepilogo lab in cache non vale più: si richiede
+  // subito, senza aspettare la scadenza dei cinque minuti.
+  if (_nomePrima !== null) {
+    var _nomeDopo = _nomeEl ? (_nomeEl.innerText || '').trim() : null;
+    if (_nomeDopo !== null && _nomeDopo !== _nomePrima) _labRiepilogoRichiedi();
+  }
 
   // Date (data ricovero + giorni calcolati, data nascita + età ricalcolata in UI)
   var ric = _parseDataRicovero(p.DataRicovero);
