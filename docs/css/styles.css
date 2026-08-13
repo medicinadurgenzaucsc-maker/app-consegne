@@ -612,7 +612,11 @@ body { padding-top: 70px; background-color: #d4e6f1 !important; }
 .lab-apri-btn:hover { background: #e0f2f1; border-color: #26a69a; }
 .lab-apri-btn svg { flex: 0 0 auto; }
 .lab-apri-txt { font-weight: 700; font-size: 0.82em; color: #00695c; letter-spacing: .01em; }
-.patient-card:not(.focus-mode) .lab-apri-btn { cursor: default; opacity: .8; }
+/* Fuori dal focus mode alambicco e promemoria sono solo indicatori */
+.patient-card:not(.focus-mode) .lab-apri-btn,
+.patient-card:not(.focus-mode) .lab-remind { cursor: default; }
+.patient-card:not(.focus-mode) .lab-apri-btn { opacity: .8; }
+.patient-card:not(.focus-mode) .lab-remind:hover { filter: none; }
 /* Promemoria "richiedi esami": sta SOTTO il bottone, mai da solo. */
 .lab-remind {
   display: block; margin: 0 0 3px; padding: 2px 8px;

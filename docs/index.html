@@ -3656,7 +3656,10 @@
       var r = ev.target && ev.target.closest ? ev.target.closest('.lab-remind') : null;
       if(!r) return;
       ev.preventDefault(); ev.stopPropagation();
-      var card = r.closest('.patient-card'); if(!card) return;
+      var card = r.closest('.patient-card');
+      // Come l'alambicco: fuori dal focus mode il click è inerte.
+      if(!card || !card.classList.contains('focus-mode')) return;
+      ev.preventDefault(); ev.stopPropagation();
       var letto = card.getAttribute('data-bed') || '';
       Swal.fire({
         icon:'question',
@@ -3783,7 +3786,9 @@
       var campo = target.closest('[data-field="EsamiColturali"], [data-field="Diaria"]');
       if (!campo) return null;
       var f = campo.getAttribute('data-field');
-      var sel = f === 'EsamiColturali' ? ':scope > .scale-box'
+      // EsamiColturali: sono confini invalicabili il blocco Laboratorio
+      // (alambicco + promemoria sveglia) e il blocco delle scale.
+      var sel = f === 'EsamiColturali' ? ':scope > .lab-box, :scope > .scale-box, :scope > .scala-risultato'
               : ':scope > .diaria-status-box, :scope > .isolamento-banner, :scope > .rianimazione-banner';
       var prot = campo.querySelectorAll(sel);
       return prot.length ? { campo: campo, protetti: Array.prototype.slice.call(prot) } : null;
@@ -3918,6 +3923,17 @@
       if(_terapiaBoxVuoto(box)) return;
       try{ document.execCommand('insertLineBreak'); }catch(e){}
     }, true);
+
+    // Self-heal del blocco Laboratorio: se una manovra estrema (seleziona-tutto
+    // + Canc, incolla che sostituisce tutto) lo ha comunque rimosso, viene
+    // ricostruito — come la riga verde della terapia. Se è già quello giusto
+    // _labBottoniApplica non tocca il DOM, quindi il cursore non si sposta.
+    document.addEventListener('input', function(ev){
+      var campo = ev.target.closest ? ev.target.closest('[data-field="EsamiColturali"]') : null;
+      if(!campo) return;
+      var card = campo.closest('.patient-card');
+      if(card && typeof window._labBottoniApplica === 'function') window._labBottoniApplica(card);
+    });
 
     // Self-heal su input: (a) se il .terapia-box e' stato rimosso lo ricrea in cima;
     // (b) se esistono PIU' .terapia-box (es. un a-capo che ha spezzato il box) toglie
