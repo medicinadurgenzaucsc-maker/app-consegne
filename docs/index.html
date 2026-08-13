@@ -2957,7 +2957,7 @@
     // ⚠️ Parser in BOZZA sulla descrizione dell'utente: da validare sul
     // DOM reale della pagina Laboratorio (freccia storico → segnalibro v2).
     // ══════════════════════════════════════════════════════════════════
-    var _LAB_BM_VERSIONE = 3;
+    var _LAB_BM_VERSIONE = 4;
 
     // Sorgente del segnalibro (gira su TrakCare). MAI commenti // qui
     // dentro: il collasso su una riga li farebbe inghiottire tutto.
@@ -2966,8 +2966,9 @@
     // con la freccia «Successivo» (…DynamicData-nextPageIcon). A fine
     // storico la freccia RESTA visibile ma l'intestazione non cambia più:
     // il giro si ferma su "nessun cambio", non sulla freccia assente.
-    // Sulla prima pagina la freccia indietro è nascosta → il ripristino
-    // clicca «Precedente» finché non sparisce.
+    // v4: arrivati all'ultima pagina la lettura è finita, quindi la vista su
+    // TrakCare resta dov'è (prima si tornava indietro pagina per pagina:
+    // altrettanti caricamenti per nulla).
     function _bmLabSorgente(){
       try{
         var banner=function(txt,bg,manuale){var d=document.getElementById('bmLabBanner');if(d)d.remove();d=document.createElement('div');d.id='bmLabBanner';d.style.cssText='position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:2147483647;background:'+bg+';color:#fff;padding:15px 22px;border-radius:12px;font:600 15px system-ui,Arial;box-shadow:0 8px 30px rgba(0,0,0,.5);max-width:92vw;text-align:center;cursor:pointer';d.innerHTML=txt+'<div style="font-weight:400;font-size:11px;margin-top:6px;opacity:.85">(tocca per chiudere)</div>';if(manuale){var ta=document.createElement('textarea');ta.value=manuale;ta.readOnly=true;ta.style.cssText='display:block;width:86vw;max-width:520px;height:64px;margin:10px auto 0;font-size:11px;border-radius:6px;padding:6px;color:#000';ta.addEventListener('click',function(ev){ev.stopPropagation();ta.focus();ta.select();});d.appendChild(ta);d.style.cursor='default';}d.addEventListener('click',function(){if(d.parentNode)d.remove();});document.body.appendChild(d);setTimeout(function(){if(d.parentNode)d.remove();},25000);};
@@ -2991,7 +2992,6 @@
         var primaCol=function(){ try{ var h=[].slice.call(TAB().querySelector('tr').querySelectorAll('td,th')).map(function(c){return norm(c.innerText);}).filter(Boolean); return h[4]||''; }catch(e){ return ''; } };
         var vis=function(id){ var e=document.getElementById(id); if(!e) return null; var r=e.getBoundingClientRect(); return (r.width>0&&r.height>0)?e:null; };
         var NEXT='OEOrdItem_ListLabCummEMRList_0-column-DynamicData-nextPageIcon';
-        var PREV='OEOrdItem_ListLabCummEMRList_0-column-DynamicData-prevPageIcon';
         var attesa=function(test,ms){ return new Promise(function(res){ var t0=Date.now(); var iv=setInterval(function(){ if(Date.now()-t0>ms){ clearInterval(iv); res(false); return; } var ok=false; try{ ok=!!test(); }catch(e){} if(ok){ clearInterval(iv); res(true); } },300); }); };
         (async function(){
           var pagine=[dump()], giri=0;
@@ -3009,24 +3009,12 @@
             await attesa(function(){ var tb=TAB(); if(!tb) return false; var n=tb.querySelectorAll('tr').length; var stab=(n===nr0 && n>0); nr0=n; return stab; },4000);
             pagine.push(dump());
           }
-          var back=0, fermi=0;
-          while(back<30 && fermi<2){
-            if(!vis(PREV)) break;
-            var q=primaCol(), okb=false;
-            for(var t2=0; t2<2 && !okb; t2++){
-              var ip=vis(PREV); if(!ip) break;
-              ip.click();
-              okb=await attesa(function(){ var c=primaCol(); return c!=='' && c!==q; },5000);
-            }
-            back++;
-            fermi = okb ? 0 : (fermi+1);
-          }
           var paz='',cs2='';
           try{var sur=document.querySelector('[id$=BANNERSurname]')||document.querySelector('[id*=BANNERSurname]:not([id*=label])'),nam=document.querySelector('[id$=BANNERName2]')||document.querySelector('[id$=BANNERName]')||document.querySelector('[id*=BANNERName]:not([id*=label]):not([id*=Surname])');paz=((sur?sur.textContent:'')+' '+(nam?nam.textContent:'')).replace(/\s+/g,' ').trim();if(/^\s*(cognome\s+nome|nome\s+cognome)\s*$/i.test(paz))paz='';}catch(e){}
           try{var reg=document.querySelector('[id$=BANNERRegistrationNo]');cs2=reg?norm(reg.textContent):((document.body.innerText.match(/ID Paz[.:\s]*([0-9]{4,})/i)||[])[1]||'');}catch(e){}
           var nR=0; pagine.forEach(function(pg){nR+=pg.righe.length;});
           if(!nR){ banner('⚠️ La tabella degli esami sembra vuota.','#c62828'); return; }
-          var payload='⟦LAB-TRAK⟧\n'+JSON.stringify({v:3,paz:paz,cs:cs2,ts:Date.now(),pagine:pagine});
+          var payload='⟦LAB-TRAK⟧\n'+JSON.stringify({v:4,paz:paz,cs:cs2,ts:Date.now(),pagine:pagine});
           var copia=function(){ try{ if(navigator.clipboard&&navigator.clipboard.writeText) return navigator.clipboard.writeText(payload); }catch(e){} return Promise.reject(new Error('API appunti non disponibile')); };
           var okB=function(){banner('✅ Esami copiati ('+pagine.length+' pagine, '+nR+' righe)<br><span style="font-weight:400;font-size:13px">Vai nelle Consegne, apri «Laboratorio» e premi «Aggiorna Esami»</span>','#00695c');};
           var manuale=function(err){try{var ta=document.createElement('textarea');ta.value=payload;document.body.appendChild(ta);ta.select();var okc=document.execCommand&&document.execCommand('copy');document.body.removeChild(ta);if(okc){okB();return;}}catch(e2){}banner('⚠️ Impossibile copiare: '+err+'<br><span style="font-weight:400;font-size:12px">Copia a mano dal riquadro qui sotto.</span>','#c62828',payload);};
