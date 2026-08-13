@@ -1377,6 +1377,15 @@
         }
         return;
       }
+      if (cmd === 'labtrak') {
+        // Click sul pulsante "Laboratorio": apre il modal degli esami di
+        // laboratorio (storico + Aggiorna Esami da TrakCare).
+        var cardLb = tb.closest('.patient-card');
+        if (cardLb && typeof window._apriLabModal === 'function') {
+          window._apriLabModal(cardLb);
+        }
+        return;
+      }
       if (cmd === 'terapiatrak') {
         // Click sul pulsante "Terapia": importa la terapia copiata da
         // TrakCare (bookmarklet) nel campo Note e Terapia della card.

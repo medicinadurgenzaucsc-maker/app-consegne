@@ -374,6 +374,9 @@
             + '</button>'
             + '<button class="tb-btn tb-terapia" data-cmd="terapiatrak" title="Importa terapia da TrakCare">'
             +   '<i class="bi bi-capsule-pill"></i><span class="tb-scale-label">Terapia</span>'
+            + '</button>'
+            + '<button class="tb-btn tb-laboratorio" data-cmd="labtrak" title="Esami di laboratorio (TrakCare)">'
+            +   '<i class="bi bi-droplet-half"></i><span class="tb-scale-label">Laboratorio</span>'
             + '</button>';
       // Da Fare: pulsante checkbox RIMOSSO su richiesta utente.
       // Il sistema dei caret + ordinamento automatico è disattivato.
@@ -2943,6 +2946,265 @@
         preConfirm:function(){ var v=((document.getElementById('terapiaPasteBox')||{}).value)||''; if(!_isPayloadTerapia(v)){ Swal.showValidationMessage('Il testo incollato non è una terapia copiata dal segnalibro (dev\'essere il risultato del bookmarklet, non il suo codice).'); return false; } return v; }
       }).then(function(r){ if(r.isConfirmed && r.value) _terapiaProcessa(card, r.value); });
     }
+    // ══════════════════════════════════════════════════════════════════
+    // LABORATORIO DA TRAKCARE — stesso impianto della terapia:
+    // segnalibro RAW (dump grezzo della tabella grande, parsing tutto
+    // lato app), marcatore ⟦LAB-TRAK⟧, controllo versione, match nome.
+    // Persistenza: tabella dedicata lab_esami (1 riga per letto, jsonb),
+    // caricata SOLO all'apertura del modal — zero peso su sync/Realtime.
+    // ⚠️ Parser in BOZZA sulla descrizione dell'utente: da validare sul
+    // DOM reale della pagina Laboratorio (freccia storico → segnalibro v2).
+    // ══════════════════════════════════════════════════════════════════
+    var _LAB_BM_VERSIONE = 1;
+
+    // Sorgente del segnalibro (gira su TrakCare). MAI commenti // qui
+    // dentro: il collasso su una riga li farebbe inghiottire tutto.
+    function _bmLabSorgente(){
+      try{
+        var banner=function(txt,bg,manuale){var d=document.createElement('div');d.style.cssText='position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:2147483647;background:'+bg+';color:#fff;padding:15px 22px;border-radius:12px;font:600 15px system-ui,Arial;box-shadow:0 8px 30px rgba(0,0,0,.5);max-width:92vw;text-align:center;cursor:pointer';d.innerHTML=txt+'<div style="font-weight:400;font-size:11px;margin-top:6px;opacity:.85">(tocca per chiudere)</div>';if(manuale){var ta=document.createElement('textarea');ta.value=manuale;ta.readOnly=true;ta.style.cssText='display:block;width:86vw;max-width:520px;height:64px;margin:10px auto 0;font-size:11px;border-radius:6px;padding:6px;color:#000';ta.addEventListener('click',function(ev){ev.stopPropagation();ta.focus();ta.select();});d.appendChild(ta);d.style.cursor='default';}d.addEventListener('click',function(){if(d.parentNode)d.remove();});document.body.appendChild(d);setTimeout(function(){if(d.parentNode)d.remove();},25000);};
+        var norm=function(s){return (s||'').replace(/ /g,' ').replace(/\s+/g,' ').trim();};
+        var best=null,bestScore=0;
+        [].slice.call(document.querySelectorAll('table')).forEach(function(t){
+          var nr=t.querySelectorAll('tr').length, nc=t.querySelectorAll('td,th').length;
+          var score=nr*3+nc;
+          if(nr>=4 && score>bestScore){ best=t; bestScore=score; }
+        });
+        if(!best){ banner('⚠️ Non trovo la tabella degli esami.<br><span style="font-weight:400;font-size:12px">Apri prima «Laboratorio» nel Dossier su TrakCare, poi ripremi il segnalibro.</span>','#c62828'); return; }
+        var righe=[],intest=[];
+        [].slice.call(best.querySelectorAll('tr')).forEach(function(tr){
+          var cs=[].slice.call(tr.querySelectorAll('td,th'));
+          if(!cs.length) return;
+          var vals=cs.map(function(td){return norm(td.innerText);});
+          if(vals.join('')==='') return;
+          if(!intest.length){ intest=vals; return; }
+          var b=0;
+          try{ var f=cs[0]; if(f&&(f.querySelector('b,strong')||/bold|[6-9]00/.test((window.getComputedStyle(f).fontWeight||'')+''))) b=1; }catch(e){}
+          righe.push({c:vals,b:b});
+        });
+        if(!righe.length){ banner('⚠️ La tabella degli esami sembra vuota.','#c62828'); return; }
+        var paz='',cs2='';
+        try{var sur=document.querySelector('[id$=BANNERSurname]')||document.querySelector('[id*=BANNERSurname]:not([id*=label])'),nam=document.querySelector('[id$=BANNERName2]')||document.querySelector('[id$=BANNERName]')||document.querySelector('[id*=BANNERName]:not([id*=label]):not([id*=Surname])');paz=((sur?sur.textContent:'')+' '+(nam?nam.textContent:'')).replace(/\s+/g,' ').trim();if(/^\s*(cognome\s+nome|nome\s+cognome)\s*$/i.test(paz))paz='';}catch(e){}
+        try{var reg=document.querySelector('[id$=BANNERRegistrationNo]');cs2=reg?norm(reg.textContent):((document.body.innerText.match(/ID Paz[.:\s]*([0-9]{4,})/i)||[])[1]||'');}catch(e){}
+        var payload='⟦LAB-TRAK⟧\n'+JSON.stringify({v:1,paz:paz,cs:cs2,ts:Date.now(),int:intest,righe:righe});
+        var ok=function(){banner('✅ Esami copiati ('+righe.length+' righe)<br><span style="font-weight:400;font-size:13px">Vai nelle Consegne, apri «Laboratorio» e premi «Aggiorna Esami»</span>','#00695c');};
+        var ko=function(err){try{var ta=document.createElement('textarea');ta.value=payload;document.body.appendChild(ta);ta.select();var okc=document.execCommand&&document.execCommand('copy');document.body.removeChild(ta);if(okc){ok();return;}}catch(e2){}banner('⚠️ Impossibile copiare: '+err+'<br><span style="font-weight:400;font-size:12px">Copia a mano dal riquadro qui sotto.</span>','#c62828',payload);};
+        try{if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(payload).then(ok,function(e){ko(e&&e.message?e.message:'permesso negato');});}else{ko('API appunti non disponibile');}}catch(e){ko(e.message);}
+      }catch(e){alert('Errore segnalibro: '+e.message);}
+    }
+    var _BM_LAB = 'javascript:(' + _bmLabSorgente.toString().replace(/\n\s*/g,' ') + ')()';
+
+    function _isPayloadLab(clip){ return (clip||'').trim().indexOf('⟦LAB-TRAK⟧')===0; }
+
+    // Parser (bozza da validare dal vivo): intestazione con colonne-data,
+    // riga in grassetto senza valori = titolo gruppo; riga esame =
+    // [nome, intervallo, unità, ...valori per data].
+    function _parseLabRaw(pl){
+      var righe=pl.righe||[], intest=pl.int||[];
+      var dateCols={};
+      intest.forEach(function(t,i){ if(/\d{1,2}\/\d{1,2}\/\d{2,4}/.test(t||'')) dateCols[i]=String(t).trim(); });
+      var idxDate=Object.keys(dateCols);
+      var out=[], gruppo='';
+      righe.forEach(function(r){
+        var c=r.c||[]; var nome=(c[0]||'').trim();
+        if(!nome) return;
+        var haValori=idxDate.some(function(i){ return (c[i]||'').trim()!==''; });
+        if(r.b && !haValori){ gruppo=nome; return; }
+        if(!haValori) return;
+        var v={};
+        idxDate.forEach(function(i){ var val=(c[i]||'').trim(); if(val) v[dateCols[i]]=val; });
+        out.push({ g:gruppo, n:nome, range:(c[1]||'').trim(), um:(c[2]||'').trim(), v:v });
+      });
+      return out;
+    }
+
+    // Merge ADDITIVO anti-doppioni: chiave = gruppo+nome, valori uniti per
+    // data (ri-importare le stesse date è idempotente).
+    function _labMerge(doc, esami){
+      doc = (doc && typeof doc==='object') ? doc : {};
+      doc.esami = doc.esami || {};
+      doc.ord   = doc.ord   || [];
+      var nuovi=0, valori=0;
+      (esami||[]).forEach(function(e){
+        var k=((e.g||'')+'||'+(e.n||'')).toLowerCase();
+        if(!doc.esami[k]){ doc.esami[k]={g:e.g||'',n:e.n||'',range:'',um:'',v:{}}; doc.ord.push(k); nuovi++; }
+        var t=doc.esami[k];
+        if(e.range) t.range=e.range;
+        if(e.um)    t.um=e.um;
+        Object.keys(e.v||{}).forEach(function(d){ if(t.v[d]!==e.v[d]){ if(!(d in t.v)) valori++; t.v[d]=e.v[d]; } });
+      });
+      return { doc:doc, nuovi:nuovi, valori:valori };
+    }
+
+    function _labDataKey(lbl){
+      var m=String(lbl).match(/(\d{1,2})\/(\d{1,2})\/(\d{2,4})(?:\D+(\d{1,2})[:.](\d{2}))?/);
+      if(!m) return '000000000000';
+      var y=m[3].length===2?'20'+m[3]:m[3];
+      return y+('0'+m[2]).slice(-2)+('0'+m[1]).slice(-2)+('0'+(m[4]||'0')).slice(-2)+('0'+(m[5]||'0')).slice(-2);
+    }
+
+    function _labRender(body, doc){
+      var ord=(doc&&doc.ord)||[];
+      if(!ord.length){
+        body.innerHTML='<div class="lab-vuoto">Nessun esame ancora importato per questo letto.<br><br>'
+          +'Su TrakCare apri il <b>Laboratorio</b> del paziente, premi il segnalibro <b>«Prendi Esami Trak»</b>, poi torna qui e premi <b>«Aggiorna Esami»</b>.</div>';
+        return;
+      }
+      var dset={};
+      ord.forEach(function(k){ var e=doc.esami[k]; if(e) Object.keys(e.v||{}).forEach(function(d){ dset[d]=1; }); });
+      var date=Object.keys(dset).sort(function(a,b){ return _labDataKey(b).localeCompare(_labDataKey(a)); });
+      var h='<table class="lab-tab"><thead><tr><th class="lab-nome">Esame</th><th>Intervallo</th><th>U.M.</th>';
+      date.forEach(function(d){ h+='<th>'+_escIso(d)+'</th>'; });
+      h+='</tr></thead><tbody>';
+      var ultimoG=null;
+      ord.forEach(function(k){
+        var e=doc.esami[k]; if(!e) return;
+        if((e.g||'')!==ultimoG){ ultimoG=e.g||''; if(ultimoG) h+='<tr class="lab-gruppo"><td colspan="'+(3+date.length)+'">'+_escIso(ultimoG)+'</td></tr>'; }
+        h+='<tr><td class="lab-nome">'+_escIso(e.n)+'</td><td>'+_escIso(e.range||'')+'</td><td>'+_escIso(e.um||'')+'</td>';
+        date.forEach(function(d){ h+='<td>'+_escIso((e.v||{})[d]||'')+'</td>'; });
+        h+='</tr>';
+      });
+      h+='</tbody></table>';
+      body.innerHTML=h;
+    }
+
+    // ── Persistenza (tabella lab_esami, on-demand) ─────────────────────
+    function _labCarica(letto){
+      return _sb.from('lab_esami').select('dati,paziente').eq('letto', String(letto)).maybeSingle()
+        .then(function(res){ if(res.error) throw new Error(res.error.message); return res.data||null; });
+    }
+    function _labSalva(letto, doc, paz){
+      return _sb.from('lab_esami').upsert({ letto:String(letto), dati:doc, paziente:paz||'', updated_at:new Date().toISOString() })
+        .then(function(res){ if(res.error) throw new Error(res.error.message); return true; });
+    }
+
+    function _labAvviso(ui, html, tipo){
+      ui.avvisi.innerHTML = html ? '<div class="lab-avviso lab-avviso-'+(tipo||'info')+'">'+html+'</div>' : '';
+    }
+
+    function _labProcessa(card, ui, clip){
+      var pl;
+      try { pl=JSON.parse(clip.trim().slice('⟦LAB-TRAK⟧'.length)); }
+      catch(e){ _labAvviso(ui,'Il testo negli appunti non è una copia valida degli esami.','err'); return; }
+      // Controllo versione BLOCCANTE (come la terapia: dati parziali = danno)
+      if((pl.v||0) < _LAB_BM_VERSIONE){
+        ui.body.innerHTML='<div class="lab-vuoto"><b style="color:#c62828">Segnalibro da aggiornare — importazione bloccata.</b><br><br>'
+          +'Cancella il vecchio pulsante dalla barra dei preferiti e trascina questo:<br><br>'
+          +'<a id="bmLabLinkUpd" href="#" style="display:inline-block;background:#00695c;color:#fff;padding:8px 16px;border-radius:8px;text-decoration:none;font-weight:700;cursor:grab;">🧪➜🗒️ Prendi Esami Trak</a></div>';
+        var aU=ui.body.querySelector('#bmLabLinkUpd');
+        if(aU){ aU.setAttribute('href', _BM_LAB); aU.addEventListener('click', function(ev){ev.preventDefault();}); }
+        return;
+      }
+      var pazT=(pl.paz||'').trim();
+      var procedi=function(){
+        _labAvviso(ui,'');
+        var esami=_parseLabRaw(pl);
+        if(!esami.length){ _labAvviso(ui,'Nessun esame riconosciuto nella copia (formato pagina inatteso).','warn'); return; }
+        _labCarica(ui.letto).then(function(row){
+          var m=_labMerge(row&&row.dati, esami);
+          return _labSalva(ui.letto, m.doc, pazT||(row&&row.paziente)||ui.pazC).then(function(){
+            _labRender(ui.body, m.doc);
+            _labAvviso(ui,'✅ Aggiornato: <b>'+m.nuovi+'</b> esami nuovi, <b>'+m.valori+'</b> valori aggiunti.','ok');
+          });
+        }).catch(function(e){ _labAvviso(ui,'Errore di salvataggio: '+_escIso(e.message),'err'); });
+      };
+      // Match nome TrakCare ↔ scheda: avviso inline (niente Swal: resta
+      // tutto dentro il modal, il focus mode non viene toccato).
+      if(pazT && ui.pazC && !_nomiCombaciano(pazT, ui.pazC)){
+        _labAvviso(ui,
+          '⚠️ <b>Paziente diverso!</b> Esami di <b>'+_escIso(pazT)+'</b>, scheda di <b>'+_escIso(ui.pazC)+'</b>. '
+          +'<button type="button" class="lab-btn lab-btn-mini lab-btn-si">Importa comunque</button> '
+          +'<button type="button" class="lab-btn lab-btn-mini lab-btn-no">Annulla</button>','warn');
+        ui.avvisi.querySelector('.lab-btn-si').addEventListener('click', procedi);
+        ui.avvisi.querySelector('.lab-btn-no').addEventListener('click', function(){ _labAvviso(ui,''); });
+      } else procedi();
+    }
+
+    function _labGuida(ui, card){
+      ui.body.innerHTML='<div class="lab-guida">'
+        +'<p style="margin:0 0 8px;">Non ho trovato esami copiati da TrakCare negli appunti.</p>'
+        +'<div style="background:#f1f8f6;border:1px solid #b2dfdb;border-radius:8px;padding:10px 12px;">'
+        +'<div style="margin:5px 0;"><b>1.</b> <b>Solo se il bottone non è già</b> nella barra dei preferiti, <b>trascinalo</b> lassù:'
+        +'<div style="text-align:center;margin:8px 0;"><a id="bmLabLink" href="#" style="display:inline-block;background:#00695c;color:#fff;padding:8px 16px;border-radius:8px;text-decoration:none;font-weight:700;cursor:grab;">🧪➜🗒️ Prendi Esami Trak</a></div></div>'
+        +'<div style="margin:5px 0;"><b>2.</b> Su TrakCare apri la cartella del paziente e vai in <b>Laboratorio</b>.</div>'
+        +'<div style="margin:5px 0;"><b>3.</b> Premi il pulsante nella <b>barra dei preferiti</b> e aspetta «Esami copiati».</div>'
+        +'<div style="margin:5px 0;"><b>4.</b> Torna qui e premi di nuovo <b>«Aggiorna Esami»</b>.</div>'
+        +'</div>'
+        +'<p style="margin:10px 0 4px;">Oppure incolla qui gli esami già copiati:</p>'
+        +'<textarea id="labPasteBox" style="width:100%;height:70px;border:1px solid #cfd8dc;border-radius:6px;padding:8px;font-size:0.8rem;" placeholder="Incolla qui…"></textarea>'
+        +'<div style="margin-top:8px;text-align:right;">'
+        +'<button type="button" class="lab-btn lab-btn-mini lab-btn-torna">Torna alla tabella</button> '
+        +'<button type="button" class="lab-btn lab-btn-mini lab-btn-agg lab-btn-usa">Usa il testo incollato</button>'
+        +'</div></div>';
+      var a=ui.body.querySelector('#bmLabLink');
+      if(a){ a.setAttribute('href', _BM_LAB); a.addEventListener('click', function(ev){ev.preventDefault();}); }
+      ui.body.querySelector('.lab-btn-torna').addEventListener('click', function(){ _labRicarica(ui); });
+      ui.body.querySelector('.lab-btn-usa').addEventListener('click', function(){
+        var v=(ui.body.querySelector('#labPasteBox')||{}).value||'';
+        if(_isPayloadLab(v)) _labProcessa(card, ui, v);
+        else _labAvviso(ui,'Il testo incollato non è una copia del segnalibro (deve iniziare col marcatore degli esami).','err');
+      });
+    }
+
+    function _labRicarica(ui){
+      ui.body.innerHTML='<div class="lab-vuoto">Carico…</div>';
+      _labCarica(ui.letto)
+        .then(function(row){ _labRender(ui.body, row&&row.dati||null); })
+        .catch(function(e){ ui.body.innerHTML='<div class="lab-vuoto">Errore di caricamento: '+_escIso(e.message)+'</div>'; });
+    }
+
+    function _labAggiorna(card, ui){
+      var p;
+      try { p=(navigator.clipboard&&navigator.clipboard.readText)?navigator.clipboard.readText():Promise.reject(new Error('appunti non disponibili')); }
+      catch(e){ p=Promise.reject(e); }
+      p.then(function(clip){
+        if(_isPayloadLab(clip)) _labProcessa(card, ui, clip);
+        else _labGuida(ui, card);
+      }).catch(function(){ _labGuida(ui, card); });
+    }
+
+    // ── Modal: sopra il focus mode, che NON viene mai chiuso ───────────
+    window._apriLabModal = function(card){
+      if(!card) return;
+      var vecchio=document.getElementById('labModalOverlay');
+      if(vecchio && vecchio.parentNode) vecchio.parentNode.removeChild(vecchio);
+      var letto=card.getAttribute('data-bed')||'';
+      var nomeEl=card.querySelector('[data-field="Nome"]');
+      var pazC=nomeEl?(nomeEl.innerText||nomeEl.textContent||'').replace(/ /g,' ').trim():'';
+      var ov=document.createElement('div');
+      ov.id='labModalOverlay';
+      ov.innerHTML='<div class="lab-modal" role="dialog" aria-label="Esami di laboratorio">'
+        +'<div class="lab-modal-bar">'
+        +'<span class="lab-modal-tit"><i class="bi bi-droplet-half"></i> Laboratorio'+(pazC?' — '+_escIso(pazC):'')+(letto?' <span style="font-weight:400;color:#78909c">(letto '+_escIso(letto)+')</span>':'')+'</span>'
+        +'<button type="button" class="lab-btn lab-btn-agg" id="labBtnAggiorna">Aggiorna Esami</button>'
+        +'<button type="button" class="lab-btn lab-btn-x" id="labBtnChiudi" title="Chiudi">✕</button>'
+        +'</div>'
+        +'<div id="labAvvisi"></div>'
+        +'<div class="lab-modal-body" id="labBody"><div class="lab-vuoto">Carico…</div></div>'
+        +'</div>';
+      // Il focus mode non deve accorgersi di NULLA: ogni evento muore qui
+      // (i suoi handler globali non vedono né click né tasti del modal).
+      ['mousedown','mouseup','click','dblclick','touchstart','keyup'].forEach(function(evn){
+        ov.addEventListener(evn, function(ev){ ev.stopPropagation(); }, false);
+      });
+      function chiudi(){
+        document.removeEventListener('keydown', escH, true);
+        if(ov.parentNode) ov.parentNode.removeChild(ov);
+      }
+      // Esc chiude SOLO il modal (capture + stopImmediate: nessun altro lo vede)
+      function escH(ev){ if(ev.key==='Escape'){ ev.stopImmediatePropagation(); ev.preventDefault(); chiudi(); } }
+      document.addEventListener('keydown', escH, true);
+      // Click sullo sfondo scuro (fuori dal riquadro) chiude solo il modal
+      var giuSuSfondo=false;
+      ov.addEventListener('mousedown', function(ev){ giuSuSfondo=(ev.target===ov); });
+      ov.addEventListener('click', function(ev){ if(ev.target===ov && giuSuSfondo) chiudi(); });
+      document.body.appendChild(ov);
+      var ui={ letto:letto, pazC:pazC, body:ov.querySelector('#labBody'), avvisi:ov.querySelector('#labAvvisi') };
+      ov.querySelector('#labBtnChiudi').addEventListener('click', chiudi);
+      ov.querySelector('#labBtnAggiorna').addEventListener('click', function(){ _labAvviso(ui,''); _labAggiorna(card, ui); });
+      if(!letto){ ui.body.innerHTML='<div class="lab-vuoto">Questa scheda non ha un letto associato.</div>'; return; }
+      _labRicarica(ui);
+    };
+
     window._importaTerapiaTrak = function(card){
       if(!card || !card.classList.contains('focus-mode')) return;
       var p;

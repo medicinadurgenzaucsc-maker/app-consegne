@@ -901,8 +901,35 @@ function _sbEliminaLetto(numeroLetto) {
         return { success: false, message: 'Il letto non è vuoto.' };
       }
       return _q(_sb.from('consegne').delete().eq('letto', String(numeroLetto)))
-        .then(function() { return { success: true, message: 'Letto eliminato.' }; });
+        .then(function() { _labPulisci(numeroLetto); return { success: true, message: 'Letto eliminato.' }; });
     });
+}
+
+// ── Ciclo di vita esami di laboratorio (tabella lab_esami) ─────────────
+// Gli esami seguono il PAZIENTE, non il letto: svuotare/eliminare un letto
+// li cancella, spostare un paziente li porta con sé. Best-effort: un
+// errore qui non deve mai bloccare l'operazione principale sul letto.
+function _labPulisci(letto) {
+  try { _sb.from('lab_esami').delete().eq('letto', String(letto)).then(function(){}); } catch (e) {}
+}
+function _labScambia(a, b) {
+  try {
+    _q(_sb.from('lab_esami').select('letto,dati,paziente').in('letto', [String(a), String(b)]))
+      .then(function(rows) {
+        rows = rows || [];
+        var ra = rows.find(function(r){ return r.letto === String(a); });
+        var rb = rows.find(function(r){ return r.letto === String(b); });
+        if (!ra && !rb) return;
+        return _q(_sb.from('lab_esami').delete().in('letto', [String(a), String(b)]))
+          .then(function() {
+            var ins = [];
+            var ts = new Date().toISOString();
+            if (ra) ins.push({ letto: String(b), dati: ra.dati, paziente: ra.paziente, updated_at: ts });
+            if (rb) ins.push({ letto: String(a), dati: rb.dati, paziente: rb.paziente, updated_at: ts });
+            if (ins.length) return _q(_sb.from('lab_esami').insert(ins));
+          });
+      }).catch(function(){});
+  } catch (e) {}
 }
 
 function _sbDimettiLetto(numeroLetto) {
@@ -917,7 +944,7 @@ function _sbDimettiLetto(numeroLetto) {
     ultimo_aggiornamento: _oraStr(), updated_at: new Date().toISOString()
   };
   return _q(_sb.from('consegne').update(campiVuoti).eq('letto', String(numeroLetto)))
-    .then(function() { return { success: true, message: 'Letto svuotato.' }; });
+    .then(function() { _labPulisci(numeroLetto); return { success: true, message: 'Letto svuotato.' }; });
 }
 
 function _sbSpostaPaziente(lettoOrigine, lettoDestinazione) {
@@ -942,7 +969,7 @@ function _sbSpostaPaziente(lettoOrigine, lettoDestinazione) {
       return Promise.all([
         _q(_sb.from('consegne').update(nuovoOrig).eq('letto', String(lettoOrigine))),
         _q(_sb.from('consegne').update(nuovoDest).eq('letto', String(lettoDestinazione)))
-      ]).then(function() { return { success: true, message: 'Spostati con successo!' }; });
+      ]).then(function() { _labScambia(lettoOrigine, lettoDestinazione); return { success: true, message: 'Spostati con successo!' }; });
     });
 }
 

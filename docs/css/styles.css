@@ -459,6 +459,54 @@ body { padding-top: 70px; background-color: #d4e6f1 !important; }
   print-color-adjust: exact;
 }
 
+/* ═════ MODAL LABORATORIO (esami da TrakCare) ═════ */
+/* Sta SOPRA il focus mode (z-index oltre login/version overlay) e vive di
+   vita propria: chiuderlo non tocca mai il focus. Quadrato max 80% della
+   pagina, adattabile al contenuto, corpo scrollabile in entrambi gli assi. */
+#labModalOverlay {
+  position: fixed; inset: 0; z-index: 100500;
+  background: rgba(17, 27, 33, 0.55);
+  display: flex; align-items: center; justify-content: center;
+}
+.lab-modal {
+  background: #fff; border-radius: 12px;
+  box-shadow: 0 12px 48px rgba(0,0,0,.45);
+  max-width: 80vw; max-height: 80vh; min-width: 340px;
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.lab-modal-bar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px; background: #eceff1; border-bottom: 1px solid #cfd8dc;
+}
+.lab-modal-tit {
+  font-weight: 700; color: #37474f; font-size: 1rem; flex: 1; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.lab-modal-tit .bi { color: #c62828; margin-right: 4px; }
+.lab-btn { border: none; border-radius: 8px; padding: 7px 14px; font-weight: 600; cursor: pointer; }
+.lab-btn-agg { background: #00695c; color: #fff; }
+.lab-btn-agg:hover { background: #00796b; }
+.lab-btn-x { background: transparent; color: #546e7a; font-size: 1.2rem; padding: 2px 8px; }
+.lab-btn-mini { padding: 4px 10px; font-size: 0.82rem; }
+.lab-btn-si, .lab-btn-usa { background: #00695c; color: #fff; }
+.lab-btn-no, .lab-btn-torna { background: #eceff1; color: #37474f; }
+.lab-modal-body { overflow: auto; padding: 12px 14px; }
+.lab-vuoto { color: #546e7a; font-size: 0.92rem; padding: 18px 6px; max-width: 520px; line-height: 1.55; }
+.lab-guida { font-size: 0.88rem; max-width: 560px; line-height: 1.5; }
+.lab-avviso { padding: 7px 14px; font-size: 0.86rem; border-bottom: 1px solid #e0e0e0; }
+.lab-avviso-ok   { background: #e8f5e9; color: #1b5e20; }
+.lab-avviso-warn { background: #fff3e0; color: #6d4c00; }
+.lab-avviso-err  { background: #ffebee; color: #b71c1c; }
+.lab-tab { border-collapse: collapse; font-size: 0.82rem; }
+.lab-tab th, .lab-tab td { border: 1px solid #e0e0e0; padding: 3px 8px; white-space: nowrap; text-align: center; }
+.lab-tab thead th { background: #f5f7f8; position: sticky; top: 0; z-index: 2; }
+.lab-tab th.lab-nome, .lab-tab td.lab-nome { text-align: left; position: sticky; left: 0; background: #fff; z-index: 1; }
+.lab-tab thead th.lab-nome { background: #f5f7f8; z-index: 3; }
+.lab-tab tr.lab-gruppo td {
+  text-align: left; font-weight: 700; background: #e8f5e9; color: #1b5e20;
+  border-left: 4px solid #43a047;
+}
+
 /* ═════ ICONE DI STATO accanto al numero letto ═════ */
 /* Contenitore condiviso in alto a sinistra (speculare alla matita, che
    sta a destra). Le icone isolamento e rianimazione stanno AFFIANCATE.
