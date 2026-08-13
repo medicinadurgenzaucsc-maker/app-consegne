@@ -1082,12 +1082,31 @@ function _labRipristina(letti, labBackup) {
 // Gli esami seguono il PAZIENTE, non il letto: svuotare/eliminare un letto
 // li cancella, spostare un paziente li porta con sé. Best-effort: un
 // errore qui non deve mai bloccare l'operazione principale sul letto.
+// Bottone e promemoria si disegnano da window._labInfoLetti: la cache va
+// allineata SUBITO, in modo sincrono, perché la scheda viene ridisegnata
+// molto prima che il database risponda. Senza questo il letto svuotato (o
+// scambiato) continua a mostrare l'alambicco del paziente precedente.
+function _labInfoImposta(letto, val) {
+  var m = window._labInfoLetti || (window._labInfoLetti = {});
+  if (val) m[String(letto)] = val; else delete m[String(letto)];
+}
 function _labPulisci(letto) {
-  try { _sb.from('lab_esami').delete().eq('letto', String(letto)).then(function(){}); } catch (e) {}
+  _labInfoImposta(letto, null);
+  try { _labBottoniApplica(); } catch (e) {}
+  try {
+    return _q(_sb.from('lab_esami').delete().eq('letto', String(letto)))
+      .then(function() { return _labBottoniAggiorna(true); })
+      .catch(function() {});
+  } catch (e) { return Promise.resolve(); }
 }
 function _labScambia(a, b) {
+  var m = window._labInfoLetti || (window._labInfoLetti = {});
+  var ia = m[String(a)], ib = m[String(b)];
+  _labInfoImposta(a, ib);
+  _labInfoImposta(b, ia);
+  try { _labBottoniApplica(); } catch (e) {}
   try {
-    _q(_sb.from('lab_esami').select('letto,dati,paziente,allarme_giorni,ultimo_esame,n_esami,allarme_visto').in('letto', [String(a), String(b)]))
+    return _q(_sb.from('lab_esami').select('letto,dati,paziente,allarme_giorni,ultimo_esame,n_esami,allarme_visto').in('letto', [String(a), String(b)]))
       .then(function(rows) {
         rows = rows || [];
         var ra = rows.find(function(r){ return r.letto === String(a); });
@@ -1102,8 +1121,10 @@ function _labScambia(a, b) {
             if (rb) ins.push({ letto: String(a), dati: rb.dati, paziente: rb.paziente, allarme_giorni: rb.allarme_giorni, ultimo_esame: rb.ultimo_esame, n_esami: rb.n_esami, allarme_visto: rb.allarme_visto, updated_at: ts });
             if (ins.length) return _q(_sb.from('lab_esami').insert(ins));
           });
-      }).catch(function(){});
-  } catch (e) {}
+      })
+      .then(function() { return _labBottoniAggiorna(true); })
+      .catch(function(){});
+  } catch (e) { return Promise.resolve(); }
 }
 
 function _sbDimettiLetto(numeroLetto) {
