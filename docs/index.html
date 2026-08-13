@@ -1044,6 +1044,8 @@
       if (_ntFM && typeof _terapiaNormalizzaStruttura === 'function') _terapiaNormalizzaStruttura(_ntFM);
       // Promemoria "terapia da aggiornare": ricontrolla all'apertura della scheda.
       if (typeof window._verificaTerapiaObsoleta === 'function') window._verificaTerapiaObsoleta(card);
+      // Blocco Laboratorio: ricostruiscilo (il fresh-fetch riscrive i campi).
+      if (typeof window._labBottoniApplica === 'function') window._labBottoniApplica(card);
 
       // Crea il badge di stato salvataggio dedicato al focus mode
       // (top-left fisso del viewport, fuori dalla card). _getBadges in

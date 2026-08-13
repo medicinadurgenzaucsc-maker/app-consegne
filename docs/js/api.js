@@ -924,7 +924,9 @@ var _LAB_ICONA =
     '<path d="M9.4 3.6h5.2" stroke="#37474f" stroke-width="1.7" stroke-linecap="round"/>' +
   '</svg>';
 function _labBottoneHtml() {
-  return '<button type="button" class="lab-apri-btn" title="Esami di laboratorio (TrakCare)" style="display:none">' +
+  // Niente display:none qui: ora la visibilità la decide la presenza del
+  // blocco .lab-box (che esiste solo se il letto ha esami importati).
+  return '<button type="button" class="lab-apri-btn" title="Esami di laboratorio (TrakCare)">' +
     _LAB_ICONA + '<span class="lab-apri-txt">Visualizza Esami di Laboratorio</span></button>';
 }
 // Ogni quanto richiedere gli esami se il letto non ha un valore suo.
@@ -974,9 +976,10 @@ function _labAssicuraScrivibile(campo) {
 // promemoria sveglia, separati dal testo libero da una riga (come le scale).
 // È uno stato DERIVATO: si ricostruisce da zero a ogni giro, così un residuo
 // salvato in una versione precedente non sopravvive mai.
-function _labBottoniApplica() {
+function _labBottoniApplica(soloCard) {
   var info = window._labInfoLetti || {};
-  document.querySelectorAll('.patient-card[data-bed]').forEach(function(c) {
+  var lista = soloCard ? [soloCard] : [].slice.call(document.querySelectorAll('.patient-card[data-bed]'));
+  lista.forEach(function(c) {
     var campo = c.querySelector('[data-field="EsamiColturali"]');
     if (!campo) return;
     var presenti = [].slice.call(campo.querySelectorAll('.lab-box'));
@@ -2612,6 +2615,12 @@ function _aggiornaCardDaPaziente(card, p) {
   if (typeof window._isolamentoSyncIcona === 'function') {
     try { window._isolamentoSyncIcona(card); } catch(e) {}
   }
+
+  // Il campo Esami Colturali è appena stato riscritto col valore del DB:
+  // il blocco Laboratorio (alambicco + promemoria) è uno stato derivato e
+  // va ricostruito, altrimenti sparisce a ogni aggiornamento della scheda
+  // — compreso il fresh-fetch all'apertura del focus mode.
+  try { _labBottoniApplica(card); } catch(e) {}
 
   // Date (data ricovero + giorni calcolati, data nascita + età ricalcolata in UI)
   var ric = _parseDataRicovero(p.DataRicovero);
