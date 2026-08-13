@@ -506,6 +506,9 @@ body { padding-top: 70px; background-color: #d4e6f1 !important; }
   text-align: left; font-weight: 700; background: #e8f5e9; color: #1b5e20;
   border-left: 4px solid #43a047;
 }
+/* Fuori range (il Trak appende H/L al valore): alto rosso, basso blu */
+.lab-tab td.lab-alto  { color: #c62828; font-weight: 700; }
+.lab-tab td.lab-basso { color: #1565c0; font-weight: 700; }
 
 /* ═════ ICONE DI STATO accanto al numero letto ═════ */
 /* Contenitore condiviso in alto a sinistra (speculare alla matita, che
