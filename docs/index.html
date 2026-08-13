@@ -2955,7 +2955,7 @@
     // ⚠️ Parser in BOZZA sulla descrizione dell'utente: da validare sul
     // DOM reale della pagina Laboratorio (freccia storico → segnalibro v2).
     // ══════════════════════════════════════════════════════════════════
-    var _LAB_BM_VERSIONE = 2;
+    var _LAB_BM_VERSIONE = 3;
 
     // Sorgente del segnalibro (gira su TrakCare). MAI commenti // qui
     // dentro: il collasso su una riga li farebbe inghiottire tutto.
@@ -3003,7 +3003,8 @@
             }
             if(senzaFreccia || !avanzato) break;
             giri++;
-            await attesa(function(){ return false; },600);
+            var nr0=-1;
+            await attesa(function(){ var tb=TAB(); if(!tb) return false; var n=tb.querySelectorAll('tr').length; var stab=(n===nr0 && n>0); nr0=n; return stab; },4000);
             pagine.push(dump());
           }
           var back=0, fermi=0;
@@ -3023,10 +3024,24 @@
           try{var reg=document.querySelector('[id$=BANNERRegistrationNo]');cs2=reg?norm(reg.textContent):((document.body.innerText.match(/ID Paz[.:\s]*([0-9]{4,})/i)||[])[1]||'');}catch(e){}
           var nR=0; pagine.forEach(function(pg){nR+=pg.righe.length;});
           if(!nR){ banner('⚠️ La tabella degli esami sembra vuota.','#c62828'); return; }
-          var payload='⟦LAB-TRAK⟧\n'+JSON.stringify({v:2,paz:paz,cs:cs2,ts:Date.now(),pagine:pagine});
-          var ok2=function(){banner('✅ Esami copiati ('+pagine.length+' pagine, '+nR+' righe)<br><span style="font-weight:400;font-size:13px">Vai nelle Consegne, apri «Laboratorio» e premi «Aggiorna Esami»</span>','#00695c');};
-          var ko=function(err){try{var ta=document.createElement('textarea');ta.value=payload;document.body.appendChild(ta);ta.select();var okc=document.execCommand&&document.execCommand('copy');document.body.removeChild(ta);if(okc){ok2();return;}}catch(e2){}banner('⚠️ Impossibile copiare: '+err+'<br><span style="font-weight:400;font-size:12px">Copia a mano dal riquadro qui sotto.</span>','#c62828',payload);};
-          try{if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(payload).then(ok2,function(e){ko(e&&e.message?e.message:'permesso negato');});}else{ko('API appunti non disponibile');}}catch(e){ko(e.message);}
+          var payload='⟦LAB-TRAK⟧\n'+JSON.stringify({v:3,paz:paz,cs:cs2,ts:Date.now(),pagine:pagine});
+          var copia=function(){ try{ if(navigator.clipboard&&navigator.clipboard.writeText) return navigator.clipboard.writeText(payload); }catch(e){} return Promise.reject(new Error('API appunti non disponibile')); };
+          var okB=function(){banner('✅ Esami copiati ('+pagine.length+' pagine, '+nR+' righe)<br><span style="font-weight:400;font-size:13px">Vai nelle Consegne, apri «Laboratorio» e premi «Aggiorna Esami»</span>','#00695c');};
+          var manuale=function(err){try{var ta=document.createElement('textarea');ta.value=payload;document.body.appendChild(ta);ta.select();var okc=document.execCommand&&document.execCommand('copy');document.body.removeChild(ta);if(okc){okB();return;}}catch(e2){}banner('⚠️ Impossibile copiare: '+err+'<br><span style="font-weight:400;font-size:12px">Copia a mano dal riquadro qui sotto.</span>','#c62828',payload);};
+          var bottone=function(){
+            var d=document.getElementById('bmLabBanner'); if(d) d.remove();
+            d=document.createElement('div'); d.id='bmLabBanner';
+            d.style.cssText='position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:2147483647;background:#455a64;color:#fff;padding:16px 22px;border-radius:12px;font:600 15px system-ui,Arial;box-shadow:0 8px 30px rgba(0,0,0,.5);max-width:92vw;text-align:center';
+            d.innerHTML='📋 Esami pronti ('+pagine.length+' pagine, '+nR+' righe).<br><span style="font-weight:400;font-size:12px">La finestra aveva perso il fuoco durante la lettura: tocca il pulsante per copiarli.</span><br>';
+            var b=document.createElement('button');
+            b.textContent='📋 Copia esami';
+            b.style.cssText='margin-top:10px;background:#00695c;color:#fff;border:0;border-radius:8px;padding:10px 18px;font:700 15px system-ui,Arial;cursor:pointer';
+            b.addEventListener('click',function(){ copia().then(okB,function(e2){ manuale(e2&&e2.message?e2.message:'errore'); }); });
+            d.appendChild(b);
+            document.body.appendChild(d);
+          };
+          try{ window.focus(); }catch(e){}
+          copia().then(okB,function(){ bottone(); });
         })();
       }catch(e){alert('Errore segnalibro: '+e.message);}
     }
@@ -3268,8 +3283,9 @@
       }
     }
 
-    function _labGuida(ui, card){
+    function _labGuida(ui, card, motivo){
       ui.body.innerHTML='<div class="lab-guida">'
+        +(motivo?'<div class="lab-avviso lab-avviso-warn" style="margin:0 0 8px;border-radius:6px;">'+motivo+'</div>':'')
         +'<p style="margin:0 0 8px;">Non ho trovato esami copiati da TrakCare negli appunti.</p>'
         +'<div style="background:#f1f8f6;border:1px solid #b2dfdb;border-radius:8px;padding:10px 12px;">'
         +'<div style="margin:5px 0;"><b>1.</b> <b>Solo se il bottone non è già</b> nella barra dei preferiti, <b>trascinalo</b> lassù:'
@@ -3299,8 +3315,8 @@
       catch(e){ p=Promise.reject(e); }
       p.then(function(clip){
         if(_isPayloadLab(clip)) _labProcessa(card, ui, clip);
-        else _labGuida(ui, card);
-      }).catch(function(){ _labGuida(ui, card); });
+        else _labGuida(ui, card, (clip&&clip.trim())?'Negli appunti c\'è altro contenuto, non gli esami del segnalibro.':null);
+      }).catch(function(e){ _labGuida(ui, card, 'Non riesco a leggere gli appunti ('+_escIso((e&&e.message)||String(e))+'). Riprova cliccando di nuovo «Aggiorna Esami».'); });
     }
 
     // ── Modal: sopra il focus mode, che NON viene mai chiuso ───────────
