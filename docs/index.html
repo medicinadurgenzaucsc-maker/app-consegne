@@ -3103,19 +3103,36 @@
       return y+('0'+m[2]).slice(-2)+('0'+m[1]).slice(-2)+('0'+(m[4]||'0')).slice(-2)+('0'+(m[5]||'0')).slice(-2);
     }
 
-    // ── Andamento nel tempo (richiesta utente): sotto ogni esame con
-    // almeno 2 valori numerici compare un bottoncino con la sparkline;
-    // il click apre il grafico completo dentro il modal stesso. ──────────
+    // ── ANDAMENTO NEL TEMPO ────────────────────────────────────────────
+    // Sotto ogni esame con almeno 2 valori numerici c'è un bottoncino con la
+    // sparkline; il click apre il grafico. Con la "selezione multipla" si
+    // scelgono più esami e si confrontano in un grafico solo.
     function _labNum(v){
       var m=String(v==null?'':v).replace(/,/g,'.').match(/-?\d+(?:\.\d+)?/);
       return m?parseFloat(m[0]):null;
     }
-    // Serie CRONOLOGICA (vecchio → recente) dei soli valori numerici.
+    // Il Trak appende H/L ai fuori-range: la lettera NON si scrive (scelta
+    // utente), resta solo il colore.
+    function _labFlag(v){ return /\bH\s*$/.test(v||'') ? 'alto' : (/\bL\s*$/.test(v||'') ? 'basso' : ''); }
+    function _labPulito(v){ return String(v==null?'':v).replace(/\s*[HL]\s*$/,'').trim(); }
     function _labSerie(e){
-      return Object.keys(e.v||{})
+      return Object.keys((e&&e.v)||{})
         .sort(function(a,b){ return _labDataKey(a).localeCompare(_labDataKey(b)); })
-        .map(function(d){ return { d:d, txt:e.v[d], val:_labNum(e.v[d]) }; })
+        .map(function(d){ return { d:d, txt:_labPulito(e.v[d]), flag:_labFlag(e.v[d]), val:_labNum(e.v[d]) }; })
         .filter(function(p){ return p.val!==null && isFinite(p.val); });
+    }
+    // Colonne strette: data sopra, ora a capo.
+    function _labDataHtml(d){
+      var m=String(d).match(/(\d{1,2}\/\d{1,2})(?:\/\d{2,4})?(?:\s+(\d{1,2}[:.]\d{2}))?/);
+      return '<div class="lab-d">'+_escIso(m?m[1]:String(d))+'</div>'
+           + ((m&&m[2]) ? '<div class="lab-o">'+_escIso(m[2])+'</div>' : '');
+    }
+    function _labDateDi(doc, chiavi){
+      var s={};
+      (chiavi||(doc&&doc.ord)||[]).forEach(function(k){
+        var e=doc.esami[k]; if(e) Object.keys(e.v||{}).forEach(function(d){ s[d]=1; });
+      });
+      return Object.keys(s);
     }
     function _labSparkSvg(serie){
       var vals=serie.map(function(p){return p.val;});
@@ -3123,100 +3140,189 @@
       if(hi===lo){ hi+=1; lo-=1; }
       var pts=vals.map(function(v,i){
         var x=3+54*(vals.length===1?0.5:i/(vals.length-1));
-        var y=17-14*((v-lo)/(hi-lo));
+        var y=16-13*((v-lo)/(hi-lo));
         return x.toFixed(1)+','+y.toFixed(1);
       }).join(' ');
-      return '<svg viewBox="0 0 60 20" width="60" height="20" aria-hidden="true">'
+      return '<svg viewBox="0 0 60 19" width="52" height="17" aria-hidden="true">'
         +'<polyline points="'+pts+'" fill="none" stroke="#00695c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
     }
-    function _labGrafHtml(e){
-      var serie=_labSerie(e);
-      var W=640,H=280,L=48,R=16,T=26,B=46;
-      var vals=serie.map(function(p){return p.val;});
-      var lo=Math.min.apply(null,vals), hi=Math.max.apply(null,vals);
-      var rm=String(e.range||'').replace(/,/g,'.').match(/(-?\d+(?:\.\d+)?)\s*-\s*(-?\d+(?:\.\d+)?)/);
-      var rlo=rm?parseFloat(rm[1]):null, rhi=rm?parseFloat(rm[2]):null;
-      if(rm){ lo=Math.min(lo,rlo); hi=Math.max(hi,rhi); }
-      if(hi===lo){ hi+=1; lo-=1; }
-      var pad=(hi-lo)*0.08; lo-=pad; hi+=pad;
-      var X=function(i){ return L+(W-L-R)*(serie.length===1?0.5:i/(serie.length-1)); };
-      var Y=function(v){ return T+(H-T-B)*(1-(v-lo)/(hi-lo)); };
-      var s='<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;max-width:680px;height:auto;display:block;">';
-      // banda di normalità (se l'intervallo è "a - b")
-      if(rm){
-        s+='<rect x="'+L+'" y="'+Y(rhi).toFixed(1)+'" width="'+(W-L-R)+'" height="'+(Y(rlo)-Y(rhi)).toFixed(1)+'" fill="#e8f5e9"/>'
-          +'<text x="'+(W-R-2)+'" y="'+(Y(rhi)-3).toFixed(1)+'" font-size="10" fill="#66bb6a" text-anchor="end">'+rhi+'</text>'
-          +'<text x="'+(W-R-2)+'" y="'+(Y(rlo)+11).toFixed(1)+'" font-size="10" fill="#66bb6a" text-anchor="end">'+rlo+'</text>';
+    // Colori della legenda: tinte diverse a ogni apertura (angolo aureo).
+    function _labColori(n){
+      var base=Math.random()*360, out=[];
+      for(var i=0;i<n;i++) out.push('hsl('+Math.round((base+i*137.508)%360)+',68%,40%)');
+      return out;
+    }
+    // Grafico. Con PIÙ serie i valori si normalizzano ciascuno sulla propria
+    // scala (Hb ~8 e Piastrine ~250 sullo stesso asse sarebbero illeggibili):
+    // i numeri veri restano nella tabella sotto e nel tooltip.
+    function _labChartSvg(series, date, norm){
+      var W=900,H=300,L=norm?18:54,R=16,T=18,B=40;
+      var X=function(i){ return L+(W-L-R)*(date.length===1?0.5:i/(date.length-1)); };
+      var lo=0,hi=1,rlo=null,rhi=null;
+      if(!norm){
+        var vals=series[0].punti.map(function(p){return p.val;});
+        lo=Math.min.apply(null,vals); hi=Math.max.apply(null,vals);
+        var rm=String(series[0].range||'').replace(/,/g,'.').match(/(-?\d+(?:\.\d+)?)\s*-\s*(-?\d+(?:\.\d+)?)/);
+        if(rm){ rlo=parseFloat(rm[1]); rhi=parseFloat(rm[2]); lo=Math.min(lo,rlo); hi=Math.max(hi,rhi); }
+        if(hi===lo){ hi+=1; lo-=1; }
+        var pad=(hi-lo)*0.1; lo-=pad; hi+=pad;
       }
-      // assi min/max
+      var Y=function(v){ return T+(H-T-B)*(1-(v-lo)/(hi-lo)); };
+      var s='<svg viewBox="0 0 '+W+' '+H+'" class="lab-svg" preserveAspectRatio="xMidYMid meet">';
+      if(!norm && rlo!==null){
+        s+='<rect x="'+L+'" y="'+Y(rhi).toFixed(1)+'" width="'+(W-L-R)+'" height="'+Math.max(0,(Y(rlo)-Y(rhi))).toFixed(1)+'" fill="#e8f5e9"/>'
+          +'<text x="'+(L-5)+'" y="'+(Y(rhi)+3).toFixed(1)+'" font-size="11" fill="#66bb6a" text-anchor="end">'+rhi+'</text>'
+          +'<text x="'+(L-5)+'" y="'+(Y(rlo)+3).toFixed(1)+'" font-size="11" fill="#66bb6a" text-anchor="end">'+rlo+'</text>';
+      }
       s+='<line x1="'+L+'" y1="'+T+'" x2="'+L+'" y2="'+(H-B)+'" stroke="#cfd8dc"/>'
         +'<line x1="'+L+'" y1="'+(H-B)+'" x2="'+(W-R)+'" y2="'+(H-B)+'" stroke="#cfd8dc"/>';
-      // linea
-      var pts=serie.map(function(p,i){ return X(i).toFixed(1)+','+Y(p.val).toFixed(1); }).join(' ');
-      s+='<polyline points="'+pts+'" fill="none" stroke="#00695c" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>';
-      // punti + valore sopra + data sotto (sfoltita se sono tante)
-      var salto=Math.max(1, Math.ceil(serie.length/9));
-      serie.forEach(function(p,i){
-        var fuori=/\sH$/.test(p.txt)||/\sL$/.test(p.txt);
-        s+='<circle cx="'+X(i).toFixed(1)+'" cy="'+Y(p.val).toFixed(1)+'" r="3.4" fill="'+(fuori?(/H$/.test(p.txt)?'#c62828':'#1565c0'):'#00695c')+'"/>'
-          +'<text x="'+X(i).toFixed(1)+'" y="'+(Y(p.val)-8).toFixed(1)+'" font-size="10.5" font-weight="700" fill="#37474f" text-anchor="middle">'+p.val+'</text>';
-        if(i%salto===0 || i===serie.length-1){
-          var m=p.d.match(/(\d{1,2}\/\d{1,2})/);
-          s+='<text x="'+X(i).toFixed(1)+'" y="'+(H-B+16)+'" font-size="10" fill="#78909c" text-anchor="middle">'+(m?m[1]:'')+'</text>';
+      // etichette date sull'asse X (sfoltite)
+      var salto=Math.max(1, Math.ceil(date.length/12));
+      date.forEach(function(d,i){
+        if(i%salto!==0 && i!==date.length-1) return;
+        var m=String(d).match(/(\d{1,2}\/\d{1,2})/);
+        s+='<text x="'+X(i).toFixed(1)+'" y="'+(H-B+15)+'" font-size="11" fill="#78909c" text-anchor="middle">'+(m?m[1]:'')+'</text>';
+      });
+      series.forEach(function(se){
+        var idx={}; date.forEach(function(d,i){ idx[d]=i; });
+        var sl=null,sh=null;
+        if(norm){
+          var vv=se.punti.map(function(p){return p.val;});
+          sl=Math.min.apply(null,vv); sh=Math.max.apply(null,vv);
+          if(sh===sl){ sh=sl+1; sl=sl-1; }
         }
+        var yy=function(v){ return norm ? (T+(H-T-B)*(1-(v-sl)/(sh-sl))) : Y(v); };
+        var pts=se.punti.map(function(p){ return X(idx[p.d]).toFixed(1)+','+yy(p.val).toFixed(1); }).join(' ');
+        s+='<polyline points="'+pts+'" fill="none" stroke="'+se.colore+'" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>';
+        se.punti.forEach(function(p){
+          var col = p.flag==='alto' ? '#c62828' : (p.flag==='basso' ? '#1565c0' : se.colore);
+          var m=String(p.d).match(/(\d{1,2}\/\d{1,2})(?:\/\d{2,4})?(?:\s+(\d{1,2}[:.]\d{2}))?/);
+          var quando=(m?m[1]:String(p.d))+((m&&m[2])?' '+m[2]:'');
+          s+='<circle class="lab-pt" cx="'+X(idx[p.d]).toFixed(1)+'" cy="'+yy(p.val).toFixed(1)+'" r="4.2" fill="'+col+'"'
+            +' data-n="'+_escIso(se.n)+'" data-d="'+_escIso(quando)+'" data-v="'+_escIso(p.txt+(se.um?' '+se.um:''))+'"/>';
+          if(!norm){
+            s+='<text x="'+X(idx[p.d]).toFixed(1)+'" y="'+(yy(p.val)-9).toFixed(1)+'" font-size="11.5" font-weight="700" fill="#37474f" text-anchor="middle">'+_escIso(p.txt)+'</text>';
+          }
+        });
       });
       s+='</svg>';
       return s;
     }
-    function _labGrafico(ui, doc, k){
-      var e=doc.esami[k]; if(!e) return;
-      var serie=_labSerie(e);
-      ui.body.innerHTML='<div class="lab-graf">'
-        +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">'
-        +'<button type="button" class="lab-btn lab-btn-mini lab-btn-torna">← Torna alla tabella</button>'
-        +'<b>'+_escIso(e.n)+'</b>'
-        +(e.range?'<span style="color:#78909c;font-size:0.85rem;">['+_escIso(e.range)+(e.um?' '+_escIso(e.um):'')+']</span>':'')
-        +'<span style="color:#78909c;font-size:0.85rem;">'+serie.length+' misurazioni</span>'
-        +'</div>'
-        +_labGrafHtml(e)
-        +'</div>';
-      ui.body.querySelector('.lab-btn-torna').addEventListener('click', function(){ _labRender(ui.body, doc); });
+    // Tabella dei valori sotto il grafico: stesse colonne/ordine del grafico.
+    function _labTabValori(series, date){
+      var h='<table class="lab-tab lab-tab-mini"><thead><tr><th class="lab-nome">Esame</th><th>U.M.</th>';
+      date.forEach(function(d){ h+='<th class="lab-dt" title="'+_escIso(d)+'">'+_labDataHtml(d)+'</th>'; });
+      h+='</tr></thead><tbody>';
+      series.forEach(function(se){
+        var m={}; se.punti.forEach(function(p){ m[p.d]=p; });
+        h+='<tr><td class="lab-nome"><span class="lab-dot" style="background:'+se.colore+'"></span>'+_escIso(se.n)+'</td>'
+          +'<td>'+_escIso(se.um||'')+'</td>';
+        date.forEach(function(d){
+          var p=m[d];
+          h+='<td'+(p&&p.flag?' class="lab-'+p.flag+'"':'')+'>'+(p?_escIso(p.txt):'')+'</td>';
+        });
+        h+='</tr>';
+      });
+      return h+'</tbody></table>';
     }
-    function _labRender(body, doc){
-      body._labDoc = doc;
+    function _labMostraGrafico(ui, chiavi){
+      var doc=ui.doc; if(!doc||!doc.esami) return;
+      var col=_labColori(chiavi.length);
+      var series=[];
+      chiavi.forEach(function(k,i){
+        var e=doc.esami[k]; if(!e) return;
+        var p=_labSerie(e);
+        if(p.length) series.push({ k:k, n:e.n, um:e.um||'', range:e.range||'', colore:col[i], punti:p });
+      });
+      if(!series.length){ _labAvviso(ui,'Nessun valore numerico da mettere in grafico.','warn'); return; }
+      var dset={}; series.forEach(function(se){ se.punti.forEach(function(p){ dset[p.d]=1; }); });
+      var date=Object.keys(dset).sort(function(a,b){ return _labDataKey(a).localeCompare(_labDataKey(b)); });
+      var norm=series.length>1;
+      var titolo = norm ? ('Confronto di '+series.length+' esami') : _escIso(series[0].n);
+      ui.body.innerHTML='<div class="lab-graf">'
+        +'<div class="lab-graf-bar">'
+        +'<button type="button" class="lab-btn lab-btn-mini lab-btn-torna"><i class="bi bi-arrow-left"></i> Torna alla tabella</button>'
+        +'<b>'+titolo+'</b>'
+        +(!norm&&series[0].range?'<span class="lab-graf-info">['+_escIso(series[0].range)+(series[0].um?' '+_escIso(series[0].um):'')+']</span>':'')
+        +'<span class="lab-graf-info">'+date.length+' prelievi</span>'
+        +(norm?'<span class="lab-graf-info">andamento normalizzato per confronto — i valori reali sono nella tabella</span>':'')
+        +'</div>'
+        +'<div class="lab-graf-top">'
+        +'<div class="lab-graf-svg">'+_labChartSvg(series,date,norm)+'</div>'
+        +(norm?('<div class="lab-graf-leg">'+series.map(function(se){
+            return '<div class="lab-leg-item"><span class="lab-dot" style="background:'+se.colore+'"></span>'+_escIso(se.n)+'</div>';
+          }).join('')+'</div>'):'')
+        +'</div>'
+        +'<div class="lab-graf-bot">'+_labTabValori(series,date)+'</div>'
+        +'<div class="lab-tip" id="labTip"></div>'
+        +'</div>';
+      var graf=ui.body.querySelector('.lab-graf');
+      var tip=ui.body.querySelector('#labTip');
+      // Tooltip: data + misurazione del punto sotto il mouse.
+      [].slice.call(ui.body.querySelectorAll('circle.lab-pt')).forEach(function(c){
+        c.addEventListener('mouseenter', function(ev){
+          tip.innerHTML='<b>'+c.getAttribute('data-d')+'</b><br>'+c.getAttribute('data-n')+': '+c.getAttribute('data-v');
+          tip.style.display='block';
+          var r=graf.getBoundingClientRect();
+          tip.style.left=Math.max(4,Math.min(r.width-190, ev.clientX-r.left+12))+'px';
+          tip.style.top=Math.max(4, ev.clientY-r.top-42)+'px';
+        });
+        c.addEventListener('mouseleave', function(){ tip.style.display='none'; });
+      });
+      ui.body.querySelector('.lab-btn-torna').addEventListener('click', function(){ _labRender(ui, doc); });
+      _labBarra(ui);
+    }
+    // Mostra/nasconde "Visualizza grafico" secondo selezione e modalità.
+    function _labBarra(ui){
+      if(!ui.ov) return;
+      var g=ui.ov.querySelector('#labBtnGraf');
+      if(!g) return;
+      var inTab=!!ui.body.querySelector('.lab-tab-main');
+      var n=ui.body.querySelectorAll('tr.lab-sel[data-num="1"]').length;
+      g.style.display=(ui.multi && inTab && n>0) ? '' : 'none';
+      g.textContent='';
+      g.innerHTML='<i class="bi bi-graph-up"></i> Visualizza grafico'+(n>1?' ('+n+')':'');
+    }
+    function _labRender(ui, doc){
+      var body=ui.body;
+      ui.doc=doc;
       var ord=(doc&&doc.ord)||[];
       if(!ord.length){
         body.innerHTML='<div class="lab-vuoto">Nessun esame ancora importato per questo letto.<br><br>'
           +'Su TrakCare apri il <b>Laboratorio</b> del paziente, premi il segnalibro <b>«Prendi Esami Trak»</b>, poi torna qui e premi <b>«Aggiorna Esami»</b>.</div>';
+        _labBarra(ui);
         return;
       }
-      var dset={};
-      ord.forEach(function(k){ var e=doc.esami[k]; if(e) Object.keys(e.v||{}).forEach(function(d){ dset[d]=1; }); });
-      var date=Object.keys(dset).sort(function(a,b){ return _labDataKey(b).localeCompare(_labDataKey(a)); });
-      var h='<table class="lab-tab"><thead><tr><th class="lab-nome">Esame</th><th>Intervallo</th><th>U.M.</th>';
-      date.forEach(function(d){ h+='<th>'+_escIso(d)+'</th>'; });
+      var date=_labDateDi(doc).sort(function(a,b){ return _labDataKey(b).localeCompare(_labDataKey(a)); });
+      var nCol=3+date.length;
+      var h='<table class="lab-tab lab-tab-main"><thead><tr><th class="lab-nome">Esame</th><th>Rif.</th><th>U.M.</th>';
+      date.forEach(function(d){ h+='<th class="lab-dt" title="'+_escIso(d)+'">'+_labDataHtml(d)+'</th>'; });
       h+='</tr></thead><tbody>';
       var ultimoG=null;
       ord.forEach(function(k){
         var e=doc.esami[k]; if(!e) return;
-        if((e.g||'')!==ultimoG){ ultimoG=e.g||''; if(ultimoG) h+='<tr class="lab-gruppo"><td colspan="'+(3+date.length)+'">'+_escIso(ultimoG)+'</td></tr>'; }
+        if((e.g||'')!==ultimoG){
+          ultimoG=e.g||'';
+          if(ultimoG) h+='<tr class="lab-gruppo" data-g="'+_escIso(ultimoG)+'"><td colspan="'+nCol+'"><span class="lab-gsticky">'+_escIso(ultimoG)+'</span></td></tr>';
+        }
         var serie=_labSerie(e);
         var spark = serie.length>=2
-          ? '<br><button type="button" class="lab-spark" data-k="'+encodeURIComponent(k)+'" title="Andamento nel tempo">'+_labSparkSvg(serie)+'</button>'
+          ? '<button type="button" class="lab-spark" data-k="'+encodeURIComponent(k)+'" title="Andamento nel tempo">'+_labSparkSvg(serie)+'</button>'
           : '';
-        h+='<tr><td class="lab-nome">'+_escIso(e.n)+spark+'</td><td>'+_escIso(e.range||'')+'</td><td>'+_escIso(e.um||'')+'</td>';
+        h+='<tr data-k="'+encodeURIComponent(k)+'" data-g="'+_escIso(e.g||'')+'"'+(serie.length?' data-num="1"':'')+'>'
+          +'<td class="lab-nome">'+_escIso(e.n)+(spark?'<br>'+spark:'')+'</td>'
+          +'<td class="lab-rif">'+_escIso(e.range||'')+'</td><td class="lab-um">'+_escIso(e.um||'')+'</td>';
         date.forEach(function(d){
-          var val=(e.v||{})[d]||'';
-          // Il Trak marca i fuori-range con H/L in coda al valore: rosso/blu.
-          var cl=/\sH$/.test(val)?' class="lab-alto"':(/\sL$/.test(val)?' class="lab-basso"':'');
-          h+='<td'+cl+'>'+_escIso(val)+'</td>';
+          var raw=(e.v||{})[d]||'';
+          var f=_labFlag(raw);
+          h+='<td'+(f?' class="lab-'+f+'"':'')+'>'+_escIso(_labPulito(raw))+'</td>';
         });
         h+='</tr>';
       });
       h+='</tbody></table>';
-      body.innerHTML=h;
+      body.innerHTML='<div class="lab-tabwrap">'+h+'</div>';
+      _labBarra(ui);
     }
-
     // ── Persistenza (tabella lab_esami, on-demand) ─────────────────────
     function _labCarica(letto){
       return _sb.from('lab_esami').select('dati,paziente').eq('letto', String(letto)).maybeSingle()
@@ -3256,8 +3362,10 @@
         _labCarica(ui.letto).then(function(row){
           var m=_labMerge(row&&row.dati, esami);
           return _labSalva(ui.letto, m.doc, pazT||(row&&row.paziente)||ui.pazC).then(function(){
-            _labRender(ui.body, m.doc);
+            _labRender(ui, m.doc);
             _labAvviso(ui,'✅ Aggiornato: <b>'+m.nuovi+'</b> esami nuovi, <b>'+m.valori+'</b> valori aggiunti.','ok');
+            // Da ora la scheda ha esami: fai comparire l'alambicco.
+            if (typeof window._labBottoniAggiorna === 'function') window._labBottoniAggiorna(true);
           });
         }).catch(function(e){ _labAvviso(ui,'Errore di salvataggio: '+_escIso(e.message),'err'); });
       };
@@ -3305,7 +3413,7 @@
     function _labRicarica(ui){
       ui.body.innerHTML='<div class="lab-vuoto">Carico…</div>';
       _labCarica(ui.letto)
-        .then(function(row){ _labRender(ui.body, row&&row.dati||null); })
+        .then(function(row){ _labRender(ui, row&&row.dati||null); })
         .catch(function(e){ ui.body.innerHTML='<div class="lab-vuoto">Errore di caricamento: '+_escIso(e.message)+'</div>'; });
     }
 
@@ -3326,13 +3434,15 @@
       if(vecchio && vecchio.parentNode) vecchio.parentNode.removeChild(vecchio);
       var letto=card.getAttribute('data-bed')||'';
       var nomeEl=card.querySelector('[data-field="Nome"]');
-      var pazC=nomeEl?(nomeEl.innerText||nomeEl.textContent||'').replace(/ /g,' ').trim():'';
+      var pazC=nomeEl?(nomeEl.innerText||nomeEl.textContent||'').replace(/ /g,' ').trim():'';
       var ov=document.createElement('div');
       ov.id='labModalOverlay';
       ov.innerHTML='<div class="lab-modal" role="dialog" aria-label="Esami di laboratorio">'
         +'<div class="lab-modal-bar">'
         +'<span class="lab-modal-tit"><i class="bi bi-droplet-half"></i> Laboratorio'+(pazC?' — '+_escIso(pazC):'')+(letto?' <span style="font-weight:400;color:#78909c">(letto '+_escIso(letto)+')</span>':'')+'</span>'
-        +'<button type="button" class="lab-btn lab-btn-agg" id="labBtnAggiorna">Aggiorna Esami</button>'
+        +'<button type="button" class="lab-btn lab-btn-graf" id="labBtnGraf" style="display:none"><i class="bi bi-graph-up"></i> Visualizza grafico</button>'
+        +'<button type="button" class="lab-btn lab-btn-multi" id="labBtnMulti"><i class="bi bi-check2-square"></i> Selezione multipla</button>'
+        +'<button type="button" class="lab-btn lab-btn-agg" id="labBtnAggiorna"><i class="bi bi-arrow-repeat"></i> Aggiorna Esami</button>'
         +'<button type="button" class="lab-btn lab-btn-x" id="labBtnChiudi" title="Chiudi">✕</button>'
         +'</div>'
         +'<div id="labAvvisi"></div>'
@@ -3345,6 +3455,9 @@
       });
       function chiudi(){
         document.removeEventListener('keydown', escH, true);
+        // Grace per il listener focusout globale: alla chiusura il fuoco
+        // rientra nella card con un attimo di ritardo.
+        window._labModalChiusoTs = Date.now();
         if(ov.parentNode) ov.parentNode.removeChild(ov);
       }
       // Esc chiude SOLO il modal (capture + stopImmediate: nessun altro lo vede)
@@ -3355,19 +3468,57 @@
       ov.addEventListener('mousedown', function(ev){ giuSuSfondo=(ev.target===ov); });
       ov.addEventListener('click', function(ev){ if(ev.target===ov && giuSuSfondo) chiudi(); });
       document.body.appendChild(ov);
-      var ui={ letto:letto, pazC:pazC, body:ov.querySelector('#labBody'), avvisi:ov.querySelector('#labAvvisi') };
+      var ui={ letto:letto, pazC:pazC, ov:ov, multi:false, doc:null,
+               body:ov.querySelector('#labBody'), avvisi:ov.querySelector('#labAvvisi') };
       ov.querySelector('#labBtnChiudi').addEventListener('click', chiudi);
       ov.querySelector('#labBtnAggiorna').addEventListener('click', function(){ _labAvviso(ui,''); _labAggiorna(card, ui); });
-      // Delega: click sulla sparkline → grafico (sopravvive ai re-render del body)
+      // Selezione multipla: abilita la scelta dei gruppi e il tasto grafico.
+      ov.querySelector('#labBtnMulti').addEventListener('click', function(){
+        ui.multi=!ui.multi;
+        this.classList.toggle('lab-btn-on', ui.multi);
+        if(!ui.multi){
+          [].slice.call(ui.body.querySelectorAll('tr.lab-sel')).forEach(function(r){ r.classList.remove('lab-sel'); });
+        }
+        _labBarra(ui);
+      });
+      ov.querySelector('#labBtnGraf').addEventListener('click', function(){
+        var ks=[].slice.call(ui.body.querySelectorAll('tr.lab-sel[data-num="1"]'))
+                 .map(function(r){ return decodeURIComponent(r.getAttribute('data-k')); });
+        if(ks.length) _labMostraGrafico(ui, ks);
+      });
+      // Delega: sparkline → grafico; riga → evidenziazione (giallino) e,
+      // in selezione multipla, riga-titolo → tutto il gruppo.
       ui.body.addEventListener('click', function(ev){
-        var b = ev.target && ev.target.closest ? ev.target.closest('.lab-spark') : null;
-        if(!b || !ui.body._labDoc) return;
-        var k = decodeURIComponent(b.getAttribute('data-k')||'');
-        if(ui.body._labDoc.esami && ui.body._labDoc.esami[k]) _labGrafico(ui, ui.body._labDoc, k);
+        var sp = ev.target && ev.target.closest ? ev.target.closest('.lab-spark') : null;
+        if(sp){ _labMostraGrafico(ui, [decodeURIComponent(sp.getAttribute('data-k')||'')]); return; }
+        var tr = ev.target && ev.target.closest ? ev.target.closest('tr') : null;
+        if(!tr) return;
+        if(tr.classList.contains('lab-gruppo')){
+          if(!ui.multi) return;
+          var g=tr.getAttribute('data-g')||'';
+          var righe=[].slice.call(ui.body.querySelectorAll('tr[data-k]')).filter(function(r){ return (r.getAttribute('data-g')||'')===g; });
+          var tutte=righe.length && righe.every(function(r){ return r.classList.contains('lab-sel'); });
+          righe.forEach(function(r){ r.classList.toggle('lab-sel', !tutte); });
+          tr.classList.toggle('lab-sel', !tutte);
+          _labBarra(ui);
+          return;
+        }
+        if(tr.getAttribute('data-k')){ tr.classList.toggle('lab-sel'); _labBarra(ui); }
       });
       if(!letto){ ui.body.innerHTML='<div class="lab-vuoto">Questa scheda non ha un letto associato.</div>'; return; }
       _labRicarica(ui);
     };
+
+    // Alambicco nel campo Esami Colturali → apre il Laboratorio.
+    // Fuori dal focus mode il click è inerte (scelta utente).
+    document.addEventListener('click', function(ev){
+      var b = ev.target && ev.target.closest ? ev.target.closest('.lab-apri-btn') : null;
+      if(!b) return;
+      var card = b.closest('.patient-card');
+      if(!card || !card.classList.contains('focus-mode')) return;
+      ev.preventDefault(); ev.stopPropagation();
+      window._apriLabModal(card);
+    }, true);
 
     window._importaTerapiaTrak = function(card){
       if(!card || !card.classList.contains('focus-mode')) return;
@@ -4013,6 +4164,13 @@
         if (document.querySelector('.modal.show')) return;
         if (document.body && document.body.classList.contains('modal-open')) return;
         if (Date.now() - _bsModalChiusoTs < 500) return;
+        // ⚠ CRITICO #4: modal LABORATORIO aperto. Vive nel <body>, fuori dalla
+        // card: premere "Aggiorna Esami", selezionare righe o aprire un grafico
+        // sposta il focus fuori e il focus mode si chiudeva dietro al modal.
+        // Il focus mode si chiude solo DOPO aver chiuso il laboratorio (grace
+        // 500ms per il rientro del fuoco nella card).
+        if (document.getElementById('labModalOverlay')) return;
+        if (Date.now() - (window._labModalChiusoTs || 0) < 500) return;
         if (_lastMousedownInCard) return;
         var active = document.activeElement;
         if (_focusCard && !_focusCard.contains(active)) {

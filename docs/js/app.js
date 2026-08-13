@@ -1569,6 +1569,7 @@
       if (typeof window._aggiornaTuttiPlaceholders === 'function') window._aggiornaTuttiPlaceholders();
       if (typeof window._verificaPianoCuraTutti === 'function') window._verificaPianoCuraTutti();
       if (typeof window._verificaTerapiaObsoletaTutti === 'function') window._verificaTerapiaObsoletaTutti();
+      if (typeof window._labBottoniAggiorna === 'function') window._labBottoniAggiorna();
       if (typeof window._normalizzaTerapiaBox === 'function') window._normalizzaTerapiaBox();
 
       // ── 4. MESSAGGIO "NESSUN LETTO" ───────────────────────────────────────

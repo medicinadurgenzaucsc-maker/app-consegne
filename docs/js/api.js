@@ -589,7 +589,11 @@ function _renderAltCard(p) {
     '<div class="editable-area rich-text alt-editable" contenteditable="true" data-field="PianoTerapeutico" data-placeholder="Piano di cura...">' + (p.PianoTerapeutico || '') + '</div>' +
     '</div>' +
     '<div class="alt-diag-fourth">' +
-    '<div class="alt-col-header-split">Esami Colturali e Scale Valutazione</div>' +
+    '<div class="alt-col-header-split">Esami Colturali, Scale di Valutazione e Laboratorio.</div>' +
+    // Alambicco: apre il Laboratorio. Visibile SOLO se il letto ha esami
+    // importati (lo decide _labBottoniAggiorna), cliccabile solo in focus
+    // mode, mai stampato.
+    _labBottoneHtml() +
     '<div class="editable-area rich-text alt-editable" contenteditable="true" data-field="EsamiColturali" data-placeholder="Esami colturali... PESI SCORE, HASBLED, GENEVA...">' + (p.EsamiColturali || '') + '</div>' +
     '</div>' +
     '<div class="alt-diag-third">' +
@@ -904,6 +908,47 @@ function _sbEliminaLetto(numeroLetto) {
         .then(function() { _labPulisci(numeroLetto); return { success: true, message: 'Letto eliminato.' }; });
     });
 }
+
+// ── Bottone "alambicco" nel campo Esami Colturali ──────────────────────
+// Apre il Laboratorio. Compare SOLO sulle schede che hanno esami importati
+// (l'elenco dei letti arriva da una query leggerissima: la sola colonna
+// `letto`, con cache di 5 minuti — il contratto "niente esami nel sync"
+// resta intatto). Cliccabile solo in focus mode, mai stampato.
+var _LAB_ICONA =
+  '<svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true">' +
+    '<path d="M10.4 3.6v5.8L5.6 18.3c-.8 1.5.3 3.3 2 3.3h8.8c1.7 0 2.8-1.8 2-3.3L13.6 9.4V3.6z" fill="#fff" stroke="#37474f" stroke-width="1.2" stroke-linejoin="round"/>' +
+    '<path d="M8.15 14h7.7l2.55 4.3c.8 1.5-.3 3.3-2 3.3H7.6c-1.7 0-2.8-1.8-2-3.3L8.15 14z" fill="#43a047"/>' +
+    '<circle cx="10.3" cy="17.9" r="1" fill="#c8e6c9"/>' +
+    '<circle cx="13.7" cy="19.3" r="1.3" fill="#c8e6c9"/>' +
+    '<circle cx="12.1" cy="16.4" r=".65" fill="#e8f5e9"/>' +
+    '<path d="M9.4 3.6h5.2" stroke="#37474f" stroke-width="1.7" stroke-linecap="round"/>' +
+  '</svg>';
+function _labBottoneHtml() {
+  return '<button type="button" class="lab-apri-btn" title="Esami di laboratorio (TrakCare)" style="display:none">' + _LAB_ICONA + '</button>';
+}
+function _labBottoniApplica() {
+  var set = window._labLettiConEsami || {};
+  document.querySelectorAll('.patient-card[data-bed] .lab-apri-btn').forEach(function(b) {
+    var c = b.closest('.patient-card');
+    b.style.display = (c && set[c.getAttribute('data-bed')]) ? '' : 'none';
+  });
+}
+var _labBottoniTs = 0;
+function _labBottoniAggiorna(forza) {
+  _labBottoniApplica();                        // subito con quello che si sa già
+  if (!forza && Date.now() - _labBottoniTs < 300000) return Promise.resolve();
+  _labBottoniTs = Date.now();
+  return _q(_sb.from('lab_esami').select('letto'))
+    .then(function(rows) {
+      var set = {};
+      (rows || []).forEach(function(r) { set[String(r.letto)] = 1; });
+      window._labLettiConEsami = set;
+      _labBottoniApplica();
+    })
+    .catch(function() {});
+}
+window._labBottoniAggiorna = _labBottoniAggiorna;
+window._labBottoniApplica  = _labBottoniApplica;
 
 // ── Ciclo di vita esami di laboratorio (tabella lab_esami) ─────────────
 // Gli esami seguono il PAZIENTE, non il letto: svuotare/eliminare un letto

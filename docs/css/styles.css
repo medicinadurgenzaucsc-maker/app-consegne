@@ -461,8 +461,8 @@ body { padding-top: 70px; background-color: #d4e6f1 !important; }
 
 /* ═════ MODAL LABORATORIO (esami da TrakCare) ═════ */
 /* Sta SOPRA il focus mode (z-index oltre login/version overlay) e vive di
-   vita propria: chiuderlo non tocca mai il focus. Quadrato max 80% della
-   pagina, adattabile al contenuto, corpo scrollabile in entrambi gli assi. */
+   vita propria: chiuderlo non tocca mai il focus. DIMENSIONE FISSA (80% della
+   pagina): passando da tabella a grafico il riquadro non si ridimensiona. */
 #labModalOverlay {
   position: fixed; inset: 0; z-index: 100500;
   background: rgba(17, 27, 33, 0.55);
@@ -471,54 +471,106 @@ body { padding-top: 70px; background-color: #d4e6f1 !important; }
 .lab-modal {
   background: #fff; border-radius: 12px;
   box-shadow: 0 12px 48px rgba(0,0,0,.45);
-  max-width: 80vw; max-height: 80vh; min-width: 340px;
+  width: 80vw; height: 80vh; min-width: 360px;
   display: flex; flex-direction: column; overflow: hidden;
 }
 .lab-modal-bar {
-  display: flex; align-items: center; gap: 10px;
-  padding: 10px 14px; background: #eceff1; border-bottom: 1px solid #cfd8dc;
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 12px; background: #eceff1; border-bottom: 1px solid #cfd8dc;
+  flex: 0 0 auto;
 }
 .lab-modal-tit {
   font-weight: 700; color: #37474f; font-size: 1rem; flex: 1; min-width: 0;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .lab-modal-tit .bi { color: #c62828; margin-right: 4px; }
-.lab-btn { border: none; border-radius: 8px; padding: 7px 14px; font-weight: 600; cursor: pointer; }
+.lab-btn { border: none; border-radius: 8px; padding: 7px 13px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.lab-btn .bi { margin-right: 4px; }
 .lab-btn-agg { background: #00695c; color: #fff; }
 .lab-btn-agg:hover { background: #00796b; }
+.lab-btn-multi { background: #546e7a; color: #fff; }
+.lab-btn-multi:hover { background: #607d8b; }
+.lab-btn-multi.lab-btn-on { background: #00838f; box-shadow: inset 0 0 0 2px #b2ebf2; }
+.lab-btn-graf { background: #ef6c00; color: #fff; }
+.lab-btn-graf:hover { background: #f57c00; }
 .lab-btn-x { background: transparent; color: #546e7a; font-size: 1.2rem; padding: 2px 8px; }
 .lab-btn-mini { padding: 4px 10px; font-size: 0.82rem; }
 .lab-btn-si, .lab-btn-usa { background: #00695c; color: #fff; }
 .lab-btn-no, .lab-btn-torna { background: #eceff1; color: #37474f; }
-.lab-modal-body { overflow: auto; padding: 12px 14px; }
+.lab-modal-body { flex: 1 1 auto; overflow: auto; padding: 10px 12px; position: relative; min-height: 0; }
 .lab-vuoto { color: #546e7a; font-size: 0.92rem; padding: 18px 6px; max-width: 520px; line-height: 1.55; }
 .lab-guida { font-size: 0.88rem; max-width: 560px; line-height: 1.5; }
-.lab-avviso { padding: 7px 14px; font-size: 0.86rem; border-bottom: 1px solid #e0e0e0; }
+.lab-avviso { padding: 7px 14px; font-size: 0.86rem; border-bottom: 1px solid #e0e0e0; flex: 0 0 auto; }
 .lab-avviso-ok   { background: #e8f5e9; color: #1b5e20; }
 .lab-avviso-info { background: #e3f2fd; color: #0d47a1; }
 .lab-avviso-warn { background: #fff3e0; color: #6d4c00; }
 .lab-avviso-err  { background: #ffebee; color: #b71c1c; }
-.lab-tab { border-collapse: collapse; font-size: 0.82rem; }
-.lab-tab th, .lab-tab td { border: 1px solid #e0e0e0; padding: 3px 8px; white-space: nowrap; text-align: center; }
-.lab-tab thead th { background: #f5f7f8; position: sticky; top: 0; z-index: 2; }
-.lab-tab th.lab-nome, .lab-tab td.lab-nome { text-align: left; position: sticky; left: 0; background: #fff; z-index: 1; }
+
+/* ── Tabella esami: compatta, celle strette, intestazione su due righe ── */
+.lab-tab { border-collapse: collapse; font-size: 0.78rem; }
+.lab-tab th, .lab-tab td { border: 1px solid #e0e0e0; padding: 1px 5px; white-space: nowrap; text-align: center; }
+.lab-tab thead th { background: #f5f7f8; position: sticky; top: 0; z-index: 2; padding: 2px 5px; line-height: 1.15; }
+.lab-tab th.lab-dt .lab-d { font-weight: 700; }
+.lab-tab th.lab-dt .lab-o { font-weight: 400; color: #78909c; font-size: 0.7rem; }
+/* Nome esame e titolo di gruppo restano visibili durante lo scroll orizzontale */
+.lab-tab th.lab-nome, .lab-tab td.lab-nome {
+  text-align: left; position: sticky; left: 0; background: #fff; z-index: 1;
+  max-width: 220px; white-space: normal; line-height: 1.2;
+}
 .lab-tab thead th.lab-nome { background: #f5f7f8; z-index: 3; }
+.lab-tab td.lab-rif, .lab-tab td.lab-um { color: #78909c; font-size: 0.72rem; }
 .lab-tab tr.lab-gruppo td {
   text-align: left; font-weight: 700; background: #e8f5e9; color: #1b5e20;
-  border-left: 4px solid #43a047;
+  border-left: 4px solid #43a047; padding: 2px 6px; cursor: pointer;
 }
-/* Fuori range (il Trak appende H/L al valore): alto rosso, basso blu */
+.lab-gsticky { position: sticky; left: 6px; display: inline-block; }
+.lab-tab tr.lab-gruppo.lab-sel td { background: #dcedc8; }
+/* Riga cliccata: evidenziata in giallino per seguirla nello scroll */
+.lab-tab tbody tr[data-k] { cursor: pointer; }
+.lab-tab tbody tr[data-k]:hover td { background: #f5fbfa; }
+.lab-tab tbody tr[data-k]:hover td.lab-nome { background: #eef7f6; }
+.lab-tab tbody tr.lab-sel td { background: #fff9c4 !important; }
+.lab-tab tbody tr.lab-sel td.lab-nome { background: #fff59d !important; }
+/* Fuori range: il Trak appende H/L, noi togliamo la lettera e coloriamo */
 .lab-tab td.lab-alto  { color: #c62828; font-weight: 700; }
 .lab-tab td.lab-basso { color: #1565c0; font-weight: 700; }
-/* Bottoncino-sparkline sotto il nome dell'esame (≥2 valori numerici):
-   rettangolare, mostra l'andamento; il click apre il grafico completo. */
+/* Bottoncino-sparkline sotto il nome dell'esame (≥2 valori numerici) */
 .lab-spark {
-  display: inline-block; margin-top: 2px; padding: 1px 4px;
+  display: inline-block; margin-top: 1px; padding: 0 3px;
   background: #f1f8f6; border: 1px solid #b2dfdb; border-radius: 5px;
   cursor: pointer; line-height: 0;
 }
 .lab-spark:hover { background: #e0f2f1; border-color: #26a69a; }
-.lab-graf { min-width: 420px; }
+
+/* ── Pagina grafico: in alto il grafico (+ legenda), sotto i valori ── */
+.lab-graf { display: flex; flex-direction: column; min-height: 100%; position: relative; }
+.lab-graf-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; flex-wrap: wrap; flex: 0 0 auto; }
+.lab-graf-info { color: #78909c; font-size: 0.82rem; }
+.lab-graf-top { display: flex; gap: 10px; align-items: stretch; flex: 0 0 auto; }
+.lab-graf-svg { flex: 1 1 auto; min-width: 0; }
+.lab-svg { width: 100%; height: auto; max-height: 46vh; display: block; }
+.lab-graf-leg { width: 190px; flex: 0 0 auto; overflow: auto; max-height: 46vh; border-left: 1px solid #eceff1; padding-left: 8px; font-size: 0.8rem; }
+.lab-leg-item { margin: 3px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lab-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
+.lab-graf-bot { flex: 1 1 auto; overflow: auto; min-height: 0; margin-top: 8px; border-top: 1px solid #eceff1; padding-top: 6px; }
+.lab-tab-mini td.lab-nome, .lab-tab-mini th.lab-nome { max-width: 240px; }
+/* Tooltip sui nodi del grafico: data + misurazione */
+.lab-tip {
+  position: absolute; display: none; z-index: 5; pointer-events: none;
+  background: #263238; color: #fff; padding: 6px 9px; border-radius: 6px;
+  font-size: 0.78rem; line-height: 1.35; white-space: nowrap;
+  box-shadow: 0 4px 14px rgba(0,0,0,.35);
+}
+
+/* ── Alambicco nel campo Esami Colturali (apre il Laboratorio) ── */
+.lab-apri-btn {
+  display: block; width: 100%; margin: 1px 0 3px; padding: 1px 0;
+  background: #f1f8f6; border: 1px solid #b2dfdb; border-radius: 5px;
+  cursor: pointer; line-height: 0; text-align: center;
+}
+.lab-apri-btn:hover { background: #e0f2f1; border-color: #26a69a; }
+.patient-card:not(.focus-mode) .lab-apri-btn { cursor: default; opacity: .8; }
+@media print { .lab-apri-btn { display: none !important; } }
 
 /* ═════ ICONE DI STATO accanto al numero letto ═════ */
 /* Contenitore condiviso in alto a sinistra (speculare alla matita, che
