@@ -925,7 +925,7 @@ var _LAB_ICONA =
   '</svg>';
 function _labBottoneHtml() {
   return '<button type="button" class="lab-apri-btn" title="Esami di laboratorio (TrakCare)" style="display:none">' +
-    _LAB_ICONA + '<span class="lab-apri-txt">Esami di Laboratorio</span></button>';
+    _LAB_ICONA + '<span class="lab-apri-txt">Visualizza Esami di Laboratorio</span></button>';
 }
 // Ogni quanto richiedere gli esami se il letto non ha un valore suo.
 // SUB-INTENSIVA: 1 giorno. MEDICINA / APPOGGIO / STANDARD: 3 giorni.

@@ -3358,7 +3358,7 @@
     }
     // ── Persistenza (tabella lab_esami, on-demand) ─────────────────────
     function _labCarica(letto){
-      return _sb.from('lab_esami').select('dati,paziente').eq('letto', String(letto)).maybeSingle()
+      return _sb.from('lab_esami').select('dati,paziente,n_esami,ultimo_esame').eq('letto', String(letto)).maybeSingle()
         .then(function(res){ if(res.error) throw new Error(res.error.message); return res.data||null; });
     }
     // Riepiloghi salvati INSIEME al documento: sono quelli che permettono alla
@@ -3470,7 +3470,19 @@
     function _labRicarica(ui){
       ui.body.innerHTML='<div class="lab-vuoto">Carico…</div>';
       _labCarica(ui.letto)
-        .then(function(row){ _labRender(ui, row&&row.dati||null); })
+        .then(function(row){
+          var doc = (row && row.dati) || null;
+          _labRender(ui, doc);
+          // Auto-riparazione: le righe salvate PRIMA che esistessero i
+          // riepiloghi (n_esami / ultimo_esame) non farebbero comparire il
+          // bottone in scheda pur avendo esami. Si ricalcolano e si salvano
+          // una volta sola, alla prima apertura del modal.
+          if(doc && ((doc.ord||[]).length) && (!row.n_esami || !row.ultimo_esame)){
+            _labSalva(ui.letto, doc, row.paziente || ui.pazC)
+              .then(function(){ if(typeof window._labBottoniAggiorna==='function') window._labBottoniAggiorna(true); })
+              .catch(function(){});
+          }
+        })
         .catch(function(e){ ui.body.innerHTML='<div class="lab-vuoto">Errore di caricamento: '+_escIso(e.message)+'</div>'; });
     }
 
