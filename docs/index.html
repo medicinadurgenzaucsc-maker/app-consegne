@@ -3262,6 +3262,7 @@
       var date=Object.keys(dset).sort(function(a,b){ return _labDataKey(a).localeCompare(_labDataKey(b)); });
       var norm=series.length>1;
       var titolo = norm ? ('Confronto di '+series.length+' esami') : _escIso(series[0].n);
+      _labCentra(ui, false);
       ui.body.innerHTML='<div class="lab-graf">'
         +'<div class="lab-graf-bar">'
         +'<button type="button" class="lab-btn lab-btn-mini lab-btn-torna"><i class="bi bi-arrow-left"></i> Torna alla tabella</button>'
@@ -3306,16 +3307,19 @@
       g.textContent='';
       g.innerHTML='<i class="bi bi-graph-up"></i> Visualizza grafico'+(n>1?' ('+n+')':'');
     }
+    // Messaggi e istruzioni al centro del modal; tabella e grafici in alto.
+    function _labCentra(ui, on){ if(ui&&ui.body) ui.body.classList.toggle('lab-centrato', !!on); }
     function _labRender(ui, doc){
       var body=ui.body;
       ui.doc=doc;
       var ord=(doc&&doc.ord)||[];
       if(!ord.length){
-        body.innerHTML='<div class="lab-vuoto">Nessun esame ancora importato per questo letto.<br><br>'
-          +'Su TrakCare apri il <b>Laboratorio</b> del paziente, premi il segnalibro <b>«Prendi Esami Trak»</b>, poi torna qui e premi <b>«Aggiorna Esami»</b>.</div>';
+        // Niente esami: messaggio E istruzioni complete, al centro.
+        _labGuida(ui, null, 'Per questa scheda non ci sono ancora esami di laboratorio.', true);
         _labBarra(ui);
         return;
       }
+      _labCentra(ui, false);
       var date=_labDateDi(doc).sort(function(a,b){ return _labDataKey(b).localeCompare(_labDataKey(a)); });
       var nCol=3+date.length;
       var h='<table class="lab-tab lab-tab-main"><thead><tr><th class="lab-nome">Esame</th><th>Rif.</th><th>U.M.</th>';
@@ -3448,10 +3452,12 @@
       }
     }
 
-    function _labGuida(ui, card, motivo){
+    function _labGuida(ui, card, motivo, senzaTorna){
+      _labCentra(ui, true);
       ui.body.innerHTML='<div class="lab-guida">'
         +(motivo?'<div class="lab-avviso lab-avviso-warn" style="margin:0 0 8px;border-radius:6px;">'+motivo+'</div>':'')
-        +'<p style="margin:0 0 8px;">Non ho trovato esami copiati da TrakCare negli appunti.</p>'
+        +(senzaTorna?'<p style="margin:0 0 8px;">Ecco come si importano da TrakCare:</p>'
+                    :'<p style="margin:0 0 8px;">Non ho trovato esami copiati da TrakCare negli appunti.</p>')
         +'<div style="background:#f1f8f6;border:1px solid #b2dfdb;border-radius:8px;padding:10px 12px;">'
         +'<div style="margin:5px 0;"><b>1.</b> <b>Solo se il bottone non è già</b> nella barra dei preferiti, <b>trascinalo</b> lassù:'
         +'<div style="text-align:center;margin:8px 0;"><a id="bmLabLink" href="#" style="display:inline-block;background:#00695c;color:#fff;padding:8px 16px;border-radius:8px;text-decoration:none;font-weight:700;cursor:grab;">🧪➜🗒️ Prendi Esami Trak</a></div></div>'
@@ -3459,15 +3465,18 @@
         +'<div style="margin:5px 0;"><b>3.</b> Premi il pulsante nella <b>barra dei preferiti</b> e aspetta «Esami copiati».</div>'
         +'<div style="margin:5px 0;"><b>4.</b> Torna qui e premi di nuovo <b>«Aggiorna Esami»</b>.</div>'
         +'</div>'
-        +'<div style="margin-top:10px;text-align:right;">'
-        +'<button type="button" class="lab-btn lab-btn-mini lab-btn-torna">Torna alla tabella</button>'
-        +'</div></div>';
+        +(senzaTorna?'':'<div style="margin-top:10px;text-align:right;">'
+          +'<button type="button" class="lab-btn lab-btn-mini lab-btn-torna">Torna alla tabella</button>'
+          +'</div>')
+        +'</div>';
       var a=ui.body.querySelector('#bmLabLink');
       if(a){ a.setAttribute('href', _BM_LAB); a.addEventListener('click', function(ev){ev.preventDefault();}); }
-      ui.body.querySelector('.lab-btn-torna').addEventListener('click', function(){ _labRicarica(ui); });
+      var t=ui.body.querySelector('.lab-btn-torna');
+      if(t) t.addEventListener('click', function(){ _labRicarica(ui); });
     }
 
     function _labRicarica(ui){
+      _labCentra(ui, true);
       ui.body.innerHTML='<div class="lab-vuoto">Carico…</div>';
       _labCarica(ui.letto)
         .then(function(row){
@@ -3483,7 +3492,7 @@
               .catch(function(){});
           }
         })
-        .catch(function(e){ ui.body.innerHTML='<div class="lab-vuoto">Errore di caricamento: '+_escIso(e.message)+'</div>'; });
+        .catch(function(e){ _labCentra(ui,true); ui.body.innerHTML='<div class="lab-vuoto">Errore di caricamento: '+_escIso(e.message)+'</div>'; });
     }
 
     function _labAggiorna(card, ui){
@@ -3638,6 +3647,24 @@
       if(!letto){ ui.body.innerHTML='<div class="lab-vuoto">Questa scheda non ha un letto associato.</div>'; return; }
       _labRicarica(ui);
     };
+
+    // Promemoria sveglia: click → lo si segna come letto per oggi.
+    document.addEventListener('click', function(ev){
+      var r = ev.target && ev.target.closest ? ev.target.closest('.lab-remind') : null;
+      if(!r) return;
+      ev.preventDefault(); ev.stopPropagation();
+      var card = r.closest('.patient-card'); if(!card) return;
+      var letto = card.getAttribute('data-bed') || '';
+      Swal.fire({
+        icon:'question',
+        title:'Segnare come letto?',
+        html:'Per oggi questo promemoria non apparirà più.<br><b>Ricordati di richiedere gli esami.</b>',
+        showCancelButton:true, confirmButtonText:'Sì, segna come letto',
+        cancelButtonText:'Annulla', confirmButtonColor:'#00695c'
+      }).then(function(res){
+        if(res.isConfirmed && typeof window._labSegnaVisto === 'function') window._labSegnaVisto(letto);
+      });
+    }, true);
 
     // Alambicco nel campo Esami Colturali → apre il Laboratorio.
     // Fuori dal focus mode il click è inerte (scelta utente).

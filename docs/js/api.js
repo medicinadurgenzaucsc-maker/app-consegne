@@ -590,10 +590,10 @@ function _renderAltCard(p) {
     '</div>' +
     '<div class="alt-diag-fourth">' +
     '<div class="alt-col-header-split">Esami Colturali, Scale di Valutazione e Laboratorio.</div>' +
-    // Alambicco: apre il Laboratorio. Visibile SOLO se il letto ha esami
-    // importati (lo decide _labBottoniAggiorna), cliccabile solo in focus
-    // mode, mai stampato.
-    _labBottoneHtml() +
+    // NB: il blocco Laboratorio (alambicco + promemoria sveglia) NON sta qui:
+    // lo inserisce _labBottoniApplica DENTRO il campo qui sotto, come le
+    // scale — così la toolbar del testo resta sopra e sotto la riga c'è
+    // sempre spazio per scrivere.
     '<div class="editable-area rich-text alt-editable" contenteditable="true" data-field="EsamiColturali" data-placeholder="Esami colturali... PESI SCORE, HASBLED, GENEVA...">' + (p.EsamiColturali || '') + '</div>' +
     '</div>' +
     '<div class="alt-diag-third">' +
@@ -934,6 +934,17 @@ function _labGiorniDefault(tip) {
   if (t.indexOf('SUB') === 0) return 1;
   return 3;
 }
+function _labOggiIso() {
+  var d = new Date();
+  return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+}
+// Spunta "letto per oggi": il promemoria sparisce fino a domani (condiviso
+// fra i PC, così un collega non lo rivede se qualcuno l'ha già preso in carico).
+function _labSegnaVisto(letto) {
+  return _q(_sb.from('lab_esami').upsert({ letto: String(letto), allarme_visto: _labOggiIso() }))
+    .then(function() { return _labBottoniAggiorna(true); });
+}
+window._labSegnaVisto = _labSegnaVisto;
 // Giorni di CALENDARIO fra una data 'YYYY-MM-DD' e oggi — NON 24h esatte:
 // un prelievo di ieri sera conta come 1 giorno, non come 0.
 function _labGiorniDa(iso) {
@@ -946,32 +957,62 @@ function _labGiorniDa(iso) {
   if (isNaN(a.getTime())) return null;
   return Math.round((b - a) / 86400000);
 }
+// Sotto i blocchi protetti (Laboratorio, scale) deve SEMPRE restare un punto
+// dove cliccare per scrivere a mano: stessa garanzia della terapia.
+function _labAssicuraScrivibile(campo) {
+  var libero = [].some.call(campo.childNodes, function(n) {
+    if (n.nodeType === 3) return (n.textContent || '').trim() !== '';
+    return n.nodeType === 1 && !(n.matches && n.matches('.lab-box, .scale-box, .scala-risultato'));
+  });
+  if (!libero) {
+    var d = document.createElement('div');
+    d.innerHTML = '<br>';
+    campo.appendChild(d);
+  }
+}
+// Blocco Laboratorio in cima al campo Esami Colturali: alambicco + eventuale
+// promemoria sveglia, separati dal testo libero da una riga (come le scale).
+// È uno stato DERIVATO: si ricostruisce da zero a ogni giro, così un residuo
+// salvato in una versione precedente non sopravvive mai.
 function _labBottoniApplica() {
   var info = window._labInfoLetti || {};
   document.querySelectorAll('.patient-card[data-bed]').forEach(function(c) {
-    var b = c.querySelector('.lab-apri-btn');
-    if (!b) return;
+    var campo = c.querySelector('[data-field="EsamiColturali"]');
+    if (!campo) return;
+    var presenti = [].slice.call(campo.querySelectorAll('.lab-box'));
     var i = info[c.getAttribute('data-bed')];
-    var haEsami = !!(i && i.n > 0);
-    b.style.display = haEsami ? '' : 'none';
-    // Il promemoria vive SOTTO il bottone: senza bottone non esiste.
-    var vecchio = b.nextElementSibling;
-    if (vecchio && vecchio.classList && vecchio.classList.contains('lab-remind')) vecchio.remove();
-    if (!haEsami) return;
+    if (!(i && i.n > 0)) {
+      presenti.forEach(function(v) { v.remove(); });
+      _labAssicuraScrivibile(campo);
+      return;
+    }
+    var box = document.createElement('div');
+    box.className = 'lab-box';
+    box.setAttribute('contenteditable', 'false');
+    box.innerHTML = _labBottoneHtml();
+
     var giorni  = (i.a != null ? i.a : _labGiorniDefault(c.getAttribute('data-tipologia')));
     var passati = _labGiorniDa(i.u);
-    // Compare il GIORNO PRIMA della scadenza e resta finché non si aggiorna.
-    if (passati === null || passati < giorni - 1) return;
-    var gg = giorni + (giorni === 1 ? ' giorno' : ' giorni');
-    var scaduto = passati >= giorni;
-    var d = document.createElement('div');
-    d.className = 'lab-remind' + (scaduto ? ' lab-remind-off' : '');
-    d.setAttribute('contenteditable', 'false');
-    d.title = 'Ultimo prelievo: ' + String(i.u).split('-').reverse().join('/');
-    d.innerHTML = '⏰ ' + (scaduto
-      ? 'Esami più vecchi di ' + gg + ': richiederli'
-      : 'Domani gli esami superano i ' + gg + ': richiederli');
-    b.parentNode.insertBefore(d, b.nextSibling);
+    // Il promemoria compare il GIORNO PRIMA della scadenza e resta finché
+    // non si aggiornano gli esami.
+    var visto = (i.v && String(i.v).slice(0, 10) === _labOggiIso());
+    if (!visto && passati !== null && passati >= giorni - 1) {
+      var eta = (passati === 0)
+        ? 'sono di oggi'
+        : 'sono più vecchi di ' + passati + (passati === 1 ? ' giorno' : ' giorni');
+      var d = document.createElement('div');
+      d.className = 'lab-remind' + (passati >= giorni ? ' lab-remind-off' : '');
+      d.title = 'Ultimo prelievo: ' + String(i.u).split('-').reverse().join('/') + ' — clicca per segnarlo come letto';
+      d.innerHTML = '⏰ Richiedere gli esami per domani: gli ultimi ' + eta + '.';
+      box.appendChild(d);
+    }
+    // Se il blocco è già quello giusto non si tocca il DOM: sostituirlo
+    // mentre il collega scrive sposterebbe il cursore.
+    if (presenti.length === 1 && presenti[0] === campo.firstElementChild &&
+        presenti[0].innerHTML === box.innerHTML) { _labAssicuraScrivibile(campo); return; }
+    presenti.forEach(function(v) { v.remove(); });
+    campo.insertBefore(box, campo.firstChild);
+    _labAssicuraScrivibile(campo);
   });
 }
 var _labBottoniTs = 0;
@@ -979,11 +1020,11 @@ function _labBottoniAggiorna(forza) {
   _labBottoniApplica();                        // subito con quello che si sa già
   if (!forza && Date.now() - _labBottoniTs < 300000) return Promise.resolve();
   _labBottoniTs = Date.now();
-  return _q(_sb.from('lab_esami').select('letto,allarme_giorni,ultimo_esame,n_esami'))
+  return _q(_sb.from('lab_esami').select('letto,allarme_giorni,ultimo_esame,n_esami,allarme_visto'))
     .then(function(rows) {
       var m = {};
       (rows || []).forEach(function(r) {
-        m[String(r.letto)] = { a: r.allarme_giorni, u: r.ultimo_esame, n: r.n_esami || 0 };
+        m[String(r.letto)] = { a: r.allarme_giorni, u: r.ultimo_esame, n: r.n_esami || 0, v: r.allarme_visto };
       });
       window._labInfoLetti = m;
       _labBottoniApplica();
@@ -1002,7 +1043,7 @@ function _labPulisci(letto) {
 }
 function _labScambia(a, b) {
   try {
-    _q(_sb.from('lab_esami').select('letto,dati,paziente,allarme_giorni,ultimo_esame,n_esami').in('letto', [String(a), String(b)]))
+    _q(_sb.from('lab_esami').select('letto,dati,paziente,allarme_giorni,ultimo_esame,n_esami,allarme_visto').in('letto', [String(a), String(b)]))
       .then(function(rows) {
         rows = rows || [];
         var ra = rows.find(function(r){ return r.letto === String(a); });
@@ -1013,8 +1054,8 @@ function _labScambia(a, b) {
             var ins = [];
             var ts = new Date().toISOString();
             // Esami, allarme e riepiloghi seguono il paziente, non il letto.
-            if (ra) ins.push({ letto: String(b), dati: ra.dati, paziente: ra.paziente, allarme_giorni: ra.allarme_giorni, ultimo_esame: ra.ultimo_esame, n_esami: ra.n_esami, updated_at: ts });
-            if (rb) ins.push({ letto: String(a), dati: rb.dati, paziente: rb.paziente, allarme_giorni: rb.allarme_giorni, ultimo_esame: rb.ultimo_esame, n_esami: rb.n_esami, updated_at: ts });
+            if (ra) ins.push({ letto: String(b), dati: ra.dati, paziente: ra.paziente, allarme_giorni: ra.allarme_giorni, ultimo_esame: ra.ultimo_esame, n_esami: ra.n_esami, allarme_visto: ra.allarme_visto, updated_at: ts });
+            if (rb) ins.push({ letto: String(a), dati: rb.dati, paziente: rb.paziente, allarme_giorni: rb.allarme_giorni, ultimo_esame: rb.ultimo_esame, n_esami: rb.n_esami, allarme_visto: rb.allarme_visto, updated_at: ts });
             if (ins.length) return _q(_sb.from('lab_esami').insert(ins));
           });
       }).catch(function(){});
