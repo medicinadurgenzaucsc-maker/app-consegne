@@ -2994,12 +2994,16 @@
         (async function(){
           var pagine=[dump()], giri=0;
           while(giri<15){
-            var ic=vis(NEXT); if(!ic) break;
-            var p=primaCol();
-            ic.click(); giri++;
-            banner('⏳ Leggo lo storico esami… pagina '+(giri+1),'#455a64');
-            var ok=await attesa(function(){ return primaCol()!==p; },10000);
-            if(!ok) break;
+            var p=primaCol(), avanzato=false, senzaFreccia=false;
+            for(var tent=0; tent<2 && !avanzato; tent++){
+              var ic=vis(NEXT); if(!ic){ senzaFreccia=true; break; }
+              ic.click();
+              banner('⏳ Leggo lo storico esami… pagina '+(giri+2),'#455a64');
+              avanzato=await attesa(function(){ return primaCol()!==p; },9000);
+            }
+            if(senzaFreccia || !avanzato) break;
+            giri++;
+            await attesa(function(){ return false; },600);
             pagine.push(dump());
           }
           var back=0;
@@ -3079,7 +3083,87 @@
       return y+('0'+m[2]).slice(-2)+('0'+m[1]).slice(-2)+('0'+(m[4]||'0')).slice(-2)+('0'+(m[5]||'0')).slice(-2);
     }
 
+    // ── Andamento nel tempo (richiesta utente): sotto ogni esame con
+    // almeno 2 valori numerici compare un bottoncino con la sparkline;
+    // il click apre il grafico completo dentro il modal stesso. ──────────
+    function _labNum(v){
+      var m=String(v==null?'':v).replace(/,/g,'.').match(/-?\d+(?:\.\d+)?/);
+      return m?parseFloat(m[0]):null;
+    }
+    // Serie CRONOLOGICA (vecchio → recente) dei soli valori numerici.
+    function _labSerie(e){
+      return Object.keys(e.v||{})
+        .sort(function(a,b){ return _labDataKey(a).localeCompare(_labDataKey(b)); })
+        .map(function(d){ return { d:d, txt:e.v[d], val:_labNum(e.v[d]) }; })
+        .filter(function(p){ return p.val!==null && isFinite(p.val); });
+    }
+    function _labSparkSvg(serie){
+      var vals=serie.map(function(p){return p.val;});
+      var lo=Math.min.apply(null,vals), hi=Math.max.apply(null,vals);
+      if(hi===lo){ hi+=1; lo-=1; }
+      var pts=vals.map(function(v,i){
+        var x=3+54*(vals.length===1?0.5:i/(vals.length-1));
+        var y=17-14*((v-lo)/(hi-lo));
+        return x.toFixed(1)+','+y.toFixed(1);
+      }).join(' ');
+      return '<svg viewBox="0 0 60 20" width="60" height="20" aria-hidden="true">'
+        +'<polyline points="'+pts+'" fill="none" stroke="#00695c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    }
+    function _labGrafHtml(e){
+      var serie=_labSerie(e);
+      var W=640,H=280,L=48,R=16,T=26,B=46;
+      var vals=serie.map(function(p){return p.val;});
+      var lo=Math.min.apply(null,vals), hi=Math.max.apply(null,vals);
+      var rm=String(e.range||'').replace(/,/g,'.').match(/(-?\d+(?:\.\d+)?)\s*-\s*(-?\d+(?:\.\d+)?)/);
+      var rlo=rm?parseFloat(rm[1]):null, rhi=rm?parseFloat(rm[2]):null;
+      if(rm){ lo=Math.min(lo,rlo); hi=Math.max(hi,rhi); }
+      if(hi===lo){ hi+=1; lo-=1; }
+      var pad=(hi-lo)*0.08; lo-=pad; hi+=pad;
+      var X=function(i){ return L+(W-L-R)*(serie.length===1?0.5:i/(serie.length-1)); };
+      var Y=function(v){ return T+(H-T-B)*(1-(v-lo)/(hi-lo)); };
+      var s='<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;max-width:680px;height:auto;display:block;">';
+      // banda di normalità (se l'intervallo è "a - b")
+      if(rm){
+        s+='<rect x="'+L+'" y="'+Y(rhi).toFixed(1)+'" width="'+(W-L-R)+'" height="'+(Y(rlo)-Y(rhi)).toFixed(1)+'" fill="#e8f5e9"/>'
+          +'<text x="'+(W-R-2)+'" y="'+(Y(rhi)-3).toFixed(1)+'" font-size="10" fill="#66bb6a" text-anchor="end">'+rhi+'</text>'
+          +'<text x="'+(W-R-2)+'" y="'+(Y(rlo)+11).toFixed(1)+'" font-size="10" fill="#66bb6a" text-anchor="end">'+rlo+'</text>';
+      }
+      // assi min/max
+      s+='<line x1="'+L+'" y1="'+T+'" x2="'+L+'" y2="'+(H-B)+'" stroke="#cfd8dc"/>'
+        +'<line x1="'+L+'" y1="'+(H-B)+'" x2="'+(W-R)+'" y2="'+(H-B)+'" stroke="#cfd8dc"/>';
+      // linea
+      var pts=serie.map(function(p,i){ return X(i).toFixed(1)+','+Y(p.val).toFixed(1); }).join(' ');
+      s+='<polyline points="'+pts+'" fill="none" stroke="#00695c" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>';
+      // punti + valore sopra + data sotto (sfoltita se sono tante)
+      var salto=Math.max(1, Math.ceil(serie.length/9));
+      serie.forEach(function(p,i){
+        var fuori=/\sH$/.test(p.txt)||/\sL$/.test(p.txt);
+        s+='<circle cx="'+X(i).toFixed(1)+'" cy="'+Y(p.val).toFixed(1)+'" r="3.4" fill="'+(fuori?(/H$/.test(p.txt)?'#c62828':'#1565c0'):'#00695c')+'"/>'
+          +'<text x="'+X(i).toFixed(1)+'" y="'+(Y(p.val)-8).toFixed(1)+'" font-size="10.5" font-weight="700" fill="#37474f" text-anchor="middle">'+p.val+'</text>';
+        if(i%salto===0 || i===serie.length-1){
+          var m=p.d.match(/(\d{1,2}\/\d{1,2})/);
+          s+='<text x="'+X(i).toFixed(1)+'" y="'+(H-B+16)+'" font-size="10" fill="#78909c" text-anchor="middle">'+(m?m[1]:'')+'</text>';
+        }
+      });
+      s+='</svg>';
+      return s;
+    }
+    function _labGrafico(ui, doc, k){
+      var e=doc.esami[k]; if(!e) return;
+      var serie=_labSerie(e);
+      ui.body.innerHTML='<div class="lab-graf">'
+        +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">'
+        +'<button type="button" class="lab-btn lab-btn-mini lab-btn-torna">← Torna alla tabella</button>'
+        +'<b>'+_escIso(e.n)+'</b>'
+        +(e.range?'<span style="color:#78909c;font-size:0.85rem;">['+_escIso(e.range)+(e.um?' '+_escIso(e.um):'')+']</span>':'')
+        +'<span style="color:#78909c;font-size:0.85rem;">'+serie.length+' misurazioni</span>'
+        +'</div>'
+        +_labGrafHtml(e)
+        +'</div>';
+      ui.body.querySelector('.lab-btn-torna').addEventListener('click', function(){ _labRender(ui.body, doc); });
+    }
     function _labRender(body, doc){
+      body._labDoc = doc;
       var ord=(doc&&doc.ord)||[];
       if(!ord.length){
         body.innerHTML='<div class="lab-vuoto">Nessun esame ancora importato per questo letto.<br><br>'
@@ -3096,7 +3180,11 @@
       ord.forEach(function(k){
         var e=doc.esami[k]; if(!e) return;
         if((e.g||'')!==ultimoG){ ultimoG=e.g||''; if(ultimoG) h+='<tr class="lab-gruppo"><td colspan="'+(3+date.length)+'">'+_escIso(ultimoG)+'</td></tr>'; }
-        h+='<tr><td class="lab-nome">'+_escIso(e.n)+'</td><td>'+_escIso(e.range||'')+'</td><td>'+_escIso(e.um||'')+'</td>';
+        var serie=_labSerie(e);
+        var spark = serie.length>=2
+          ? '<br><button type="button" class="lab-spark" data-k="'+encodeURIComponent(k)+'" title="Andamento nel tempo">'+_labSparkSvg(serie)+'</button>'
+          : '';
+        h+='<tr><td class="lab-nome">'+_escIso(e.n)+spark+'</td><td>'+_escIso(e.range||'')+'</td><td>'+_escIso(e.um||'')+'</td>';
         date.forEach(function(d){
           var val=(e.v||{})[d]||'';
           // Il Trak marca i fuori-range con H/L in coda al valore: rosso/blu.
@@ -3247,6 +3335,13 @@
       var ui={ letto:letto, pazC:pazC, body:ov.querySelector('#labBody'), avvisi:ov.querySelector('#labAvvisi') };
       ov.querySelector('#labBtnChiudi').addEventListener('click', chiudi);
       ov.querySelector('#labBtnAggiorna').addEventListener('click', function(){ _labAvviso(ui,''); _labAggiorna(card, ui); });
+      // Delega: click sulla sparkline → grafico (sopravvive ai re-render del body)
+      ui.body.addEventListener('click', function(ev){
+        var b = ev.target && ev.target.closest ? ev.target.closest('.lab-spark') : null;
+        if(!b || !ui.body._labDoc) return;
+        var k = decodeURIComponent(b.getAttribute('data-k')||'');
+        if(ui.body._labDoc.esami && ui.body._labDoc.esami[k]) _labGrafico(ui, ui.body._labDoc, k);
+      });
       if(!letto){ ui.body.innerHTML='<div class="lab-vuoto">Questa scheda non ha un letto associato.</div>'; return; }
       _labRicarica(ui);
     };

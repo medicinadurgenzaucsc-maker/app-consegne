@@ -509,6 +509,15 @@ body { padding-top: 70px; background-color: #d4e6f1 !important; }
 /* Fuori range (il Trak appende H/L al valore): alto rosso, basso blu */
 .lab-tab td.lab-alto  { color: #c62828; font-weight: 700; }
 .lab-tab td.lab-basso { color: #1565c0; font-weight: 700; }
+/* Bottoncino-sparkline sotto il nome dell'esame (≥2 valori numerici):
+   rettangolare, mostra l'andamento; il click apre il grafico completo. */
+.lab-spark {
+  display: inline-block; margin-top: 2px; padding: 1px 4px;
+  background: #f1f8f6; border: 1px solid #b2dfdb; border-radius: 5px;
+  cursor: pointer; line-height: 0;
+}
+.lab-spark:hover { background: #e0f2f1; border-color: #26a69a; }
+.lab-graf { min-width: 420px; }
 
 /* ═════ ICONE DI STATO accanto al numero letto ═════ */
 /* Contenitore condiviso in alto a sinistra (speculare alla matita, che
