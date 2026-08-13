@@ -989,10 +989,14 @@ function _labBottoniApplica(soloCard) {
       _labAssicuraScrivibile(campo);
       return;
     }
+    // ORDINE: prima il bottone (c'è perché il letto ha esami), poi — solo
+    // se serve — il promemoria sotto di esso.
     var box = document.createElement('div');
     box.className = 'lab-box';
     box.setAttribute('contenteditable', 'false');
     box.innerHTML = _labBottoneHtml();
+    var btn = box.querySelector('.lab-apri-btn');
+    if (btn) btn.style.display = '';
 
     var giorni  = (i.a != null ? i.a : _labGiorniDefault(c.getAttribute('data-tipologia')));
     var passati = _labGiorniDa(i.u);
@@ -1010,9 +1014,14 @@ function _labBottoniApplica(soloCard) {
       box.appendChild(d);
     }
     // Se il blocco è già quello giusto non si tocca il DOM: sostituirlo
-    // mentre il collega scrive sposterebbe il cursore.
-    if (presenti.length === 1 && presenti[0] === campo.firstElementChild &&
-        presenti[0].innerHTML === box.innerHTML) { _labAssicuraScrivibile(campo); return; }
+    // mentre il collega scrive sposterebbe il cursore. Prima però si
+    // neutralizza un residuo delle versioni vecchie, in cui il bottone
+    // nasceva con display:none inline (si vedeva il solo promemoria).
+    if (presenti.length === 1 && presenti[0] === campo.firstElementChild) {
+      var b0 = presenti[0].querySelector('.lab-apri-btn');
+      if (b0 && b0.style.display === 'none') b0.style.display = '';
+      if (presenti[0].innerHTML === box.innerHTML) { _labAssicuraScrivibile(campo); return; }
+    }
     presenti.forEach(function(v) { v.remove(); });
     campo.insertBefore(box, campo.firstChild);
     _labAssicuraScrivibile(campo);
