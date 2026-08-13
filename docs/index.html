@@ -3007,11 +3007,15 @@
             pagine.push(dump());
           }
           var back=0, fermi=0;
-          while(back<25 && fermi<2){
-            var ip=vis(PREV); if(!ip) break;
-            var q=primaCol();
-            ip.click(); back++;
-            var okb=await attesa(function(){ var c=primaCol(); return c!=='' && c!==q; },4000);
+          while(back<30 && fermi<2){
+            if(!vis(PREV)) break;
+            var q=primaCol(), okb=false;
+            for(var t2=0; t2<2 && !okb; t2++){
+              var ip=vis(PREV); if(!ip) break;
+              ip.click();
+              okb=await attesa(function(){ var c=primaCol(); return c!=='' && c!==q; },5000);
+            }
+            back++;
             fermi = okb ? 0 : (fermi+1);
           }
           var paz='',cs2='';
