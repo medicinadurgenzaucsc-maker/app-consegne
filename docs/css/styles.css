@@ -564,8 +564,9 @@ body { padding-top: 70px; background-color: #d4e6f1 !important; }
 /* Fuori range: il Trak appende H/L, noi togliamo la lettera e coloriamo */
 .lab-tab td.lab-alto  { color: #c62828; font-weight: 700; }
 .lab-tab td.lab-basso { color: #1565c0; font-weight: 700; }
-/* Freccia ↑/↓ accanto ai valori fuori range: eredita il colore del testo */
-.lab-fr { font-size: 0.95em; line-height: 1; }
+/* Freccia accanto ai valori fuori range: alta quanto il testo, piena e
+   spessa (SVG con currentColor → eredita il rosso/blu del numero) */
+.lab-fr { width: .62em; height: 1em; vertical-align: -.12em; margin-left: 2px; }
 /* Bottoncino-sparkline sotto il nome dell'esame (≥2 valori numerici) */
 .lab-spark {
   display: inline-block; margin-top: 1px; padding: 0 3px;

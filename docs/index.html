@@ -3181,11 +3181,15 @@
       for(var i=0;i<n;i++) out.push('hsl('+Math.round((base+i*137.508)%360)+',68%,40%)');
       return out;
     }
-    // Freccia accanto ai valori fuori range: eredita il colore del testo
-    // (rosso in alto, blu in basso).
+    // Freccia accanto ai valori fuori range: alta quanto il testo ma piena e
+    // spessa, così si coglie a colpo d'occhio anche con molte colonne. È un
+    // SVG (le frecce dei font sono troppo sottili) e usa currentColor, quindi
+    // eredita il colore del numero: rosso in alto, blu in basso.
     function _labFreccia(flag){
-      return flag==='alto'  ? ' <span class="lab-fr">&#8593;</span>'
-           : flag==='basso' ? ' <span class="lab-fr">&#8595;</span>' : '';
+      if(flag!=='alto' && flag!=='basso') return '';
+      var d = flag==='alto' ? 'M5 0.4 L9.4 5.8 H6.7 V11.6 H3.3 V5.8 H0.6 Z'
+                            : 'M5 11.6 L0.6 6.2 H3.3 V0.4 H6.7 V6.2 H9.4 Z';
+      return '<svg class="lab-fr" viewBox="0 0 10 12" aria-hidden="true"><path d="'+d+'" fill="currentColor"/></svg>';
     }
     // Grafico. Con PIÙ serie i valori si normalizzano ciascuno sulla propria
     // scala (Hb ~8 e Piastrine ~250 sullo stesso asse sarebbero illeggibili):
