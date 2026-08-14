@@ -3268,6 +3268,7 @@
       var norm=series.length>1;
       var titolo = norm ? ('Confronto di '+series.length+' esami') : _escIso(series[0].n);
       _labCentra(ui, false);
+      _labGiorniBar(ui,'');
       ui.body.innerHTML='<div class="lab-graf">'
         +'<div class="lab-graf-bar">'
         +'<button type="button" class="lab-btn lab-btn-mini lab-btn-torna"><i class="bi bi-arrow-left"></i> Torna alla tabella</button>'
@@ -3314,18 +3315,133 @@
     }
     // Messaggi e istruzioni al centro del modal; tabella e grafici in alto.
     function _labCentra(ui, on){ if(ui&&ui.body) ui.body.classList.toggle('lab-centrato', !!on); }
+    // ── Ordine clinico di visualizzazione ──────────────────────────────
+    // Emocromo → conta dei leucociti → elettroliti → coagulazione →
+    // funzione renale → epatica → assetto marziale → tutto il resto (in
+    // alfabetico). Si classifica il TITOLO del gruppo con parole-chiave
+    // tarate sui nomi reali del Trak; a parità di rango i gruppi vanno in
+    // alfabetico e dentro il gruppo resta l'ordine del Trak.
+    var _LAB_RANGHI=[
+      [0.00,/EMOCROMO/],
+      [0.01,/PIASTRINE/],
+      [0.02,/RETICOLOCIT/],
+      [1.00,/LEUCOCIT/],
+      [2.00,/\bSODIO\b/],
+      [2.01,/\bPOTASSIO\b/],
+      [2.02,/CLORUR/],
+      [2.03,/\bCALCIO\b/],
+      [2.04,/MAGNESIO/],
+      [2.05,/FOSFORO|\bFOSFATI\b/],
+      [2.06,/ELETTROLIT/],
+      [3.00,/TEMPO DI PROTROMBINA/],
+      [3.01,/TROMBOPLASTINA/],
+      [3.02,/FIBRINOGENO/],
+      [3.03,/D[\s.\-]?DIMERO/],
+      [3.04,/ANTITROMBINA/],
+      [3.05,/ANTICOAGULANTE|PROTEINA S LIBERA|\bEPARINA\b|APIXABAN|COAGULAZ/],
+      [3.06,/PROTROMBINA/],
+      [4.00,/CREATININA/],
+      [4.01,/AZOTEMIA|\bUREA\b/],
+      [4.02,/E?GFR\b|FILTRAZIONE/],
+      [4.03,/ACIDO URICO/],
+      [5.00,/BILIRUBIN/],
+      [5.01,/\bGOT\b|\bAST\b|ASPARTATO/],
+      [5.02,/\bGPT\b|\bALT\b|ALANINA/],
+      [5.03,/TRANSAMINASI/],
+      [5.04,/GAMMA\s*GLUTAMIL|GAMMA\s*-?\s*GT\b|\bGGT\b/],
+      [5.05,/FOSFATASI ALCALINA/],
+      [5.06,/AMMONIAC|AMMONIO/],
+      [5.07,/\bALBUMINA\b/],
+      [6.00,/SIDEREMIA/],
+      [6.01,/FERRITINA/],
+      [6.02,/TRANSFERRINA/],
+      [6.03,/CAPACITA.{0,3}LEGANTE|\bFERRO\b/]
+    ];
+    var _labRangoCache={};
+    function _labRango(g){
+      var t=String(g||'').toUpperCase();
+      if(t in _labRangoCache) return _labRangoCache[t];
+      var r=99;
+      for(var i=0;i<_LAB_RANGHI.length;i++){ if(_LAB_RANGHI[i][1].test(t)){ r=_LAB_RANGHI[i][0]; break; } }
+      _labRangoCache[t]=r;
+      return r;
+    }
+    function _labOrdinati(doc){
+      var ord=(doc&&doc.ord)||[];
+      return ord.map(function(k,i){ return {k:k,i:i,e:doc&&doc.esami&&doc.esami[k]}; })
+        .filter(function(x){ return !!x.e; })
+        .sort(function(a,b){
+          var ra=_labRango(a.e.g), rb=_labRango(b.e.g);
+          if(ra!==rb) return ra-rb;
+          var ga=String(a.e.g||''), gb=String(b.e.g||'');
+          if(ga!==gb) return ga.localeCompare(gb,'it');
+          return a.i-b.i;
+        })
+        .map(function(x){ return x.k; });
+    }
+    // ── Vista globale / giornaliera ────────────────────────────────────
+    // La preferenza è PER LETTO e PER SESSIONE del browser: girando tra
+    // grafici e tabella (o chiudendo e riaprendo il modal) ogni scheda
+    // ritrova la vista in cui era.
+    function _labVistaGet(letto){ try{ return sessionStorage.getItem('labVista:'+letto)==='D'?'D':'G'; }catch(e){ return 'G'; } }
+    function _labVistaSet(letto,v){ try{ sessionStorage.setItem('labVista:'+letto,v); }catch(e){} }
+    function _labGiornoGet(letto){ try{ return sessionStorage.getItem('labGiorno:'+letto)||''; }catch(e){ return ''; } }
+    function _labGiornoSet(letto,g){ try{ sessionStorage.setItem('labGiorno:'+letto,g); }catch(e){} }
+    function _labGiornoDi(lbl){ var m=String(lbl).match(/\d{1,2}\/\d{1,2}\/\d{2,4}/); return m?m[0]:String(lbl); }
+    // Bottone della barra: icona attiva evidenziata + scritta della vista.
+    function _labVistaBtn(ui){
+      var b=ui.ov&&ui.ov.querySelector('#labBtnVista'); if(!b) return;
+      var gg=_labVistaGet(ui.letto)==='D';
+      var icG=b.querySelector('.lab-vista-g'), icD=b.querySelector('.lab-vista-d'), tx=b.querySelector('.lab-vista-txt');
+      if(icG) icG.classList.toggle('lab-vista-on', !gg);
+      if(icD) icD.classList.toggle('lab-vista-on', gg);
+      if(tx) tx.textContent = gg?'Visualizzazione Giornaliera':'Visualizzazione Globale';
+    }
+    // Fila dei giorni: vive FUORI dall'area che scorre (sotto la barra del
+    // modal), così resta sempre visibile; vuota = nascosta.
+    function _labGiorniBar(ui, html){
+      var d=ui.ov&&ui.ov.querySelector('#labGiorniBar'); if(!d) return;
+      d.innerHTML=html||'';
+      d.style.display=html?'':'none';
+    }
+    function _labCercaNorm(s){ return String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036F]/g,''); }
     function _labRender(ui, doc){
       var body=ui.body;
       ui.doc=doc;
-      var ord=(doc&&doc.ord)||[];
+      // Ordine clinico, non ordine di importazione.
+      var ord=_labOrdinati(doc);
+      var bv=ui.ov && ui.ov.querySelector('#labBtnVista');
       if(!ord.length){
+        if(bv) bv.style.display='none';
+        _labGiorniBar(ui,'');
         // Niente esami: messaggio E istruzioni complete, al centro.
         _labGuida(ui, null, 'Per questa scheda non ci sono ancora esami di laboratorio.', true);
         _labBarra(ui);
         return;
       }
+      if(bv) bv.style.display='';
+      _labVistaBtn(ui);
       _labCentra(ui, false);
-      var date=_labDateDi(doc).sort(function(a,b){ return _labDataKey(b).localeCompare(_labDataKey(a)); });
+      var tutte=_labDateDi(doc).sort(function(a,b){ return _labDataKey(b).localeCompare(_labDataKey(a)); });
+      var date=tutte, bottoniGiorni='';
+      if(_labVistaGet(ui.letto)==='D'){
+        // Vista giornaliera: fila dei giorni con almeno un prelievo; il
+        // predefinito e il giorno piu vicino a oggi.
+        var giorni=[];
+        tutte.forEach(function(d){ var g=_labGiornoDi(d); if(giorni.indexOf(g)<0) giorni.push(g); });
+        var scelto=_labGiornoGet(ui.letto);
+        if(giorni.indexOf(scelto)<0) scelto=giorni[0]||'';
+        date=tutte.filter(function(d){ return _labGiornoDi(d)===scelto; });
+        ord=ord.filter(function(k){
+          var e=doc.esami[k];
+          return e && date.some(function(d){ return ((e.v||{})[d]||'')!==''; });
+        });
+        bottoniGiorni=giorni.map(function(g){
+          var m=String(g).match(/^(\d{1,2}\/\d{1,2})/);
+          return '<button type="button" class="lab-gg'+(g===scelto?' lab-gg-on':'')+'" data-gg="'+_escIso(g)+'" title="Esami del '+_escIso(g)+'">'+_escIso(m?m[1]:g)+'</button>';
+        }).join('');
+      }
+      _labGiorniBar(ui, bottoniGiorni);
       var nCol=3+date.length;
       var h='<table class="lab-tab lab-tab-main"><thead><tr><th class="lab-nome">Esame</th><th>Rif.</th><th>U.M.</th>';
       date.forEach(function(d){ h+='<th class="lab-dt" title="'+_escIso(d)+'">'+_labDataHtml(d)+'</th>'; });
@@ -3353,16 +3469,15 @@
       });
       h+='</tbody></table>';
       body.innerHTML='<div class="lab-tabwrap">'+h+'</div>';
-      // Tendina "Ricerca esame…": titoli dei gruppi in ordine alfabetico.
-      var sel=ui.ov && ui.ov.querySelector('#labCerca');
-      if(sel){
-        var gruppi=[];
-        ord.forEach(function(k){ var g=((doc.esami[k]||{}).g||'').trim(); if(g && gruppi.indexOf(g)<0) gruppi.push(g); });
-        gruppi.sort(function(a,b){ return a.localeCompare(b,'it'); });
-        sel.innerHTML='<option value="">🔎 Ricerca esame…</option>'
-          + gruppi.map(function(g){ return '<option value="'+_escIso(g)+'">'+_escIso(g)+'</option>'; }).join('');
-        sel.style.display = gruppi.length ? '' : 'none';
-      }
+      // Voci per la "Ricerca esame...": gli esami VISIBILI in questa vista
+      // (globale = tutti, giornaliera = solo il giorno scelto), nello stesso
+      // ordine clinico della tabella.
+      ui.cercaVoci = ord.map(function(k){
+        var e=doc.esami[k]||{};
+        return { a:encodeURIComponent(k), n:e.n||'', g:e.g||'', t:_labCercaNorm((e.n||'')+' '+(e.g||'')) };
+      });
+      var cw=ui.ov && ui.ov.querySelector('#labCercaWrap');
+      if(cw) cw.style.display = ui.cercaVoci.length ? '' : 'none';
       _labBarra(ui);
     }
     // ── Persistenza (tabella lab_esami, on-demand) ─────────────────────
@@ -3409,6 +3524,7 @@
       catch(e){ _labAvviso(ui,'Il testo negli appunti non è una copia valida degli esami.','err'); return; }
       // Controllo versione BLOCCANTE (come la terapia: dati parziali = danno)
       if((pl.v||0) < _LAB_BM_VERSIONE){
+        _labGiorniBar(ui,'');
         ui.body.innerHTML='<div class="lab-vuoto"><b style="color:#c62828">Segnalibro da aggiornare — importazione bloccata.</b><br><br>'
           +'Cancella il vecchio pulsante dalla barra dei preferiti e trascina questo:<br><br>'
           +'<a id="bmLabLinkUpd" href="#" style="display:inline-block;background:#00695c;color:#fff;padding:8px 16px;border-radius:8px;text-decoration:none;font-weight:700;cursor:grab;">🧪➜🗒️ Prendi Esami Trak</a></div>';
@@ -3459,6 +3575,7 @@
 
     function _labGuida(ui, card, motivo, senzaTorna){
       _labCentra(ui, true);
+      _labGiorniBar(ui,'');
       ui.body.innerHTML='<div class="lab-guida">'
         +(motivo?'<div class="lab-avviso lab-avviso-warn" style="margin:0 0 8px;border-radius:6px;">'+motivo+'</div>':'')
         +(senzaTorna?'<p style="margin:0 0 8px;">Ecco come si importano da TrakCare:</p>'
@@ -3482,6 +3599,7 @@
 
     function _labRicarica(ui){
       _labCentra(ui, true);
+      _labGiorniBar(ui,'');
       ui.body.innerHTML='<div class="lab-vuoto">Carico…</div>';
       _labCarica(ui.letto)
         .then(function(row){
@@ -3523,8 +3641,17 @@
       ov.innerHTML='<div class="lab-modal" role="dialog" aria-label="Esami di laboratorio">'
         +'<div class="lab-modal-bar">'
         +'<span class="lab-modal-tit"><i class="bi bi-droplet-half"></i> Laboratorio'+(pazC?' — '+_escIso(pazC):'')+(letto?' <span style="font-weight:400;color:#78909c">(letto '+_escIso(letto)+')</span>':'')+'</span>'
-        +'<select class="lab-cerca" id="labCerca" title="Vai a un esame"><option value="">🔎 Ricerca esame…</option></select>'
+        +'<span class="lab-cerca-wrap" id="labCercaWrap">'
+        +'<input type="text" class="lab-cerca" id="labCerca" placeholder="🔎 Ricerca esame…" autocomplete="off" title="Scrivi per filtrare gli esami della tabella visualizzata">'
+        +'<div class="lab-cerca-lista" id="labCercaLista" style="display:none"></div>'
+        +'</span>'
         +'<button type="button" class="lab-btn lab-btn-all" id="labBtnAllarmi" title="Ogni quanto richiedere gli esami"><i class="bi bi-alarm"></i> Imposta allarmi</button>'
+        +'<span class="lab-bar-spazio"></span>'
+        +'<button type="button" class="lab-btn lab-btn-vista" id="labBtnVista" style="display:none" title="Alterna vista: tutte le date oppure un giorno alla volta">'
+        +'<span class="lab-vista-ic lab-vista-g"><i class="bi bi-globe2"></i></span>'
+        +'<span class="lab-vista-ic lab-vista-d"><i class="bi bi-calendar3"></i></span>'
+        +'<span class="lab-vista-txt">Visualizzazione Globale</span>'
+        +'</button>'
         +'<span class="lab-bar-spazio"></span>'
         +'<button type="button" class="lab-btn lab-btn-graf" id="labBtnGraf" style="display:none"><i class="bi bi-graph-up"></i> Visualizza grafico</button>'
         +'<button type="button" class="lab-btn lab-btn-multi" id="labBtnMulti"><i class="bi bi-check2-square"></i> Selezione multipla</button>'
@@ -3532,6 +3659,7 @@
         +'<button type="button" class="lab-btn lab-btn-x" id="labBtnChiudi" title="Chiudi">✕</button>'
         +'</div>'
         +'<div id="labAvvisi"></div>'
+        +'<div class="lab-giorni" id="labGiorniBar" style="display:none"></div>'
         +'<div class="lab-modal-body" id="labBody"><div class="lab-vuoto">Carico…</div></div>'
         // Finestrella allarmi: vive DENTRO il modal, così è già coperta dalla
         // guardia che protegge il focus mode (nessun overlay nuovo nel body).
@@ -3559,7 +3687,10 @@
         if(ov.parentNode) ov.parentNode.removeChild(ov);
       }
       // Esc chiude SOLO il modal (capture + stopImmediate: nessun altro lo vede)
-      function escH(ev){ if(ev.key==='Escape'){ ev.stopImmediatePropagation(); ev.preventDefault(); chiudi(); } }
+      function escH(ev){ if(ev.key==='Escape'){ ev.stopImmediatePropagation(); ev.preventDefault();
+        var ls=ov.querySelector('#labCercaLista');
+        if(ls && ls.style.display!=='none'){ ls.style.display='none'; var ci=ov.querySelector('#labCerca'); if(ci){ ci.value=''; ci.blur(); } return; }
+        chiudi(); } }
       document.addEventListener('keydown', escH, true);
       // Click sullo sfondo scuro (fuori dal riquadro) chiude solo il modal
       var giuSuSfondo=false;
@@ -3579,22 +3710,60 @@
         }
         _labBarra(ui);
       });
-      // Tendina "Ricerca esame…": porta al titolo verde scelto.
-      ov.querySelector('#labCerca').addEventListener('change', function(){
-        var g=this.value; this.value='';
-        if(!g) return;
-        if(!ui.body.querySelector('.lab-tab-main')) _labRender(ui, ui.doc);
+      // Toggle vista globale/giornaliera: la preferenza e per letto e per
+      // sessione, cosi tornando da grafici o messaggi si ritrova la vista.
+      ov.querySelector('#labBtnVista').addEventListener('click', function(){
+        _labVistaSet(ui.letto, _labVistaGet(ui.letto)==='D' ? 'G' : 'D');
+        _labVistaBtn(ui);
+        if(ui.body.querySelector('.lab-tab-main')) _labRender(ui, ui.doc);
+      });
+      // Fila dei giorni della vista giornaliera.
+      ov.querySelector('#labGiorniBar').addEventListener('click', function(ev){
+        var b=ev.target && ev.target.closest ? ev.target.closest('.lab-gg') : null;
+        if(!b) return;
+        _labGiornoSet(ui.letto, b.getAttribute('data-gg')||'');
+        _labRender(ui, ui.doc);
+      });
+      // "Ricerca esame...": campo con tendina che si filtra a ogni lettera.
+      // Cerca SOLO nella tabella visualizzata al momento (vista globale =
+      // tutti gli esami, giornaliera = il giorno scelto); scegliendo una
+      // voce si salta alla riga e il campo torna al segnaposto.
+      var cIn=ov.querySelector('#labCerca'), cLs=ov.querySelector('#labCercaLista');
+      function cVai(a){
+        cIn.value=''; cLs.style.display='none'; cIn.blur();
         var tr=null;
-        [].slice.call(ui.body.querySelectorAll('tr.lab-gruppo')).forEach(function(r){
-          if(!tr && (r.getAttribute('data-g')||'')===g) tr=r;
-        });
+        [].slice.call(ui.body.querySelectorAll('tr[data-k]')).forEach(function(r){ if(!tr && r.getAttribute('data-k')===a) tr=r; });
         if(!tr) return;
         var rb=ui.body.getBoundingClientRect(), rt=tr.getBoundingClientRect();
-        ui.body.scrollTop += (rt.top-rb.top)-36;   // -36: sotto l'intestazione sticky
+        ui.body.scrollTop += (rt.top-rb.top)-42;   // sotto l'intestazione sticky
         tr.classList.add('lab-flash');
         setTimeout(function(){ tr.classList.remove('lab-flash'); }, 1500);
+      }
+      function cMostra(){
+        var voci=ui.cercaVoci||[];
+        var f=_labCercaNorm(cIn.value.trim());
+        var out=f ? voci.filter(function(v){ return v.t.indexOf(f)>=0; }) : voci;
+        cLs.innerHTML = out.length
+          ? out.map(function(v){ return '<div class="lab-cerca-it" data-a="'+v.a+'"><b>'+_escIso(v.n)+'</b><span class="lab-cerca-g">'+_escIso(v.g)+'</span></div>'; }).join('')
+          : '<div class="lab-cerca-vuoto">Nessun esame contiene &laquo;'+_escIso(cIn.value.trim())+'&raquo;.</div>';
+        cLs.style.display='block';
+      }
+      cIn.addEventListener('focus', function(){
+        if(!ui.body.querySelector('.lab-tab-main')) _labRender(ui, ui.doc);
+        cMostra();
       });
-      // Finestrella allarmi
+      cIn.addEventListener('input', cMostra);
+      // mousedown prevenuto: il click su una voce non deve rubare il focus
+      // (il blur chiuderebbe la tendina prima che il click arrivi).
+      cLs.addEventListener('mousedown', function(ev){ ev.preventDefault(); });
+      cLs.addEventListener('click', function(ev){
+        var it=ev.target && ev.target.closest ? ev.target.closest('.lab-cerca-it') : null;
+        if(it) cVai(it.getAttribute('data-a')||'');
+      });
+      // Click altrove nel modal: tendina chiusa e campo di nuovo al segnaposto.
+      ov.addEventListener('mousedown', function(ev){
+        if(cLs.style.display!=='none' && !(ev.target.closest && ev.target.closest('#labCercaWrap'))){ cLs.style.display='none'; cIn.value=''; }
+      });
       var pan=ov.querySelector('#labAllarmi');
       var inp=ov.querySelector('#labAllGiorni');
       var tipo=(card.getAttribute('data-tipologia')||'').toUpperCase();

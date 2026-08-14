@@ -525,6 +525,33 @@ body { padding-top: 70px; background-color: #d4e6f1 !important; }
 .lab-btn-mini { padding: 4px 10px; font-size: 0.82rem; }
 .lab-btn-si, .lab-btn-usa { background: #00695c; color: #fff; }
 .lab-btn-no, .lab-btn-torna { background: #eceff1; color: #37474f; }
+/* Toggle vista Globale/Giornaliera: al centro della barra, con entrambe le
+   icone dentro il bottone e quella attiva evidenziata */
+.lab-btn-vista { background: #fff; color: #37474f; border: 1px solid #b0bec5; display: inline-flex; align-items: center; gap: 5px; padding: 5px 11px; }
+.lab-btn-vista:hover { background: #eceff1; }
+.lab-vista-ic { display: inline-flex; align-items: center; justify-content: center; width: 21px; height: 21px; border-radius: 5px; opacity: .38; }
+.lab-vista-ic .bi { margin-right: 0; }
+.lab-vista-ic.lab-vista-on { background: #00695c; color: #fff; opacity: 1; }
+.lab-vista-txt { font-weight: 700; font-size: 0.82rem; }
+/* Vista giornaliera: fila dei giorni con almeno un prelievo. Sta FUORI
+   dall'area che scorre, cosi resta sempre sotto mano */
+.lab-giorni { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 12px; background: #f1f8f6; border-bottom: 1px solid #b2dfdb; flex: 0 0 auto; }
+.lab-gg { border: 1px solid #b2dfdb; background: #fff; border-radius: 6px; padding: 2px 9px; font-weight: 700; font-size: 0.8rem; color: #00695c; cursor: pointer; }
+.lab-gg:hover { background: #e0f2f1; }
+.lab-gg.lab-gg-on { background: #00695c; border-color: #00695c; color: #fff; }
+/* Ricerca esame: campo di testo + tendina filtrabile lettera per lettera */
+.lab-cerca-wrap { position: relative; flex: 0 1 230px; max-width: 230px; }
+.lab-cerca-wrap .lab-cerca { width: 100%; max-width: none; flex: none; cursor: text; }
+.lab-cerca-lista {
+  position: absolute; top: calc(100% + 3px); left: 0; width: 340px; max-width: 60vw;
+  max-height: 46vh; overflow: auto; background: #fff; border: 1px solid #b0bec5;
+  border-radius: 8px; box-shadow: 0 10px 28px rgba(0,0,0,.28); z-index: 7;
+}
+.lab-cerca-it { padding: 4px 10px; cursor: pointer; display: flex; gap: 10px; align-items: baseline; justify-content: space-between; }
+.lab-cerca-it:hover { background: #e0f2f1; }
+.lab-cerca-it b { font-size: 0.84rem; color: #263238; font-weight: 600; white-space: nowrap; }
+.lab-cerca-g { font-size: 0.68rem; color: #90a4ae; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 55%; flex: 0 1 auto; }
+.lab-cerca-vuoto { padding: 8px 10px; color: #90a4ae; font-size: 0.8rem; }
 .lab-modal-body { flex: 1 1 auto; overflow: auto; padding: 10px 12px; position: relative; min-height: 0; }
 /* Messaggi e istruzioni: al centro del modal (tabella e grafici restano in alto) */
 .lab-modal-body.lab-centrato { display: flex; align-items: center; justify-content: center; }
