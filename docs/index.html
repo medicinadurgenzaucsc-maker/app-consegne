@@ -2957,7 +2957,7 @@
     // ⚠️ Parser in BOZZA sulla descrizione dell'utente: da validare sul
     // DOM reale della pagina Laboratorio (freccia storico → segnalibro v2).
     // ══════════════════════════════════════════════════════════════════
-    var _LAB_BM_VERSIONE = 4;
+    var _LAB_BM_VERSIONE = 5;
 
     // Sorgente del segnalibro (gira su TrakCare). MAI commenti // qui
     // dentro: il collasso su una riga li farebbe inghiottire tutto.
@@ -2973,8 +2973,11 @@
       try{
         var banner=function(txt,bg,manuale){var d=document.getElementById('bmLabBanner');if(d)d.remove();d=document.createElement('div');d.id='bmLabBanner';d.style.cssText='position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:2147483647;background:'+bg+';color:#fff;padding:15px 22px;border-radius:12px;font:600 15px system-ui,Arial;box-shadow:0 8px 30px rgba(0,0,0,.5);max-width:92vw;text-align:center;cursor:pointer';d.innerHTML=txt+'<div style="font-weight:400;font-size:11px;margin-top:6px;opacity:.85">(tocca per chiudere)</div>';if(manuale){var ta=document.createElement('textarea');ta.value=manuale;ta.readOnly=true;ta.style.cssText='display:block;width:86vw;max-width:520px;height:64px;margin:10px auto 0;font-size:11px;border-radius:6px;padding:6px;color:#000';ta.addEventListener('click',function(ev){ev.stopPropagation();ta.focus();ta.select();});d.appendChild(ta);d.style.cursor='default';}d.addEventListener('click',function(){if(d.parentNode)d.remove();});document.body.appendChild(d);setTimeout(function(){if(d.parentNode)d.remove();},25000);};
         var norm=function(s){return (s||'').replace(/ /g,' ').replace(/\s+/g,' ').trim();};
-        var TAB=function(){ var t=document.getElementById('tOEOrdItem_ListLabCummEMRList_0'); if(t) return t; var best=null,bs=0; [].slice.call(document.querySelectorAll('table')).forEach(function(x){ var s=x.querySelectorAll('tr').length*3+x.querySelectorAll('td,th').length; if(x.querySelectorAll('tr').length>=4&&s>bs){best=x;bs=s;} }); return best; };
-        if(!TAB()){ banner('⚠️ Non trovo la tabella degli esami.<br><span style="font-weight:400;font-size:12px">Apri prima «Laboratorio» nel Dossier su TrakCare, poi ripremi il segnalibro.</span>','#c62828'); return; }
+        var haDate=function(tb){ try{ var r0=tb.querySelector('tr'); if(!r0) return false; var n=0; [].slice.call(r0.querySelectorAll('td,th')).forEach(function(c){ if(/\d{1,2}[\/\-.]\d{1,2}([\/\-.]\d{2,4})?/.test(norm(c.innerText))) n++; }); return n>=1; }catch(e){ return false; } };
+        var eLab=function(){ try{ return !!document.querySelector('[id*="LabCumm"]'); }catch(e){ return false; } };
+        var eTerapia=function(){ try{ return !!document.querySelector('table.componentTable tr.componentTableRowGroup'); }catch(e){ return false; } };
+        var TAB=function(){ var t=document.getElementById('tOEOrdItem_ListLabCummEMRList_0'); if(t) return t; if(eTerapia()&&!eLab()) return null; var best=null,bs=0; [].slice.call(document.querySelectorAll('table')).forEach(function(x){ if(x.querySelectorAll('tr').length<4) return; if(!eLab()&&!haDate(x)) return; var s=x.querySelectorAll('tr').length*3+x.querySelectorAll('td,th').length; if(s>bs){best=x;bs=s;} }); return best; };
+        if(!TAB()){ banner('⚠️ Non sei nella pagina «Laboratorio».'+(eTerapia()?'<br><span style="font-weight:400;font-size:13px">Questa è la <b>Terapia</b>: hai premuto il segnalibro degli <b>esami</b>.</span>':'')+'<br><span style="font-weight:400;font-size:12px">Apri «Laboratorio» nel Dossier su TrakCare, poi ripremi il segnalibro.</span>','#c62828'); return; }
         var dump=function(){
           var trs=[].slice.call(TAB().querySelectorAll('tr'));
           var int=[].slice.call(trs[0].querySelectorAll('td,th')).map(function(c){return norm(c.innerText);});
@@ -3014,7 +3017,7 @@
           try{var reg=document.querySelector('[id$=BANNERRegistrationNo]');cs2=reg?norm(reg.textContent):((document.body.innerText.match(/ID Paz[.:\s]*([0-9]{4,})/i)||[])[1]||'');}catch(e){}
           var nR=0; pagine.forEach(function(pg){nR+=pg.righe.length;});
           if(!nR){ banner('⚠️ La tabella degli esami sembra vuota.','#c62828'); return; }
-          var payload='⟦LAB-TRAK⟧\n'+JSON.stringify({v:4,paz:paz,cs:cs2,ts:Date.now(),pagine:pagine});
+          var payload='⟦LAB-TRAK⟧\n'+JSON.stringify({v:5,paz:paz,cs:cs2,ts:Date.now(),pagine:pagine});
           var copia=function(){ try{ if(navigator.clipboard&&navigator.clipboard.writeText) return navigator.clipboard.writeText(payload); }catch(e){} return Promise.reject(new Error('API appunti non disponibile')); };
           var okB=function(){banner('✅ Esami copiati ('+pagine.length+' pagine, '+nR+' righe)<br><span style="font-weight:400;font-size:13px">Vai nelle Consegne, apri «Laboratorio» e premi «Aggiorna Esami»</span>','#00695c');};
           var manuale=function(err){try{var ta=document.createElement('textarea');ta.value=payload;document.body.appendChild(ta);ta.select();var okc=document.execCommand&&document.execCommand('copy');document.body.removeChild(ta);if(okc){okB();return;}}catch(e2){}banner('⚠️ Impossibile copiare: '+err+'<br><span style="font-weight:400;font-size:12px">Copia a mano dal riquadro qui sotto.</span>','#c62828',payload);};
