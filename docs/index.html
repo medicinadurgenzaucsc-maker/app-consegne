@@ -4961,6 +4961,17 @@
             <span>Update</span>
           </button>
         </li>
+        <!-- Autorizzazione Google del reparto mancante: si fa UNA volta,
+             da UN solo PC, e il badge sparisce ovunque per sempre. -->
+        <li class="nav-item me-2" id="navItemCassaforte" style="display:none;">
+          <button id="btnCassaforte"
+                  class="btn btn-warning btn-sm fw-bold py-0 px-2"
+                  onclick="window._cassaforteAutorizza && window._cassaforteAutorizza()"
+                  title="Serve l'autorizzazione Google del reparto (una sola volta, vale per tutti i PC)"
+                  style="font-size:0.75rem;">
+            <i class="bi bi-key-fill me-1"></i>Autorizza Google
+          </button>
+        </li>
         <li class="nav-item me-2" id="navItemEmergenza">
           <button id="btnEmergenzaPC"
                   class="btn btn-success btn-sm fw-bold py-0 px-2"
@@ -5586,6 +5597,166 @@
     // account). Il token di sessione persiste in localStorage per ~58 minuti,
     // quindi un reload entro quel tempo non richiede nuovo login.
 
+    // ══════════════════════════════════════════════════════════════════
+    // CASSAFORTE GOOGLE DI REPARTO (Edge Function google-token)
+    // ──────────────────────────────────────────────────────────────────
+    // L'autorizzazione Google si concede UNA VOLTA SOLA, da UN solo PC:
+    // il refresh token resta sul server (tabella privata google_oauth) e
+    // ogni computer riceve access token freschi con una fetch invisibile.
+    // Niente piu' popup, niente iframe, niente sessione Google richiesta
+    // nel browser. Se la cassaforte non e' ancora configurata, tutto
+    // continua a funzionare col percorso storico (iframe/popup).
+    // ══════════════════════════════════════════════════════════════════
+    var _cassaTok = null, _cassaScad = 0, _cassaPending = null, _cassaEmail = '';
+    function _cassaCall(body) {
+      var ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+      var tmr = ctl ? setTimeout(function() { try { ctl.abort(); } catch (e) {} }, 12000) : null;
+      return fetch(SUPABASE_URL + '/functions/v1/google-token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': SUPABASE_ANON_KEY,
+          'Authorization': 'Bearer ' + SUPABASE_ANON_KEY
+        },
+        body: JSON.stringify(body),
+        signal: ctl ? ctl.signal : undefined
+      }).then(function(r) {
+        if (tmr) clearTimeout(tmr);
+        return r.json();
+      }, function(e) {
+        if (tmr) clearTimeout(tmr);
+        throw e;
+      });
+    }
+    function _cassaforteBadge(mostra) {
+      var li = document.getElementById('navItemCassaforte');
+      if (li) li.style.display = mostra ? '' : 'none';
+    }
+    // Token per Drive/Docs/Gmail (un token, tutti gli scope del reparto).
+    window._cassaforteToken = function() {
+      if (_cassaTok && Date.now() < _cassaScad - 60000) return Promise.resolve(_cassaTok);
+      if (_cassaPending) return _cassaPending;
+      _cassaPending = _cassaCall({ azione: 'token' }).then(function(j) {
+        _cassaPending = null;
+        if (!j || !j.access_token) {
+          if (j && j.riautorizzare) _cassaforteBadge(true);
+          throw new Error((j && j.errore) || 'cassaforte non disponibile');
+        }
+        _cassaTok  = j.access_token;
+        _cassaScad = Date.now() + (j.expires_in || 3000) * 1000;
+        _cassaEmail = j.email || '';
+        window._googleAccessToken = j.access_token;
+        window._googleDriveToken  = j.access_token;
+        _cassaforteBadge(false);
+        return j.access_token;
+      }, function(e) { _cassaPending = null; throw e; });
+      return _cassaPending;
+    };
+    // Controllo invisibile all'avvio: nessuna finestra, solo una fetch.
+    // Se manca l'autorizzazione compare il bottoncino giallo in barra.
+    window._cassaforteAvvio = function() {
+      _cassaCall({ azione: 'stato' }).then(function(st) {
+        if (st && st.autorizzato) {
+          _cassaforteBadge(false);
+          window._cassaforteToken().catch(function() {});
+        } else {
+          _cassaforteBadge(true);
+        }
+      }).catch(function() { /* offline: si riprova al prossimo avvio */ });
+    };
+    // Percorso di autorizzazione una-tantum (click sul bottoncino giallo).
+    window._cassaforteAutorizza = function() {
+      _cassaCall({ azione: 'stato' }).then(function(st) {
+        var serveSecret = !(st && st.configurato);
+        Swal.fire({
+          icon: 'info',
+          title: 'Autorizzazione Google del reparto',
+          html: '<div class="text-start small">'
+            + '<p>Si fa <b>una volta sola, da un solo PC</b>: l\'autorizzazione resta custodita sul server e vale per <b>tutti i computer</b> del reparto. Mail dimissioni, backup su Drive e documenti senza piu\' finestre di Google.</p>'
+            + '<p class="mb-1">Usa l\'account del reparto' + (_emailConsentita ? ' (<b>' + _emailConsentita + '</b>)' : '') + '.</p>'
+            + (serveSecret
+              ? '<hr><p class="mb-1"><b>Primo avvio:</b> incolla il <b>client secret</b> del client OAuth.<br><small class="text-muted">console.cloud.google.com &rarr; API e servizi &rarr; Credenziali &rarr; client &laquo;170256871056-&hellip;&raquo; &rarr; Segreto client</small></p>'
+                + '<input type="password" id="cassaSecret" class="form-control form-control-sm" placeholder="Client secret (GOCSPX-...)" autocomplete="off">'
+              : '')
+            + '</div>',
+          showCancelButton: true,
+          confirmButtonText: 'Autorizza con Google',
+          cancelButtonText: 'Annulla',
+          confirmButtonColor: '#00695c',
+          preConfirm: function() {
+            var el = document.getElementById('cassaSecret');
+            return el ? el.value.trim() : '';
+          }
+        }).then(function(r) {
+          if (!r.isConfirmed) return;
+          var secret = r.value || '';
+          if (serveSecret && !secret) {
+            Swal.fire({ icon: 'warning', title: 'Manca il client secret', text: 'Senza il segreto del client OAuth la cassaforte non puo\' scambiare i codici con Google.', confirmButtonColor: '#00695c' });
+            return;
+          }
+          if (typeof google === 'undefined' || !google.accounts || !google.accounts.oauth2) {
+            Swal.fire({ icon: 'error', title: 'Componente Google non caricato', text: 'Ricarica la pagina e riprova.' });
+            return;
+          }
+          // Il popup del consenso parte SUBITO (dentro il gesto utente, il
+          // blocco popup non scatta); il salvataggio del secret viaggia in
+          // parallelo e lo scambio del code lo attende.
+          var pConfig = secret
+            ? _cassaCall({ azione: 'config', client_secret: secret }).then(function(j) {
+                if (!j || !j.ok) throw new Error((j && j.errore) || 'salvataggio del client secret non riuscito');
+              })
+            : Promise.resolve();
+          var cc = google.accounts.oauth2.initCodeClient({
+            client_id: GOOGLE_CLIENT_ID,
+            scope: 'email profile https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/documents https://www.googleapis.com/auth/gmail.send',
+            ux_mode: 'popup',
+            login_hint: _emailConsentita || '',
+            callback: function(resp) {
+              if (!resp || !resp.code) {
+                Swal.fire({ icon: 'error', title: 'Autorizzazione annullata', text: (resp && resp.error) || '' });
+                return;
+              }
+              Swal.fire({ title: 'Registro l\'autorizzazione…', allowOutsideClick: false, showConfirmButton: false, didOpen: function() { Swal.showLoading(); } });
+              pConfig
+                .then(function() { return _cassaCall({ azione: 'scambia', code: resp.code }); })
+                .then(function(j) {
+                  if (!j || !j.ok) throw new Error((j && j.errore) || 'registrazione non riuscita');
+                  _cassaTok = null; _cassaScad = 0;
+                  _cassaforteBadge(false);
+                  window._cassaforteToken().catch(function() {});
+                  Swal.fire({
+                    icon: 'success', title: 'Fatto: autorizzazione registrata',
+                    html: 'D\'ora in poi mail dimissioni, backup su Drive e documenti funzionano su <b>tutti i PC del reparto</b> senza finestre di Google.<br><small class="text-muted">Account: ' + (j.email || '') + '</small>',
+                    confirmButtonColor: '#00695c'
+                  });
+                  if (typeof window._log === 'function') {
+                    window._log('info', 'google-cassaforte', 'Autorizzazione Google di reparto registrata', 'Account: ' + (j.email || '?') + '\nScopes: ' + (j.scopes || '?'));
+                  }
+                })
+                .catch(function(e) {
+                  Swal.fire({ icon: 'error', title: 'Registrazione non riuscita', html: '<div class="small text-start">' + String((e && e.message) || e) + '</div>', confirmButtonColor: '#d33' });
+                });
+            },
+            error_callback: function(err) {
+              var t = (err && err.type) || '';
+              Swal.fire({
+                icon: 'error',
+                title: t === 'popup_failed_to_open' ? 'Popup bloccato dal browser' : 'Autorizzazione non completata',
+                html: t === 'popup_failed_to_open'
+                  ? 'Consenti i popup per questo sito (icona a destra nella barra dell\'indirizzo) e riprova.<br><b>Serve solo per questa prima e unica volta.</b>'
+                  : (t || 'errore'),
+                confirmButtonColor: '#d33'
+              });
+            }
+          });
+          cc.requestCode();
+          pConfig.catch(function() {});
+        });
+      }).catch(function(e) {
+        Swal.fire({ icon: 'error', title: 'Cassaforte non raggiungibile', text: String((e && e.message) || e), confirmButtonColor: '#d33' });
+      });
+    };
+
     // ── REFRESH TOKEN SILENZIOSO ─────────────────────────────────────
     // Rinnova l'access token Google senza interazione. ⚠️ Il token client
     // GIS (requestAccessToken) apre SEMPRE una finestrella popup, anche
@@ -5724,7 +5895,7 @@
 
     window._rinnovaTokenSilenzioso = function() {
       if (_silentPending) return _silentPending;       // rinnovo già in corso: agganciati
-      _silentPending = _rinnovaTokenViaIframe()
+      var _viaBrowser = function() { return _rinnovaTokenViaIframe()
         .then(function(r) {
           _salvaTokenRinnovato(r.token, r.expiresIn);
           console.log('[Token refresh] Rinnovo via iframe nascosto OK (nessuna finestra, validità ~' + Math.round((r.expiresIn || 3500) / 60) + ' min)');
@@ -5733,7 +5904,19 @@
         .catch(function(e1) {
           console.log('[Token refresh] Iframe non disponibile (' + ((e1 && e1.message) || e1) + ') → fallback popup GIS');
           return _rinnovaTokenViaPopup();
-        });
+        }); };
+      // Tentativo 0: cassaforte di reparto (Edge Function) — niente
+      // finestre, niente iframe, vale anche a sessione Google scaduta.
+      _silentPending = (typeof window._cassaforteToken === 'function'
+        ? window._cassaforteToken().then(function(tok) {
+            _salvaTokenRinnovato(tok, 3000);
+            console.log('[Token refresh] Token dalla cassaforte di reparto (zero finestre)');
+            return tok;
+          }).catch(function(e0) {
+            console.log('[Token refresh] Cassaforte non disponibile (' + ((e0 && e0.message) || e0) + ') -> percorso browser');
+            return _viaBrowser();
+          })
+        : _viaBrowser());
       var _clear = function() { _silentPending = null; };
       _silentPending.then(_clear, _clear);
       return _silentPending;
@@ -9764,7 +9947,7 @@
               '<p class="mb-1"><b>Oggetto:</b> ' + _esc(d.oggetto) + '</p>' +
               '<p class="mb-1"><b>Destinatari:</b> ' + emails.length + '</p>' +
               '<p class="mb-1"><b>Pazienti inclusi:</b> ' + d.pazientiSel.length + '</p>' +
-              '<p class="mb-0 text-muted">La mail partirà dal tuo account Google e apparirà in "Inviati".</p>' +
+              '<p class="mb-0 text-muted">La mail parte dall\'account Google del reparto (resta copia in "Inviati").</p>' +
               '</div>',
         showCancelButton: true,
         confirmButtonText: 'Sì, invia',

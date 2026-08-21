@@ -80,73 +80,46 @@
           })
           .catch(function(e) { console.error('ottieniNomeReparto error:', e); });
 
-        // FASE 5: overlay sparisce solo quando le card sono caricate
-        // FASE 6 (nuova): diagnostica silent come ultima fase prima di chiudere overlay.
-        // Se rileva problemi, il modal si apre PRIMA della chiusura overlay,
-        // così l'utente lo vede subito.
+        // FASE 5: l'app si apre APPENA le card sono pronte. La diagnostica
+        // non trattiene piu' nessuno: parte subito dopo, in background, con
+        // gli stessi automatismi di prima (auto-emergenza solo per rischio
+        // salvataggio); il suo esito si legge dal chip PC OK / PC LENTO.
         _sincronizzaEPoiFai(function() {
-          // Card caricate. Ora barra al 95% e fase diagnostica.
-          _setProgress(95);
-          var msg = document.getElementById('backupCheckMsg');
-          if (msg) msg.innerHTML =
-            'Diagnostica in corso...<br>' +
-            '<span style="font-size:0.75rem;color:#78909c;font-weight:normal;">' +
-            'Verifica del PC e della connessione.' +
-            '</span>';
-
-          function _chiudiOverlay() {
-            _setProgress(100);
-            setTimeout(function() {
-              var ov = document.getElementById('backupCheckOverlay');
-              if (ov) {
-                ov.style.transition = 'opacity 0.4s';
-                ov.style.opacity = '0';
-                setTimeout(function() { ov.style.display = 'none'; }, 420);
-              }
-              // Se eravamo in version update reload (?_r=), nascondi anche
-              // l'overlay versione che copriva tutto il caos visivo del reload.
-              var vo = document.getElementById('versionUpdateOverlay');
-              if (vo && vo.style.display !== 'none') {
-                vo.style.transition = 'opacity 0.4s';
-                vo.style.opacity = '0';
-                setTimeout(function() { vo.style.display = 'none'; }, 420);
-              }
-            }, 300);
-          }
-
-          // Avvia diagnostica silent. Quando completa (con o senza problemi),
-          // chiude l'overlay. Il modal di report (se aperto per problemi)
-          // si sovrappone all'overlay già in chiusura.
-          if (typeof window._eseguiDiagnosticaSilent === 'function') {
-            // Safety net: se la diagnostica non termina in 20s, chiudi comunque l'overlay.
-            var done = false;
-            var safety = setTimeout(function() {
-              if (done) return;
-              done = true;
-              console.warn('[Caricamento] Diagnostica oltre 20s, chiusura overlay');
-              _chiudiOverlay();
-            }, 20000);
-            // Boot-mode: NESSUN modal di report, anche se ci sono problemi.
-            // Auto-attiva emergenza SOLO se 'Rischio bug salvataggio' è
-            // diverso da NESSUNO (= rischioSalvataggio >= 10). Critici come
-            // WebSocket bloccato o REST down NON triggherano qui — vengono
-            // gestiti dalla diagnostica oraria periodica con la logica
-            // completa (autoAttivaEmergenza + criteri estesi).
-            window._eseguiDiagnosticaSilent(function() {
-              if (done) return;
-              done = true;
-              clearTimeout(safety);
-              _chiudiOverlay();
-            }, {
-              autoAttivaEmergenza: true,
-              autoDisattivaEmergenza: true,
-              noModal: true,
-              soloRischioSalvataggio: true
-            });
-          } else {
-            // Fallback: nessuna diagnostica disponibile, chiudi subito
-            _chiudiOverlay();
-          }
+          _setProgress(100);
+          setTimeout(function() {
+            var ov = document.getElementById('backupCheckOverlay');
+            if (ov) {
+              ov.style.transition = 'opacity 0.4s';
+              ov.style.opacity = '0';
+              setTimeout(function() { ov.style.display = 'none'; }, 420);
+            }
+            // Se eravamo in version update reload (?_r=), nascondi anche
+            // l'overlay versione che copriva tutto il caos visivo del reload.
+            var vo = document.getElementById('versionUpdateOverlay');
+            if (vo && vo.style.display !== 'none') {
+              vo.style.transition = 'opacity 0.4s';
+              vo.style.opacity = '0';
+              setTimeout(function() { vo.style.display = 'none'; }, 420);
+            }
+          }, 250);
+          // Diagnostica in BACKGROUND: boot-mode, nessun modal; auto-attiva
+          // l'emergenza SOLO se 'Rischio bug salvataggio' e' presente.
+          // I critici (WebSocket, REST) restano alla diagnostica oraria.
+          setTimeout(function() {
+            if (typeof window._eseguiDiagnosticaSilent === 'function') {
+              window._eseguiDiagnosticaSilent(function() {}, {
+                autoAttivaEmergenza: true,
+                autoDisattivaEmergenza: true,
+                noModal: true,
+                soloRischioSalvataggio: true
+              });
+            }
+          }, 1200);
+          // Cassaforte Google: controllo invisibile (una fetch); se manca
+          // l'autorizzazione di reparto compare solo il bottoncino giallo.
+          setTimeout(function() {
+            if (typeof window._cassaforteAvvio === 'function') window._cassaforteAvvio();
+          }, 2500);
         }, _setProgress);
       }
 
@@ -2044,6 +2017,17 @@
     };
 
     function _richiediDocsToken(callback) {
+      // Cassaforte di reparto prima di tutto: zero finestre.
+      if (typeof window._cassaforteToken === 'function') {
+        window._cassaforteToken().then(function(tok) {
+          _googleDocsToken = tok;
+          callback(true);
+        }).catch(function() { _richiediDocsTokenPopup(callback); });
+        return;
+      }
+      _richiediDocsTokenPopup(callback);
+    }
+    function _richiediDocsTokenPopup(callback) {
       if (typeof google === 'undefined' || !google.accounts || !google.accounts.oauth2) { callback(false); return; }
       // Controlla sessionStorage
       try {
@@ -2072,16 +2056,30 @@
       // prompt:'consent' forza sempre la schermata di autorizzazione Google,
       // così l'utente vede esplicitamente che sta concedendo l'accesso ai Docs.
       // Necessario la prima volta; le volte successive sarà già in cache.
-      _docsTokenClient.requestAccessToken({ prompt: 'consent' });
+      _docsTokenClient.requestAccessToken({ prompt: '' });
     }
 
-    // ── Client OAuth separato per Gmail (scope gmail.send) ─────────
-    // Usato dal modal "Invia mail dimissioni". Pattern identico a
-    // _richiediDocsToken ma con scope diverso: chi non usa la mail
-    // dimissioni non viene infastidito dal popup di consenso.
+    // ── Token Gmail (scope gmail.send) ─────────────────────────────
+    // Percorso normale: CASSAFORTE DI REPARTO (nessuna finestra, mai).
+    // Riserva storica: popup GIS, solo se la cassaforte non e' pronta.
     var _gmailTokenClient = null;
     var _googleGmailToken = null;
     function _richiediGmailToken(callback) {
+      // 1) Cassaforte di reparto: token senza NESSUNA finestra, su ogni PC
+      //    (autorizzazione concessa una volta per tutte).
+      if (typeof window._cassaforteToken === 'function') {
+        window._cassaforteToken().then(function(tok) {
+          _googleGmailToken = tok;
+          callback(true);
+        }).catch(function() { _richiediGmailTokenPopup(callback); });
+        return;
+      }
+      _richiediGmailTokenPopup(callback);
+    }
+    // 2) Percorso storico (solo se la cassaforte non e' configurata):
+    //    popup GIS. prompt:'' — Google mostra il consenso SOLO se manca,
+    //    non a ogni invio come faceva prompt:'consent'.
+    function _richiediGmailTokenPopup(callback) {
       if (typeof google === 'undefined' || !google.accounts || !google.accounts.oauth2) { callback(false); return; }
       // Controlla sessionStorage
       try {
@@ -2126,7 +2124,7 @@
         }
       });
       try {
-        _gmailTokenClient.requestAccessToken({ prompt: 'consent' });
+        _gmailTokenClient.requestAccessToken({ prompt: '' });
       } catch(e) {
         _rispondi(false, 'popup_bloccato');
       }
