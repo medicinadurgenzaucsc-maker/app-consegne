@@ -812,6 +812,8 @@ body { padding-top: 70px; background-color: #d4e6f1 !important; }
   border-color: transparent !important;
   background: transparent !important;
 }
+/* In focus mode niente scritta: al suo posto c'è la barretta col + */
+.patient-card.focus-mode .editable-area.piano-mancante::before { content: none !important; }
 /* ── PROBLEMI ATTIVI: elenco puntato coi bottoni (+ / matita / cestino).
    I bottoni vivono nell'HTML salvato ma li governa il CSS: visibili solo
    in focus mode, mai in stampa. Nel campo non si scrive a mano. */

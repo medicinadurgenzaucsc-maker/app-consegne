@@ -2781,6 +2781,11 @@ function _aggiornaCardDaPaziente(card, p) {
   // va ricostruito, altrimenti sparisce a ogni aggiornamento della scheda
   // — compreso il fresh-fetch all'apertura del focus mode.
   try { _labBottoniApplica(card); } catch(e) {}
+  // Problemi Attivi: anche la barretta col + e i bottoni per riga sono
+  // stato derivato — il fresh-fetch del focus mode riscrive il campo e
+  // senza questa ricostruzione spariscono (+ mai visibile, righe senza
+  // matita/cestino).
+  try { _paApplicaCard(card); } catch(e) {}
 
   // Se il letto ha cambiato paziente — spostamento o svuotamento eseguiti da
   // un ALTRO computer — il riepilogo lab in cache non vale più: si richiede
