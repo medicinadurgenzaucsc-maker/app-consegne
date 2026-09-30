@@ -4491,6 +4491,9 @@
           return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c];
         });
       }
+      function rifocalizza() {
+        try { campo.focus({ preventScroll: true }); } catch (e) { try { campo.focus(); } catch (e2) {} }
+      }
       function salva() {
         if (typeof attivaSalvataggioRitardato === 'function') {
           attivaSalvataggioRitardato(card.getAttribute('data-bed'), card);
@@ -4502,7 +4505,7 @@
           title: titolo,
           html: '<input id="paInput" class="swal2-input" autocomplete="off" value="' + paEsc(valore) + '" placeholder="es. Scompenso cardiaco in labilizzazione" style="max-width:420px;">',
           showCancelButton: true, confirmButtonText: conferma, confirmButtonColor: '#198754',
-          cancelButtonText: 'Annulla', focusConfirm: false,
+          cancelButtonText: 'Annulla', focusConfirm: false, returnFocus: false,
           didOpen: function() { var i = document.getElementById('paInput'); if (i) { i.focus(); if (valore) i.select(); } },
           preConfirm: function() {
             var v = (document.getElementById('paInput').value || '').trim();
@@ -4513,6 +4516,7 @@
       }
       if (btn.classList.contains('pa-add-btn')) {
         chiediTesto('Nuovo problema attivo', '', 'Aggiungi').then(function(r) {
+          rifocalizza();
           if (r.isConfirmed && r.value && typeof window._paRiga === 'function') {
             campo.appendChild(window._paRiga(r.value));
             salva();
@@ -4526,6 +4530,7 @@
       var testo = (txEl ? txEl.textContent : '').replace(/^\s*-\s*/, '').trim();
       if (btn.classList.contains('pa-mod')) {
         chiediTesto('Modifica problema attivo', testo, 'Salva').then(function(r) {
+          rifocalizza();
           if (r.isConfirmed && r.value && txEl) { txEl.textContent = '- ' + r.value; salva(); }
         });
         return;
@@ -4534,8 +4539,9 @@
         icon: 'warning', title: 'Cancellare questo problema?',
         html: '<div class="text-start small" style="word-break:break-word;">&laquo;' + paEsc(testo) + '&raquo;</div>',
         showCancelButton: true, confirmButtonText: 'Sì, cancella', confirmButtonColor: '#dc3545',
-        cancelButtonText: 'Annulla', reverseButtons: true
+        cancelButtonText: 'Annulla', reverseButtons: true, returnFocus: false
       }).then(function(r) {
+        rifocalizza();
         if (r.isConfirmed) { item.remove(); salva(); }
       });
     }, true);

@@ -2765,6 +2765,12 @@ function _aggiornaCardDaPaziente(card, p) {
     if (hasFocus && caretPos !== null && typeof _ripristinaCaretPos === 'function') {
       dst.focus();
       _ripristinaCaretPos(dst, caretPos);
+    } else if (hasFocus) {
+      // Il fuoco era dentro il campo ma su un nodo appena distrutto dalla
+      // riscrittura (es. i bottoni dei Problemi Attivi): senza rimetterlo
+      // nella card, il listener focusout crede che l'utente sia uscito e
+      // chiude il focus mode.
+      try { dst.focus({ preventScroll: true }); } catch (e) { try { dst.focus(); } catch (e2) {} }
     }
     // Aggiorna stato placeholder (mostra/nasconde la classe .is-empty)
     if (typeof _placeholderCheck === 'function') _placeholderCheck(dst);
