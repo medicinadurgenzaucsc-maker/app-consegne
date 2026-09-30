@@ -886,6 +886,20 @@ function _paApplicaCard(card) {
   if (!card || !card.querySelector) return;
   try { _paApplica(card.querySelector('[data-field="PianoTerapeutico"]')); } catch (e) {}
 }
+// Per il Doc di backup su Drive: dalle righe strutturate si estrae solo
+// il testo ("- x<br>- y"); un campo mai convertito passa invariato.
+function _paDriveTesto(html) {
+  var s = String(html == null ? '' : html);
+  if (s.indexOf('pa-item') < 0) return s;
+  var tmp = document.createElement('div');
+  tmp.innerHTML = s;
+  var righe = [];
+  [].forEach.call(tmp.querySelectorAll('.pa-item .pa-txt'), function(t) {
+    var r = (t.textContent || '').trim();
+    if (r) righe.push(_driveEscape(r));
+  });
+  return righe.join('<br>');
+}
 window._paRiga = _paRiga;
 window._paApplicaCard = _paApplicaCard;
 
@@ -2315,6 +2329,9 @@ function _driveRenderColInfo(p, schemaInfo) {
 // MA siamo dentro una cella, non in una sottotabella, per parsing
 // semplice.
 function _driveRenderDiagSection(spec, val, isFirst) {
+  // Problemi Attivi: nel Doc di backup va il TESTO pulito delle righe
+  // (niente bottoni: al re-import la struttura si ricrea da sola).
+  if (spec && spec.campo === 'PianoTerapeutico') val = _paDriveTesto(val);
   return _driveColHeader(spec.label, !isFirst) + _driveValueHtml(val, spec.isHtml);
 }
 
