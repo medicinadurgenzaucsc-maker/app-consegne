@@ -175,6 +175,8 @@
     /* Blocco Laboratorio (alambicco + promemoria sveglia): è un comando
        dell'app, vive nel campo ma non si stampa mai. */
     .lab-box { display: none !important; }
+    /* Problemi Attivi: in stampa solo il testo, mai i bottoni */
+    .pa-add, .pa-az { display: none !important; }
     .diaria-status-box {
       border-bottom: 1.5px solid #cfd8dc;
       margin-bottom: 4px;
@@ -417,7 +419,7 @@
         '</div>' +
       '</div>' +
       '<div class="piano-row">' +
-        '<div class="col-header-piano">Piano di Cura</div>' +
+        '<div class="col-header-piano">Problemi Attivi</div>' +
         '<div class="field-content-piano">' + (p.PianoTerapeutico || '') + '</div>' +
       '</div>' +
     '</div>';
@@ -463,7 +465,7 @@
           '<div class="alt-editable alt-diagnosi">' + (p.Diagnosi || '') + '</div>' +
         '</div>' +
         '<div class="alt-diag-bottom">' +
-          '<div class="alt-col-header-split">Piano di Cura</div>' +
+          '<div class="alt-col-header-split">Problemi Attivi</div>' +
           '<div class="alt-editable">' + (p.PianoTerapeutico || '') + '</div>' +
         '</div>' +
         '<div class="alt-diag-fourth">' +

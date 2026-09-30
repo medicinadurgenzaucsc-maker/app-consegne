@@ -1046,6 +1046,8 @@
       if (typeof window._verificaTerapiaObsoleta === 'function') window._verificaTerapiaObsoleta(card);
       // Blocco Laboratorio: ricostruiscilo (il fresh-fetch riscrive i campi).
       if (typeof window._labBottoniApplica === 'function') window._labBottoniApplica(card);
+      // Problemi Attivi: barretta + righe (stessa ragione).
+      if (typeof window._paApplicaCard === 'function') window._paApplicaCard(card);
 
       // Crea il badge di stato salvataggio dedicato al focus mode
       // (top-left fisso del viewport, fuori dalla card). _getBadges in
@@ -1440,7 +1442,8 @@
     // dopo il cambio tipologia.
     window._disattivaFocusMode = _disattivaFocusMode;
 
-    var _TOOLBAR_FIELDS = { 'NoteTerapia': true, 'Diaria': true, 'DaFare': true, 'PianoTerapeutico': true, 'EsamiColturali': true };
+    // PianoTerapeutico (Problemi Attivi) NON ha la barra: si gestisce coi bottoni.
+    var _TOOLBAR_FIELDS = { 'NoteTerapia': true, 'Diaria': true, 'DaFare': true, 'EsamiColturali': true };
 
     function _aggiornaSimboloSesso(el) {
       var val = el.getAttribute('data-sesso') || '';
@@ -4459,6 +4462,94 @@
           else if (r.isDenied) applicaValore('');
         });
       }
+    });
+
+    // ── PROBLEMI ATTIVI: elenco gestito coi bottoni, mai a mano ────────
+    // Stesso pattern del checkbox Dimissibile: click delegato in capture,
+    // guard focus mode, finestre Swal al centro pagina. Il listener
+    // focusout ha gia' la tolleranza per i modal SweetAlert (guard
+    // .swal2-container + grace _swalChiusoTs): il focus mode NON si
+    // chiude ne' all'apertura ne' alla chiusura di queste finestre.
+    document.addEventListener('click', function(e) {
+      var btn = e.target.closest && e.target.closest('.pa-add-btn, .pa-mod, .pa-del');
+      if (!btn) return;
+      var card = btn.closest('.patient-card');
+      var campo = btn.closest('[data-field="PianoTerapeutico"]');
+      if (!card || !campo) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      if (!card.classList.contains('focus-mode')) {
+        Swal.fire({
+          icon: 'info', title: 'Modifica bloccata',
+          text: 'Per gestire i problemi attivi attiva prima la modalità modifica (icona matita).',
+          confirmButtonColor: '#37474f', timer: 2200, showConfirmButton: false, timerProgressBar: true
+        });
+        return;
+      }
+      function paEsc(s) {
+        return String(s || '').replace(/[&<>"']/g, function(c) {
+          return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c];
+        });
+      }
+      function salva() {
+        if (typeof attivaSalvataggioRitardato === 'function') {
+          attivaSalvataggioRitardato(card.getAttribute('data-bed'), card);
+        }
+        if (typeof window._verificaPianoCura === 'function') window._verificaPianoCura(card);
+      }
+      function chiediTesto(titolo, valore, conferma) {
+        return Swal.fire({
+          title: titolo,
+          html: '<input id="paInput" class="swal2-input" autocomplete="off" value="' + paEsc(valore) + '" placeholder="es. Scompenso cardiaco in labilizzazione" style="max-width:420px;">',
+          showCancelButton: true, confirmButtonText: conferma, confirmButtonColor: '#198754',
+          cancelButtonText: 'Annulla', focusConfirm: false,
+          didOpen: function() { var i = document.getElementById('paInput'); if (i) { i.focus(); if (valore) i.select(); } },
+          preConfirm: function() {
+            var v = (document.getElementById('paInput').value || '').trim();
+            if (!v) { Swal.showValidationMessage('Scrivi il problema attivo'); return false; }
+            return v;
+          }
+        });
+      }
+      if (btn.classList.contains('pa-add-btn')) {
+        chiediTesto('Nuovo problema attivo', '', 'Aggiungi').then(function(r) {
+          if (r.isConfirmed && r.value && typeof window._paRiga === 'function') {
+            campo.appendChild(window._paRiga(r.value));
+            salva();
+          }
+        });
+        return;
+      }
+      var item = btn.closest('.pa-item');
+      if (!item) return;
+      var txEl = item.querySelector('.pa-txt');
+      var testo = (txEl ? txEl.textContent : '').replace(/^\s*-\s*/, '').trim();
+      if (btn.classList.contains('pa-mod')) {
+        chiediTesto('Modifica problema attivo', testo, 'Salva').then(function(r) {
+          if (r.isConfirmed && r.value && txEl) { txEl.textContent = '- ' + r.value; salva(); }
+        });
+        return;
+      }
+      Swal.fire({
+        icon: 'warning', title: 'Cancellare questo problema?',
+        html: '<div class="text-start small" style="word-break:break-word;">&laquo;' + paEsc(testo) + '&raquo;</div>',
+        showCancelButton: true, confirmButtonText: 'Sì, cancella', confirmButtonColor: '#dc3545',
+        cancelButtonText: 'Annulla', reverseButtons: true
+      }).then(function(r) {
+        if (r.isConfirmed) { item.remove(); salva(); }
+      });
+    }, true);
+
+    // Nel campo Problemi Attivi non si scrive MAI a mano: qualunque input
+    // diretto (tastiera, incolla, trascina) muore sul nascere. I contenuti
+    // cambiano solo attraverso i bottoni qui sopra.
+    ['beforeinput', 'paste', 'drop'].forEach(function(evn) {
+      document.addEventListener(evn, function(e) {
+        if (e.target && e.target.closest && e.target.closest('[data-field="PianoTerapeutico"]')) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+        }
+      }, true);
     });
 
     // Blocca scrittura fuori dal focus mode

@@ -2359,6 +2359,7 @@
         ['diariaepicrisi',            'Diaria',           true ],
         ['pianoterapeutico',          'PianoTerapeutico', true ],
         ['pianodicura',               'PianoTerapeutico', true ],
+        ['problemiattivi',            'PianoTerapeutico', true ],
         ['esamicolturali',            'EsamiColturali',   true ],
         ['cs',                        'CodiceSanitario',  false],
         ['codicesanitario',           'CodiceSanitario',  false],

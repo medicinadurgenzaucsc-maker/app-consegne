@@ -585,8 +585,8 @@ function _renderAltCard(p) {
     '<div class="editable-area plain-text alt-editable" contenteditable="true" data-field="Diagnosi" data-placeholder="Diagnosi e motivo del ricovero...">' + (p.Diagnosi || '') + '</div>' +
     '</div>' +
     '<div class="alt-diag-bottom">' +
-    '<div class="alt-col-header-split">Piano di Cura</div>' +
-    '<div class="editable-area rich-text alt-editable" contenteditable="true" data-field="PianoTerapeutico" data-placeholder="Piano di cura...">' + (p.PianoTerapeutico || '') + '</div>' +
+    '<div class="alt-col-header-split">Problemi Attivi</div>' +
+    '<div class="editable-area rich-text alt-editable" contenteditable="true" data-field="PianoTerapeutico" data-placeholder="Problemi attivi">' + (p.PianoTerapeutico || '') + '</div>' +
     '</div>' +
     '<div class="alt-diag-fourth">' +
     '<div class="alt-col-header-split">Esami Colturali, Scale di Valutazione e Laboratorio.</div>' +
@@ -815,19 +815,94 @@ var _TEMPLATE_NOTETERAPIA_VUOTO =
   '<div class="note-hdr" contenteditable="false">NOTE</div><div><br></div>';
 window._TEMPLATE_NOTETERAPIA_VUOTO = _TEMPLATE_NOTETERAPIA_VUOTO;
 
-// ── Controllo "Piano di Cura mancante" ──────────────────────────────────
-// Scheda occupata (ha un Nome) ma Piano di Cura vuoto → bordo rosso +
-// scritta "COMPILARE IL PIANO DI CURA" quando NON in focus mode (in focus
-// il bordo sparisce, ricompare all'uscita se resta vuoto).
+// ── PROBLEMI ATTIVI (ex Piano di Cura) ──────────────────────────────────
+// Elenco puntato gestito SOLO dai bottoni (+ / matita / cestino): niente
+// testo libero, cosi' l'impaginazione resta uguale per tutti. Le righe
+// vivono nell'HTML del campo (come scale e laboratorio); i bottoni li
+// governa il CSS: visibili solo in focus mode, mai in stampa.
+function _paBarretta() {
+  var d = document.createElement('div');
+  d.className = 'pa-add';
+  d.setAttribute('contenteditable', 'false');
+  d.innerHTML = '<button type="button" class="pa-add-btn" title="Aggiungi un problema attivo"><i class="bi bi-plus-circle-fill"></i></button>';
+  return d;
+}
+function _paRiga(testo) {
+  var d = document.createElement('div');
+  d.className = 'pa-item';
+  d.setAttribute('contenteditable', 'false');
+  var tx = document.createElement('span');
+  tx.className = 'pa-txt';
+  tx.textContent = '- ' + String(testo || '').trim();
+  var az = document.createElement('span');
+  az.className = 'pa-az';
+  az.setAttribute('contenteditable', 'false');
+  az.innerHTML = '<button type="button" class="pa-mod" title="Modifica"><i class="bi bi-pencil-fill"></i></button>'
+               + '<button type="button" class="pa-del" title="Cancella"><i class="bi bi-trash"></i></button>';
+  d.appendChild(tx);
+  d.appendChild(az);
+  return d;
+}
+// Porta il campo alla forma canonica: barretta col + in cima, poi solo
+// righe .pa-item. Il testo libero delle schede precedenti diventa un punto
+// per ogni riga (la conversione e' a video: si persiste al primo uso dei
+// bottoni o al salvataggio della scheda). Idempotente e parsimoniosa: se
+// il campo e' gia' in forma, il DOM non si tocca.
+function _paApplica(campo) {
+  if (!campo) return;
+  var nodi = [].slice.call(campo.childNodes);
+  var conforme = !!(campo.firstElementChild && campo.firstElementChild.classList.contains('pa-add'));
+  if (conforme) {
+    for (var i = 0; i < nodi.length && conforme; i++) {
+      var n = nodi[i];
+      if (n.nodeType === 3) { if (n.textContent.trim() !== '') conforme = false; continue; }
+      if (n.nodeType !== 1) continue;
+      if (n.classList.contains('pa-add')) continue;
+      if (!(n.classList.contains('pa-item') && n.querySelector('.pa-txt') && n.querySelector('.pa-mod') && n.querySelector('.pa-del'))) conforme = false;
+    }
+  }
+  if (conforme) return;
+  var testi = [];
+  function aggiungi(riga) {
+    var t = String(riga || '').replace(/ /g, ' ').replace(/^\s*[-•]\s*/, '').trim();
+    if (t) testi.push(t);
+  }
+  nodi.forEach(function(n) {
+    if (n.nodeType === 3) { aggiungi(n.textContent); return; }
+    if (n.nodeType !== 1) return;
+    if (n.classList.contains('pa-add')) return;
+    if (n.classList.contains('pa-item')) {
+      var tx = n.querySelector('.pa-txt');
+      aggiungi(tx ? tx.textContent : n.textContent);
+      return;
+    }
+    String(n.innerText || n.textContent || '').split('\n').forEach(aggiungi);
+  });
+  campo.innerHTML = '';
+  campo.appendChild(_paBarretta());
+  testi.forEach(function(t) { campo.appendChild(_paRiga(t)); });
+}
+function _paApplicaCard(card) {
+  if (!card || !card.querySelector) return;
+  try { _paApplica(card.querySelector('[data-field="PianoTerapeutico"]')); } catch (e) {}
+}
+window._paRiga = _paRiga;
+window._paApplicaCard = _paApplicaCard;
+
+// ── Controllo "Problemi Attivi mancanti" ────────────────────────────────
+// Scheda occupata (ha un Nome) ma senza nessun problema attivo → bordo
+// rosso + scritta "INSERIRE I PROBLEMI ATTIVI" quando NON in focus mode
+// (in focus il bordo sparisce, ricompare all'uscita se resta vuoto).
 function _verificaPianoCura(card) {
   if (!card || !card.querySelector) return;
   var piano = card.querySelector('[data-field="PianoTerapeutico"]');
   if (!piano) return;
+  _paApplica(piano);
   var nomeEl = card.querySelector('[data-field="Nome"]');
-  var occupata = !!(nomeEl && (nomeEl.innerText || nomeEl.textContent || '').replace(/ /g,' ').trim());
-  var pianoVuoto = !((piano.innerText || piano.textContent || '').replace(/ /g,' ').replace(/\s/g,'') !== '');
+  var occupata = !!(nomeEl && (nomeEl.innerText || nomeEl.textContent || '').replace(/ /g, ' ').trim());
+  var vuoto = !piano.querySelector('.pa-item');
   var inFocus = card.classList.contains('focus-mode');
-  if (occupata && pianoVuoto && !inFocus) piano.classList.add('piano-mancante');
+  if (occupata && vuoto && !inFocus) piano.classList.add('piano-mancante');
   else piano.classList.remove('piano-mancante');
 }
 function _verificaPianoCuraTutti() {
@@ -2070,7 +2145,7 @@ var _DRIVE_LAYOUT = [
   { campo: 'Dimissibile',       gruppo: 'info',    label: 'Dimissibile' },
   // ── Colonna DIAG (centro-sinistra) — replica .alt-col-diag ──
   { campo: 'Diagnosi',          gruppo: 'diag',    label: 'DIAGNOSI / MOTIVO RICOVERO', isHtml: true },
-  { campo: 'PianoTerapeutico',  gruppo: 'diag',    label: 'PIANO DI CURA',              isHtml: true },
+  { campo: 'PianoTerapeutico',  gruppo: 'diag',    label: 'PROBLEMI ATTIVI',              isHtml: true },
   { campo: 'EsamiColturali',    gruppo: 'diag',    label: 'ESAMI COLTURALI',            isHtml: true },
   { campo: 'DaFare',            gruppo: 'diag',    label: 'DA FARE / RICHIESTE',        isHtml: true },
   // ── Colonna DIARIA (centro, grande) — replica .alt-col-diaria ──

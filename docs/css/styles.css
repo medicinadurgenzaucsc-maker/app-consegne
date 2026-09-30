@@ -792,8 +792,8 @@ body { padding-top: 70px; background-color: #d4e6f1 !important; }
   display: block; text-align: center; color: #00897b; font-weight: 700;
   font-size: 0.92rem; margin-top: 3px; pointer-events: none; user-select: none;
 }
-/* Piano di Cura non compilato (scheda occupata, fuori focus): bordo rosso
-   + scritta "COMPILARE IL PIANO DI CURA". In focus mode il bordo sparisce. */
+/* Problemi Attivi non compilati (scheda occupata, fuori focus): bordo rosso
+   + scritta "INSERIRE I PROBLEMI ATTIVI". In focus mode il bordo sparisce. */
 .editable-area.piano-mancante {
   border: 2px solid #e53935 !important;
   border-radius: 5px;
@@ -801,9 +801,9 @@ body { padding-top: 70px; background-color: #d4e6f1 !important; }
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
 }
-.editable-area[data-placeholder].piano-mancante:empty::before,
-.editable-area[data-placeholder].piano-mancante.is-empty::before {
-  content: "COMPILARE IL PIANO DI CURA" !important;
+.editable-area.piano-mancante::before {
+  display: block;
+  content: "INSERIRE I PROBLEMI ATTIVI" !important;
   color: #c62828 !important;
   font-weight: 700 !important;
   font-style: normal !important;
@@ -812,6 +812,24 @@ body { padding-top: 70px; background-color: #d4e6f1 !important; }
   border-color: transparent !important;
   background: transparent !important;
 }
+/* ── PROBLEMI ATTIVI: elenco puntato coi bottoni (+ / matita / cestino).
+   I bottoni vivono nell'HTML salvato ma li governa il CSS: visibili solo
+   in focus mode, mai in stampa. Nel campo non si scrive a mano. */
+.editable-area[data-field="PianoTerapeutico"] { caret-color: transparent; cursor: default; }
+.pa-item { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; padding: 1px 0; }
+.pa-txt { flex: 1 1 auto; white-space: pre-wrap; word-break: break-word; }
+.pa-az { flex: 0 0 auto; display: none; gap: 2px; }
+.patient-card.focus-mode .pa-az { display: inline-flex; }
+.pa-az button, .pa-add-btn { border: none; background: transparent; cursor: pointer; padding: 0 3px; line-height: 1; font-size: 0.95em; }
+.pa-mod { color: #37474f; }
+.pa-mod:hover { color: #00695c; }
+.pa-del { color: #b0bec5; }
+.pa-del:hover { color: #c62828; }
+.pa-add { display: none; padding: 1px 0 3px; }
+.patient-card.focus-mode .pa-add { display: block; }
+.pa-add-btn { color: #00897b; font-size: 1.08em; }
+.pa-add-btn:hover { color: #00695c; }
+@media print { .pa-az, .pa-add { display: none !important; } }
 /* Blocco isolamento/rianimazione in cima al campo Diaria: una linea lo separa
    dal testo libero sotto, che resta sempre scrivibile. */
 .diaria-status-box {
