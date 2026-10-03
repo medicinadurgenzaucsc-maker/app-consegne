@@ -48,4 +48,6 @@ PWA «Sistema Consegne Reparto»: schede pazienti per letto, modificate in tempo
 
 ## Verifiche
 
+**Smoke-test obbligatorio dopo ogni taglio su index.html**: aprire la pagina SLOGGATA nel pannello browser e pretendere console pulita + pulsante «Accedi con Google» visibile. I controlli di sintassi non vedono i tag script persi: il 03/10/2026 un taglio ancorato su commenti HTML ha portato via l'SDK Supabase che stava in mezzo al range e l'app non partiva più per chi doveva rifare il login (riparato in v169).
+
 Non esiste una suite: i controlli si scrivono ad hoc nello scratchpad e si eseguono prima del deploy — compilazione script inline + bookmarklet collassati, e un «banco di prova» HTML servito da un mini-server node locale che carica CSS reale + funzioni estratte dal sorgente per asserire comportamento e computed style (il Browser pane non esegue script nei file aperti via `file://`). Per i test funzionali sull'app vera serve l'accesso dell'utente (login Google) — chiederlo invece di aggirarlo.
