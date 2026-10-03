@@ -5494,19 +5494,6 @@
             </div>
           </div>
 
-          <!-- STEP 1: password -->
-          <div id="importaStep1">
-            <label class="form-label fw-semibold">Password di autorizzazione</label>
-            <input type="password" id="inputImportaPwd" class="form-control"
-                   placeholder="Stessa password del backup manuale"
-                   style="font-size:0.88rem;"
-                   onkeydown="if(event.key==='Enter') eseguiImportaConsegne()">
-            <div class="form-text text-muted mt-1">
-              Inserisci la password di sicurezza configurata in Supabase
-              (chiave <code>IMPORT_PWD</code> o <code>BACKUP_PWD</code>).
-            </div>
-          </div>
-
           <!-- STEP 2: spinner verifica/lista -->
           <div id="importaStep2" style="display:none;text-align:center;padding:20px 0;">
             <div class="spinner-border text-warning mb-3" style="width:2.5rem;height:2.5rem;" role="status"></div>
@@ -5554,9 +5541,6 @@
         </div>
         <div class="modal-footer border-0 pt-0" id="importaFooter">
           <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annulla</button>
-          <button type="button" class="btn btn-warning text-white" id="btnConfermaImporta" onclick="eseguiImportaConsegne()">
-            <i class="bi bi-check2-circle me-1"></i>Verifica password
-          </button>
           <button type="button" class="btn btn-danger" id="btnEseguiImporta" style="display:none;" onclick="_importaEsegui()">
             <i class="bi bi-cloud-arrow-down me-1"></i>Importa selezionati
           </button>
@@ -6420,75 +6404,37 @@
   // ============================================================
   (function() {
 
-    // ── Helper: verifica password IMPORT_PWD ─────────────────────
-    function _verificaPassword(pwdInserita) {
-      return _q(_sb.from('impostazioni').select('valore').eq('chiave', 'IMPORT_PWD').maybeSingle())
-        .then(function(row) {
-          var attesa = row ? row.valore : null;
-          return !!attesa && pwdInserita === attesa;
-        });
-    }
-
-    function _chiediPassword(titoloAzione) {
-      return Swal.fire({
-        title: '<i class="bi bi-lock-fill me-2"></i>' + titoloAzione,
-        html: '<input id="swal-pwd-input" type="password" class="swal2-input" placeholder="Password di autorizzazione" autocomplete="off">',
-        confirmButtonText: 'Continua',
-        confirmButtonColor: '#37474f',
-        showCancelButton: true,
-        cancelButtonText: 'Annulla',
-        focusConfirm: false,
-        preConfirm: function() {
-          var v = (document.getElementById('swal-pwd-input').value || '').trim();
-          if (!v) { Swal.showValidationMessage('Inserisci la password'); return false; }
-          return v;
-        }
-      });
-    }
-
-    // ── BACKUP MANUALE ───────────────────────────────────────────
+    // ── BACKUP MANUALE (nessuna password: solo conferma) ─────────
     window._avviaBackupManuale = function() {
       if (typeof _emergGuard === 'function' && _emergGuard()) return;
-      _chiediPassword('Backup Manuale').then(function(result) {
-        if (!result.isConfirmed || !result.value) return;
-        var pwd = result.value;
-        _verificaPassword(pwd).then(function(ok) {
-          if (!ok) {
-            Swal.fire({ icon: 'error', title: 'Password errata', text: 'Password non corretta.', confirmButtonColor: '#d33' });
-            return;
-          }
-          return Swal.fire({
-            icon: 'question',
-            title: 'Conferma Backup',
-            html: 'Verrà creato subito un nuovo backup con i dati attuali.<br><br>' +
-                  '<small class="text-muted">Il backup verrà salvato nell\'archivio Supabase e, se disponibile, su Google Drive.</small>',
-            confirmButtonText: '<i class="bi bi-cloud-arrow-up-fill me-1"></i>Esegui Backup',
-            confirmButtonColor: '#2e7d32',
-            showCancelButton: true,
-            cancelButtonText: 'Annulla'
-          }).then(function(conf) {
-            if (!conf.isConfirmed) return;
-            Swal.fire({
-              title: 'Backup in corso...',
-              html: '<div class="d-flex align-items-center justify-content-center gap-3 py-2"><div class="spinner-border text-success"></div><span>Creazione backup...</span></div>',
-              allowOutsideClick: false, showConfirmButton: false
-            });
-            _sbBackupForzato()
-              .then(function(res) {
-                Swal.fire({
-                  icon: 'success', title: 'Backup completato!',
-                  html: 'Backup salvato con successo.<br><small class="text-muted">' +
-                        (res && res.count ? 'Letti salvati: <b>' + res.count + '</b>' : '') + '</small>',
-                  timer: 3500, showConfirmButton: false, timerProgressBar: true
-                });
-              })
-              .catch(function(e) {
-                Swal.fire({ icon: 'error', title: 'Errore Backup', text: (e && e.message) || 'Si è verificato un errore.', confirmButtonColor: '#d33' });
-              });
-          });
-        }).catch(function() {
-          Swal.fire({ icon: 'error', title: 'Errore', text: 'Impossibile verificare la password.', confirmButtonColor: '#d33' });
+      Swal.fire({
+        icon: 'question',
+        title: 'Conferma Backup',
+        html: 'Verrà creato subito un nuovo backup con i dati attuali.<br><br>' +
+              '<small class="text-muted">Il backup verrà salvato nell\'archivio Supabase e, se disponibile, su Google Drive.</small>',
+        confirmButtonText: '<i class="bi bi-cloud-arrow-up-fill me-1"></i>Esegui Backup',
+        confirmButtonColor: '#2e7d32',
+        showCancelButton: true,
+        cancelButtonText: 'Annulla'
+      }).then(function(conf) {
+        if (!conf.isConfirmed) return;
+        Swal.fire({
+          title: 'Backup in corso...',
+          html: '<div class="d-flex align-items-center justify-content-center gap-3 py-2"><div class="spinner-border text-success"></div><span>Creazione backup...</span></div>',
+          allowOutsideClick: false, showConfirmButton: false
         });
+        _sbBackupForzato()
+          .then(function(res) {
+            Swal.fire({
+              icon: 'success', title: 'Backup completato!',
+              html: 'Backup salvato con successo.<br><small class="text-muted">' +
+                    (res && res.count ? 'Letti salvati: <b>' + res.count + '</b>' : '') + '</small>',
+              timer: 3500, showConfirmButton: false, timerProgressBar: true
+            });
+          })
+          .catch(function(e) {
+            Swal.fire({ icon: 'error', title: 'Errore Backup', text: (e && e.message) || 'Si è verificato un errore.', confirmButtonColor: '#d33' });
+          });
       });
     };
 
@@ -6531,27 +6477,14 @@
 
     window._apriRipristina = function() {
       if (typeof _emergGuard === 'function' && _emergGuard()) return;
-      _chiediPassword('Ripristina da Backup').then(function(result) {
-        if (!result.isConfirmed || !result.value) return;
-        var pwd = result.value;
-        _verificaPassword(pwd).then(function(ok) {
-          if (!ok) {
-            Swal.fire({ icon: 'error', title: 'Password errata', text: 'Password non corretta.', confirmButtonColor: '#d33' });
-            return;
-          }
-          var modalEl = document.getElementById('modalRipristina');
-          _ripristinaModal = bootstrap.Modal.getOrCreateInstance(modalEl);
-          // Avvia il caricamento SOLO quando il modal è completamente visibile
-          // (evita conflitti con la chiusura di Swal che precede l'apertura)
-          modalEl.addEventListener('shown.bs.modal', function handler() {
-            modalEl.removeEventListener('shown.bs.modal', handler);
-            _ripristinaGoGiorni();
-          });
-          _ripristinaModal.show();
-        }).catch(function() {
-          Swal.fire({ icon: 'error', title: 'Errore', text: 'Impossibile verificare la password.', confirmButtonColor: '#d33' });
-        });
+      var modalEl = document.getElementById('modalRipristina');
+      _ripristinaModal = bootstrap.Modal.getOrCreateInstance(modalEl);
+      // Avvia il caricamento SOLO quando il modal è completamente visibile
+      modalEl.addEventListener('shown.bs.modal', function handler() {
+        modalEl.removeEventListener('shown.bs.modal', handler);
+        _ripristinaGoGiorni();
       });
+      _ripristinaModal.show();
     };
 
     // ── VIEW 1: lista giorni ────────────────────────────────────

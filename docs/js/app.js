@@ -1641,23 +1641,19 @@
     var _imp_pazientiParsed = [];     // schede letto estratte dal Doc
 
     function _imp_resetUI() {
-      ['importaStep1','importaStep2','importaStep3','importaStep4','importaStep5'].forEach(function(id) {
+      ['importaStep2','importaStep3','importaStep4','importaStep5'].forEach(function(id) {
         var el = document.getElementById(id); if (el) el.style.display = 'none';
       });
-      document.getElementById('importaStep1').style.display = '';
-      document.getElementById('btnConfermaImporta').style.display = '';
       document.getElementById('btnEseguiImporta').style.display = 'none';
       document.getElementById('importaFooter').style.display = '';
-      document.getElementById('inputImportaPwd').value = '';
     }
 
     function _imp_mostraSpinner(msg) {
-      ['importaStep1','importaStep3','importaStep4','importaStep5'].forEach(function(id) {
+      ['importaStep3','importaStep4','importaStep5'].forEach(function(id) {
         var el = document.getElementById(id); if (el) el.style.display = 'none';
       });
       document.getElementById('importaStep2').style.display = '';
       document.getElementById('importaStepMsg').textContent = msg || 'Caricamento…';
-      document.getElementById('btnConfermaImporta').style.display = 'none';
       document.getElementById('btnEseguiImporta').style.display = 'none';
     }
 
@@ -1669,39 +1665,8 @@
       _imp_pazientiParsed = [];
       var mi = bootstrap.Modal.getOrCreateInstance(document.getElementById('modalImportaConsegne'));
       mi.show();
-    }
-
-    // STEP 1 → 2: verifica password e poi STEP 3 (lista file)
-    function eseguiImportaConsegne() {
-      if (typeof _emergGuard === 'function' && _emergGuard()) return;
-      var pwd = (document.getElementById('inputImportaPwd').value || '').trim();
-      if (!pwd) { Swal.fire({ icon: 'warning', title: 'Password mancante',
-        text: 'Inserisci la password di autorizzazione.', confirmButtonColor: '#e65100' }); return; }
-      _imp_mostraSpinner('Verifica password…');
-
-      // Verifica password contro chiavi IMPORT_PWD o BACKUP_PWD
-      // (entrambe vanno bene: stessa password del backup manuale)
-      _q(_sb.from('impostazioni').select('chiave,valore').in('chiave', ['IMPORT_PWD','BACKUP_PWD']))
-        .then(function(rows) {
-          var pwds = {};
-          (rows || []).forEach(function(r) { pwds[r.chiave] = r.valore; });
-          var ok = (pwds.IMPORT_PWD && pwd === pwds.IMPORT_PWD) ||
-                   (pwds.BACKUP_PWD && pwd === pwds.BACKUP_PWD);
-          if (!ok) {
-            _imp_resetUI();
-            Swal.fire({ icon: 'error', title: 'Password errata',
-              text: 'La password inserita non è corretta. Impossibile procedere.',
-              confirmButtonColor: '#d33' });
-            return;
-          }
-          _imp_richiediTokenECaricaFiles();
-        })
-        .catch(function() {
-          _imp_resetUI();
-          Swal.fire({ icon: 'error', title: 'Errore verifica',
-            text: 'Impossibile verificare la password. Connessione Supabase down? Se è un emergenza, usa "Ripristina da Backup" o consulta il backup Drive manualmente.',
-            confirmButtonColor: '#d33' });
-        });
+      // Nessuna password: si parte subito con l'elenco dei backup su Drive.
+      _imp_richiediTokenECaricaFiles();
     }
 
     function _imp_richiediTokenECaricaFiles() {
@@ -1786,11 +1751,10 @@
           };
         });
       }
-      ['importaStep1','importaStep2','importaStep4','importaStep5'].forEach(function(id) {
+      ['importaStep2','importaStep4','importaStep5'].forEach(function(id) {
         var el = document.getElementById(id); if (el) el.style.display = 'none';
       });
       document.getElementById('importaStep3').style.display = '';
-      document.getElementById('btnConfermaImporta').style.display = 'none';
       document.getElementById('btnEseguiImporta').style.display = 'none';
       document.getElementById('importaFooter').style.display = '';
       // refresh button
@@ -1897,11 +1861,10 @@
         'Backup del ' + (_imp_fileSelected ? _imp_fileSelected.dataVis : '—');
       _imp_aggiornaConteggio();
 
-      ['importaStep1','importaStep2','importaStep3','importaStep5'].forEach(function(id) {
+      ['importaStep2','importaStep3','importaStep5'].forEach(function(id) {
         var el = document.getElementById(id); if (el) el.style.display = 'none';
       });
       document.getElementById('importaStep4').style.display = '';
-      document.getElementById('btnConfermaImporta').style.display = 'none';
       document.getElementById('btnEseguiImporta').style.display = '';
 
       var btnBack = document.getElementById('btnBackToFiles');
