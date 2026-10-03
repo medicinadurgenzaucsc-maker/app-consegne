@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="it">
+<head><meta charset="utf-8"><title>Rinnovo sessione</title></head>
+<body>
+<script>
+(function () {
+  // Pagina di ritorno del RINNOVO TOKEN SILENZIOSO (iframe nascosto).
+  // Google reindirizza qui con il token (o l'errore) nel fragment (#...).
+  // Non salva nulla e non chiama nessuno: passa il fragment alla pagina
+  // madre (stessa origin) via postMessage e basta. Aperta da sola non fa
+  // niente di visibile.
+  try {
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage(
+        { tipo: 'oauth-silent-return', hash: window.location.hash || '' },
+        window.location.origin
+      );
+    }
+  } catch (e) {}
+})();
+</script>
+</body>
+</html>

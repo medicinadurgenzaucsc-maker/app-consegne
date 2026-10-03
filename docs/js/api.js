@@ -18,7 +18,7 @@ var LOCK_TTL_MS      = 600000; // 10 minuti — safety net DB-side, deve essere 
 // Origini JS autorizzate: https://medicinadurgenzaucsc-maker.github.io
 var GOOGLE_CLIENT_ID = '170256871056-gchf386c3oic77ek2j5m3b1e5pbv6cre.apps.googleusercontent.com';
 
-// Token di accesso Google — impostato dopo il login (identità/diagnostica)
+// Token di accesso Google — impostato dopo il login, usato per Drive API
 window._googleAccessToken = null;
 
 // ── CLIENT SUPABASE ───────────────────────────────────────────
@@ -886,6 +886,20 @@ function _paApplicaCard(card) {
   if (!card || !card.querySelector) return;
   try { _paApplica(card.querySelector('[data-field="PianoTerapeutico"]')); } catch (e) {}
 }
+// Per il Doc di backup su Drive: dalle righe strutturate si estrae solo
+// il testo ("- x<br>- y"); un campo mai convertito passa invariato.
+function _paDriveTesto(html) {
+  var s = String(html == null ? '' : html);
+  if (s.indexOf('pa-item') < 0) return s;
+  var tmp = document.createElement('div');
+  tmp.innerHTML = s;
+  var righe = [];
+  [].forEach.call(tmp.querySelectorAll('.pa-item .pa-txt'), function(t) {
+    var r = (t.textContent || '').trim();
+    if (r) righe.push(_driveEscape(r));
+  });
+  return righe.join('<br>');
+}
 window._paRiga = _paRiga;
 window._paApplicaCard = _paApplicaCard;
 
@@ -1457,14 +1471,18 @@ function _sbArchiviaGiornoCorrente() {
             lab: res[1]        // esami di laboratorio: colonna a parte
           }));
         }).then(function() {
-          // Log del backup DB orario riuscito.
+          // Log del backup DB orario riuscito: include info sul token Drive
+          // così, incrociando con i log 'drive-backup', si capisce se il PC
+          // che ha eseguito il backup aveva o no la sessione Drive attiva.
           if (typeof window._log === 'function') {
             try {
               window._log('info', 'backup-orario-db',
-                'Backup orario su DB completato (' + _pazientiBackup.length + ' letti)', '');
+                'Backup orario su DB completato (' + _pazientiBackup.length + ' letti)',
+                'token_drive_disponibile=' + (!!window._googleDriveToken));
             } catch(e) {}
           }
-          // ── Step 4: pulizia archivio (retention) ──────────────────
+          // ── Step 4: backup Drive (fire-and-forget) + pulizia archivio ──────
+          _driveBackupConsegne(_pazientiBackup, now);
           return _sbGetGiorniConservazione().then(function(giorni) {
             var limit = now - (giorni * 86400000);
             _q(_sb.from('archivio').delete().lt('ts', limit)).catch(function() {});
@@ -1605,11 +1623,63 @@ function _isDimissibileDomani(strDim) {
 
 // Costruisce e invia un'email via Gmail API for-conto-utente.
 // Richiede token con scope https://www.googleapis.com/auth/gmail.send
+function _gmailInviaMail(token, fromEmail, destinatariArr, oggetto, htmlBody) {
+  if (!token) return Promise.reject(new Error('Token Gmail mancante'));
+  if (!destinatariArr || !destinatariArr.length) return Promise.reject(new Error('Nessun destinatario'));
+
+  // Codifica oggetto in RFC 2047 (per accenti, lettere non ASCII)
+  function encodeHeader(s) {
+    var hasNonAscii = /[^\x00-\x7F]/.test(s || '');
+    if (!hasNonAscii) return s || '';
+    return '=?UTF-8?B?' + btoa(unescape(encodeURIComponent(String(s)))) + '?=';
+  }
+
+  var headers = [
+    'From: ' + (fromEmail || ''),
+    'To: ' + destinatariArr.join(', '),
+    'Subject: ' + encodeHeader(oggetto || ''),
+    'MIME-Version: 1.0',
+    'Content-Type: text/html; charset=UTF-8',
+    'Content-Transfer-Encoding: base64'
+  ];
+  // Body in Base64 (max 76 char per riga è standard ma Gmail accetta unbroken)
+  var bodyB64 = btoa(unescape(encodeURIComponent(htmlBody || '')));
+  // Chunked a 76 char (più compatibile)
+  bodyB64 = bodyB64.replace(/(.{76})/g, '$1\r\n');
+  // RFC 5322: headers e body separati da UNA RIGA VUOTA → \r\n\r\n
+  // (un \r\n chiude l'ultimo header, l'altro è la linea vuota richiesta).
+  // Senza questo separatore, Gmail interpreta il body come header malformato
+  // e la mail arriva con oggetto/destinatari OK ma corpo vuoto.
+  var rawMessage = headers.join('\r\n') + '\r\n\r\n' + bodyB64;
+
+  // URL-safe Base64 (Gmail API richiede questo)
+  var raw = btoa(unescape(encodeURIComponent(rawMessage)))
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+  return fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+    method: 'POST',
+    headers: {
+      'Authorization': 'Bearer ' + token,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ raw: raw })
+  }).then(function(r) {
+    if (!r.ok) {
+      return r.json().catch(function(){return {};}).then(function(b) {
+        var em = (b.error && b.error.message) || 'HTTP ' + r.status;
+        throw new Error(em);
+      });
+    }
+    return r.json();
+  });
+}
+
 window._sbCaricaTemplateMail        = _sbCaricaTemplateMail;
 window._sbSalvaTemplateMail         = _sbSalvaTemplateMail;
 window._sbMailDimissioniInviataOggi = _sbMailDimissioniInviataOggi;
 window._domaniMezzanotte            = _domaniMezzanotte;
 window._isDimissibileDomani         = _isDimissibileDomani;
+window._gmailInviaMail              = _gmailInviaMail;
 
 
 // Backup forzato: inserisce subito un record in archivio e aggiorna ULTIMO_BACKUP.
@@ -1624,6 +1694,7 @@ function _sbBackupForzato() {
         return _q(_sb.from('impostazioni')
           .upsert({ chiave: 'ULTIMO_BACKUP', valore: String(now) }, { onConflict: 'chiave' }));
       }).then(function() {
+        _driveBackupConsegne(pazienti, now); // fire-and-forget
         return { success: true, ts: now, count: pazienti.length };
       });
   });
@@ -1851,6 +1922,636 @@ function _sbOttieniAccountLogin() {
     .then(function(row) { return row ? row.valore : ''; });
 }
 
+
+// ══════════════════════════════════════════════════════════════
+// GOOGLE DRIVE BACKUP
+// ══════════════════════════════════════════════════════════════
+
+// Helper Base64 UTF-8 safe (gestisce caratteri accentati e Unicode).
+// Usato per embedare il JSON dei dati nel Google Doc di backup senza
+// problemi di escaping HTML.
+function _b64encodeUtf8(s) {
+  try {
+    return btoa(unescape(encodeURIComponent(String(s || ''))));
+  } catch(e) { return ''; }
+}
+function _b64decodeUtf8(b64) {
+  try {
+    // Tollera whitespace/newline introdotti dal Doc
+    var clean = String(b64 || '').replace(/[\s\n\r\t]+/g, '');
+    return decodeURIComponent(escape(atob(clean)));
+  } catch(e) { return ''; }
+}
+window._b64encodeUtf8 = _b64encodeUtf8;
+window._b64decodeUtf8 = _b64decodeUtf8;
+
+// Cerca o crea la cartella "BACKUP CONSEGNE EMERGENZA" nella root dell'utente.
+// Con scope drive.file, files.list restituisce solo le cartelle create da quest'app.
+function _driveGetOrCreateFolder(nome) {
+  var token = window._googleDriveToken;
+  if (!token) return Promise.reject(new Error('No Drive token'));
+  var q = "name='" + nome.replace(/'/g, "\\'") + "'" +
+          " and mimeType='application/vnd.google-apps.folder'" +
+          " and trashed=false";
+  return fetch('https://www.googleapis.com/drive/v3/files?q=' + encodeURIComponent(q) + '&fields=files(id)', {
+    headers: { 'Authorization': 'Bearer ' + token }
+  }).then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.files && data.files.length > 0) return data.files[0].id;
+    // Non trovata → crea nella root
+    return fetch('https://www.googleapis.com/drive/v3/files', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: nome, mimeType: 'application/vnd.google-apps.folder' })
+    }).then(function(r) { return r.json(); }).then(function(f) {
+      if (f.error) throw new Error(f.error.message);
+      return f.id;
+    });
+  });
+}
+
+// Lista tutti i Google Doc nella cartella backup ordinati per createdTime DESC
+// (dal più recente al più vecchio). Usato dal modal "Importa da backup Drive"
+// come safety net se Supabase è temporaneamente down.
+// Ritorna array di { id, name, createdTime, modifiedTime }.
+function _driveListaBackupFiles(folderId, limit) {
+  var token = window._googleDriveToken;
+  if (!token) return Promise.reject(new Error('No Drive token'));
+  if (!folderId) return Promise.reject(new Error('No folder ID'));
+  var q = "'" + folderId + "' in parents" +
+          " and mimeType='application/vnd.google-apps.document'" +
+          " and trashed=false";
+  var url = 'https://www.googleapis.com/drive/v3/files?' +
+            'q=' + encodeURIComponent(q) +
+            '&orderBy=createdTime%20desc' +
+            '&pageSize=' + (limit || 100) +
+            '&fields=files(id,name,createdTime,modifiedTime)';
+  return fetch(url, {
+    headers: { 'Authorization': 'Bearer ' + token }
+  }).then(function(r) {
+    if (!r.ok) {
+      return r.json().catch(function(){return {};}).then(function(body) {
+        var msg = (body.error && body.error.message) || 'HTTP ' + r.status;
+        throw new Error(msg);
+      });
+    }
+    return r.json();
+  }).then(function(data) {
+    return (data && data.files) ? data.files : [];
+  });
+}
+window._driveListaBackupFiles = _driveListaBackupFiles;
+window._driveGetOrCreateFolder = _driveGetOrCreateFolder;
+
+// Elimina i file Drive nella cartella più vecchi di cutoffMs (basato su createdTime di Drive).
+function _driveEliminaVecchi(folderId, cutoffMs) {
+  var token = window._googleDriveToken;
+  if (!token) return Promise.resolve();
+  var cutoffISO = new Date(cutoffMs).toISOString();
+  var q = "'" + folderId + "' in parents" +
+          " and createdTime < '" + cutoffISO + "'" +
+          " and trashed=false";
+  return fetch('https://www.googleapis.com/drive/v3/files?q=' + encodeURIComponent(q) + '&fields=files(id,name)', {
+    headers: { 'Authorization': 'Bearer ' + token }
+  }).then(function(r) { return r.json(); })
+  .then(function(data) {
+    var files = data.files || [];
+    if (files.length > 0) console.log('[Drive cleanup] Eliminazione ' + files.length + ' file vecchi');
+    return Promise.all(files.map(function(f) {
+      return fetch('https://www.googleapis.com/drive/v3/files/' + f.id, {
+        method: 'DELETE',
+        headers: { 'Authorization': 'Bearer ' + token }
+      }).catch(function() {});
+    }));
+  }).catch(function() {});
+}
+
+// Crea un file di testo plain in una cartella Drive (multipart upload)
+// Crea un Google Doc nativo su Drive, imposta A4 landscape e adatta le colonne
+// alla larghezza reale del foglio via Docs API batchUpdate.
+//
+// Flusso:
+// 1. Upload HTML → Google Doc (il converter usa portrait per le larghezze)
+// 2. GET struttura doc (solo posizioni tabelle)
+// 3. batchUpdate: imposta A4 landscape + larghezze colonne corrette
+//
+// A4 landscape con margini 20mm: larghezza utile = 841.89 - 2×56.69 = 728.51pt
+// Colonne card (3 col): C1=17% (124pt) | C2=63% (459pt) | C3=20% (146pt)
+function _driveCreaGoogleDoc(nome, htmlContent, folderId) {
+  var token = window._googleDriveToken;
+  if (!token) return Promise.reject(new Error('No Drive token'));
+
+  // Step 1: carica HTML come Google Doc
+  var boundary = 'app_consegne_gdoc_boundary';
+  var meta = JSON.stringify({ name: nome, mimeType: 'application/vnd.google-apps.document', parents: [folderId] });
+  var uploadBody = '--' + boundary + '\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n' + meta + '\r\n' +
+                   '--' + boundary + '\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n' + htmlContent + '\r\n' +
+                   '--' + boundary + '--';
+
+  return fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'multipart/related; boundary="' + boundary + '"' },
+    body: uploadBody
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(file) {
+    if (!file || !file.id) return file;
+    var docId = file.id;
+
+    // Step 2: legge la struttura del doc (solo startIndex delle tabelle)
+    return fetch('https://docs.googleapis.com/v1/documents/' + docId +
+                 '?fields=body.content(startIndex%2Ctable%2Fcolumns)', {
+      headers: { 'Authorization': 'Bearer ' + token }
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(doc) {
+      // Step 3: costruisce un unico batchUpdate con:
+      //   a) orientamento A4 landscape + margini
+      //   b) larghezze colonne per ogni tabella
+      var TOTAL = 728; // pt utili in landscape (841.89 - 2×56.69)
+      var COL3  = [Math.round(TOTAL * 0.17), Math.round(TOTAL * 0.63),
+                   TOTAL - Math.round(TOTAL * 0.17) - Math.round(TOTAL * 0.63)];  // 124 + 459 + 145 = 728
+      var COL2  = [Math.round(TOTAL * 0.40), TOTAL - Math.round(TOTAL * 0.40)];   // 291 + 437 = 728
+
+      var requests = [{
+        updateDocumentStyle: {
+          documentStyle: {
+            pageSize: { width: { magnitude: 841.89, unit: 'PT' }, height: { magnitude: 595.28, unit: 'PT' } },
+            marginTop:    { magnitude: 42.52, unit: 'PT' },
+            marginBottom: { magnitude: 42.52, unit: 'PT' },
+            marginLeft:   { magnitude: 56.69, unit: 'PT' },
+            marginRight:  { magnitude: 56.69, unit: 'PT' }
+          },
+          fields: 'pageSize,marginTop,marginBottom,marginLeft,marginRight'
+        }
+      }];
+
+      // Aggiunge updateTableColumnProperties per ogni tabella trovata
+      ((doc.body && doc.body.content) || []).forEach(function(elem) {
+        if (!elem.table || elem.startIndex === undefined) return;
+        var numCols = elem.table.columns || 3;
+        var widths  = numCols === 3 ? COL3 : COL2;
+        for (var ci = 0; ci < numCols; ci++) {
+          requests.push({
+            updateTableColumnProperties: {
+              tableStartLocation: { index: elem.startIndex },
+              columnIndices: [ci],
+              tableColumnProperties: {
+                widthType: 'FIXED_WIDTH',
+                width: { magnitude: widths[ci] || Math.round(TOTAL / numCols), unit: 'PT' }
+              },
+              fields: 'widthType,width'
+            }
+          });
+        }
+      });
+
+      return fetch('https://docs.googleapis.com/v1/documents/' + docId + ':batchUpdate', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requests: requests })
+      });
+    })
+    .then(function() { return file; })
+    .catch(function(e) {
+      console.warn('[Drive] Post-processing fallito (non bloccante):', e.message || e);
+      return file;
+    });
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// SCHEMA DINAMICO PER BACKUP/IMPORT DRIVE — derivato da `_campi`
+// ──────────────────────────────────────────────────────────────────────
+// Ogni paziente nel backup è una TABELLA 4-COLONNE che replica il
+// layout della card paziente nell'app (info | diag | diaria | terapia).
+// Il parser dell'import cerca le coppie label/valore dentro le celle:
+// non importa in che colonna stanno, basta che la label sia presente.
+//
+// SISTEMA DATA-DRIVEN da `_campi`:
+// - Per un nuovo campo, basta aggiungerlo a `_campi`: appare nel backup
+//   nel gruppo "info" con label = nome JS (default).
+// - Per personalizzare label + colonna + tipo HTML, aggiungere una
+//   entry a `_DRIVE_LAYOUT` con { campo, gruppo, label, isHtml? }.
+// - Per escludere un campo dal backup, aggiungere a `_DRIVE_EXCLUDE_FIELDS`.
+//
+// Quindi: NESSUNA modifica al codice di rendering/parsing per nuovi campi.
+// ══════════════════════════════════════════════════════════════════════
+
+// Definizione layout campo per campo: gruppo (colonna), label visibile
+// nel Doc, isHtml (true = preserva HTML rich-text). L'ORDINE in questo
+// array determina anche l'ordine visivo dei campi dentro ogni gruppo.
+// Gruppi disponibili: 'info' (col sinistra), 'diag' (col centro-sx, una
+// riga per campo), 'diaria' (col centro-grande), 'terapia' (col destra).
+var _DRIVE_LAYOUT = [
+  // ── Colonna INFO (sinistra) — replica .alt-col-info dell'app ──
+  { campo: 'Letto',             gruppo: 'info',    label: 'LETTO' },
+  { campo: 'TipologiaLetto',    gruppo: 'info',    label: 'TIPOLOGIA' },
+  { campo: 'Nome',              gruppo: 'info',    label: 'NOME' },
+  { campo: 'Sesso',             gruppo: 'info',    label: 'SESSO' },
+  { campo: 'Allergie',          gruppo: 'info',    label: '⚠ ALLERGIE',       isHtml: true },
+  { campo: 'DataNascita',       gruppo: 'info',    label: 'Data di Nascita' },
+  { campo: 'Eta',               gruppo: 'info',    label: 'Età' },
+  { campo: 'DataRicovero',      gruppo: 'info',    label: 'Ricovero' },
+  { campo: 'CodiceSanitario',   gruppo: 'info',    label: 'C.S.' },
+  { campo: 'Ossigeno',          gruppo: 'info',    label: 'Ossigeno' },
+  { campo: 'Vitto',             gruppo: 'info',    label: 'Vitto' },
+  { campo: 'Dimissibile',       gruppo: 'info',    label: 'Dimissibile' },
+  // ── Colonna DIAG (centro-sinistra) — replica .alt-col-diag ──
+  { campo: 'Diagnosi',          gruppo: 'diag',    label: 'DIAGNOSI / MOTIVO RICOVERO', isHtml: true },
+  { campo: 'PianoTerapeutico',  gruppo: 'diag',    label: 'PROBLEMI ATTIVI',              isHtml: true },
+  { campo: 'EsamiColturali',    gruppo: 'diag',    label: 'ESAMI COLTURALI',            isHtml: true },
+  { campo: 'DaFare',            gruppo: 'diag',    label: 'DA FARE / RICHIESTE',        isHtml: true },
+  // ── Colonna DIARIA (centro, grande) — replica .alt-col-diaria ──
+  { campo: 'Diaria',            gruppo: 'diaria',  label: 'DIARIA ED EPICRISI',         isHtml: true },
+  // ── Colonna TERAPIA (destra) — replica .alt-col-terapia ──
+  { campo: 'NoteTerapia',       gruppo: 'terapia', label: 'NOTE E TERAPIA',             isHtml: true }
+];
+
+// Campi da NON includere nel backup (campi tecnici di sistema)
+var _DRIVE_EXCLUDE_FIELDS = {
+  'UltimoAggiornamento': true
+};
+
+// Costruisce dinamicamente lo schema gruppi {info:[...], diag:[...], diaria:[...], terapia:[...]}
+// dai campi attualmente registrati in `_campi`, usando `_DRIVE_LAYOUT` per
+// gli override. I campi nuovi non listati vanno in 'info' con label = nome JS.
+function _getDriveSchema() {
+  var groups = { info: [], diag: [], diaria: [], terapia: [] };
+  if (typeof _campi !== 'object' || !_campi) return groups;
+
+  // Mappa rapida campo → spec layout
+  var bySpec = {};
+  _DRIVE_LAYOUT.forEach(function(s) { bySpec[s.campo] = s; });
+
+  // Prima: campi nell'ordine del _DRIVE_LAYOUT (mantengono l'ordine voluto)
+  _DRIVE_LAYOUT.forEach(function(spec) {
+    if (_DRIVE_EXCLUDE_FIELDS[spec.campo]) return;
+    if (!_campi[spec.campo]) return; // il campo non è più in _campi
+    groups[spec.gruppo || 'info'].push({
+      campo:  spec.campo,
+      label:  spec.label || spec.campo,
+      isHtml: !!spec.isHtml
+    });
+  });
+
+  // Poi: campi presenti in _campi ma NON in _DRIVE_LAYOUT (aggiunti dopo)
+  // → vanno automaticamente in 'info' con label = nome JS.
+  Object.keys(_campi).forEach(function(f) {
+    if (_DRIVE_EXCLUDE_FIELDS[f]) return;
+    if (bySpec[f]) return; // già processato sopra
+    groups.info.push({ campo: f, label: f, isHtml: false });
+  });
+
+  return groups;
+}
+
+// Espone tutto a window per uso da app.js (parser import)
+window._DRIVE_LAYOUT          = _DRIVE_LAYOUT;
+window._DRIVE_EXCLUDE_FIELDS  = _DRIVE_EXCLUDE_FIELDS;
+window._getDriveSchema        = _getDriveSchema;
+
+// ──────────────────────────────────────────────────────────────────────
+// HELPER per rendering Doc — replicano stili della card app (.alt-row)
+// ──────────────────────────────────────────────────────────────────────
+
+// Stile celle: bordo, padding
+var _D_B  = '1.5pt solid #333';
+var _D_Bi = '1pt solid #ccc';
+
+// Escape minimo per i campi plain text
+function _driveEscape(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+// Header colonna (es. "DIAGNOSI / MOTIVO RICOVERO")
+// Replica .alt-col-header / .alt-col-header-split dell'app:
+//   background #e8e6e1, bold, uppercase, center, font 8pt
+function _driveColHeader(label, isSplit) {
+  return '<p style="background-color:#e8e6e1;padding:4pt 6pt;font-weight:bold;' +
+         'font-size:8pt;text-align:center;text-transform:uppercase;letter-spacing:0.3pt;' +
+         'margin:0;color:#263238;' +
+         (isSplit ? 'border-top:1pt solid #333;' : '') +
+         '">' + _driveEscape(label) + '</p>';
+}
+
+// Wrap valore campo: padding standard
+function _driveValueHtml(val, isHtml) {
+  if (val == null || val === '') return '<p style="padding:5pt 8pt;font-size:9pt;margin:0;color:#999;font-style:italic;">&nbsp;</p>';
+  var content = isHtml ? String(val) : _driveEscape(val);
+  return '<p style="padding:5pt 8pt;font-size:9pt;margin:0;line-height:1.4;color:#263238;">' + content + '</p>';
+}
+
+// Rendering della cella INFO (sinistra). Contiene Letto/Tipologia/Nome
+// con stili speciali (numero gigante, badge colorato, nome maiuscolo),
+// poi Allergie con label rossa, e tutti gli altri campi info come
+// piccola label uppercase + valore.
+function _driveRenderColInfo(p, schemaInfo) {
+  // Indice rapido per accesso ai campi standard nello schema info
+  var bySpec = {};
+  schemaInfo.forEach(function(s) { bySpec[s.campo] = s; });
+
+  var tipo  = (p.TipologiaLetto || '').trim().toUpperCase() || 'STANDARD';
+  var nome  = (p.Nome || '').trim();
+  var letto = String(p.Letto || '?');
+  var sesso = (p.Sesso || '').toUpperCase();
+  var sessoSym = sesso === 'M' ? '♂' : sesso === 'F' ? '♀' : '';
+  var sessoColor = sesso === 'M' ? '#1976d2' : sesso === 'F' ? '#c2185b' : '#666';
+  var tipoColor = stringToColor(tipo);
+
+  // Header speciale: letto + sesso + tipologia + nome
+  // Le LABEL sono presenti per il parser, ma stylate piccole/discrete.
+  // Il VALORE invece ha lo stile grande della card app.
+  var lblStyle = 'font-size:7pt;color:#888;font-weight:bold;text-transform:uppercase;letter-spacing:0.4pt;margin:6pt 0 1pt;text-align:center;';
+
+  var html = '';
+
+  // LETTO grande (replica .alt-bed-number: 2rem bold)
+  if (bySpec.Letto) {
+    html += '<p style="' + lblStyle + '">' + _driveEscape(bySpec.Letto.label) + '</p>';
+    html += '<p style="font-size:24pt;font-weight:bold;text-align:center;margin:0;line-height:1;color:#263238;">' + _driveEscape(letto) + '</p>';
+  }
+  // TIPOLOGIA (replica badge colorato)
+  if (bySpec.TipologiaLetto) {
+    html += '<p style="' + lblStyle + '">' + _driveEscape(bySpec.TipologiaLetto.label) + '</p>';
+    html += '<p style="background-color:' + tipoColor + ';color:#fff;text-align:center;font-size:8.5pt;' +
+            'font-weight:bold;text-transform:uppercase;padding:3pt 6pt;margin:0;letter-spacing:0.8pt;">' +
+            _driveEscape(tipo) + '</p>';
+  }
+  // SESSO (piccola riga)
+  if (bySpec.Sesso) {
+    html += '<p style="' + lblStyle + '">' + _driveEscape(bySpec.Sesso.label) + '</p>';
+    html += '<p style="text-align:center;font-size:11pt;margin:0;color:' + sessoColor + ';font-weight:bold;">' +
+            (sessoSym || _driveEscape(sesso) || '—') + '</p>';
+  }
+  // NOME (replica .alt-nome: 1.1rem bold uppercase)
+  if (bySpec.Nome) {
+    html += '<p style="' + lblStyle + '">' + _driveEscape(bySpec.Nome.label) + '</p>';
+    html += '<p style="font-size:11pt;font-weight:bold;text-align:center;text-transform:uppercase;' +
+            'margin:0;padding:2pt;border-bottom:1pt solid #ccc;color:#263238;">' +
+            (_driveEscape(nome) || '<span style="color:#aaa;font-style:italic;font-weight:normal;">— vuoto —</span>') + '</p>';
+  }
+  // ALLERGIE (replica .alt-allergie-label: rosso, uppercase, bold)
+  if (bySpec.Allergie) {
+    html += '<p style="margin:6pt 0 1pt;font-size:9pt;font-weight:bold;color:#c62828;text-transform:uppercase;text-align:center;">' +
+            _driveEscape(bySpec.Allergie.label) + '</p>';
+    var allergieVal = String(p.Allergie || '');
+    html += '<p style="font-size:9.5pt;padding:2pt 4pt;margin:0;text-align:center;color:#263238;">' +
+            (allergieVal || '<span style="color:#aaa;font-style:italic;">—</span>') + '</p>';
+  }
+
+  // Altri campi info (Data Nascita, Età, Ricovero, CS, Ossigeno, Vitto,
+  // Dimissibile, eventuali campi NUOVI aggiunti) → label piccola + valore
+  var processed = { Letto:1, TipologiaLetto:1, Nome:1, Sesso:1, Allergie:1 };
+  schemaInfo.forEach(function(s) {
+    if (processed[s.campo]) return;
+    var val = p[s.campo];
+    var labelStyle = 'font-size:8pt;font-weight:bold;color:#37474f;text-transform:none;margin:5pt 0 0;';
+    var valStyle = 'font-size:9pt;margin:0;color:#263238;padding:0 0 0 2pt;';
+    if (s.isHtml) {
+      html += '<p style="' + labelStyle + '">' + _driveEscape(s.label) + '</p>';
+      html += '<p style="' + valStyle + '">' + (val ? String(val) : '<span style="color:#aaa;font-style:italic;">—</span>') + '</p>';
+    } else {
+      html += '<p style="' + labelStyle + '">' + _driveEscape(s.label) + '</p>';
+      html += '<p style="' + valStyle + '">' + _driveEscape(val) + '</p>';
+    }
+  });
+
+  return html;
+}
+
+// Rendering della cella DIAG (centro-sinistra). Diagnosi sopra,
+// poi PIANO DI CURA, ESAMI COLTURALI, DA FARE / RICHIESTE — divisi
+// da split header. Ogni campo è una "sezione" con header + valore.
+// MA siamo dentro una cella, non in una sottotabella, per parsing
+// semplice.
+function _driveRenderDiagSection(spec, val, isFirst) {
+  // Problemi Attivi: nel Doc di backup va il TESTO pulito delle righe
+  // (niente bottoni: al re-import la struttura si ricrea da sola).
+  if (spec && spec.campo === 'PianoTerapeutico') val = _paDriveTesto(val);
+  return _driveColHeader(spec.label, !isFirst) + _driveValueHtml(val, spec.isHtml);
+}
+
+function _driveRenderCard(p) {
+  var schema = _getDriveSchema();
+  // Schema groups: info, diag, diaria, terapia
+
+  // ── COLONNA 1: INFO (rowspan = numero righe = numero campi diag) ──
+  var infoHtml = _driveRenderColInfo(p, schema.info);
+
+  // ── COLONNA 2: DIAG (una riga per campo, headers stacked) ──
+  // Costruita come singola cella con multiple sezioni stacked verticalmente.
+  // Ogni sezione: header colonna + valore. Visivamente identico a
+  // .alt-col-diag con .alt-diag-top/.alt-diag-bottom/.alt-diag-fourth/.alt-diag-third.
+  var diagHtml = schema.diag.map(function(s, i) {
+    return _driveRenderDiagSection(s, p[s.campo], i === 0);
+  }).join('');
+  if (!diagHtml) diagHtml = '<p style="padding:6pt;font-style:italic;color:#aaa;">—</p>';
+
+  // ── COLONNA 3: DIARIA (più grande) ──
+  var diariaHtml = schema.diaria.map(function(s, i) {
+    return _driveRenderDiagSection(s, p[s.campo], i === 0);
+  }).join('');
+  if (!diariaHtml) diariaHtml = '<p style="padding:6pt;font-style:italic;color:#aaa;">—</p>';
+
+  // ── COLONNA 4: TERAPIA (destra) ──
+  var terapiaHtml = schema.terapia.map(function(s, i) {
+    return _driveRenderDiagSection(s, p[s.campo], i === 0);
+  }).join('');
+  if (!terapiaHtml) terapiaHtml = '<p style="padding:6pt;font-style:italic;color:#aaa;">—</p>';
+
+  // Layout tabella 4-col come la card app (col widths come .alt-col-*)
+  return (
+    '<table width="100%" style="border-collapse:collapse;margin-top:14pt;margin-bottom:14pt;' +
+    'border:' + _D_B + ';font-family:Arial,sans-serif;page-break-inside:avoid;">' +
+      '<tr>' +
+        '<td width="12%" style="background-color:#f2efe9;vertical-align:top;padding:4pt;border:' + _D_Bi + ';">' +
+          infoHtml +
+        '</td>' +
+        '<td width="18%" style="vertical-align:top;padding:0;border:' + _D_Bi + ';">' +
+          diagHtml +
+        '</td>' +
+        '<td width="58%" style="vertical-align:top;padding:0;border:' + _D_Bi + ';">' +
+          diariaHtml +
+        '</td>' +
+        '<td width="12%" style="vertical-align:top;padding:0;border:' + _D_Bi + ';">' +
+          terapiaHtml +
+        '</td>' +
+      '</tr>' +
+    '</table>'
+  );
+}
+
+// Card NOTE: una tabella 4-col come le altre, ma quasi vuota:
+// solo "LETTO" → NOTE in col-info e "DIARIA ED EPICRISI" in col-diaria
+function _driveRenderNoteCard(p) {
+  var diariaSpec = null;
+  // Trova lo spec Diaria dallo schema
+  _DRIVE_LAYOUT.forEach(function(s) {
+    if (s.campo === 'Diaria') diariaSpec = s;
+  });
+  if (!diariaSpec) diariaSpec = { campo: 'Diaria', label: 'DIARIA ED EPICRISI', isHtml: true };
+
+  // Cella info semplificata: solo "LETTO" + "NOTE"
+  var lblStyle = 'font-size:7pt;color:#888;font-weight:bold;text-transform:uppercase;letter-spacing:0.4pt;margin:6pt 0 1pt;text-align:center;';
+  var infoHtml =
+    '<p style="' + lblStyle + '">LETTO</p>' +
+    '<p style="font-size:13pt;font-weight:bold;letter-spacing:2pt;color:#546e7a;text-align:center;margin:0;padding:8pt 0;">NOTE</p>';
+
+  // Cella diaria: header + valore
+  var diariaHtml = _driveColHeader(diariaSpec.label, false) +
+                   _driveValueHtml(p.Diaria || '', true);
+
+  return (
+    '<table width="100%" style="border-collapse:collapse;margin-top:14pt;margin-bottom:14pt;' +
+    'border:' + _D_B + ';font-family:Arial,sans-serif;page-break-inside:avoid;">' +
+      '<tr>' +
+        '<td width="12%" style="background-color:#eceff1;vertical-align:top;padding:4pt;border:' + _D_Bi + ';">' +
+          infoHtml +
+        '</td>' +
+        '<td colspan="3" width="88%" style="vertical-align:top;padding:0;border:' + _D_Bi + ';">' +
+          diariaHtml +
+        '</td>' +
+      '</tr>' +
+    '</table>'
+  );
+}
+
+// Esegue backup su Google Drive come Google Doc con layout standard.
+// Le cartelle vengono create la prima volta e l'ID salvato in Supabase.
+// Fire-and-forget: non blocca il flusso principale.
+function _driveBackupConsegne(pazienti, ts) {
+  // Helper logging coerente (logga solo se _log è disponibile)
+  function _bkLog(livello, esito, msg, dettagli) {
+    console.log('[Drive backup]', esito, '—', msg);
+    if (typeof window._log === 'function') {
+      try { window._log(livello, 'drive-backup', esito + ' — ' + msg, dettagli || ''); }
+      catch(e) {}
+    }
+  }
+  if (!window._googleDriveToken) {
+    // SKIP: questo PC ha vinto la CAS atomica ma non ha il token Drive.
+    // Causa tipica: il login Google a Drive è scaduto (Google rinnova il
+    // token ogni ~1h e in app aperta da molte ore senza interazione il
+    // token può essere null). Conseguenza: il backup va SOLO su Supabase,
+    // niente file nella cartella Drive per quest'ora.
+    _bkLog('warning', 'skip-no-token',
+      'Backup orario su DB OK ma Google Drive saltato',
+      'Questo PC ha vinto il CAS atomico ma _googleDriveToken=null ' +
+      '(login Drive scaduto o mai concesso). Per avere il file nella ' +
+      'cartella Drive servirebbe un altro PC col token attivo.');
+    return Promise.resolve();
+  }
+  var data = new Date(Number(ts));
+  var pad = function(n) { return String(n).padStart(2, '0'); };
+  var dataLabel = pad(data.getDate()) + '/' + pad(data.getMonth() + 1) + '/' + data.getFullYear() +
+                  ' ' + pad(data.getHours()) + ':' + pad(data.getMinutes());
+  var nomeSafe  = pad(data.getDate()) + '-' + pad(data.getMonth() + 1) + '-' + data.getFullYear() +
+                  '_' + pad(data.getHours()) + '-' + pad(data.getMinutes());
+  var nomeFile  = 'Backup_' + nomeSafe; // senza estensione → sarà un Google Doc
+
+  // Ordina per numero letto (NOTE sempre ultima)
+  var ordinati = (pazienti || []).slice().sort(function(a, b) {
+    if (a.Letto === 'NOTE') return 1;
+    if (b.Letto === 'NOTE') return -1;
+    var nA = parseInt(a.Letto, 10), nB = parseInt(b.Letto, 10);
+    return (!isNaN(nA) && !isNaN(nB)) ? nA - nB : String(a.Letto).localeCompare(String(b.Letto));
+  });
+
+  // Costruisce HTML: tabelle label-valore (autoritative per parsing/import).
+  // Ogni paziente è una tabella 2-colonne (Label | Valore) con TUTTI i 18
+  // campi. Il parser cerca per LABEL (no positional) quindi:
+  //   - il medico può aggiornare manualmente i valori dal Doc
+  //   - aggiungere righe vuote o riordinare non rompe il parser
+  //   - round-trip backup → modifica → import è LOSSLESS
+  var cardsHtml = ordinati.map(function(p) {
+    return p.Letto === 'NOTE' ? _driveRenderNoteCard(p) : _driveRenderCard(p);
+  }).join('');
+
+  var html = '<!DOCTYPE html><html><head><meta charset="UTF-8">' +
+    '<style>' +
+    '@page{size:A4 landscape;margin:14mm 16mm 14mm 16mm;}' +
+    'body{font-family:Arial,sans-serif;font-size:9pt;margin:0;padding:0;color:#263238;}' +
+    'p{margin:0;padding:0;}' +
+    '</style>' +
+    '</head><body>' +
+    // Header documento
+    '<table width="100%" style="margin-bottom:6pt;border-bottom:3pt solid #37474f;">' +
+    '<tr>' +
+    '<td style="font-size:18pt;font-weight:bold;color:#37474f;padding-bottom:6pt;letter-spacing:0.5pt;">' +
+      '🛏 CONSEGNE REPARTO' +
+    '</td>' +
+    '<td style="text-align:right;vertical-align:bottom;font-size:10pt;color:#546e7a;padding-bottom:6pt;">' +
+      '<b>Backup automatico</b><br>' +
+      '<span style="font-size:11pt;color:#37474f;font-weight:bold;">' + dataLabel + '</span>' +
+    '</td>' +
+    '</tr></table>' +
+    // Banner istruzioni emergenza
+    '<table width="100%" style="background-color:#fff8e1;border-left:3pt solid #f4a300;margin-bottom:14pt;">' +
+    '<tr><td style="padding:6pt 10pt;font-size:8.5pt;color:#7a5800;line-height:1.4;">' +
+      '<b>⚠ Safety net per emergenze</b> · ' +
+      'In caso di down del sistema, modificare i valori nelle celle di destra delle tabelle ' +
+      '(NON modificare le etichette di sinistra). Ri-importare poi nelle consegne via menu ⚙ → "Importa da backup Drive".' +
+    '</td></tr></table>' +
+    cardsHtml +
+    '</body></html>';
+
+  // Cerca o crea la cartella nella root, crea il file, poi pulisce i vecchi
+  function _tentaBackupDrive() {
+    return _driveGetOrCreateFolder('BACKUP CONSEGNE EMERGENZA')
+      .then(function(folderId) {
+        return _driveCreaGoogleDoc(nomeFile, html, folderId)
+          .then(function(file) {
+            _bkLog('info', 'success',
+              'File Drive creato: ' + (file && file.name),
+              'fileId=' + (file && file.id) + ' | folderId=' + folderId);
+            // Pulizia file vecchi con la stessa retention di Supabase archivio
+            return _sbGetGiorniConservazione().then(function(giorni) {
+              var cutoff = Number(ts) - (giorni * 86400000);
+              _driveEliminaVecchi(folderId, cutoff); // fire-and-forget
+            });
+          });
+      });
+  }
+  return _tentaBackupDrive()
+    .catch(function(e) {
+      // 401 = token Drive scaduto/revocato NONOSTANTE il pre-check (il
+      // rinnovo pre-backup era fallito in silenzio, o l'expiry salvato in
+      // localStorage era bugiardo — es. orologio del PC sballato). Il log
+      // storico mostrava proprio questo: token_drive_disponibile=true e poi
+      // "invalid authentication credentials". Rimedio: rinnovo FORZATO del
+      // token e UN solo retry. _driveCreaGoogleDoc rilegge
+      // window._googleDriveToken a ogni invocazione → usa il token nuovo.
+      var msg = (e && (e.message || e.error || e.toString())) || '';
+      var e401 = /invalid authentication|unauthorized|401/i.test(msg);
+      if (e401 && typeof window._rinnovaTokenSilenzioso === 'function') {
+        _bkLog('warning', 'retry-401',
+          'Token Drive scaduto: rinnovo silenzioso e riprovo',
+          'Il pre-check non aveva rinnovato il token (expiry localStorage inattendibile o refresh fallito).');
+        return window._rinnovaTokenSilenzioso().then(function() {
+          return _tentaBackupDrive();
+        });
+      }
+      throw e;
+    })
+    .catch(function(e) {
+      var msg = (e && (e.message || e.error || e.toString())) || 'errore sconosciuto';
+      _bkLog('error', 'error',
+        'Backup Drive FALLITO: ' + msg,
+        'nomeFile=' + nomeFile + ' | stack=' + (e && e.stack ? String(e.stack).substring(0,300) : 'n/a'));
+    });
+}
+
+
+// ══════════════════════════════════════════════════════════════
+// REALTIME — aggiornamenti istantanei senza polling
+// ══════════════════════════════════════════════════════════════
+
+var _realtimeTimer = null;
+var _realtimeChannel = null;
 
 function _inizializzaRealtime() {
   if (_realtimeChannel) { _sb.removeChannel(_realtimeChannel); }

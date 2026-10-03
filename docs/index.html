@@ -5118,6 +5118,7 @@
             <li><a class="dropdown-item" href="javascript:void(0)" data-emerg-disable="1" onclick="_avviaBackupManuale()"><i class="bi bi-cloud-arrow-up-fill text-success me-2"></i>Esegui Backup Manuale</a></li>
             <li><a class="dropdown-item" href="javascript:void(0)" data-emerg-disable="1" onclick="_apriRipristina()"><i class="bi bi-arrow-counterclockwise text-danger me-2"></i>Ripristina da Backup</a></li>
             <li><hr class="dropdown-divider"></li>
+            <li><a class="dropdown-item" href="javascript:void(0)" data-emerg-disable="1" onclick="apriModalImportaConsegne()"><i class="bi bi-cloud-arrow-down text-warning me-2"></i>Importa da backup Drive</a></li>
             <li><hr class="dropdown-divider"></li>
             <li><a class="dropdown-item" href="javascript:void(0)" onclick="_toggleModalitaEmergenza()"><i class="bi bi-speedometer2 text-info me-2"></i>Diagnostica Prestazioni</a></li>
             <li><a class="dropdown-item" href="javascript:void(0)" onclick="apriModalLog()"><i class="bi bi-journal-text text-secondary me-2"></i>Log</a></li>
@@ -5470,9 +5471,87 @@
     </div>
   </div>
 
+  <!-- ===== MODAL IMPORTA DA BACKUP DRIVE (safety net) ===== -->
+  <!-- Flusso a 4 step:
+       1. password (verifica)
+       2. lista file della cartella Drive 'BACKUP CONSEGNE EMERGENZA'
+       3. selezione letti dal file scelto (grid card cliccabili)
+       4. risultato import (importati / saltati / errori) -->
+  <div class="modal fade" id="modalImportaConsegne" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-dialog-centered" id="modalImportaDlg" style="max-width:680px;">
+      <div class="modal-content border-0 shadow-lg">
+        <div class="modal-header" style="background:linear-gradient(135deg,#e65100,#bf360c);color:#fff;">
+          <h5 class="modal-title"><i class="bi bi-cloud-arrow-down me-2"></i>Importa da backup Drive</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body p-4">
+          <div class="alert alert-warning d-flex align-items-start gap-2 mb-3" style="font-size:0.85rem;">
+            <i class="bi bi-shield-exclamation text-warning mt-1" style="flex-shrink:0;"></i>
+            <div>
+              <strong>Funzione di emergenza:</strong> usala se Supabase è momentaneamente down
+              e devi ripopolare le consegne da un backup Drive recente.
+              I dati importati <strong>sovrascriveranno</strong> i letti corrispondenti.
+            </div>
+          </div>
+
+          <!-- STEP 2: spinner verifica/lista -->
+          <div id="importaStep2" style="display:none;text-align:center;padding:20px 0;">
+            <div class="spinner-border text-warning mb-3" style="width:2.5rem;height:2.5rem;" role="status"></div>
+            <div id="importaStepMsg" class="fw-semibold text-secondary" style="font-size:0.92rem;">Verifica…</div>
+          </div>
+
+          <!-- STEP 3: lista file backup Drive -->
+          <div id="importaStep3" style="display:none;">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+              <h6 class="mb-0 fw-bold"><i class="bi bi-folder2-open text-warning me-1"></i>File di backup disponibili</h6>
+              <button type="button" class="btn btn-sm btn-outline-secondary" id="btnRefreshFiles" title="Aggiorna lista">
+                <i class="bi bi-arrow-clockwise"></i>
+              </button>
+            </div>
+            <div id="importaListaFiles" class="list-group" style="max-height:55vh;overflow-y:auto;border:1px solid #cfd8dc;border-radius:6px;"></div>
+            <div class="form-text text-muted mt-2">
+              <i class="bi bi-info-circle me-1"></i>Click su un file per vedere i letti contenuti.
+            </div>
+          </div>
+
+          <!-- STEP 4: selezione letti dal file scelto -->
+          <div id="importaStep4" style="display:none;">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+              <button type="button" class="btn btn-sm btn-outline-secondary" id="btnBackToFiles">
+                <i class="bi bi-arrow-left me-1"></i>Indietro
+              </button>
+              <div class="text-end" style="font-size:0.85rem;">
+                <div class="fw-bold" id="importaFileSelLabel">Backup del —</div>
+                <div class="text-muted" id="importaConteggioSel" style="font-size:0.78rem;"></div>
+              </div>
+            </div>
+            <div class="form-check mb-2">
+              <input class="form-check-input" type="checkbox" id="importaTutto"
+                     onchange="_importaTuttoChange(this)">
+              <label class="form-check-label fw-semibold" for="importaTutto">Importa tutti i letti</label>
+            </div>
+            <div id="importaGridLetti" class="d-flex flex-wrap gap-2 justify-content-start"
+                 style="max-height:50vh;overflow-y:auto;padding:8px;background:#fafafa;border-radius:6px;"></div>
+          </div>
+
+          <!-- STEP 5: risultato -->
+          <div id="importaStep5" style="display:none;">
+            <div id="importaRisultato"></div>
+          </div>
+        </div>
+        <div class="modal-footer border-0 pt-0" id="importaFooter">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annulla</button>
+          <button type="button" class="btn btn-danger" id="btnEseguiImporta" style="display:none;" onclick="_importaEsegui()">
+            <i class="bi bi-cloud-arrow-down me-1"></i>Importa selezionati
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- SDK Supabase (deve precedere api.js) -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-  <!-- Google Identity Services (OAuth2 login) -->
+  <!-- Google Identity Services (OAuth2 login + Drive) -->
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <!-- Pickr: color picker posizionato vicino al trigger -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@simonwep/pickr@1.9.1/dist/themes/nano.min.css">
@@ -5487,18 +5566,22 @@
   <script>
   (function() {
 
-    // ── Client OAuth2 del login: SOLO identità (email+profile) ───────────────
-    // Drive e Docs non esistono più; la mail parte dal server (cassaforte).
+    // ── Unico client OAuth2 con TUTTI gli scope necessari ────────────────────
+    // email+profile: verifica identità
+    // drive.file: crea/gestisce file backup su Drive
+    // documents: imposta orientamento landscape via Docs API batchUpdate
+    // Un solo popup → tutte le autorizzazioni in una volta
     var _tokenClient   = null;
     var _emailConsentita = '';
     window._googleAccessToken = null;
+    window._googleDriveToken  = null; // punta allo stesso token
 
     function _inizializzaGoogleClient() {
       if (typeof google === 'undefined' || !google.accounts || !google.accounts.oauth2) return false;
       if (typeof GOOGLE_CLIENT_ID === 'undefined' || GOOGLE_CLIENT_ID.startsWith('INSERISCI')) return false;
       _tokenClient = google.accounts.oauth2.initTokenClient({
         client_id: GOOGLE_CLIENT_ID,
-        scope: 'email profile',
+        scope: 'email profile https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/documents',
         callback: _onGoogleToken
       });
       return true;
@@ -5547,6 +5630,7 @@
         if (!emailOk || emailUtente === emailOk) {
           // ✅ Account corretto → salva in localStorage (persiste oltre la chiusura)
           window._googleAccessToken = resp.access_token;
+          window._googleDriveToken  = resp.access_token; // stesso token per Drive
           localStorage.setItem('appSession', JSON.stringify({
             email: info.email,
             token: resp.access_token,
@@ -5629,17 +5713,25 @@
       var li = document.getElementById('navItemCassaforte');
       if (li) li.style.display = mostra ? '' : 'none';
     }
-    // Invio mail SERVER-SIDE: la Edge Function spedisce lei; nessun token
-    // Google raggiunge mai il browser (la falla dell'azione 'token' è chiusa).
-    window._cassaforteInvia = function(destinatari, oggetto, html) {
-      return _cassaCall({ azione: 'invia', destinatari: destinatari, oggetto: oggetto, html: html }).then(function(j) {
-        if (!j || !j.ok) {
-          var e = new Error((j && j.errore) || 'invio non riuscito');
-          if (j && j.riautorizzare) { e.riautorizzare = true; _cassaforteBadge(true); }
-          throw e;
+    // Token per Drive/Docs/Gmail (un token, tutti gli scope del reparto).
+    window._cassaforteToken = function() {
+      if (_cassaTok && Date.now() < _cassaScad - 60000) return Promise.resolve(_cassaTok);
+      if (_cassaPending) return _cassaPending;
+      _cassaPending = _cassaCall({ azione: 'token' }).then(function(j) {
+        _cassaPending = null;
+        if (!j || !j.access_token) {
+          if (j && j.riautorizzare) _cassaforteBadge(true);
+          throw new Error((j && j.errore) || 'cassaforte non disponibile');
         }
-        return j;
-      });
+        _cassaTok  = j.access_token;
+        _cassaScad = Date.now() + (j.expires_in || 3000) * 1000;
+        _cassaEmail = j.email || '';
+        window._googleAccessToken = j.access_token;
+        window._googleDriveToken  = j.access_token;
+        _cassaforteBadge(false);
+        return j.access_token;
+      }, function(e) { _cassaPending = null; throw e; });
+      return _cassaPending;
     };
     // Controllo invisibile all'avvio: nessuna finestra, solo una fetch.
     // Se manca l'autorizzazione compare il bottoncino giallo in barra.
@@ -5647,6 +5739,7 @@
       _cassaCall({ azione: 'stato' }).then(function(st) {
         if (st && st.autorizzato) {
           _cassaforteBadge(false);
+          window._cassaforteToken().catch(function() {});
         } else {
           _cassaforteBadge(true);
         }
@@ -5660,7 +5753,7 @@
           icon: 'info',
           title: 'Autorizzazione Google del reparto',
           html: '<div class="text-start small">'
-            + '<p>Si fa <b>una volta sola, da un solo PC</b>: l\'autorizzazione resta custodita sul server e vale per <b>tutti i computer</b> del reparto. Serve SOLO a inviare la mail dimissioni dall\'account del reparto, direttamente dal server.</p>'
+            + '<p>Si fa <b>una volta sola, da un solo PC</b>: l\'autorizzazione resta custodita sul server e vale per <b>tutti i computer</b> del reparto. Mail dimissioni, backup su Drive e documenti senza piu\' finestre di Google.</p>'
             + '<p class="mb-1">Usa l\'account del reparto' + (_emailConsentita ? ' (<b>' + _emailConsentita + '</b>)' : '') + '.</p>'
             + (serveSecret
               ? '<hr><p class="mb-1"><b>Primo avvio:</b> incolla il <b>client secret</b> del client OAuth.<br><small class="text-muted">console.cloud.google.com &rarr; API e servizi &rarr; Credenziali &rarr; client &laquo;170256871056-&hellip;&raquo; &rarr; Segreto client</small></p>'
@@ -5696,7 +5789,7 @@
             : Promise.resolve();
           var cc = google.accounts.oauth2.initCodeClient({
             client_id: GOOGLE_CLIENT_ID,
-            scope: 'email profile https://www.googleapis.com/auth/gmail.send',
+            scope: 'email profile https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/documents https://www.googleapis.com/auth/gmail.send',
             ux_mode: 'popup',
             login_hint: _emailConsentita || '',
             callback: function(resp) {
@@ -5709,10 +5802,12 @@
                 .then(function() { return _cassaCall({ azione: 'scambia', code: resp.code }); })
                 .then(function(j) {
                   if (!j || !j.ok) throw new Error((j && j.errore) || 'registrazione non riuscita');
+                  _cassaTok = null; _cassaScad = 0;
                   _cassaforteBadge(false);
+                  window._cassaforteToken().catch(function() {});
                   Swal.fire({
                     icon: 'success', title: 'Fatto: autorizzazione registrata',
-                    html: 'D\'ora in poi la mail dimissioni parte da <b>tutti i PC del reparto</b> senza finestre di Google.<br><small class="text-muted">Account: ' + (j.email || '') + '</small>',
+                    html: 'D\'ora in poi mail dimissioni, backup su Drive e documenti funzionano su <b>tutti i PC del reparto</b> senza finestre di Google.<br><small class="text-muted">Account: ' + (j.email || '') + '</small>',
                     confirmButtonColor: '#00695c'
                   });
                   if (typeof window._log === 'function') {
@@ -5741,6 +5836,171 @@
       }).catch(function(e) {
         Swal.fire({ icon: 'error', title: 'Cassaforte non raggiungibile', text: String((e && e.message) || e), confirmButtonColor: '#d33' });
       });
+    };
+
+    // ── REFRESH TOKEN SILENZIOSO ─────────────────────────────────────
+    // Rinnova l'access token Google senza interazione. ⚠️ Il token client
+    // GIS (requestAccessToken) apre SEMPRE una finestrella popup, anche
+    // con prompt:'none': si chiude da sola in una frazione di secondo ma
+    // interrompe digitazione/lettura (la "finestrella di Google che si
+    // apre e si richiude" segnalata dall'utente). Perciò il rinnovo tenta
+    // PRIMA un IFRAME NASCOSTO (flusso OAuth classico con prompt=none):
+    // se la sessione Google è valida, Google risponde con un redirect
+    // immediato alla nostra oauth-silent.html col token nel fragment —
+    // nessuna pagina renderizzata, nessuna finestra, non si vede nulla.
+    // Se l'iframe fallisce (redirect URI non ancora registrato sul client,
+    // cookie di terze parti bloccati, sessione scaduta, timeout) si passa
+    // al popup GIS di sempre: comportamento identico a prima, mai peggio.
+    // REQUISITO una-tantum (Google Cloud Console → Credenziali → client
+    // OAuth → "URI di reindirizzamento autorizzati"): aggiungere
+    //   https://medicinadurgenzaucsc-maker.github.io/app-consegne/oauth-silent.html
+    var _SILENT_SCOPE = 'email profile https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/documents';
+    var _silentPending = null; // promise condivisa: chiamate concorrenti riusano lo stesso rinnovo
+
+    function _salvaTokenRinnovato(tok, expiresInSec) {
+      window._googleAccessToken = tok;
+      window._googleDriveToken  = tok;
+      try {
+        var sess = JSON.parse(localStorage.getItem('appSession') || '{}');
+        sess.token  = tok;
+        // margine di 2 min sulla scadenza dichiarata da Google (default ~58')
+        sess.expiry = Date.now() + (expiresInSec ? Math.max(60, expiresInSec - 120) * 1000 : 3500000);
+        localStorage.setItem('appSession', JSON.stringify(sess));
+      } catch (e) {}
+    }
+
+    // Tentativo 1: iframe nascosto — zero finestre.
+    function _rinnovaTokenViaIframe() {
+      return new Promise(function(resolve, reject) {
+        if (typeof GOOGLE_CLIENT_ID === 'undefined' || GOOGLE_CLIENT_ID.startsWith('INSERISCI')) { reject(new Error('client id mancante')); return; }
+        if (!document.body) { reject(new Error('DOM non pronto')); return; }
+        // login_hint: l'account già in uso (evita l'account chooser)
+        var email = '';
+        try { email = (JSON.parse(localStorage.getItem('appSession') || '{}').email) || ''; } catch (e) {}
+        if (!email) email = _emailConsentita || '';
+        var state = 'sil_' + Math.random().toString(36).slice(2);
+        var redirect = location.origin + location.pathname.replace(/[^\/]*$/, '') + 'oauth-silent.html';
+        var url = 'https://accounts.google.com/o/oauth2/v2/auth'
+          + '?client_id='    + encodeURIComponent(GOOGLE_CLIENT_ID)
+          + '&redirect_uri=' + encodeURIComponent(redirect)
+          + '&response_type=token'
+          + '&scope='        + encodeURIComponent(_SILENT_SCOPE)
+          + '&prompt=none'
+          + '&state='        + encodeURIComponent(state)
+          + (email ? '&login_hint=' + encodeURIComponent(email) : '');
+        var ifr = document.createElement('iframe');
+        // Invisibile e inerte: fuori schermo, 1×1, niente eventi, niente layout.
+        ifr.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;border:0;visibility:hidden;pointer-events:none;';
+        ifr.setAttribute('aria-hidden', 'true');
+        ifr.setAttribute('tabindex', '-1');
+        var done = false, tmr = null;
+        function fine(err, tok, exp) {
+          if (done) return; done = true;
+          clearTimeout(tmr);
+          window.removeEventListener('message', onMsg);
+          if (ifr.parentNode) ifr.parentNode.removeChild(ifr);
+          if (err) reject(err); else resolve({ token: tok, expiresIn: exp });
+        }
+        // Se Google NON reindirizza (es. redirect URI non registrato → pagina
+        // d'errore, comunque invisibile) scatta il timeout e si va di fallback.
+        tmr = setTimeout(function() { fine(new Error('timeout iframe')); }, 8000);
+        function onMsg(ev) {
+          if (ev.origin !== location.origin) return;   // solo la nostra oauth-silent.html
+          var d = ev.data;
+          if (!d || d.tipo !== 'oauth-silent-return') return;
+          var p = {};
+          String(d.hash || '').replace(/^#/, '').split('&').forEach(function(kv) {
+            var i = kv.indexOf('=');
+            if (i > 0) { try { p[decodeURIComponent(kv.slice(0, i))] = decodeURIComponent(kv.slice(i + 1)); } catch (e) {} }
+          });
+          if (p.state !== state) return;               // risposta di un altro tentativo
+          if (p.error) { fine(new Error(p.error)); return; }
+          if (!p.access_token) { fine(new Error('nessun token nella risposta')); return; }
+          fine(null, p.access_token, parseInt(p.expires_in, 10) || 0);
+        }
+        window.addEventListener('message', onMsg);
+        document.body.appendChild(ifr);
+        ifr.src = url;
+      });
+    }
+
+    // Tentativo 2 (fallback): popup GIS — il comportamento storico.
+    // Tecnica: si salva il callback principale, se ne installa uno
+    // temporaneo per questa richiesta, e si ripristina l'originale al
+    // termine.
+    function _rinnovaTokenViaPopup() {
+      return new Promise(function(resolve, reject) {
+        if (!_tokenClient && !_inizializzaGoogleClient()) {
+          reject(new Error('Client OAuth non pronto'));
+          return;
+        }
+        var origCallback = _tokenClient.callback;
+        var doneResolved = false;
+        var safety = setTimeout(function() {
+          if (doneResolved) return;
+          doneResolved = true;
+          _tokenClient.callback = origCallback;
+          reject(new Error('Timeout 10s'));
+        }, 10000);
+        _tokenClient.callback = function(resp) {
+          if (doneResolved) return;
+          doneResolved = true;
+          clearTimeout(safety);
+          _tokenClient.callback = origCallback;
+          if (resp.error) {
+            reject(new Error(resp.error));
+            return;
+          }
+          _salvaTokenRinnovato(resp.access_token, 0);
+          console.log('[Token refresh] Rinnovo silenzioso OK (validita ~58 min)');
+          resolve(resp.access_token);
+        };
+        try {
+          // prompt:'none': nessuna UI dentro la finestra; la finestrella
+          // però GIS la apre comunque — è il motivo per cui questo è solo
+          // il fallback quando l'iframe non riesce.
+          _tokenClient.requestAccessToken({
+            prompt: 'none',
+            hint: _emailConsentita || ''
+          });
+        } catch(e) {
+          if (!doneResolved) {
+            doneResolved = true;
+            clearTimeout(safety);
+            _tokenClient.callback = origCallback;
+            reject(e);
+          }
+        }
+      });
+    }
+
+    window._rinnovaTokenSilenzioso = function() {
+      if (_silentPending) return _silentPending;       // rinnovo già in corso: agganciati
+      var _viaBrowser = function() { return _rinnovaTokenViaIframe()
+        .then(function(r) {
+          _salvaTokenRinnovato(r.token, r.expiresIn);
+          console.log('[Token refresh] Rinnovo via iframe nascosto OK (nessuna finestra, validità ~' + Math.round((r.expiresIn || 3500) / 60) + ' min)');
+          return r.token;
+        })
+        .catch(function(e1) {
+          console.log('[Token refresh] Iframe non disponibile (' + ((e1 && e1.message) || e1) + ') → fallback popup GIS');
+          return _rinnovaTokenViaPopup();
+        }); };
+      // Tentativo 0: cassaforte di reparto (Edge Function) — niente
+      // finestre, niente iframe, vale anche a sessione Google scaduta.
+      _silentPending = (typeof window._cassaforteToken === 'function'
+        ? window._cassaforteToken().then(function(tok) {
+            _salvaTokenRinnovato(tok, 3000);
+            console.log('[Token refresh] Token dalla cassaforte di reparto (zero finestre)');
+            return tok;
+          }).catch(function(e0) {
+            console.log('[Token refresh] Cassaforte non disponibile (' + ((e0 && e0.message) || e0) + ') -> percorso browser');
+            return _viaBrowser();
+          })
+        : _viaBrowser());
+      var _clear = function() { _silentPending = null; };
+      _silentPending.then(_clear, _clear);
+      return _silentPending;
     };
 
     // ══════════════════════════════════════════════════════════════════
@@ -5879,6 +6139,14 @@
     }
 
     function _dopoLoginUnificato() {
+      // Token Drive in silenzio (prompt:'none' + hint): se fallisce NON
+      // blocca l'ingresso — i backup Drive hanno già retry-401 + refresh
+      // orario che sistemano il token alla prima occasione
+      try {
+        if (typeof window._rinnovaTokenSilenzioso === 'function') {
+          window._rinnovaTokenSilenzioso().catch(function() {});
+        }
+      } catch(e) {}
       var sp = document.getElementById('loginSpinner');
       if (sp) sp.style.display = 'none';
       _nascondiErroreLogin();
@@ -5954,12 +6222,13 @@
       // auto-rinnova da sola). Il vecchio appSession non è più il gate:
       // resta SOLO come token Drive per i backup. Un unico login Google.
 
-      // 1. Ripristina il token Google di identità da appSession se ancora
-      //    valido (serve solo alla diagnostica; non decide l'ingresso)
+      // 1. Ripristina il token Drive da appSession se ancora valido
+      //    (solo per i backup Drive: non decide più l'ingresso)
       try {
         var sessD = JSON.parse(localStorage.getItem('appSession') || 'null');
         if (sessD && sessD.token && sessD.expiry > Date.now()) {
           window._googleAccessToken = sessD.token;
+          window._googleDriveToken  = sessD.token;
         }
       } catch(e) {}
 
@@ -5982,6 +6251,18 @@
           if (ov) ov.style.display = 'none';
           if (typeof window._avviaFlussoApp === 'function') window._avviaFlussoApp();
           _supaAuthLogConAutorizzazione('ok-ripristinata', s.user.email || '');
+          // Token Drive: se manca o scade entro 15 min → rinnovo silenzioso
+          // (non blocca; il backup ha comunque retry-401 + refresh orario)
+          setTimeout(function() {
+            try {
+              var ss = JSON.parse(localStorage.getItem('appSession') || 'null');
+              var scadeFra = (ss && ss.expiry) ? (ss.expiry - Date.now()) : 0;
+              if ((!window._googleDriveToken || scadeFra < 15 * 60 * 1000) &&
+                  typeof window._rinnovaTokenSilenzioso === 'function') {
+                window._rinnovaTokenSilenzioso().catch(function() {});
+              }
+            } catch(e) {}
+          }, 3000);
           return;
         }
         // 3. Nessuna sessione → schermata di login col pulsante unificato
@@ -6130,7 +6411,7 @@
         icon: 'question',
         title: 'Conferma Backup',
         html: 'Verrà creato subito un nuovo backup con i dati attuali.<br><br>' +
-              '<small class="text-muted">Il backup verrà salvato nell\'archivio Supabase.</small>',
+              '<small class="text-muted">Il backup verrà salvato nell\'archivio Supabase e, se disponibile, su Google Drive.</small>',
         confirmButtonText: '<i class="bi bi-cloud-arrow-up-fill me-1"></i>Esegui Backup',
         confirmButtonColor: '#2e7d32',
         showCancelButton: true,
@@ -7378,6 +7659,8 @@
         _diagLog('Token Google access: ASSENTE — login non completato!', 'err');
         problemi.push('Token Google');
       }
+      var hasDriveToken = !!(window._googleDriveToken);
+      _diagLog('Token Google Drive: '+(hasDriveToken?'presente':'assente'), hasDriveToken?'ok':'warn');
       // Sessione localStorage
       try {
         var raw = localStorage.getItem('appSession');
@@ -9726,53 +10009,89 @@
     }
 
     function _inviaConToken(emails, d) {
+      // Mostra spinner
       Swal.fire({
         title: 'Invio in corso…',
         html: '<div class="text-center py-3"><div class="spinner-border text-primary"></div></div>',
         allowOutsideClick: false,
         showConfirmButton: false
       });
-      if (typeof window._cassaforteInvia !== 'function') {
-        Swal.fire({ icon: 'error', title: 'Funzione mail non disponibile', text: 'Ricarica la pagina e riprova.', confirmButtonColor: '#d33' });
+      // Richiede token Gmail
+      if (typeof window._richiediGmailToken !== 'function') {
+        Swal.fire({ icon: 'error', title: 'Funzione Gmail non disponibile', confirmButtonColor: '#d33' });
         return;
       }
-      // Il corpo della mail e' DIRETTAMENTE l'HTML editato nell'anteprima.
-      var htmlBody =
-        '<div style="font-family:Arial,sans-serif;font-size:14px;color:#222;line-height:1.5;">' +
-          d.htmlBody +
-        '</div>';
-      window._cassaforteInvia(emails, d.oggetto, htmlBody)
-        .then(function() {
-          if (typeof window._sbSalvaTemplateMail === 'function') {
-            window._sbSalvaTemplateMail(d.dest, d.oggetto, '', '').catch(function(){});
-          }
-          if (typeof window._log === 'function') {
-            window._log('info', 'mail-dimissioni',
-              'Mail dimissioni inviata (' + d.pazientiSel.length + ' pazienti, ' + emails.length + ' destinatari)',
-              'Destinatari: ' + emails.join(', ') +
-              '\nInvio: server di reparto (cassaforte)' +
-              '\nPazienti: ' + d.pazientiSel.map(function(p){return 'L.'+p.Letto+' '+(p.Nome||'-');}).join('; '));
-          }
-          Swal.fire({
-            icon: 'success', title: 'Mail inviata!',
-            html: 'Mail inviata a <strong>' + emails.length + '</strong> destinatari.<br>' +
-                  '<small class="text-muted">Copia nella casella "Inviati" dell\'account di reparto.</small>',
-            timer: 3500, showConfirmButton: false, timerProgressBar: true
+      window._richiediGmailToken(function(ok, motivo) {
+        if (!ok) {
+          var spiega =
+            motivo === 'popup_bloccato'
+              ? 'Il browser ha bloccato la finestra di Google.<br><small class="text-muted">Consenti i popup per questo sito e riprova.</small>'
+            : motivo === 'popup_chiuso'
+              ? 'La finestra di Google è stata chiusa prima di dare il permesso.'
+              : 'Non è stato possibile ottenere il permesso per inviare email.' +
+                (motivo ? '<br><small class="text-muted">' + _esc(String(motivo)) + '</small>' : '');
+          Swal.fire({ icon: 'error', title: 'Accesso Gmail negato',
+            html: spiega, confirmButtonColor: '#d33' });
+          return;
+        }
+        var token = window._googleGmailTokenSafe;
+        var fromEmail = '';
+        try {
+          var sess = JSON.parse(localStorage.getItem('appSession') || '{}');
+          fromEmail = sess.email || '';
+        } catch(e) {}
+        // Il corpo della mail e' DIRETTAMENTE l'HTML editato nell'anteprima
+        // (d.htmlBody). Wrappato in un container con stili coerenti per
+        // garantire rendering corretto nei client di posta.
+        var htmlBody =
+          '<div style="font-family:Arial,sans-serif;font-size:14px;color:#222;line-height:1.5;">' +
+            d.htmlBody +
+          '</div>';
+
+        window._gmailInviaMail(token, fromEmail, emails, d.oggetto, htmlBody)
+          .then(function() {
+            // Salva i template per riuso futuro (destinatari + oggetto).
+            // 'corpo' e 'chiusura' non sono piu' campi separati: l'anteprima
+            // viene rigenerata ad ogni apertura del modal.
+            if (typeof window._sbSalvaTemplateMail === 'function') {
+              window._sbSalvaTemplateMail(d.dest, d.oggetto, '', '').catch(function(){});
+            }
+            // Log evento
+            if (typeof window._log === 'function') {
+              window._log('info', 'mail-dimissioni',
+                'Mail dimissioni inviata (' + d.pazientiSel.length + ' pazienti, ' + emails.length + ' destinatari)',
+                'Destinatari: ' + emails.join(', ') +
+                '\nMittente: ' + fromEmail +
+                '\nPazienti: ' + d.pazientiSel.map(function(p){return 'L.'+p.Letto+' '+(p.Nome||'-');}).join('; '));
+            }
+            Swal.fire({
+              icon: 'success', title: 'Mail inviata!',
+              html: 'Mail inviata a <strong>' + emails.length + '</strong> destinatari.<br>' +
+                    '<small class="text-muted">Trovi una copia nella tua casella "Inviati" di Gmail.</small>',
+              timer: 3500, showConfirmButton: false, timerProgressBar: true
+            });
+          })
+          .catch(function(e) {
+            var msg = e.message || String(e);
+            var nota = '';
+            // Permesso scaduto o revocato da Google: butto via il token salvato,
+            // così il tentativo successivo lo richiede di nuovo invece di
+            // ripresentare per sempre lo stesso errore.
+            if (/invalid credentials|unauthorized|invalid_token|401/i.test(msg)) {
+              try {
+                var s = JSON.parse(sessionStorage.getItem('appSession') || '{}');
+                delete s.gmailToken; delete s.gmailExpiry;
+                sessionStorage.setItem('appSession', JSON.stringify(s));
+              } catch(_) {}
+              nota = '<br><br>Il permesso di Google era scaduto: riprova, te lo chiederà di nuovo.';
+            }
+            Swal.fire({
+              icon: 'error', title: 'Errore invio',
+              html: '<div class="text-start small">' + _esc(msg) + nota + '</div>',
+              confirmButtonColor: '#d33'
+            });
           });
-        })
-        .catch(function(e) {
-          var msg = String((e && e.message) || e);
-          var daAutorizzare = !!(e && e.riautorizzare) || /non configurata|revocata/i.test(msg);
-          Swal.fire({
-            icon: 'error',
-            title: daAutorizzare ? 'Serve l\'autorizzazione del reparto' : 'Errore invio',
-            html: daAutorizzare
-              ? 'La mail parte dal server del reparto, ma l\'autorizzazione Google non è attiva.<br><b>Premi il bottone giallo «Autorizza Google»</b> in alto nella barra: si fa una volta sola e vale per tutti i PC.'
-              : '<div class="text-start small">' + _esc(msg) + '</div>',
-            confirmButtonColor: '#d33'
-          });
-          if (daAutorizzare && typeof window._cassaforteAvvio === 'function') window._cassaforteAvvio();
-        });
+      });
     }
   })();
   </script>
