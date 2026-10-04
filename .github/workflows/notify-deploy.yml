@@ -13,8 +13,10 @@ on:
 jobs:
   notify:
     runs-on: ubuntu-latest
+    # Solo nel repository di produzione: nel repository di collaudo non ci sono
+    # i segreti e app_version viene aggiornata a mano dopo la pubblicazione.
     # Skippa se il build di Pages è fallito
-    if: github.event_name == 'workflow_dispatch' || github.event.build.error.message == null
+    if: github.repository == 'medicinadurgenzaucsc-maker/app-consegne' && (github.event_name == 'workflow_dispatch' || github.event.build.error.message == null)
     steps:
       - name: PATCH Supabase app_version
         env:

@@ -5,9 +5,29 @@
 
 
 // ── CONFIGURAZIONE ────────────────────────────────────────────
-var SUPABASE_URL     = 'https://ifmmcvxzhwdkmzhsxcvb.supabase.co';
-var SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlmbW1jdnh6aHdka216aHN4Y3ZiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc2Nzk1ODAsImV4cCI6MjA5MzI1NTU4MH0.LH8h4Fivtl3-TuiA050oF8iS4b80xrd2Dn6z8JjCoeA';
-var APP_URL          = 'https://medicinadurgenzaucsc-maker.github.io/app-consegne/';
+// Un solo codice per due ambienti: database, indirizzo e client Google si
+// scelgono dal nome host. È collaudo SOLO sugli host elencati: qualunque altro
+// indirizzo è produzione, così un errore qui non può dirottare il reparto sul
+// database con i dati fittizi.
+var _AMBIENTI = {
+  produzione: {
+    supabaseUrl:     'https://ifmmcvxzhwdkmzhsxcvb.supabase.co',
+    supabaseAnonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlmbW1jdnh6aHdka216aHN4Y3ZiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc2Nzk1ODAsImV4cCI6MjA5MzI1NTU4MH0.LH8h4Fivtl3-TuiA050oF8iS4b80xrd2Dn6z8JjCoeA',
+    appUrl:          'https://medicinadurgenzaucsc-maker.github.io/app-consegne/',
+    googleClientId:  '170256871056-gchf386c3oic77ek2j5m3b1e5pbv6cre.apps.googleusercontent.com'
+  },
+  collaudo: {
+    supabaseUrl:     'https://rqvohwpthhumydpbwktq.supabase.co',
+    supabaseAnonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJxdm9od3B0aGh1bXlkcGJ3a3RxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTExMjUyNjAsImV4cCI6MjEwNjcwMTI2MH0.tA5uy7aJM9x8UmHjYBM9wvRmR5eqR5fH2mVctp4l0xo',
+    appUrl:          null, // l'indirizzo da cui è servita la pagina (sito di collaudo o localhost)
+    googleClientId:  'INSERISCI_CLIENT_ID_COLLAUDO'
+  }
+};
+var _HOST_COLLAUDO = ['gistech2026.github.io', 'localhost', '127.0.0.1'];
+var AMBIENTE = (_HOST_COLLAUDO.indexOf(location.hostname) >= 0) ? 'collaudo' : 'produzione';
+var SUPABASE_URL      = _AMBIENTI[AMBIENTE].supabaseUrl;
+var SUPABASE_ANON_KEY = _AMBIENTI[AMBIENTE].supabaseAnonKey;
+var APP_URL           = _AMBIENTI[AMBIENTE].appUrl || new URL('./', location.href).href;
 var PRINT_URL        = APP_URL + 'print.html';
 var LOCK_TTL_MS      = 600000; // 10 minuti — safety net DB-side, deve essere > timer client (5 min) per evitare race
 
@@ -15,14 +35,72 @@ var LOCK_TTL_MS      = 600000; // 10 minuti — safety net DB-side, deve essere 
 // Client ID OAuth2 da Google Cloud Console (Web application).
 // Istruzioni: console.cloud.google.com → API e servizi → Credenziali →
 // Crea credenziali → ID client OAuth2 → Web application
-// Origini JS autorizzate: https://medicinadurgenzaucsc-maker.github.io
-var GOOGLE_CLIENT_ID = '170256871056-gchf386c3oic77ek2j5m3b1e5pbv6cre.apps.googleusercontent.com';
+// Origini JS autorizzate: quella del sito di ciascun ambiente (vedi _AMBIENTI).
+var GOOGLE_CLIENT_ID = _AMBIENTI[AMBIENTE].googleClientId;
 
 // Token di accesso Google — impostato dopo il login (identità/diagnostica)
 window._googleAccessToken = null;
 
 // ── CLIENT SUPABASE ───────────────────────────────────────────
 var _sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// ── COLLAUDO: segnale visivo ──────────────────────────────────
+// Cornice ed etichetta fisse che non spostano il layout (pointer-events:
+// none) e filigrana in stampa. In produzione non viene creato alcun elemento.
+(function () {
+  if (AMBIENTE !== 'collaudo') return;
+  function monta() {
+    if (document.getElementById('fasciaCollaudo')) return;
+    var st = document.createElement('style');
+    st.textContent =
+      '#fasciaCollaudo{position:fixed;top:0;right:0;bottom:0;left:0;z-index:2147483000;pointer-events:none;border:5px solid #ff6f00;box-sizing:border-box}' +
+      '#fasciaCollaudo::after{content:"COLLAUDO \\2014  DATI FITTIZI";position:absolute;left:50%;bottom:0;transform:translateX(-50%);background:#ff6f00;color:#fff;font:700 12px/1 system-ui,Arial,sans-serif;letter-spacing:.08em;padding:5px 14px 4px;border-radius:8px 8px 0 0;white-space:nowrap}' +
+      '@media print{#fasciaCollaudo{border:0}#fasciaCollaudo::after{top:50%;bottom:auto;transform:translate(-50%,-50%) rotate(-30deg);background:none;color:rgba(255,111,0,.28);font-size:64px;-webkit-print-color-adjust:exact;print-color-adjust:exact}}';
+    document.head.appendChild(st);
+    var d = document.createElement('div');
+    d.id = 'fasciaCollaudo';
+    d.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(d);
+    if (document.title.indexOf('[COLLAUDO]') !== 0) document.title = '[COLLAUDO] ' + document.title;
+  }
+  if (document.body) monta(); else document.addEventListener('DOMContentLoaded', monta);
+})();
+
+// ── CONTROLLO INCROCIATO SITO ↔ DATABASE ──────────────────────
+// Ogni database dichiara chi è nella riga AMBIENTE di «impostazioni». Se il
+// sito e il database a cui è collegato non concordano l'app si ferma: meglio
+// fermi che dati veri nel database dei dati fittizi (o il contrario). Si
+// blocca solo davanti a una riga letta e diversa: riga assente, utente non
+// collegato o errore di rete non fermano nulla.
+(function () {
+  var fatto = false;
+  function blocca(db) {
+    if (document.getElementById('bloccoAmbiente')) return;
+    var d = document.createElement('div');
+    d.id = 'bloccoAmbiente';
+    d.setAttribute('style', 'position:fixed;top:0;right:0;bottom:0;left:0;z-index:2147483600;background:#b71c1c;color:#fff;display:flex;align-items:center;justify-content:center;text-align:center;padding:24px;font:600 20px/1.5 system-ui,Arial,sans-serif');
+    var t = document.createElement('div');
+    t.textContent = 'CONFIGURAZIONE INCOERENTE: questo sito è «' + AMBIENTE + '» ma il database collegato è «' + db + '». Non usare l\'applicazione e avvisare chi la gestisce.';
+    d.appendChild(t);
+    (document.body || document.documentElement).appendChild(d);
+  }
+  function verifica() {
+    _q(_sb.from('impostazioni').select('valore').eq('chiave', 'AMBIENTE').maybeSingle())
+      .then(function (row) {
+        var db = row && row.valore ? String(row.valore).trim() : '';
+        if (db && db !== AMBIENTE) blocca(db);
+      })
+      .catch(function () {});
+  }
+  try {
+    _sb.auth.onAuthStateChange(function (ev, sess) {
+      if (!sess || fatto) return;
+      fatto = true;
+      // fuori dal callback: le chiamate a Supabase fatte qui dentro si bloccherebbero
+      setTimeout(verifica, 0);
+    });
+  } catch (e) {}
+})();
 
 // ── STATO LOCK IN MEMORIA ─────────────────────────────────────
 // Aggiornato da Realtime: nessuna query aggiuntiva al DB per leggere i lock.

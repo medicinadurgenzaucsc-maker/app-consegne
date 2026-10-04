@@ -8,3 +8,8 @@
 # File di sistema Windows
 Thumbs.db
 desktop.ini
+
+# Ambiente di collaudo: file generati o temporanei
+collaudo/strumenti/.gettone
+collaudo/strumenti/.accesso-*.json
+collaudo/strumenti/struttura-*.json

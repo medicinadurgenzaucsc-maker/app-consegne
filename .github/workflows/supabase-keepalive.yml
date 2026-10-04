@@ -20,6 +20,8 @@ permissions:
 
 jobs:
   keepalive:
+    # Solo nel repository di produzione (il progetto e i segreti sono i suoi).
+    if: github.repository == 'medicinadurgenzaucsc-maker/app-consegne'
     runs-on: ubuntu-latest
     steps:
       - name: Stato progetto + auto-restore se in pausa

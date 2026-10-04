@@ -15,6 +15,16 @@ PWA «Sistema Consegne Reparto»: schede pazienti per letto, modificate in tempo
 - URL pubblico: `https://medicinadurgenzaucsc-maker.github.io/app-consegne/` — **sottocartella**: la radice del dominio risponde 404 e sembra un deploy mancato.
 - File principali: `docs/index.html` (~10k righe: login, focus mode, modal, bookmarklet, tutta la logica inline), `docs/js/api.js` (client Supabase, template card, ciclo dati, backup, laboratorio, problemi attivi), `docs/js/app.js` (avvio, sync, operazioni sui letti, token Google), `docs/js/app2.js`, `docs/print.html` (stampa autonoma: rilegge i dati da Supabase e ha CSS proprio — le regole di stile vanno replicate lì), `docs/sw.js` (service worker cache-first).
 
+## Ambiente di collaudo (prima di ogni rilascio)
+
+Esiste un gemello della produzione con pazienti inventati — sito `gistech2026.github.io/app-consegne/`, repository `gistech2026/app-consegne` (remote `collaudo`), progetto Supabase `rqvohwpthhumydpbwktq`. **Ogni modifica si prova lì prima di arrivare al reparto**: si lavora sul ramo `collaudo`, `git push collaudo collaudo:master` pubblica il sito di collaudo, e solo con l'ok dell'utente lo stesso commit va in produzione (`git merge --ff-only collaudo` su `master`, poi push su `origin`). Stessa strada per migrazioni ed Edge Function. Dettagli, strumenti e regole in `collaudo/README.md`.
+
+- Il codice è **uno solo**: `_AMBIENTI` in `api.js` sceglie database e client Google dal nome host (collaudo solo su `gistech2026.github.io` e `localhost`, tutto il resto è produzione). Niente rami «solo collaudo» nel codice dell'app: ciò che si prova deve essere ciò che si rilascia.
+- Da `collaudo/strumenti/sb.js` la produzione è in **sola lettura**; nel collaudo non si copiano mai righe di pazienti veri (nemmeno anonimizzate).
+- Prove da utente collegato senza login Google: `gettone-prova.js` firma un token per l'utente fittizio `collaudo-automatico@example.com`, valido solo nel collaudo; l'app servita in locale (`localhost` = collaudo) lo trova nel `localStorage` e parte già collegata.
+- Nel collaudo la mail dimissioni non parte: la funzione `google-finto` fa la parte di Google e registra i messaggi in `posta_simulata`. `prova-funzione-mail.js` è la batteria di prove di `google-token`.
+- Il sorgente delle Edge Function sta in `supabase/functions/`: il deploy via MCP non fa type-check, quindi prima va verificata la sintassi (`funzioni-collaudo.js` lo fa da sé).
+
 ## Rilascio (nessuna build, nessun test runner)
 
 1. Modifica i file in `docs/`.
