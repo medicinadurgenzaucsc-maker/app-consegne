@@ -20,7 +20,7 @@ var _AMBIENTI = {
     supabaseUrl:     'https://rqvohwpthhumydpbwktq.supabase.co',
     supabaseAnonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJxdm9od3B0aGh1bXlkcGJ3a3RxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTExMjUyNjAsImV4cCI6MjEwNjcwMTI2MH0.tA5uy7aJM9x8UmHjYBM9wvRmR5eqR5fH2mVctp4l0xo',
     appUrl:          null, // l'indirizzo da cui è servita la pagina (sito di collaudo o localhost)
-    googleClientId:  'INSERISCI_CLIENT_ID_COLLAUDO'
+    googleClientId:  '223005241786-ds6ctquq91gtq4d539kflq1ptbb1r5d5.apps.googleusercontent.com'
   }
 };
 var _HOST_COLLAUDO = ['gistech2026.github.io', 'localhost', '127.0.0.1'];
