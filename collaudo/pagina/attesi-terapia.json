@@ -1,0 +1,1549 @@
+{
+ "epoca": "2026-10-04",
+ "esiti": {
+  "1+0": {
+   "corso": "Terapia EV\nCeftriaxone 2g ×1 (dal 28/09)\nPerfalgan 1g ×2 a/b (dal 28/09 · max 3g/24h)\nPantorc 40mg ×1 (dal 28/09)\nIsolyte 1000ml ×1 (dal 28/09)\n\nTerapia OS (orale)\nNorvasc 5mg ×1 (dal 28/09)\nZyloric 100mg ×1 (dal 28/09)\nDeltacortene 25mg ×1 (dal 28/09)\n\nTerapia SC (sottocute)\nClexane 4000 UI ×1 (dal 28/09)\n\nAerosol\nBreva 10 gtt ×3 (dal 28/09)",
+   "pregressi": []
+  },
+  "2+0": {
+   "corso": "Terapia EV\nLasix 40mg ×3 (dal 26/09)\nPantorc 40mg ×1 (dal 26/09)\n\nTerapia OS (orale)\nCongescor 2,5mg ×1 (dal 26/09)\nTriatec 5mg ×1 (dal 26/09)\nCardioaspirin 100mg ×1 (dal 26/09)\nTorvast 20mg ×1 (dal 26/09)\n\nTerapia SC (sottocute)\nClexane 4000 UI ×1 (dal 26/09)\nHumalog 6 UI ×3 a/b (dal 26/09 · max 30 UI/24h)\nLantus 14 UI ×1 (dal 26/09)",
+   "pregressi": [
+    {
+     "nome": "Glucophage 500mg",
+     "date": [
+      "dal 26/09",
+      "sospeso il 27/09"
+     ],
+     "ord": "20260927"
+    }
+   ]
+  },
+  "3+0": {
+   "corso": "Terapia EV\nPantorc 40mg ×2 (dal 17/09)\nIsolyte 1000ml ×1 (dal 17/09)\n\nTerapia OS (orale)\nCongescor 2,5mg ×1 (dal 17/09)\nEutirox 75mcg ×1 (dal 17/09)\nLaevolac 15ml ×2 (dal 17/09 · se alvo chiuso da 48 ore)",
+   "pregressi": [
+    {
+     "nome": "Tranex 500mg",
+     "date": [
+      "17/09"
+     ],
+     "ord": "20260917"
+    },
+    {
+     "nome": "Plasil 10mg",
+     "date": [
+      "17/09"
+     ],
+     "ord": "20260917"
+    },
+    {
+     "nome": "Eliquis 5mg",
+     "date": [
+      "dal 13/08",
+      "sospeso il 17/09"
+     ],
+     "ord": "20260917"
+    }
+   ]
+  },
+  "4+0": {
+   "corso": "Terapia EV\nUrbason 40mg ×2 (dal 02/10)\nPantorc 40mg ×1 (dal 02/10)\nCeftriaxone 2g ×1 (dal 02/10)\n\nTerapia OS (orale)\nSeroquel 25mg ×1 a/b (dal 02/10)\nZyloric 100mg ×1 (dal 02/10)\nDeltacortene 25mg ×1 (dal 02/10)\n\nTerapia SC (sottocute)\nClexane 4000 UI ×1 (dal 02/10)\n\nAerosol\nBreva 10 gtt ×3 (dal 02/10)\nAircort 1mg ×2 (dal 02/10)",
+   "pregressi": [
+    {
+     "nome": "Norvasc 5mg",
+     "date": [
+      "dal 02/10",
+      "sospeso il 04/10"
+     ],
+     "ord": "20261004"
+    }
+   ]
+  },
+  "6+0": {
+   "corso": "Terapia EV\nMeropenem Triidrato 1g ×3 (dal 23/09)\nIsolyte 1000ml ×1 (dal 22/09)\nPerfalgan 1g ×2 a/b (dal 22/09 · max 3g/24h)\nPantorc 40mg ×1 (dal 22/09)\n\nTerapia OS (orale)\nSeroquel 25mg ×1 a/b (dal 22/09)\nTorvast 20mg ×1 (dal 22/09)\nCardioaspirin 100mg ×1 (dal 22/09)\n\nTerapia SC (sottocute)\nClexane 4000 UI ×1 (dal 22/09)",
+   "pregressi": [
+    {
+     "nome": "Piperacillina/Tazobactam 4,5g",
+     "date": [
+      "dal 22/09",
+      "sospeso il 23/09"
+     ],
+     "ord": "20260923"
+    }
+   ]
+  },
+  "7+0": {
+   "corso": "Terapia EV\nCordarone 900mg ×1 (dal 25/09)\nPantorc 40mg ×1 (dal 25/09)\n\nTerapia OS (orale)\nCongescor 2,5mg ×1 (dal 25/09)\nTriatec 5mg ×1 (dal 25/09)\nEutirox 75mcg ×1 (dal 25/09)\nLaevolac 15ml ×2 (dal 25/09 · se alvo chiuso da 48 ore)\n\nTerapia SC (sottocute)\nClexane 6000 UI ×2 (dal 25/09)",
+   "pregressi": []
+  },
+  "8+0": {
+   "corso": "Terapia EV\nSodio Cloruro 500ml ×2 (dal 19/09)\nIsolyte 1000ml ×1 (dal 19/09)\nPantorc 40mg ×1 (dal 19/09)\n\nTerapia OS (orale)\nZyloric 100mg ×1 (dal 19/09)\nDeltacortene 25mg ×1 (dal 19/09)\n\nTerapia SC (sottocute)\nClexane 4000 UI ×1 (dal 19/09)",
+   "pregressi": [
+    {
+     "nome": "Norvasc 5mg",
+     "date": [
+      "dal 19/09",
+      "sospeso il 21/09"
+     ],
+     "ord": "20260921"
+    },
+    {
+     "nome": "Lasix 20mg",
+     "date": [
+      "dal 23/11",
+      "sospeso il 19/09"
+     ],
+     "ord": "20260919"
+    },
+    {
+     "nome": "Triatec 5mg",
+     "date": [
+      "dal 23/11",
+      "sospeso il 19/09"
+     ],
+     "ord": "20260919"
+    }
+   ]
+  },
+  "9+0": {
+   "corso": "Terapia EV\nLasix 20mg ×2 (dal 26/09)\nPantorc 40mg ×1 (dal 26/09)\nIsolyte 1000ml ×1 (dal 26/09)\nCeftriaxone 2g ×1 (dal 26/09)\n\nTerapia OS (orale)\nLaevolac 15ml ×2 (dal 26/09)\nTorvast 20mg ×1 (dal 26/09)\nCardioaspirin 100mg ×1 (dal 26/09)",
+   "pregressi": []
+  },
+  "10+0": {
+   "corso": "Terapia EV\nPerfalgan 1g ×2 a/b (dal 19/09 · max 3g/24h)\nPantorc 40mg ×1 (dal 19/09)\n\nTerapia OS (orale)\nEutirox 75mcg ×1 (dal 19/09)\nLaevolac 15ml ×2 (dal 19/09 · se alvo chiuso da 48 ore)\n\nTerapia SC (sottocute)\nClexane 6000 UI ×2 (dal 19/09)",
+   "pregressi": []
+  },
+  "11+0": {
+   "corso": "Terapia EV\nIsolyte 1000ml ×1 (dal 30/09)\nPantorc 40mg ×1 (dal 30/09)\n\nTerapia OS (orale)\nZyloric 100mg ×1 (dal 30/09)\nDeltacortene 25mg ×1 (dal 30/09)\n\nTerapia SC (sottocute)\nLantus 14 UI ×1 (dal 30/09)\nHumalog 6 UI ×3 a/b (dal 30/09 · max 30 UI/24h)\nClexane 4000 UI ×1 (dal 30/09)",
+   "pregressi": [
+    {
+     "nome": "Norvasc 5mg",
+     "date": [
+      "dal 30/09",
+      "sospeso il 02/10"
+     ],
+     "ord": "20261002"
+    }
+   ]
+  },
+  "12+0": {
+   "corso": "Terapia EV\nPantorc 40mg ×1 (dal 24/09)\n\nTerapia OS (orale)\nCardioaspirin 100mg ×1 (dal 24/09)\nTorvast 20mg ×1 (dal 24/09)",
+   "pregressi": []
+  },
+  "13+0": {
+   "corso": "Terapia EV\nPiperacillina/Tazobactam 4,5g ×4 (dal 25/09)\nVancomicina 1g ×2 (dal 26/09)\nIsolyte 1000ml ×1 (dal 25/09)\nPantorc 40mg ×1 (dal 25/09)\nPerfalgan 1g ×2 a/b (dal 25/09 · max 3g/24h)\n\nTerapia OS (orale)\nEutirox 75mcg ×1 (dal 25/09)\nLaevolac 15ml ×2 (dal 25/09 · se alvo chiuso da 48 ore)\n\nTerapia SC (sottocute)\nClexane 4000 UI ×1 (dal 25/09)\n\nAerosol\nBreva 10 gtt ×3 (dal 25/09)",
+   "pregressi": []
+  },
+  "15+0": {
+   "corso": "Terapia EV\nCeftriaxone 2g ×1 (dal 25/09)\nPerfalgan 1g ×2 a/b (dal 25/09 · max 3g/24h)\nPantorc 40mg ×1 (dal 25/09)\nIsolyte 1000ml ×1 (dal 25/09)\n\nTerapia OS (orale)\nNorvasc 5mg ×1 (dal 25/09)\nZyloric 100mg ×1 (dal 25/09)\nDeltacortene 25mg ×1 (dal 25/09)\n\nTerapia SC (sottocute)\nClexane 4000 UI ×1 (dal 25/09)\n\nAerosol\nBreva 10 gtt ×3 (dal 25/09)",
+   "pregressi": []
+  },
+  "16+0": {
+   "corso": "Terapia EV\nLasix 40mg ×3 (dal 02/10)\nPantorc 40mg ×1 (dal 02/10)\n\nTerapia OS (orale)\nCongescor 2,5mg ×1 (dal 02/10)\nTriatec 5mg ×1 (dal 02/10)\nCardioaspirin 100mg ×1 (dal 02/10)\nTorvast 20mg ×1 (dal 02/10)\n\nTerapia SC (sottocute)\nClexane 4000 UI ×1 (dal 02/10)\nHumalog 6 UI ×3 a/b (dal 02/10 · max 30 UI/24h)\nLantus 14 UI ×1 (dal 02/10)",
+   "pregressi": [
+    {
+     "nome": "Glucophage 500mg",
+     "date": [
+      "dal 02/10",
+      "sospeso il 03/10"
+     ],
+     "ord": "20261003"
+    }
+   ]
+  },
+  "17+0": {
+   "corso": "Terapia EV\nPantorc 40mg ×2 (dal 24/09)\nIsolyte 1000ml ×1 (dal 24/09)\n\nTerapia OS (orale)\nCongescor 2,5mg ×1 (dal 24/09)\nEutirox 75mcg ×1 (dal 24/09)\nLaevolac 15ml ×2 (dal 24/09 · se alvo chiuso da 48 ore)",
+   "pregressi": [
+    {
+     "nome": "Tranex 500mg",
+     "date": [
+      "24/09"
+     ],
+     "ord": "20260924"
+    },
+    {
+     "nome": "Plasil 10mg",
+     "date": [
+      "24/09"
+     ],
+     "ord": "20260924"
+    },
+    {
+     "nome": "Eliquis 5mg",
+     "date": [
+      "dal 20/08",
+      "sospeso il 24/09"
+     ],
+     "ord": "20260924"
+    }
+   ]
+  },
+  "18+0": {
+   "corso": "Terapia EV\nUrbason 40mg ×2 (dal 26/09)\nPantorc 40mg ×1 (dal 26/09)\n\nTerapia OS (orale)\nSeroquel 25mg ×1 a/b (dal 26/09)\nZyloric 100mg ×1 (dal 26/09)\nDeltacortene 25mg ×1 (dal 26/09)\n\nTerapia SC (sottocute)\nClexane 4000 UI ×1 (dal 26/09)\n\nAerosol\nBreva 10 gtt ×3 (dal 26/09)\nAircort 1mg ×2 (dal 26/09)",
+   "pregressi": [
+    {
+     "nome": "Ceftriaxone 2g",
+     "date": [
+      "dal 26/09 al 30/09",
+      "completato"
+     ],
+     "ord": "20260930"
+    },
+    {
+     "nome": "Norvasc 5mg",
+     "date": [
+      "dal 26/09",
+      "sospeso il 28/09"
+     ],
+     "ord": "20260928"
+    }
+   ]
+  },
+  "19+0": {
+   "corso": "Terapia EV\nMeropenem Triidrato 1g ×3 (dal 30/09)\nIsolyte 1000ml ×1 (dal 29/09)\nPerfalgan 1g ×2 a/b (dal 29/09 · max 3g/24h)\nPantorc 40mg ×1 (dal 29/09)\n\nTerapia OS (orale)\nSeroquel 25mg ×1 a/b (dal 29/09)\nTorvast 20mg ×1 (dal 29/09)\nCardioaspirin 100mg ×1 (dal 29/09)\n\nTerapia SC (sottocute)\nClexane 4000 UI ×1 (dal 29/09)",
+   "pregressi": [
+    {
+     "nome": "Piperacillina/Tazobactam 4,5g",
+     "date": [
+      "dal 29/09",
+      "sospeso il 30/09"
+     ],
+     "ord": "20260930"
+    }
+   ]
+  },
+  "20+0": {
+   "corso": "Terapia EV\nCordarone 900mg ×1 (dal 22/09)\nPantorc 40mg ×1 (dal 22/09)\n\nTerapia OS (orale)\nCongescor 2,5mg ×1 (dal 22/09)\nTriatec 5mg ×1 (dal 22/09)\nEutirox 75mcg ×1 (dal 22/09)\nLaevolac 15ml ×2 (dal 22/09 · se alvo chiuso da 48 ore)\n\nTerapia SC (sottocute)\nClexane 6000 UI ×2 (dal 22/09)",
+   "pregressi": []
+  },
+  "21+0": {
+   "corso": "Terapia EV\nSodio Cloruro 500ml ×2 (dal 28/09)\nIsolyte 1000ml ×1 (dal 28/09)\nPantorc 40mg ×1 (dal 28/09)\n\nTerapia OS (orale)\nZyloric 100mg ×1 (dal 28/09)\nDeltacortene 25mg ×1 (dal 28/09)\n\nTerapia SC (sottocute)\nClexane 4000 UI ×1 (dal 28/09)",
+   "pregressi": [
+    {
+     "nome": "Norvasc 5mg",
+     "date": [
+      "dal 28/09",
+      "sospeso il 30/09"
+     ],
+     "ord": "20260930"
+    },
+    {
+     "nome": "Lasix 20mg",
+     "date": [
+      "dal 02/12",
+      "sospeso il 28/09"
+     ],
+     "ord": "20260928"
+    },
+    {
+     "nome": "Triatec 5mg",
+     "date": [
+      "dal 02/12",
+      "sospeso il 28/09"
+     ],
+     "ord": "20260928"
+    }
+   ]
+  },
+  "22+0": {
+   "corso": "Terapia EV\nLasix 20mg ×2 (dal 02/10)\nPantorc 40mg ×1 (dal 02/10)\nIsolyte 1000ml ×1 (dal 02/10)\nCeftriaxone 2g ×1 (dal 02/10)\n\nTerapia OS (orale)\nLaevolac 15ml ×2 (dal 02/10)\nTorvast 20mg ×1 (dal 02/10)\nCardioaspirin 100mg ×1 (dal 02/10)",
+   "pregressi": []
+  },
+  "23+0": {
+   "corso": "Terapia EV\nPerfalgan 1g ×2 a/b (dal 24/09 · max 3g/24h)\nPantorc 40mg ×1 (dal 24/09)\n\nTerapia OS (orale)\nEutirox 75mcg ×1 (dal 24/09)\nLaevolac 15ml ×2 (dal 24/09 · se alvo chiuso da 48 ore)\n\nTerapia SC (sottocute)\nClexane 6000 UI ×2 (dal 24/09)",
+   "pregressi": []
+  },
+  "24+0": {
+   "corso": "Terapia EV\nIsolyte 1000ml ×1 (dal 25/09)\nPantorc 40mg ×1 (dal 25/09)\n\nTerapia OS (orale)\nZyloric 100mg ×1 (dal 25/09)\nDeltacortene 25mg ×1 (dal 25/09)\n\nTerapia SC (sottocute)\nLantus 14 UI ×1 (dal 25/09)\nHumalog 6 UI ×3 a/b (dal 25/09 · max 30 UI/24h)\nClexane 4000 UI ×1 (dal 25/09)",
+   "pregressi": [
+    {
+     "nome": "Norvasc 5mg",
+     "date": [
+      "dal 25/09",
+      "sospeso il 27/09"
+     ],
+     "ord": "20260927"
+    }
+   ]
+  },
+  "25+0": {
+   "corso": "Terapia EV\nPantorc 40mg ×1 (dal 02/10)\n\nTerapia OS (orale)\nCardioaspirin 100mg ×1 (dal 02/10)\nTorvast 20mg ×1 (dal 02/10)",
+   "pregressi": []
+  },
+  "APPOGGIO AL 9E+0": {
+   "corso": "Terapia EV\nPiperacillina/Tazobactam 4,5g ×4 (dal 02/10)\nVancomicina 1g ×2 (dal 03/10)\nIsolyte 1000ml ×1 (dal 02/10)\nPantorc 40mg ×1 (dal 02/10)\nPerfalgan 1g ×2 a/b (dal 02/10 · max 3g/24h)\n\nTerapia OS (orale)\nEutirox 75mcg ×1 (dal 02/10)\nLaevolac 15ml ×2 (dal 02/10 · se alvo chiuso da 48 ore)\n\nTerapia SC (sottocute)\nClexane 4000 UI ×1 (dal 02/10)\n\nAerosol\nBreva 10 gtt ×3 (dal 02/10)",
+   "pregressi": []
+  },
+  "1+1": {
+   "corso": "Terapia EV\nCeftriaxone 2g ×1 (dal 28/09)\nPerfalgan 1g ×2 a/b (dal 28/09 · max 3g/24h)\nPantorc 40mg ×1 (dal 28/09)\n\nTerapia OS (orale)\nNorvasc 5mg ×1 (dal 28/09)\nZyloric 100mg ×1 (dal 28/09)\nDeltacortene 25mg ×1 (dal 28/09)\n\nTerapia SC (sottocute)\nClexane 4000 UI ×1 (dal 28/09)\n\nAerosol\nBreva 10 gtt ×3 (dal 28/09)",
+   "pregressi": [
+    {
+     "nome": "Isolyte 1000ml",
+     "date": [
+      "dal 28/09",
+      "sospeso il 05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Plasil 10mg",
+     "date": [
+      "05/10"
+     ],
+     "ord": "20261005"
+    }
+   ]
+  },
+  "2+1": {
+   "corso": "Terapia EV\nLasix 40mg ×3 (dal 26/09)\n\nTerapia OS (orale)\nCongescor 2,5mg ×1 (dal 26/09)\nTriatec 5mg ×1 (dal 26/09)\nCardioaspirin 100mg ×1 (dal 26/09)\nTorvast 20mg ×1 (dal 26/09)\n\nTerapia SC (sottocute)\nClexane 4000 UI ×1 (dal 26/09)\nHumalog 6 UI ×3 a/b (dal 26/09 · max 30 UI/24h)\nLantus 14 UI ×1 (dal 26/09)",
+   "pregressi": [
+    {
+     "nome": "Pantorc 40mg",
+     "date": [
+      "dal 26/09",
+      "sospeso il 05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Lasix 20mg",
+     "date": [
+      "05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Glucophage 500mg",
+     "date": [
+      "dal 26/09",
+      "sospeso il 27/09"
+     ],
+     "ord": "20260927"
+    }
+   ]
+  },
+  "3+1": {
+   "corso": "Terapia EV\nPantorc 40mg ×2 (dal 17/09)\n\nTerapia OS (orale)\nCongescor 2,5mg ×1 (dal 17/09)\nEutirox 75mcg ×1 (dal 17/09)\nLaevolac 15ml ×2 (dal 17/09 · se alvo chiuso da 48 ore)",
+   "pregressi": [
+    {
+     "nome": "Isolyte 1000ml",
+     "date": [
+      "dal 17/09",
+      "sospeso il 05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Plasil 10mg",
+     "date": [
+      "17/09",
+      "05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Tranex 500mg",
+     "date": [
+      "17/09"
+     ],
+     "ord": "20260917"
+    },
+    {
+     "nome": "Eliquis 5mg",
+     "date": [
+      "dal 13/08",
+      "sospeso il 17/09"
+     ],
+     "ord": "20260917"
+    }
+   ]
+  },
+  "4+1": {
+   "corso": "Terapia EV\nUrbason 40mg ×2 (dal 02/10)\nCeftriaxone 2g ×1 (dal 02/10)\n\nTerapia OS (orale)\nSeroquel 25mg ×1 a/b (dal 02/10)\nZyloric 100mg ×1 (dal 02/10)\nDeltacortene 25mg ×1 (dal 02/10)\n\nTerapia SC (sottocute)\nClexane 4000 UI ×1 (dal 02/10)\n\nAerosol\nBreva 10 gtt ×3 (dal 02/10)\nAircort 1mg ×2 (dal 02/10)",
+   "pregressi": [
+    {
+     "nome": "Pantorc 40mg",
+     "date": [
+      "dal 02/10",
+      "sospeso il 05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Lasix 20mg",
+     "date": [
+      "05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Norvasc 5mg",
+     "date": [
+      "dal 02/10",
+      "sospeso il 04/10"
+     ],
+     "ord": "20261004"
+    }
+   ]
+  },
+  "6+1": {
+   "corso": "Terapia EV\nMeropenem Triidrato 1g ×3 (dal 23/09)\nPerfalgan 1g ×2 a/b (dal 22/09 · max 3g/24h)\nPantorc 40mg ×1 (dal 22/09)\n\nTerapia OS (orale)\nSeroquel 25mg ×1 a/b (dal 22/09)\nTorvast 20mg ×1 (dal 22/09)\nCardioaspirin 100mg ×1 (dal 22/09)\n\nTerapia SC (sottocute)\nClexane 4000 UI ×1 (dal 22/09)",
+   "pregressi": [
+    {
+     "nome": "Isolyte 1000ml",
+     "date": [
+      "dal 22/09",
+      "sospeso il 05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Plasil 10mg",
+     "date": [
+      "05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Piperacillina/Tazobactam 4,5g",
+     "date": [
+      "dal 22/09",
+      "sospeso il 23/09"
+     ],
+     "ord": "20260923"
+    }
+   ]
+  },
+  "7+1": {
+   "corso": "Terapia EV\nCordarone 900mg ×1 (dal 25/09)\n\nTerapia OS (orale)\nCongescor 2,5mg ×1 (dal 25/09)\nTriatec 5mg ×1 (dal 25/09)\nEutirox 75mcg ×1 (dal 25/09)\nLaevolac 15ml ×2 (dal 25/09 · se alvo chiuso da 48 ore)\n\nTerapia SC (sottocute)\nClexane 6000 UI ×2 (dal 25/09)",
+   "pregressi": [
+    {
+     "nome": "Pantorc 40mg",
+     "date": [
+      "dal 25/09",
+      "sospeso il 05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Lasix 20mg",
+     "date": [
+      "05/10"
+     ],
+     "ord": "20261005"
+    }
+   ]
+  },
+  "8+1": {
+   "corso": "Terapia EV\nSodio Cloruro 500ml ×2 (dal 19/09)\nPantorc 40mg ×1 (dal 19/09)\n\nTerapia OS (orale)\nZyloric 100mg ×1 (dal 19/09)\nDeltacortene 25mg ×1 (dal 19/09)\n\nTerapia SC (sottocute)\nClexane 4000 UI ×1 (dal 19/09)",
+   "pregressi": [
+    {
+     "nome": "Isolyte 1000ml",
+     "date": [
+      "dal 19/09",
+      "sospeso il 05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Plasil 10mg",
+     "date": [
+      "05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Norvasc 5mg",
+     "date": [
+      "dal 19/09",
+      "sospeso il 21/09"
+     ],
+     "ord": "20260921"
+    },
+    {
+     "nome": "Lasix 20mg",
+     "date": [
+      "dal 23/11",
+      "sospeso il 19/09"
+     ],
+     "ord": "20260919"
+    },
+    {
+     "nome": "Triatec 5mg",
+     "date": [
+      "dal 23/11",
+      "sospeso il 19/09"
+     ],
+     "ord": "20260919"
+    }
+   ]
+  },
+  "9+1": {
+   "corso": "Terapia EV\nLasix 20mg ×2 (dal 26/09)\nPantorc 40mg ×1 (dal 26/09)\nCeftriaxone 2g ×1 (dal 26/09)\n\nTerapia OS (orale)\nLaevolac 15ml ×2 (dal 26/09)\nTorvast 20mg ×1 (dal 26/09)\nCardioaspirin 100mg ×1 (dal 26/09)",
+   "pregressi": [
+    {
+     "nome": "Isolyte 1000ml",
+     "date": [
+      "dal 26/09",
+      "sospeso il 05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Lasix 20mg",
+     "date": [
+      "05/10"
+     ],
+     "ord": "20261005"
+    }
+   ]
+  },
+  "10+1": {
+   "corso": "Terapia EV\nPantorc 40mg ×1 (dal 19/09)\n\nTerapia OS (orale)\nEutirox 75mcg ×1 (dal 19/09)\nLaevolac 15ml ×2 (dal 19/09 · se alvo chiuso da 48 ore)\n\nTerapia SC (sottocute)\nClexane 6000 UI ×2 (dal 19/09)",
+   "pregressi": [
+    {
+     "nome": "Perfalgan 1g",
+     "date": [
+      "dal 19/09",
+      "sospeso il 05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Plasil 10mg",
+     "date": [
+      "05/10"
+     ],
+     "ord": "20261005"
+    }
+   ]
+  },
+  "11+1": {
+   "corso": "Terapia EV\nPantorc 40mg ×1 (dal 30/09)\n\nTerapia OS (orale)\nZyloric 100mg ×1 (dal 30/09)\nDeltacortene 25mg ×1 (dal 30/09)\n\nTerapia SC (sottocute)\nLantus 14 UI ×1 (dal 30/09)\nHumalog 6 UI ×3 a/b (dal 30/09 · max 30 UI/24h)\nClexane 4000 UI ×1 (dal 30/09)",
+   "pregressi": [
+    {
+     "nome": "Isolyte 1000ml",
+     "date": [
+      "dal 30/09",
+      "sospeso il 05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Lasix 20mg",
+     "date": [
+      "05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Norvasc 5mg",
+     "date": [
+      "dal 30/09",
+      "sospeso il 02/10"
+     ],
+     "ord": "20261002"
+    }
+   ]
+  },
+  "12+1": {
+   "corso": "Terapia OS (orale)\nCardioaspirin 100mg ×1 (dal 24/09)\nTorvast 20mg ×1 (dal 24/09)",
+   "pregressi": [
+    {
+     "nome": "Pantorc 40mg",
+     "date": [
+      "dal 24/09",
+      "sospeso il 05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Plasil 10mg",
+     "date": [
+      "05/10"
+     ],
+     "ord": "20261005"
+    }
+   ]
+  },
+  "13+1": {
+   "corso": "Terapia EV\nPiperacillina/Tazobactam 4,5g ×4 (dal 25/09)\nVancomicina 1g ×2 (dal 26/09)\nPantorc 40mg ×1 (dal 25/09)\nPerfalgan 1g ×2 a/b (dal 25/09 · max 3g/24h)\n\nTerapia OS (orale)\nEutirox 75mcg ×1 (dal 25/09)\nLaevolac 15ml ×2 (dal 25/09 · se alvo chiuso da 48 ore)\n\nTerapia SC (sottocute)\nClexane 4000 UI ×1 (dal 25/09)\n\nAerosol\nBreva 10 gtt ×3 (dal 25/09)",
+   "pregressi": [
+    {
+     "nome": "Isolyte 1000ml",
+     "date": [
+      "dal 25/09",
+      "sospeso il 05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Lasix 20mg",
+     "date": [
+      "05/10"
+     ],
+     "ord": "20261005"
+    }
+   ]
+  },
+  "15+1": {
+   "corso": "Terapia EV\nCeftriaxone 2g ×1 (dal 25/09)\nPerfalgan 1g ×2 a/b (dal 25/09 · max 3g/24h)\nPantorc 40mg ×1 (dal 25/09)\n\nTerapia OS (orale)\nNorvasc 5mg ×1 (dal 25/09)\nZyloric 100mg ×1 (dal 25/09)\nDeltacortene 25mg ×1 (dal 25/09)\n\nTerapia SC (sottocute)\nClexane 4000 UI ×1 (dal 25/09)\n\nAerosol\nBreva 10 gtt ×3 (dal 25/09)",
+   "pregressi": [
+    {
+     "nome": "Isolyte 1000ml",
+     "date": [
+      "dal 25/09",
+      "sospeso il 05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Plasil 10mg",
+     "date": [
+      "05/10"
+     ],
+     "ord": "20261005"
+    }
+   ]
+  },
+  "16+1": {
+   "corso": "Terapia EV\nLasix 40mg ×3 (dal 02/10)\n\nTerapia OS (orale)\nCongescor 2,5mg ×1 (dal 02/10)\nTriatec 5mg ×1 (dal 02/10)\nCardioaspirin 100mg ×1 (dal 02/10)\nTorvast 20mg ×1 (dal 02/10)\n\nTerapia SC (sottocute)\nClexane 4000 UI ×1 (dal 02/10)\nHumalog 6 UI ×3 a/b (dal 02/10 · max 30 UI/24h)\nLantus 14 UI ×1 (dal 02/10)",
+   "pregressi": [
+    {
+     "nome": "Pantorc 40mg",
+     "date": [
+      "dal 02/10",
+      "sospeso il 05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Lasix 20mg",
+     "date": [
+      "05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Glucophage 500mg",
+     "date": [
+      "dal 02/10",
+      "sospeso il 03/10"
+     ],
+     "ord": "20261003"
+    }
+   ]
+  },
+  "17+1": {
+   "corso": "Terapia EV\nPantorc 40mg ×2 (dal 24/09)\n\nTerapia OS (orale)\nCongescor 2,5mg ×1 (dal 24/09)\nEutirox 75mcg ×1 (dal 24/09)\nLaevolac 15ml ×2 (dal 24/09 · se alvo chiuso da 48 ore)",
+   "pregressi": [
+    {
+     "nome": "Isolyte 1000ml",
+     "date": [
+      "dal 24/09",
+      "sospeso il 05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Plasil 10mg",
+     "date": [
+      "24/09",
+      "05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Tranex 500mg",
+     "date": [
+      "24/09"
+     ],
+     "ord": "20260924"
+    },
+    {
+     "nome": "Eliquis 5mg",
+     "date": [
+      "dal 20/08",
+      "sospeso il 24/09"
+     ],
+     "ord": "20260924"
+    }
+   ]
+  },
+  "18+1": {
+   "corso": "Terapia EV\nUrbason 40mg ×2 (dal 26/09)\n\nTerapia OS (orale)\nSeroquel 25mg ×1 a/b (dal 26/09)\nZyloric 100mg ×1 (dal 26/09)\nDeltacortene 25mg ×1 (dal 26/09)\n\nTerapia SC (sottocute)\nClexane 4000 UI ×1 (dal 26/09)\n\nAerosol\nBreva 10 gtt ×3 (dal 26/09)\nAircort 1mg ×2 (dal 26/09)",
+   "pregressi": [
+    {
+     "nome": "Pantorc 40mg",
+     "date": [
+      "dal 26/09",
+      "sospeso il 05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Lasix 20mg",
+     "date": [
+      "05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Ceftriaxone 2g",
+     "date": [
+      "dal 26/09 al 30/09",
+      "completato"
+     ],
+     "ord": "20260930"
+    },
+    {
+     "nome": "Norvasc 5mg",
+     "date": [
+      "dal 26/09",
+      "sospeso il 28/09"
+     ],
+     "ord": "20260928"
+    }
+   ]
+  },
+  "19+1": {
+   "corso": "Terapia EV\nMeropenem Triidrato 1g ×3 (dal 30/09)\nPerfalgan 1g ×2 a/b (dal 29/09 · max 3g/24h)\nPantorc 40mg ×1 (dal 29/09)\n\nTerapia OS (orale)\nSeroquel 25mg ×1 a/b (dal 29/09)\nTorvast 20mg ×1 (dal 29/09)\nCardioaspirin 100mg ×1 (dal 29/09)\n\nTerapia SC (sottocute)\nClexane 4000 UI ×1 (dal 29/09)",
+   "pregressi": [
+    {
+     "nome": "Isolyte 1000ml",
+     "date": [
+      "dal 29/09",
+      "sospeso il 05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Plasil 10mg",
+     "date": [
+      "05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Piperacillina/Tazobactam 4,5g",
+     "date": [
+      "dal 29/09",
+      "sospeso il 30/09"
+     ],
+     "ord": "20260930"
+    }
+   ]
+  },
+  "20+1": {
+   "corso": "Terapia EV\nCordarone 900mg ×1 (dal 22/09)\n\nTerapia OS (orale)\nCongescor 2,5mg ×1 (dal 22/09)\nTriatec 5mg ×1 (dal 22/09)\nEutirox 75mcg ×1 (dal 22/09)\nLaevolac 15ml ×2 (dal 22/09 · se alvo chiuso da 48 ore)\n\nTerapia SC (sottocute)\nClexane 6000 UI ×2 (dal 22/09)",
+   "pregressi": [
+    {
+     "nome": "Pantorc 40mg",
+     "date": [
+      "dal 22/09",
+      "sospeso il 05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Lasix 20mg",
+     "date": [
+      "05/10"
+     ],
+     "ord": "20261005"
+    }
+   ]
+  },
+  "21+1": {
+   "corso": "Terapia EV\nSodio Cloruro 500ml ×2 (dal 28/09)\nPantorc 40mg ×1 (dal 28/09)\n\nTerapia OS (orale)\nZyloric 100mg ×1 (dal 28/09)\nDeltacortene 25mg ×1 (dal 28/09)\n\nTerapia SC (sottocute)\nClexane 4000 UI ×1 (dal 28/09)",
+   "pregressi": [
+    {
+     "nome": "Isolyte 1000ml",
+     "date": [
+      "dal 28/09",
+      "sospeso il 05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Plasil 10mg",
+     "date": [
+      "05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Norvasc 5mg",
+     "date": [
+      "dal 28/09",
+      "sospeso il 30/09"
+     ],
+     "ord": "20260930"
+    },
+    {
+     "nome": "Lasix 20mg",
+     "date": [
+      "dal 02/12",
+      "sospeso il 28/09"
+     ],
+     "ord": "20260928"
+    },
+    {
+     "nome": "Triatec 5mg",
+     "date": [
+      "dal 02/12",
+      "sospeso il 28/09"
+     ],
+     "ord": "20260928"
+    }
+   ]
+  },
+  "22+1": {
+   "corso": "Terapia EV\nLasix 20mg ×2 (dal 02/10)\nPantorc 40mg ×1 (dal 02/10)\nCeftriaxone 2g ×1 (dal 02/10)\n\nTerapia OS (orale)\nLaevolac 15ml ×2 (dal 02/10)\nTorvast 20mg ×1 (dal 02/10)\nCardioaspirin 100mg ×1 (dal 02/10)",
+   "pregressi": [
+    {
+     "nome": "Isolyte 1000ml",
+     "date": [
+      "dal 02/10",
+      "sospeso il 05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Lasix 20mg",
+     "date": [
+      "05/10"
+     ],
+     "ord": "20261005"
+    }
+   ]
+  },
+  "23+1": {
+   "corso": "Terapia EV\nPantorc 40mg ×1 (dal 24/09)\n\nTerapia OS (orale)\nEutirox 75mcg ×1 (dal 24/09)\nLaevolac 15ml ×2 (dal 24/09 · se alvo chiuso da 48 ore)\n\nTerapia SC (sottocute)\nClexane 6000 UI ×2 (dal 24/09)",
+   "pregressi": [
+    {
+     "nome": "Perfalgan 1g",
+     "date": [
+      "dal 24/09",
+      "sospeso il 05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Plasil 10mg",
+     "date": [
+      "05/10"
+     ],
+     "ord": "20261005"
+    }
+   ]
+  },
+  "24+1": {
+   "corso": "Terapia EV\nPantorc 40mg ×1 (dal 25/09)\n\nTerapia OS (orale)\nZyloric 100mg ×1 (dal 25/09)\nDeltacortene 25mg ×1 (dal 25/09)\n\nTerapia SC (sottocute)\nLantus 14 UI ×1 (dal 25/09)\nHumalog 6 UI ×3 a/b (dal 25/09 · max 30 UI/24h)\nClexane 4000 UI ×1 (dal 25/09)",
+   "pregressi": [
+    {
+     "nome": "Isolyte 1000ml",
+     "date": [
+      "dal 25/09",
+      "sospeso il 05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Lasix 20mg",
+     "date": [
+      "05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Norvasc 5mg",
+     "date": [
+      "dal 25/09",
+      "sospeso il 27/09"
+     ],
+     "ord": "20260927"
+    }
+   ]
+  },
+  "25+1": {
+   "corso": "Terapia OS (orale)\nCardioaspirin 100mg ×1 (dal 02/10)\nTorvast 20mg ×1 (dal 02/10)",
+   "pregressi": [
+    {
+     "nome": "Pantorc 40mg",
+     "date": [
+      "dal 02/10",
+      "sospeso il 05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Plasil 10mg",
+     "date": [
+      "05/10"
+     ],
+     "ord": "20261005"
+    }
+   ]
+  },
+  "APPOGGIO AL 9E+1": {
+   "corso": "Terapia EV\nPiperacillina/Tazobactam 4,5g ×4 (dal 02/10)\nVancomicina 1g ×2 (dal 03/10)\nPantorc 40mg ×1 (dal 02/10)\nPerfalgan 1g ×2 a/b (dal 02/10 · max 3g/24h)\n\nTerapia OS (orale)\nEutirox 75mcg ×1 (dal 02/10)\nLaevolac 15ml ×2 (dal 02/10 · se alvo chiuso da 48 ore)\n\nTerapia SC (sottocute)\nClexane 4000 UI ×1 (dal 02/10)\n\nAerosol\nBreva 10 gtt ×3 (dal 02/10)",
+   "pregressi": [
+    {
+     "nome": "Isolyte 1000ml",
+     "date": [
+      "dal 02/10",
+      "sospeso il 05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Lasix 20mg",
+     "date": [
+      "05/10"
+     ],
+     "ord": "20261005"
+    }
+   ]
+  },
+  "1+2": {
+   "corso": "Terapia EV\nCeftriaxone 2g ×1 (dal 28/09)\nPerfalgan 1g ×2 a/b (dal 28/09 · max 3g/24h)\nPantorc 40mg ×1 (dal 28/09)\n\nTerapia OS (orale)\nNorvasc 5mg ×1 (dal 28/09)\nZyloric 100mg ×1 (dal 28/09)\nDeltacortene 25mg ×1 (dal 28/09)\nLaevolac 15ml ×2 (dal 06/10)\n\nTerapia SC (sottocute)\nClexane 4000 UI ×1 (dal 28/09)\n\nAerosol\nBreva 10 gtt ×3 (dal 28/09)",
+   "pregressi": [
+    {
+     "nome": "Isolyte 1000ml",
+     "date": [
+      "dal 28/09",
+      "sospeso il 05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Plasil 10mg",
+     "date": [
+      "05/10"
+     ],
+     "ord": "20261005"
+    }
+   ]
+  },
+  "2+2": {
+   "corso": "Terapia EV\nLasix 40mg ×3 (dal 26/09)\n\nTerapia OS (orale)\nCongescor 2,5mg ×1 (dal 26/09)\nTriatec 5mg ×1 (dal 26/09)\nCardioaspirin 100mg ×1 (dal 26/09)\nTorvast 20mg ×1 (dal 26/09)\nLaevolac 15ml ×2 (dal 06/10)\n\nTerapia SC (sottocute)\nClexane 4000 UI ×1 (dal 26/09)\nHumalog 6 UI ×3 a/b (dal 26/09 · max 30 UI/24h)\nLantus 14 UI ×1 (dal 26/09)",
+   "pregressi": [
+    {
+     "nome": "Pantorc 40mg",
+     "date": [
+      "dal 26/09",
+      "sospeso il 05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Lasix 20mg",
+     "date": [
+      "05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Glucophage 500mg",
+     "date": [
+      "dal 26/09",
+      "sospeso il 27/09"
+     ],
+     "ord": "20260927"
+    }
+   ]
+  },
+  "3+2": {
+   "corso": "Terapia EV\nPantorc 40mg ×2 (dal 17/09)\n\nTerapia OS (orale)\nCongescor 2,5mg ×1 (dal 17/09)\nEutirox 75mcg ×1 (dal 17/09)\nLaevolac 15ml ×2 (dal 17/09 · se alvo chiuso da 48 ore)\nSeroquel 25mg ×1 a/b (dal 06/10)",
+   "pregressi": [
+    {
+     "nome": "Isolyte 1000ml",
+     "date": [
+      "dal 17/09",
+      "sospeso il 05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Plasil 10mg",
+     "date": [
+      "17/09",
+      "05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Tranex 500mg",
+     "date": [
+      "17/09"
+     ],
+     "ord": "20260917"
+    },
+    {
+     "nome": "Eliquis 5mg",
+     "date": [
+      "dal 13/08",
+      "sospeso il 17/09"
+     ],
+     "ord": "20260917"
+    }
+   ]
+  },
+  "4+2": {
+   "corso": "Terapia EV\nUrbason 40mg ×2 (dal 02/10)\n\nTerapia OS (orale)\nSeroquel 25mg ×1 a/b (dal 02/10)\nZyloric 100mg ×1 (dal 02/10)\nDeltacortene 25mg ×1 (dal 02/10)\nLaevolac 15ml ×2 (dal 06/10)\n\nTerapia SC (sottocute)\nClexane 4000 UI ×1 (dal 02/10)\n\nAerosol\nBreva 10 gtt ×3 (dal 02/10)\nAircort 1mg ×2 (dal 02/10)",
+   "pregressi": [
+    {
+     "nome": "Ceftriaxone 2g",
+     "date": [
+      "dal 02/10 al 06/10",
+      "completato il 06/10"
+     ],
+     "ord": "20261006"
+    },
+    {
+     "nome": "Pantorc 40mg",
+     "date": [
+      "dal 02/10",
+      "sospeso il 05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Lasix 20mg",
+     "date": [
+      "05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Norvasc 5mg",
+     "date": [
+      "dal 02/10",
+      "sospeso il 04/10"
+     ],
+     "ord": "20261004"
+    }
+   ]
+  },
+  "6+2": {
+   "corso": "Terapia EV\nMeropenem Triidrato 1g ×3 (dal 23/09)\nPerfalgan 1g ×2 a/b (dal 22/09 · max 3g/24h)\nPantorc 40mg ×1 (dal 22/09)\n\nTerapia OS (orale)\nSeroquel 25mg ×1 a/b (dal 22/09)\nTorvast 20mg ×1 (dal 22/09)\nCardioaspirin 100mg ×1 (dal 22/09)\nLaevolac 15ml ×2 (dal 06/10)\n\nTerapia SC (sottocute)\nClexane 4000 UI ×1 (dal 22/09)",
+   "pregressi": [
+    {
+     "nome": "Isolyte 1000ml",
+     "date": [
+      "dal 22/09",
+      "sospeso il 05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Plasil 10mg",
+     "date": [
+      "05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Piperacillina/Tazobactam 4,5g",
+     "date": [
+      "dal 22/09",
+      "sospeso il 23/09"
+     ],
+     "ord": "20260923"
+    }
+   ]
+  },
+  "7+2": {
+   "corso": "Terapia EV\nCordarone 900mg ×1 (dal 25/09)\n\nTerapia OS (orale)\nCongescor 2,5mg ×1 (dal 25/09)\nTriatec 5mg ×1 (dal 25/09)\nEutirox 75mcg ×1 (dal 25/09)\nLaevolac 15ml ×2 (dal 25/09 · se alvo chiuso da 48 ore)\nSeroquel 25mg ×1 a/b (dal 06/10)\n\nTerapia SC (sottocute)\nClexane 6000 UI ×2 (dal 25/09)",
+   "pregressi": [
+    {
+     "nome": "Pantorc 40mg",
+     "date": [
+      "dal 25/09",
+      "sospeso il 05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Lasix 20mg",
+     "date": [
+      "05/10"
+     ],
+     "ord": "20261005"
+    }
+   ]
+  },
+  "8+2": {
+   "corso": "Terapia EV\nSodio Cloruro 500ml ×2 (dal 19/09)\nPantorc 40mg ×1 (dal 19/09)\n\nTerapia OS (orale)\nZyloric 100mg ×1 (dal 19/09)\nDeltacortene 25mg ×1 (dal 19/09)\nLaevolac 15ml ×2 (dal 06/10)\n\nTerapia SC (sottocute)\nClexane 4000 UI ×1 (dal 19/09)",
+   "pregressi": [
+    {
+     "nome": "Isolyte 1000ml",
+     "date": [
+      "dal 19/09",
+      "sospeso il 05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Plasil 10mg",
+     "date": [
+      "05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Norvasc 5mg",
+     "date": [
+      "dal 19/09",
+      "sospeso il 21/09"
+     ],
+     "ord": "20260921"
+    },
+    {
+     "nome": "Lasix 20mg",
+     "date": [
+      "dal 23/11",
+      "sospeso il 19/09"
+     ],
+     "ord": "20260919"
+    },
+    {
+     "nome": "Triatec 5mg",
+     "date": [
+      "dal 23/11",
+      "sospeso il 19/09"
+     ],
+     "ord": "20260919"
+    }
+   ]
+  },
+  "9+2": {
+   "corso": "Terapia EV\nLasix 20mg ×2 (dal 26/09)\nPantorc 40mg ×1 (dal 26/09)\nCeftriaxone 2g ×1 (dal 26/09)\n\nTerapia OS (orale)\nLaevolac 15ml ×2 (dal 26/09)\nTorvast 20mg ×1 (dal 26/09)\nCardioaspirin 100mg ×1 (dal 26/09)\nSeroquel 25mg ×1 a/b (dal 06/10)",
+   "pregressi": [
+    {
+     "nome": "Isolyte 1000ml",
+     "date": [
+      "dal 26/09",
+      "sospeso il 05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Lasix 20mg",
+     "date": [
+      "05/10"
+     ],
+     "ord": "20261005"
+    }
+   ]
+  },
+  "10+2": {
+   "corso": "Terapia EV\nPantorc 40mg ×1 (dal 19/09)\n\nTerapia OS (orale)\nEutirox 75mcg ×1 (dal 19/09)\nLaevolac 15ml ×2 (dal 19/09 · se alvo chiuso da 48 ore)\nSeroquel 25mg ×1 a/b (dal 06/10)\n\nTerapia SC (sottocute)\nClexane 6000 UI ×2 (dal 19/09)",
+   "pregressi": [
+    {
+     "nome": "Perfalgan 1g",
+     "date": [
+      "dal 19/09",
+      "sospeso il 05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Plasil 10mg",
+     "date": [
+      "05/10"
+     ],
+     "ord": "20261005"
+    }
+   ]
+  },
+  "11+2": {
+   "corso": "Terapia EV\nPantorc 40mg ×1 (dal 30/09)\n\nTerapia OS (orale)\nZyloric 100mg ×1 (dal 30/09)\nDeltacortene 25mg ×1 (dal 30/09)\nLaevolac 15ml ×2 (dal 06/10)\n\nTerapia SC (sottocute)\nLantus 14 UI ×1 (dal 30/09)\nHumalog 6 UI ×3 a/b (dal 30/09 · max 30 UI/24h)\nClexane 4000 UI ×1 (dal 30/09)",
+   "pregressi": [
+    {
+     "nome": "Isolyte 1000ml",
+     "date": [
+      "dal 30/09",
+      "sospeso il 05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Lasix 20mg",
+     "date": [
+      "05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Norvasc 5mg",
+     "date": [
+      "dal 30/09",
+      "sospeso il 02/10"
+     ],
+     "ord": "20261002"
+    }
+   ]
+  },
+  "12+2": {
+   "corso": "Terapia OS (orale)\nCardioaspirin 100mg ×1 (dal 24/09)\nTorvast 20mg ×1 (dal 24/09)\nLaevolac 15ml ×2 (dal 06/10)",
+   "pregressi": [
+    {
+     "nome": "Pantorc 40mg",
+     "date": [
+      "dal 24/09",
+      "sospeso il 05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Plasil 10mg",
+     "date": [
+      "05/10"
+     ],
+     "ord": "20261005"
+    }
+   ]
+  },
+  "13+2": {
+   "corso": "Terapia EV\nPiperacillina/Tazobactam 4,5g ×4 (dal 25/09)\nVancomicina 1g ×2 (dal 26/09)\nPantorc 40mg ×1 (dal 25/09)\nPerfalgan 1g ×2 a/b (dal 25/09 · max 3g/24h)\n\nTerapia OS (orale)\nEutirox 75mcg ×1 (dal 25/09)\nLaevolac 15ml ×2 (dal 25/09 · se alvo chiuso da 48 ore)\nSeroquel 25mg ×1 a/b (dal 06/10)\n\nTerapia SC (sottocute)\nClexane 4000 UI ×1 (dal 25/09)\n\nAerosol\nBreva 10 gtt ×3 (dal 25/09)",
+   "pregressi": [
+    {
+     "nome": "Isolyte 1000ml",
+     "date": [
+      "dal 25/09",
+      "sospeso il 05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Lasix 20mg",
+     "date": [
+      "05/10"
+     ],
+     "ord": "20261005"
+    }
+   ]
+  },
+  "15+2": {
+   "corso": "Terapia EV\nCeftriaxone 2g ×1 (dal 25/09)\nPerfalgan 1g ×2 a/b (dal 25/09 · max 3g/24h)\nPantorc 40mg ×1 (dal 25/09)\n\nTerapia OS (orale)\nNorvasc 5mg ×1 (dal 25/09)\nZyloric 100mg ×1 (dal 25/09)\nDeltacortene 25mg ×1 (dal 25/09)\nLaevolac 15ml ×2 (dal 06/10)\n\nTerapia SC (sottocute)\nClexane 4000 UI ×1 (dal 25/09)\n\nAerosol\nBreva 10 gtt ×3 (dal 25/09)",
+   "pregressi": [
+    {
+     "nome": "Isolyte 1000ml",
+     "date": [
+      "dal 25/09",
+      "sospeso il 05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Plasil 10mg",
+     "date": [
+      "05/10"
+     ],
+     "ord": "20261005"
+    }
+   ]
+  },
+  "16+2": {
+   "corso": "Terapia EV\nLasix 40mg ×3 (dal 02/10)\n\nTerapia OS (orale)\nCongescor 2,5mg ×1 (dal 02/10)\nTriatec 5mg ×1 (dal 02/10)\nCardioaspirin 100mg ×1 (dal 02/10)\nTorvast 20mg ×1 (dal 02/10)\nLaevolac 15ml ×2 (dal 06/10)\n\nTerapia SC (sottocute)\nClexane 4000 UI ×1 (dal 02/10)\nHumalog 6 UI ×3 a/b (dal 02/10 · max 30 UI/24h)\nLantus 14 UI ×1 (dal 02/10)",
+   "pregressi": [
+    {
+     "nome": "Pantorc 40mg",
+     "date": [
+      "dal 02/10",
+      "sospeso il 05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Lasix 20mg",
+     "date": [
+      "05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Glucophage 500mg",
+     "date": [
+      "dal 02/10",
+      "sospeso il 03/10"
+     ],
+     "ord": "20261003"
+    }
+   ]
+  },
+  "17+2": {
+   "corso": "Terapia EV\nPantorc 40mg ×2 (dal 24/09)\n\nTerapia OS (orale)\nCongescor 2,5mg ×1 (dal 24/09)\nEutirox 75mcg ×1 (dal 24/09)\nLaevolac 15ml ×2 (dal 24/09 · se alvo chiuso da 48 ore)\nSeroquel 25mg ×1 a/b (dal 06/10)",
+   "pregressi": [
+    {
+     "nome": "Isolyte 1000ml",
+     "date": [
+      "dal 24/09",
+      "sospeso il 05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Plasil 10mg",
+     "date": [
+      "24/09",
+      "05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Tranex 500mg",
+     "date": [
+      "24/09"
+     ],
+     "ord": "20260924"
+    },
+    {
+     "nome": "Eliquis 5mg",
+     "date": [
+      "dal 20/08",
+      "sospeso il 24/09"
+     ],
+     "ord": "20260924"
+    }
+   ]
+  },
+  "18+2": {
+   "corso": "Terapia EV\nUrbason 40mg ×2 (dal 26/09)\n\nTerapia OS (orale)\nSeroquel 25mg ×1 a/b (dal 26/09)\nZyloric 100mg ×1 (dal 26/09)\nDeltacortene 25mg ×1 (dal 26/09)\nLaevolac 15ml ×2 (dal 06/10)\n\nTerapia SC (sottocute)\nClexane 4000 UI ×1 (dal 26/09)\n\nAerosol\nBreva 10 gtt ×3 (dal 26/09)\nAircort 1mg ×2 (dal 26/09)",
+   "pregressi": [
+    {
+     "nome": "Pantorc 40mg",
+     "date": [
+      "dal 26/09",
+      "sospeso il 05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Lasix 20mg",
+     "date": [
+      "05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Ceftriaxone 2g",
+     "date": [
+      "dal 26/09 al 30/09",
+      "completato"
+     ],
+     "ord": "20260930"
+    },
+    {
+     "nome": "Norvasc 5mg",
+     "date": [
+      "dal 26/09",
+      "sospeso il 28/09"
+     ],
+     "ord": "20260928"
+    }
+   ]
+  },
+  "19+2": {
+   "corso": "Terapia EV\nMeropenem Triidrato 1g ×3 (dal 30/09)\nPerfalgan 1g ×2 a/b (dal 29/09 · max 3g/24h)\nPantorc 40mg ×1 (dal 29/09)\n\nTerapia OS (orale)\nSeroquel 25mg ×1 a/b (dal 29/09)\nTorvast 20mg ×1 (dal 29/09)\nCardioaspirin 100mg ×1 (dal 29/09)\nLaevolac 15ml ×2 (dal 06/10)\n\nTerapia SC (sottocute)\nClexane 4000 UI ×1 (dal 29/09)",
+   "pregressi": [
+    {
+     "nome": "Isolyte 1000ml",
+     "date": [
+      "dal 29/09",
+      "sospeso il 05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Plasil 10mg",
+     "date": [
+      "05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Piperacillina/Tazobactam 4,5g",
+     "date": [
+      "dal 29/09",
+      "sospeso il 30/09"
+     ],
+     "ord": "20260930"
+    }
+   ]
+  },
+  "20+2": {
+   "corso": "Terapia EV\nCordarone 900mg ×1 (dal 22/09)\n\nTerapia OS (orale)\nCongescor 2,5mg ×1 (dal 22/09)\nTriatec 5mg ×1 (dal 22/09)\nEutirox 75mcg ×1 (dal 22/09)\nLaevolac 15ml ×2 (dal 22/09 · se alvo chiuso da 48 ore)\nSeroquel 25mg ×1 a/b (dal 06/10)\n\nTerapia SC (sottocute)\nClexane 6000 UI ×2 (dal 22/09)",
+   "pregressi": [
+    {
+     "nome": "Pantorc 40mg",
+     "date": [
+      "dal 22/09",
+      "sospeso il 05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Lasix 20mg",
+     "date": [
+      "05/10"
+     ],
+     "ord": "20261005"
+    }
+   ]
+  },
+  "21+2": {
+   "corso": "Terapia EV\nSodio Cloruro 500ml ×2 (dal 28/09)\nPantorc 40mg ×1 (dal 28/09)\n\nTerapia OS (orale)\nZyloric 100mg ×1 (dal 28/09)\nDeltacortene 25mg ×1 (dal 28/09)\nLaevolac 15ml ×2 (dal 06/10)\n\nTerapia SC (sottocute)\nClexane 4000 UI ×1 (dal 28/09)",
+   "pregressi": [
+    {
+     "nome": "Isolyte 1000ml",
+     "date": [
+      "dal 28/09",
+      "sospeso il 05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Plasil 10mg",
+     "date": [
+      "05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Norvasc 5mg",
+     "date": [
+      "dal 28/09",
+      "sospeso il 30/09"
+     ],
+     "ord": "20260930"
+    },
+    {
+     "nome": "Lasix 20mg",
+     "date": [
+      "dal 02/12",
+      "sospeso il 28/09"
+     ],
+     "ord": "20260928"
+    },
+    {
+     "nome": "Triatec 5mg",
+     "date": [
+      "dal 02/12",
+      "sospeso il 28/09"
+     ],
+     "ord": "20260928"
+    }
+   ]
+  },
+  "22+2": {
+   "corso": "Terapia EV\nLasix 20mg ×2 (dal 02/10)\nPantorc 40mg ×1 (dal 02/10)\nCeftriaxone 2g ×1 (dal 02/10)\n\nTerapia OS (orale)\nLaevolac 15ml ×2 (dal 02/10)\nTorvast 20mg ×1 (dal 02/10)\nCardioaspirin 100mg ×1 (dal 02/10)\nSeroquel 25mg ×1 a/b (dal 06/10)",
+   "pregressi": [
+    {
+     "nome": "Isolyte 1000ml",
+     "date": [
+      "dal 02/10",
+      "sospeso il 05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Lasix 20mg",
+     "date": [
+      "05/10"
+     ],
+     "ord": "20261005"
+    }
+   ]
+  },
+  "23+2": {
+   "corso": "Terapia EV\nPantorc 40mg ×1 (dal 24/09)\n\nTerapia OS (orale)\nEutirox 75mcg ×1 (dal 24/09)\nLaevolac 15ml ×2 (dal 24/09 · se alvo chiuso da 48 ore)\nSeroquel 25mg ×1 a/b (dal 06/10)\n\nTerapia SC (sottocute)\nClexane 6000 UI ×2 (dal 24/09)",
+   "pregressi": [
+    {
+     "nome": "Perfalgan 1g",
+     "date": [
+      "dal 24/09",
+      "sospeso il 05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Plasil 10mg",
+     "date": [
+      "05/10"
+     ],
+     "ord": "20261005"
+    }
+   ]
+  },
+  "24+2": {
+   "corso": "Terapia EV\nPantorc 40mg ×1 (dal 25/09)\n\nTerapia OS (orale)\nZyloric 100mg ×1 (dal 25/09)\nDeltacortene 25mg ×1 (dal 25/09)\nLaevolac 15ml ×2 (dal 06/10)\n\nTerapia SC (sottocute)\nLantus 14 UI ×1 (dal 25/09)\nHumalog 6 UI ×3 a/b (dal 25/09 · max 30 UI/24h)\nClexane 4000 UI ×1 (dal 25/09)",
+   "pregressi": [
+    {
+     "nome": "Isolyte 1000ml",
+     "date": [
+      "dal 25/09",
+      "sospeso il 05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Lasix 20mg",
+     "date": [
+      "05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Norvasc 5mg",
+     "date": [
+      "dal 25/09",
+      "sospeso il 27/09"
+     ],
+     "ord": "20260927"
+    }
+   ]
+  },
+  "25+2": {
+   "corso": "Terapia OS (orale)\nCardioaspirin 100mg ×1 (dal 02/10)\nTorvast 20mg ×1 (dal 02/10)\nLaevolac 15ml ×2 (dal 06/10)",
+   "pregressi": [
+    {
+     "nome": "Pantorc 40mg",
+     "date": [
+      "dal 02/10",
+      "sospeso il 05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Plasil 10mg",
+     "date": [
+      "05/10"
+     ],
+     "ord": "20261005"
+    }
+   ]
+  },
+  "APPOGGIO AL 9E+2": {
+   "corso": "Terapia EV\nPiperacillina/Tazobactam 4,5g ×4 (dal 02/10)\nVancomicina 1g ×2 (dal 03/10)\nPantorc 40mg ×1 (dal 02/10)\nPerfalgan 1g ×2 a/b (dal 02/10 · max 3g/24h)\n\nTerapia OS (orale)\nEutirox 75mcg ×1 (dal 02/10)\nLaevolac 15ml ×2 (dal 02/10 · se alvo chiuso da 48 ore)\nSeroquel 25mg ×1 a/b (dal 06/10)\n\nTerapia SC (sottocute)\nClexane 4000 UI ×1 (dal 02/10)\n\nAerosol\nBreva 10 gtt ×3 (dal 02/10)",
+   "pregressi": [
+    {
+     "nome": "Isolyte 1000ml",
+     "date": [
+      "dal 02/10",
+      "sospeso il 05/10"
+     ],
+     "ord": "20261005"
+    },
+    {
+     "nome": "Lasix 20mg",
+     "date": [
+      "05/10"
+     ],
+     "ord": "20261005"
+    }
+   ]
+  }
+ }
+}

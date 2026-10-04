@@ -10,7 +10,9 @@
 //    Teams) sono ridotti al solo sito, senza il percorso del documento
 //  - impostazioni: stesse chiavi; i destinatari della mail dimissioni diventano
 //    indirizzi fittizi (example.com), i riferimenti Drive restano vuoti
-//  - utenti_autorizzati: gli stessi account della produzione
+//  - utenti_autorizzati: gli account della produzione vengono aggiunti; quelli
+//    che esistono solo nel collaudo (utente delle prove automatiche, persone
+//    ammesse al solo collaudo) restano
 const crypto = require('crypto');
 const { collaudo, produzione } = require('./sb.js');
 
@@ -51,13 +53,14 @@ function dollaro(testo) {
 
   const sql = `
     truncate public.tipologie, public.scale_valutazione, public.link_utili, public.impostazioni,
-             public.utenti_autorizzati, public.app_version, public.keepalive, public.google_oauth;
+             public.app_version, public.keepalive, public.google_oauth;
     insert into public.tipologie select * from jsonb_populate_recordset(null::public.tipologie, ${dollaro(tipologie)}::jsonb);
     insert into public.scale_valutazione select * from jsonb_populate_recordset(null::public.scale_valutazione, ${dollaro(scale)}::jsonb);
     insert into public.link_utili select * from jsonb_populate_recordset(null::public.link_utili, ${dollaro(link)}::jsonb);
     select setval('public.link_utili_id_seq', (select coalesce(max(id), 1) from public.link_utili));
     insert into public.impostazioni select * from jsonb_populate_recordset(null::public.impostazioni, ${dollaro(impostazioni)}::jsonb);
-    insert into public.utenti_autorizzati select * from jsonb_populate_recordset(null::public.utenti_autorizzati, ${dollaro(utenti)}::jsonb);
+    insert into public.utenti_autorizzati select * from jsonb_populate_recordset(null::public.utenti_autorizzati, ${dollaro(utenti)}::jsonb)
+      on conflict (email) do nothing;
     insert into public.app_version (id, sha, deployed_at, message) values (1, '', 0, 'collaudo');
     insert into public.keepalive (id) values (1);
     insert into public.google_oauth (id, richiedi_utente) values ('reparto', ${interruttore && interruttore.richiedi_utente ? 'true' : 'false'});

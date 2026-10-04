@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>TrakCare FINTO — collaudo Consegne</title>
+<style>
+  :root { --verde: #00695c; --bordo: #cfd8dc; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.4 system-ui, "Segoe UI", Arial, sans-serif; background: #eceff1; color: #263238; }
+  header { background: #37474f; color: #fff; padding: 10px 16px; display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
+  header h1 { font-size: 16px; margin: 0; font-weight: 700; }
+  header .avviso { background: #ff6f00; padding: 3px 10px; border-radius: 12px; font-weight: 700; font-size: 12px; letter-spacing: .05em; }
+  header select { font: inherit; padding: 4px 8px; border-radius: 6px; border: 0; max-width: 100%; }
+  main { padding: 14px 16px 60px; }
+  .banner-paziente { background: #fff; border: 1px solid var(--bordo); border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; display: flex; flex-wrap: wrap; gap: 6px 22px; align-items: baseline; }
+  .banner-paziente .nome { font-size: 18px; font-weight: 700; }
+  .banner-paziente .etichetta { color: #607d8b; font-size: 12px; }
+  nav { display: flex; gap: 6px; margin-bottom: 10px; }
+  nav button { font: inherit; padding: 7px 16px; border: 1px solid var(--bordo); background: #fff; border-radius: 8px 8px 0 0; cursor: pointer; }
+  nav button.attivo { background: var(--verde); color: #fff; border-color: var(--verde); font-weight: 700; }
+  .spiegazione { color: #546e7a; font-size: 13px; margin: 0 0 10px; }
+  .scorri { overflow-x: auto; background: #fff; border: 1px solid var(--bordo); border-radius: 0 8px 8px 8px; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { border: 1px solid #e0e6e9; padding: 5px 8px; vertical-align: top; text-align: left; }
+  th { background: #f5f7f8; font-weight: 600; white-space: nowrap; }
+  th.oggi { background: #e0f2f1; }
+  tr.componentTableRowGroup td { background: #e0f2f1; font-weight: 700; color: var(--verde); letter-spacing: .03em; }
+  tr.sottotitolo td { background: #fafafa; color: #607d8b; font-style: italic; }
+  td.giorno { text-align: center; width: 46px; color: var(--verde); font-weight: 700; }
+  .linkBold { font-weight: 700; color: var(--verde); text-decoration: none; }
+  .clsCeasedClinProfDesc { color: #c62828; font-weight: 700; }
+  .paginazione { padding: 8px 10px; display: flex; gap: 14px; align-items: center; border-bottom: 1px solid #e0e6e9; }
+  .paginazione span[role=button] { cursor: pointer; font-size: 18px; color: var(--verde); user-select: none; padding: 0 6px; }
+  td.alto { color: #c62828; font-weight: 700; } td.basso { color: #1565c0; font-weight: 700; }
+  .vuoto { padding: 24px; color: #607d8b; }
+</style>
+</head>
+<body>
+<header>
+  <h1>TrakCare</h1>
+  <span class="avviso">FINTO — COLLAUDO, DATI INVENTATI</span>
+  <label>Paziente: <select id="scegliPaziente"></select></label>
+  <label>Giorno: <select id="scegliGiorno"></select></label>
+</header>
+<main>
+  <div class="banner-paziente" id="bannerPaziente"></div>
+  <nav>
+    <button type="button" data-vista="terapia">Pannello Terapia</button>
+    <button type="button" data-vista="laboratorio">Laboratorio</button>
+  </nav>
+  <p class="spiegazione" id="spiegazione"></p>
+  <div class="scorri" id="contenuto"></div>
+</main>
+
+<script src="catalogo.js"></script>
+<script>
+// Finto TrakCare del collaudo: riproduce la struttura delle due pagine da cui i
+// segnalibri «Prendi Terapia Trak» e «Prendi Esami Trak» leggono i dati, con i
+// pazienti inventati del catalogo. Serve a provare l'importazione senza toccare
+// il TrakCare vero e senza portare dati veri nel collaudo.
+// Il giorno «come nelle schede» mostra ciò che il generatore ha già scritto
+// nelle Consegne di collaudo (reimportarlo non deve cambiare nulla); i giorni
+// successivi simulano il passare del tempo: prelievi nuovi, terapia modificata.
+(function () {
+  var C = window.CatalogoFinto;
+  var el = function (tag, attr, figli) {
+    var n = document.createElement(tag);
+    Object.keys(attr || {}).forEach(function (k) { if (k === 'text') n.textContent = attr[k]; else n.setAttribute(k, attr[k]); });
+    (figli || []).forEach(function (f) { n.appendChild(typeof f === 'string' ? document.createTextNode(f) : f); });
+    return n;
+  };
+  var stato = { piani: C.pianifica(), indice: 0, vista: 'terapia', giorno: 0, pagina: 0 };
+
+  function leggiHash() {
+    var p = new URLSearchParams(location.hash.replace(/^#/, ''));
+    if (p.get('letto')) { stato.piani.forEach(function (x, i) { if (x.paziente.Letto === p.get('letto')) stato.indice = i; }); }
+    if (p.get('vista') === 'laboratorio' || p.get('vista') === 'terapia') stato.vista = p.get('vista');
+    var g = parseInt(p.get('giorno'), 10);
+    if (g >= 0 && g <= C.GIORNI_AVANTI) stato.giorno = g;
+  }
+  function scriviHash() {
+    history.replaceState(null, '', '#letto=' + encodeURIComponent(stato.piani[stato.indice].paziente.Letto) + '&vista=' + stato.vista + '&giorno=' + stato.giorno);
+  }
+
+  // ── intestazione del paziente: gli id sono quelli che cercano i segnalibri ──
+  function disegnaBanner(p) {
+    var b = document.getElementById('bannerPaziente');
+    b.textContent = '';
+    var parti = p.nome.split(' ');
+    // il cognome può avere due parole ("DE LUCA"): il nome di battesimo è ciò che resta
+    var nCognome = /^(DE|DI|DA|DEL|DELLA|LO|LA)$/.test(parti[0]) ? 2 : 1;
+    b.appendChild(el('span', { class: 'nome' }, [
+      el('span', { id: 'PAPerson_Banner_BANNERSurname', text: parti.slice(0, nCognome).join(' ') }), ' ',
+      el('span', { id: 'PAPerson_Banner_BANNERName2', text: parti.slice(nCognome).join(' ') }),
+    ]));
+    b.appendChild(el('span', {}, [el('span', { class: 'etichetta', text: 'ID Paz. ' }), el('span', { id: 'PAPerson_Banner_BANNERRegistrationNo', text: p.paziente.CodiceSanitario })]));
+    b.appendChild(el('span', {}, [el('span', { class: 'etichetta', text: 'Nato il ' }), p.paziente.DataNascita + ' (' + p.paziente.Sesso + ')']));
+    b.appendChild(el('span', {}, [el('span', { class: 'etichetta', text: 'Letto ' }), p.paziente.Letto + ' — ' + p.paziente.TipologiaLetto]));
+  }
+
+  // ── Pannello Terapia: griglia farmaco × giorno ─────────────────────────
+  function disegnaTerapia(p) {
+    var righe = C.terapiaDi(p, stato.giorno);
+    var giorni = C.finestra(stato.giorno), oggi = C.dmy(C.giorno(stato.giorno));
+    var t = el('table', { class: 'componentTable componentTableGrid' });
+    var testa = el('tr', {}, [el('th', { text: '' }), el('th', { text: 'Prestazione' }), el('th', { text: '' })]);
+    giorni.forEach(function (d) { testa.appendChild(el('th', d === oggi ? { text: d, class: 'oggi' } : { text: d })); });
+    t.appendChild(testa);
+
+    function gruppo(nome) { t.appendChild(el('tr', { class: 'componentTableRowGroup' }, [el('td', { colspan: String(3 + giorni.length), text: nome })])); }
+    function sottotitolo(testo) {
+      var tr = el('tr', { class: 'componentTableRow sottotitolo' }, [el('td'), el('td', { text: testo }), el('td')]);
+      giorni.forEach(function () { tr.appendChild(el('td')); });
+      t.appendChild(tr);
+    }
+    // una riga del catalogo diventa una riga della griglia: nome in grassetto col
+    // tooltip delle date, stato di chiusura in rosso, un segno nei giorni riempiti
+    function farmaco(r) {
+      var dati = String(r.Giorni || '').split(/\s+/);
+      var testo = r.Prestazione;
+      if (r.Stato && testo.slice(-r.Stato.length) === r.Stato) testo = testo.slice(0, -r.Stato.length).replace(/\s+$/, '');
+      var taglio = testo.indexOf(' — ');
+      var cella = el('td', {}, [
+        el('a', { class: 'linkBold', href: '#', title: r.Info || '', onclick: 'return false' }, [taglio > 0 ? testo.slice(0, taglio) : testo]),
+        taglio > 0 ? testo.slice(taglio) : '',
+      ]);
+      if (r.Stato) { cella.appendChild(document.createTextNode(' ')); cella.appendChild(el('span', { class: 'clsCeasedClinProfDesc', title: r.StatoInfo || '', text: r.Stato })); }
+      var tr = el('tr', { class: 'componentTableRow' }, [el('td', { text: r.Stato ? '■' : '●' }), cella, el('td')]);
+      giorni.forEach(function (d) { tr.appendChild(el('td', { class: 'giorno', text: dati.indexOf(d) >= 0 ? '✓' : '' })); });
+      t.appendChild(tr);
+    }
+
+    var ev = righe.filter(function (r) { return r.Gruppo === 'ENDOVENA'; }), altri = righe.filter(function (r) { return r.Gruppo !== 'ENDOVENA'; });
+    if (ev.length) { gruppo('ENDOVENA'); sottotitolo('Infusioni e boli'); ev.forEach(farmaco); }
+    if (altri.length) { gruppo('TERAPIA'); sottotitolo('Orale, sottocute, aerosol'); altri.forEach(farmaco); }
+    // gruppi non farmacologici: i segnalibri li devono saltare
+    gruppo('Piano infermieristico');
+    farmaco({ Prestazione: 'Rilevazione parametri vitali — ogni 8 ore — Continuativo', Giorni: giorni.join(' '), Info: '' });
+    farmaco({ Prestazione: 'Mobilizzazione in poltrona — 2 volte al giorno — Continuativo', Giorni: giorni.join(' '), Info: '' });
+    gruppo('PARAMETRI CLINICI');
+    farmaco({ Prestazione: 'Bilancio idrico — nelle 24 ore — Continuativo', Giorni: giorni.join(' '), Info: '' });
+
+    var c = document.getElementById('contenuto');
+    c.textContent = '';
+    c.appendChild(t);
+    document.getElementById('spiegazione').textContent = 'Questa è la pagina «Terapia → Pannello Terapia». Premi qui il segnalibro «Prendi Terapia Trak», poi nelle Consegne (collaudo) apri la scheda di ' + p.nome + ' e premi l\'icona «Terapia».';
+  }
+
+  // ── Laboratorio: colonne-prelievo a pagine, freccia «successivo» ───────
+  function disegnaLaboratorio(p) {
+    var pagine = C.labDi(p, stato.giorno);   // dalla più recente
+    var c = document.getElementById('contenuto');
+    c.textContent = '';
+    var t = el('table', { id: 'tOEOrdItem_ListLabCummEMRList_0' });
+    var testa = el('tr');
+    t.appendChild(testa);
+    var fisse = ['Esame', 'Intervallo di riferimento', 'Unità', 'Andamento'];
+    if (!pagine.length) {
+      // paziente senza prelievi: la griglia c'è ma è vuota, e non ha la freccia
+      fisse.forEach(function (h) { testa.appendChild(el('th', { text: h })); });
+      c.appendChild(t);
+      c.appendChild(el('div', { class: 'vuoto', text: 'Nessun esame di laboratorio per questo paziente.' }));
+      document.getElementById('spiegazione').textContent = 'Paziente senza esami: premendo «Prendi Esami Trak» il segnalibro deve avvisare che la tabella è vuota.';
+      return;
+    }
+    if (stato.pagina >= pagine.length) stato.pagina = pagine.length - 1;
+    var pg = pagine[stato.pagina];
+    var barra = el('div', { class: 'paginazione' }, [
+      el('span', { role: 'button', id: 'paginaPrecedente', title: 'Prelievi più recenti', text: '◀' }),
+      el('span', { text: 'Pagina ' + (stato.pagina + 1) + ' di ' + pagine.length }),
+      // l'id è quello della freccia «Successivo» del TrakCare: resta visibile anche all'ultima pagina
+      el('span', { role: 'button', id: 'OEOrdItem_ListLabCummEMRList_0-column-DynamicData-nextPageIcon', title: 'Prelievi precedenti', text: '▶' }),
+    ]);
+    fisse.concat(pg.int.slice(3)).forEach(function (h) { testa.appendChild(el('th', { text: h })); });
+    pg.righe.forEach(function (r) {
+      var tr = el('tr');
+      var prima = el('td');
+      if (r.b) prima.appendChild(el('b', { text: r.c[0] })); else prima.textContent = r.c[0];
+      tr.appendChild(prima);
+      tr.appendChild(el('td', { text: r.c[1] || '' }));
+      tr.appendChild(el('td', { text: r.c[2] || '' }));
+      tr.appendChild(el('td', { text: '' }));
+      r.c.slice(3).forEach(function (v) { tr.appendChild(el('td', { class: /\sH$/.test(v) ? 'alto' : (/\sL$/.test(v) ? 'basso' : ''), text: v })); });
+      t.appendChild(tr);
+    });
+    c.appendChild(barra);
+    c.appendChild(t);
+    var vai = function (delta) {
+      var nuova = stato.pagina + delta;
+      if (nuova < 0 || nuova >= pagine.length) return;   // a fine storico non cambia nulla
+      // il TrakCare vero ricarica la griglia con un attimo di ritardo
+      setTimeout(function () { stato.pagina = nuova; disegnaLaboratorio(p); }, 500);
+    };
+    document.getElementById('OEOrdItem_ListLabCummEMRList_0-column-DynamicData-nextPageIcon').addEventListener('click', function () { vai(1); });
+    document.getElementById('paginaPrecedente').addEventListener('click', function () { vai(-1); });
+    document.getElementById('spiegazione').textContent = 'Questa è la pagina «Laboratorio» del Dossier. Premi qui il segnalibro «Prendi Esami Trak» (sfoglia da solo tutte le pagine), poi nelle Consegne (collaudo) apri «Laboratorio» sulla scheda di ' + p.nome + ' e premi «Aggiorna Esami».';
+  }
+
+  function disegna() {
+    var p = stato.piani[stato.indice];
+    document.title = 'TrakCare FINTO — ' + p.nome;
+    disegnaBanner(p);
+    [].forEach.call(document.querySelectorAll('nav button'), function (b) { b.classList.toggle('attivo', b.getAttribute('data-vista') === stato.vista); });
+    if (stato.vista === 'laboratorio') disegnaLaboratorio(p); else disegnaTerapia(p);
+    scriviHash();
+  }
+
+  var selP = document.getElementById('scegliPaziente'), selG = document.getElementById('scegliGiorno');
+  stato.piani.forEach(function (p, i) {
+    selP.appendChild(el('option', { value: String(i), text: 'Letto ' + p.paziente.Letto + ' — ' + p.nome + (p.senzaEsami ? ' (senza esami)' : (p.labNellaScheda ? '' : ' (esami mai importati)')) }));
+  });
+  for (var g = 0; g <= C.GIORNI_AVANTI; g++) {
+    selG.appendChild(el('option', { value: String(g), text: C.dmy(C.giorno(g)) + (g === 0 ? ' — come nelle schede' : ' — ' + g + (g === 1 ? ' giorno dopo' : ' giorni dopo')) }));
+  }
+  leggiHash();
+  selP.value = String(stato.indice);
+  selG.value = String(stato.giorno);
+  selP.addEventListener('change', function () { stato.indice = Number(selP.value); stato.pagina = 0; disegna(); });
+  selG.addEventListener('change', function () { stato.giorno = Number(selG.value); stato.pagina = 0; disegna(); });
+  [].forEach.call(document.querySelectorAll('nav button'), function (b) {
+    b.addEventListener('click', function () { stato.vista = b.getAttribute('data-vista'); stato.pagina = 0; disegna(); });
+  });
+  disegna();
+})();
+</script>
+</body>
+</html>
