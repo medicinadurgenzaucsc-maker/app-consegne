@@ -202,10 +202,12 @@
     // ============================================================
     var _coloriTipologie = {};
 
+    // Il valore finisce dentro attributi style di varie liste: deve essere un
+    // colore CSS, qualunque cosa ci sia nella tabella «tipologie».
     function _getColoreTipo(tipo) {
       if (!tipo) return '#adb5bd';
-      if (_coloriTipologie[tipo]) return _coloriTipologie[tipo];
-      return stringToColor(tipo);
+      var salvato = Object.prototype.hasOwnProperty.call(_coloriTipologie, tipo) ? _coloriTipologie[tipo] : '';
+      return salvato ? _coloreSicuro(salvato, stringToColor(tipo)) : stringToColor(tipo);
     }
     // Esposto globalmente: app.js lo chiama dopo ogni aggiornamento DOM
     window._getColoreTipo = _getColoreTipo;
@@ -213,7 +215,7 @@
     function _aggiornaBadgePrincipali() {
       document.querySelectorAll('[id^="badge-tipo-"]').forEach(function(b) {
         var letto = b.id.replace('badge-tipo-alt-', '').replace('badge-tipo-', '');
-        var card = document.querySelector('.patient-card[data-bed="' + letto + '"]');
+        var card = document.querySelector('.patient-card[data-bed="' + _cssVal(letto) + '"]');
         if (!card) return;
         var tipo = (card.getAttribute('data-tipologia') || '').trim();
         if (tipo) { b.innerText = tipo; b.style.backgroundColor = _getColoreTipo(tipo); }
@@ -338,18 +340,18 @@
       }
       var html = '';
       _gtRighe.forEach(function(riga, idx) {
-        var color = riga.colore || stringToColor(riga.nomeNew || 'X');
+        var color = _coloreSicuro(riga.colore || stringToColor(riga.nomeNew || 'X'), '#78909c');
         html += '<div class="d-flex align-items-center gap-2 px-2 py-2 border-bottom gt-riga" data-idx="' + idx + '">' +
           '<div class="gt-swatch" data-idx="' + idx + '" ' +
                'style="width:36px;height:36px;border-radius:8px;background:' + color + ';' +
                'border:2px solid rgba(0,0,0,.15);cursor:pointer;flex-shrink:0;position:relative" ' +
                'title="Clicca per cambiare colore"></div>' +
           '<input type="text" class="form-control form-control-sm text-uppercase gt-nome-input" ' +
-                 'data-idx="' + idx + '" value="' + (riga.nomeNew || '').replace(/"/g,'&quot;') + '" ' +
+                 'data-idx="' + idx + '" value="' + _testoHtml(riga.nomeNew || '') + '" ' +
                  'placeholder="Nome tipologia" ' +
                  'style="max-width:220px;font-weight:600">' +
           '<span class="badge text-white ms-1 gt-badge-preview" data-idx="' + idx + '" ' +
-                'style="background:' + color + ';font-size:.75rem;min-width:70px">' + (riga.nomeNew || '') + '</span>' +
+                'style="background:' + color + ';font-size:.75rem;min-width:70px">' + _testoHtml(riga.nomeNew || '') + '</span>' +
           '<button type="button" class="btn btn-link btn-sm text-danger ms-auto p-1 gt-del-btn" ' +
                   'data-idx="' + idx + '" title="Elimina tipologia"><i class="bi bi-trash3-fill"></i></button>' +
         '</div>';
@@ -415,7 +417,7 @@
       if (riga.isNew || !riga.nomeOld) {
         Swal.fire({
           icon: 'question', title: 'Rimuovere?',
-          html: 'Vuoi rimuovere la tipologia <strong>' + (riga.nomeNew || 'nuova') + '</strong>?',
+          html: 'Vuoi rimuovere la tipologia <strong>' + _testoHtml(riga.nomeNew || 'nuova') + '</strong>?',
           showCancelButton: true, confirmButtonColor: '#dc3545',
           confirmButtonText: 'Sì, rimuovi', cancelButtonText: 'Annulla'
         }).then(function(r) {
@@ -429,7 +431,7 @@
 
       Swal.fire({
         icon: 'question', title: 'Eliminare tipologia?',
-        html: 'Vuoi eliminare la tipologia <strong>' + riga.nomeOld + '</strong>?',
+        html: 'Vuoi eliminare la tipologia <strong>' + _testoHtml(riga.nomeOld) + '</strong>?',
         showCancelButton: true, confirmButtonColor: '#dc3545',
         confirmButtonText: 'Sì, elimina', cancelButtonText: 'Annulla'
       }).then(function(confirmed) {
@@ -454,8 +456,8 @@
               Swal.fire({
                 icon: 'warning',
                 title: 'Tipologia in uso',
-                html: 'La tipologia <strong>' + riga.nomeOld + '</strong> è assegnata a ' +
-                      '<strong>' + res.count + '</strong> letto/i.<br><br>' +
+                html: 'La tipologia <strong>' + _testoHtml(riga.nomeOld) + '</strong> è assegnata a ' +
+                      '<strong>' + _testoHtml(res.count) + '</strong> letto/i.<br><br>' +
                       'Se continui, quei letti diventeranno <strong>STANDARD</strong>.',
                 showCancelButton: true,
                 confirmButtonColor: '#dc3545',
@@ -600,7 +602,7 @@
     function _apriModalTipologia(letto) {
       // Apertura via chip colorata: consentita SOLO se la card di quel letto
       // è in focus mode (modifica attiva). Fuori focus mode il click è ignorato.
-      var cardFocus = document.querySelector('.patient-card.focus-mode[data-bed="' + letto + '"]');
+      var cardFocus = document.querySelector('.patient-card.focus-mode[data-bed="' + _cssVal(letto) + '"]');
       if (!cardFocus) return;
       _ctlPreselezioneLetto = letto;
       _ctlDaFocusMode = letto;
@@ -622,7 +624,7 @@
       // un flag rimasto da un annullamento precedente non deve attivare
       // il ramo focus quando si apre dal menu).
       var daFocus = (_ctlDaFocusMode === letto) &&
-        !!document.querySelector('.patient-card.focus-mode[data-bed="' + letto + '"]');
+        !!document.querySelector('.patient-card.focus-mode[data-bed="' + _cssVal(letto) + '"]');
       _ctlDaFocusMode = null;
       var modalEl = document.getElementById('modalCambiaTipologiaLetto');
       bootstrap.Modal.getInstance(modalEl).hide();
@@ -639,7 +641,7 @@
             if (!res || !res.success) throw new Error((res && res.message) || 'Operazione fallita.');
             // Aggiorna badge tipologia nel DOM della card (Realtime è skippato
             // mentre la card è lockata in focus mode)
-            var card = document.querySelector('.patient-card[data-bed="' + letto + '"]');
+            var card = document.querySelector('.patient-card[data-bed="' + _cssVal(letto) + '"]');
             if (card) {
               card.setAttribute('data-tipologia', (nuovaTipo || '').toUpperCase());
               if (typeof _aggiornaBadgePrincipali === 'function') {
@@ -651,7 +653,7 @@
               window._disattivaFocusMode(false);
             }
             Swal.fire({ icon: 'success', title: 'Tipologia aggiornata',
-              html: 'Letto ' + letto + ' → <strong>' + label + '</strong>',
+              html: 'Letto ' + _testoHtml(letto) + ' → <strong>' + _testoHtml(label) + '</strong>',
               timer: 1800, showConfirmButton: false, timerProgressBar: true });
           })
           .catch(function(err) {

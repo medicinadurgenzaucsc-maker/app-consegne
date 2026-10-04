@@ -44,6 +44,39 @@ window._googleAccessToken = null;
 // ── CLIENT SUPABASE ───────────────────────────────────────────
 var _sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+// ── FILTRO DELL'HTML (js/sanifica.js + DOMPurify) ─────────────
+// Il contenuto dei campi è scritto da chiunque abbia una sessione: prima di
+// finire in pagina passa SEMPRE dal filtro. Se il filtro non c'è (libreria o
+// file non caricati) l'app non disegna e non salva le schede, e lo dice a
+// tutto schermo: meglio fermi che una scheda scritta in pagina così com'è, o
+// salvata «a testo» distruggendo la formattazione di tutti i PC.
+function _filtroPronto() {
+  return typeof window._sanificaPronta === 'function' && window._sanificaPronta();
+}
+(function () {
+  function avvisa() {
+    if (_filtroPronto() || document.getElementById('bloccoFiltro')) return;
+    var d = document.createElement('div');
+    d.id = 'bloccoFiltro';
+    d.setAttribute('role', 'alert');
+    d.setAttribute('style', 'position:fixed;top:0;right:0;bottom:0;left:0;z-index:2147483500;background:#263238;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;font:600 18px/1.5 system-ui,Arial,sans-serif');
+    var t = document.createElement('div');
+    t.textContent = 'Un componente di sicurezza dell\'applicazione non si è caricato: le schede non possono essere mostrate.';
+    var s = document.createElement('div');
+    s.setAttribute('style', 'font-weight:400;font-size:15px;margin-top:10px;max-width:560px');
+    s.textContent = 'Ricarica la pagina. Se il messaggio ricompare, controlla la connessione e avvisa chi gestisce l\'applicazione.';
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = 'Ricarica la pagina';
+    b.setAttribute('style', 'margin-top:18px;padding:10px 22px;border:0;border-radius:8px;background:#fff;color:#263238;font:600 15px system-ui,Arial,sans-serif;cursor:pointer');
+    b.addEventListener('click', function () { location.reload(); });
+    d.appendChild(t); d.appendChild(s); d.appendChild(b);
+    (document.body || document.documentElement).appendChild(d);
+    try { console.error('[Filtro HTML] DOMPurify o js/sanifica.js non caricati: schede non disegnate.'); } catch (e) {}
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', avvisa); else avvisa();
+})();
+
 // ── COLLAUDO: segnale visivo ──────────────────────────────────
 // Cornice ed etichetta fisse che non spostano il layout (pointer-events:
 // none) e filigrana in stampa. In produzione non viene creato alcun elemento.
@@ -133,22 +166,55 @@ var _campi = {
 var _colonne = {};
 Object.keys(_campi).forEach(function(k) { _colonne[_campi[k]] = k; });
 
+// I soli campi il cui contenuto è HTML (testo ricco). Passano dal filtro
+// (_pulisciHtml, in sanifica.js) sia quando ARRIVANO dal database sia quando
+// ci TORNANO: tutto il resto dell'app lavora su contenuto già ripulito. Gli
+// altri campi sono testo semplice e si codificano (_testoHtml) nel punto in
+// cui finiscono in pagina — MAI qui, altrimenti si salverebbero codificati.
+var _CAMPI_RICCHI = { NoteTerapia: 1, Diaria: 1, DaFare: 1, PianoTerapeutico: 1, EsamiColturali: 1, Allergie: 1 };
+
 function _fromDb(row) {
   var p = {};
+  if (!row || typeof row !== 'object') return p;
   Object.keys(row).forEach(function(col) {
-    var field = _colonne[col] || col;
-    p[field] = (row[col] !== null && row[col] !== undefined) ? String(row[col]) : '';
+    var field = Object.prototype.hasOwnProperty.call(_colonne, col) ? _colonne[col] : col;
+    var v = (row[col] !== null && row[col] !== undefined) ? String(row[col]) : '';
+    p[field] = (_CAMPI_RICCHI[field] === 1) ? _pulisciHtml(v) : v;
   });
   return p;
 }
 
+// Schede lette da un backup (archivio.dati): hanno già i nomi dei campi
+// dell'app, ma la riga la può aver scritta chiunque abbia una sessione →
+// stesso trattamento delle righe di «consegne».
+function _pazientiPuliti(elenco) {
+  return (Array.isArray(elenco) ? elenco : [])
+    .filter(function(p) { return p && typeof p === 'object'; })
+    .map(_fromDb);
+}
+
 function _toDb(datiPaziente) {
+  // Senza filtro non si scrive: _pulisciHtml ripiegherebbe sul testo codificato.
+  if (!_filtroPronto()) throw new Error('Filtro HTML non disponibile: salvataggio annullato. Ricarica la pagina.');
   var row = {};
   Object.keys(datiPaziente).forEach(function(field) {
+    if (!Object.prototype.hasOwnProperty.call(_campi, field)) return;
     var col = _campi[field];
-    if (col && col !== 'letto') row[col] = datiPaziente[field] != null ? datiPaziente[field] : '';
+    if (col && col !== 'letto') {
+      var v = datiPaziente[field] != null ? datiPaziente[field] : '';
+      row[col] = (_CAMPI_RICCHI[field] === 1) ? _pulisciHtml(v) : v;
+    }
   });
   return row;
+}
+
+// Il nome del letto è la chiave di molti oggetti dell'app (salvataggi in corso,
+// lock, istantanee…). Una riga il cui «letto» è vuoto o coincide con un membro
+// di Object.prototype («__proto__», «constructor»…) non è un letto del reparto
+// — l'app scrive i nomi in maiuscolo — e non viene disegnata.
+function _lettoRiservato(letto) {
+  var s = String(letto == null ? '' : letto);
+  return s === '' || (s in {});
 }
 
 function _oggiStr() {
@@ -180,6 +246,7 @@ function _aEsc(s) {
   return String(s || '')
     .replace(/&/g, '&amp;')
     .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
 }
@@ -579,11 +646,11 @@ function _renderAltCard(p) {
     ? '<span class="badge text-white text-uppercase shadow-sm"' +
       ' style="background-color:' + colore + ';cursor:pointer;"' +
       ' id="badge-tipo-alt-' + _aEsc(letto) + '"' +
-      ' onclick="_apriModalTipologia(\'' + _aEsc(letto) + '\')"' +
+      ' onclick="_apriModalTipologia(this.closest(\'.patient-card\').getAttribute(\'data-bed\'))"' +
       ' title="Click per cambiare tipologia (solo in modifica)">' + _aEsc(tipo) + '</span>'
     : '<span class="badge bg-light text-secondary border text-uppercase shadow-sm"' +
       ' style="cursor:pointer;"' +
-      ' onclick="_apriModalTipologia(\'' + _aEsc(letto) + '\')"' +
+      ' onclick="_apriModalTipologia(this.closest(\'.patient-card\').getAttribute(\'data-bed\'))"' +
       ' title="Click per cambiare tipologia (solo in modifica)">STANDARD</span>';
 
   // Icona "in dimissione" accanto al badge tipologia
@@ -622,9 +689,9 @@ function _renderAltCard(p) {
     '<span class="sesso-symbol" data-field="Sesso" data-sesso="' + _aEsc(p.Sesso || '') + '"></span>' +
     '</div>' +
     '<div class="text-center tipo-badge-wrap" style="font-size:0.75rem;">' + badgeHtml + dimIconHtml + '</div>' +
-    '<div class="editable-area plain-text alt-nome" contenteditable="true" data-field="Nome" data-placeholder="Cognome Nome...">' + (p.Nome || '') + '</div>' +
+    '<div class="editable-area plain-text alt-nome" contenteditable="true" data-field="Nome" data-placeholder="Cognome Nome...">' + _testoHtml(p.Nome) + '</div>' +
     '<div class="alt-allergie-label"><i class="bi bi-exclamation-triangle-fill"></i> Allergie</div>' +
-    '<div class="editable-area rich-text alt-allergie-val" contenteditable="true" data-field="Allergie" data-placeholder="Allergia ad antibiotici...">' + (p.Allergie || '') + '</div>' +
+    '<div class="editable-area rich-text alt-allergie-val" contenteditable="true" data-field="Allergie" data-placeholder="Allergia ad antibiotici...">' + _pulisciHtml(p.Allergie) + '</div>' +
     '<div class="alt-info-row"><span class="alt-info-label">Data di Nascita</span>' +
     '<input type="text" class="data-nascita-text alt-info-val" placeholder="gg/mm/aaaa"' +
     ' oninput="formattaDataNascita(this)" onblur="formattaDataNascitaBlur(this)" readonly' +
@@ -633,20 +700,20 @@ function _renderAltCard(p) {
     '<div class="alt-info-row"><span class="alt-info-label">Et&agrave; </span>' +
     '<div class="editable-area plain-text alt-info-val"' +
     ' contenteditable="' + (nasc.hasData ? 'false' : 'true') + '" data-field="Eta"' +
-    ' style="' + (nasc.hasData ? 'opacity:0.6;cursor:not-allowed;' : '') + '">' + eta + '</div></div>' +
+    ' style="' + (nasc.hasData ? 'opacity:0.6;cursor:not-allowed;' : '') + '">' + _testoHtml(eta) + '</div></div>' +
     '<div class="alt-info-row"><span class="alt-info-label">Ricovero</span>' +
     '<input type="text" class="data-ricovero-text alt-info-val" placeholder="gg/mm/aaaa"' +
     ' oninput="formattaDataRicovero(this)" onblur="formattaDataRicoveroBlur(this)" readonly' +
     ' value="' + _aEsc(ric.vis) + '"' +
     ' style="border:none;border-bottom:1px solid #ccc;outline:none;background:transparent;padding:0 2px;"></div>' +
     '<div class="alt-info-row"><span class="alt-info-label">Giorni di Ricovero</span>' +
-    '<span class="text-danger valore-giorni alt-info-val">' + ric.giorni + '</span></div>' +
+    '<span class="text-danger valore-giorni alt-info-val">' + _testoHtml(ric.giorni) + '</span></div>' +
     '<div class="alt-info-row"><span class="alt-info-label">C.S.</span>' +
-    '<div class="editable-area plain-text alt-info-val" contenteditable="true" data-field="CodiceSanitario">' + (p.CodiceSanitario || '') + '</div></div>' +
+    '<div class="editable-area plain-text alt-info-val" contenteditable="true" data-field="CodiceSanitario">' + _testoHtml(p.CodiceSanitario) + '</div></div>' +
     '<div class="alt-info-row"><span class="alt-info-label">Ossigeno</span>' +
-    '<div class="editable-area plain-text alt-info-val" contenteditable="true" data-field="Ossigeno" data-placeholder="es. CN 4lt/min">' + (p.Ossigeno || '') + '</div></div>' +
+    '<div class="editable-area plain-text alt-info-val" contenteditable="true" data-field="Ossigeno" data-placeholder="es. CN 4lt/min">' + _testoHtml(p.Ossigeno) + '</div></div>' +
     '<div class="alt-info-row"><span class="alt-info-label">Vitto</span>' +
-    '<div class="editable-area plain-text alt-info-val" contenteditable="true" data-field="Vitto" data-placeholder="Vitto completo, diabetico, senza scorie...">' + (p.Vitto || '') + '</div></div>' +
+    '<div class="editable-area plain-text alt-info-val" contenteditable="true" data-field="Vitto" data-placeholder="Vitto completo, diabetico, senza scorie...">' + _testoHtml(p.Vitto) + '</div></div>' +
     '<div class="alt-info-row dim-row" data-field="Dimissibile" data-value="' + _aEsc(dimVal) + '">' +
     '<label class="dim-checkbox-wrap" title="' + (dimVal ? 'Click per modificare/rimuovere' : 'Click per impostare data dimissione') + '">' +
     '<input type="checkbox" class="dim-checkbox"' + (dimVal ? ' checked' : '') + ' aria-label="Dimissibile">' +
@@ -660,11 +727,11 @@ function _renderAltCard(p) {
     '<div class="alt-col alt-col-diag">' +
     '<div class="alt-diag-top">' +
     '<div class="alt-col-header">Diagnosi / Motivo Ricovero</div>' +
-    '<div class="editable-area plain-text alt-editable" contenteditable="true" data-field="Diagnosi" data-placeholder="Diagnosi e motivo del ricovero...">' + (p.Diagnosi || '') + '</div>' +
+    '<div class="editable-area plain-text alt-editable" contenteditable="true" data-field="Diagnosi" data-placeholder="Diagnosi e motivo del ricovero...">' + _testoHtml(p.Diagnosi) + '</div>' +
     '</div>' +
     '<div class="alt-diag-bottom">' +
     '<div class="alt-col-header-split">Problemi Attivi</div>' +
-    '<div class="editable-area rich-text alt-editable" contenteditable="true" data-field="PianoTerapeutico" data-placeholder="Problemi attivi">' + (p.PianoTerapeutico || '') + '</div>' +
+    '<div class="editable-area rich-text alt-editable" contenteditable="true" data-field="PianoTerapeutico" data-placeholder="Problemi attivi">' + _pulisciHtml(p.PianoTerapeutico) + '</div>' +
     '</div>' +
     '<div class="alt-diag-fourth">' +
     '<div class="alt-col-header-split">Esami Colturali, Scale di Valutazione e Laboratorio.</div>' +
@@ -672,20 +739,20 @@ function _renderAltCard(p) {
     // lo inserisce _labBottoniApplica DENTRO il campo qui sotto, come le
     // scale — così la toolbar del testo resta sopra e sotto la riga c'è
     // sempre spazio per scrivere.
-    '<div class="editable-area rich-text alt-editable" contenteditable="true" data-field="EsamiColturali" data-placeholder="Esami colturali... PESI SCORE, HASBLED, GENEVA...">' + (p.EsamiColturali || '') + '</div>' +
+    '<div class="editable-area rich-text alt-editable" contenteditable="true" data-field="EsamiColturali" data-placeholder="Esami colturali... PESI SCORE, HASBLED, GENEVA...">' + _pulisciHtml(p.EsamiColturali) + '</div>' +
     '</div>' +
     '<div class="alt-diag-third">' +
     '<div class="alt-col-header-split">Da Fare / Richieste</div>' +
-    '<div class="editable-area rich-text alt-editable" contenteditable="true" data-field="DaFare" data-placeholder="Da Fare / Richieste...">' + (p.DaFare || '') + '</div>' +
+    '<div class="editable-area rich-text alt-editable" contenteditable="true" data-field="DaFare" data-placeholder="Da Fare / Richieste...">' + _pulisciHtml(p.DaFare) + '</div>' +
     '</div>' +
     '</div>' +
     '<div class="alt-col alt-col-diaria">' +
     '<div class="alt-col-header">Diaria ed Epicrisi</div>' +
-    '<div class="editable-area rich-text alt-editable" contenteditable="true" data-field="Diaria" data-placeholder="Diaria ed epicrisi: APR, APP, storia prima del ricovero...">' + (p.Diaria || '') + '</div>' +
+    '<div class="editable-area rich-text alt-editable" contenteditable="true" data-field="Diaria" data-placeholder="Diaria ed epicrisi: APR, APP, storia prima del ricovero...">' + _pulisciHtml(p.Diaria) + '</div>' +
     '</div>' +
     '<div class="alt-col alt-col-terapia">' +
     '<div class="alt-col-header">Note e Terapia</div>' +
-    '<div class="editable-area rich-text alt-editable" contenteditable="true" data-field="NoteTerapia" data-placeholder="Note e Terapia: Terapia EV, Orale, Aerosol...">' + (p.NoteTerapia || '') + '</div>' +
+    '<div class="editable-area rich-text alt-editable" contenteditable="true" data-field="NoteTerapia" data-placeholder="Note e Terapia: Terapia EV, Orale, Aerosol...">' + _pulisciHtml(p.NoteTerapia) + '</div>' +
     '</div>' +
     '<div class="alt-row-spacer"></div>' +
     '</div>';
@@ -710,7 +777,7 @@ function _renderNoteCardAlt(p) {
     '<div class="alt-col" style="flex:1;border-right:none;">' +
     '<div class="editable-area rich-text alt-editable" contenteditable="true" data-field="Diaria"' +
     ' data-placeholder="Note del reparto (visibili a tutti)..."' +
-    ' style="min-height:300px;padding:10px;font-size:0.9rem;">' + (p.Diaria || '') + '</div>' +
+    ' style="min-height:300px;padding:10px;font-size:0.9rem;">' + _pulisciHtml(p.Diaria) + '</div>' +
     '</div>' +
     '<div class="alt-row-spacer"></div>' +
     '</div>';
@@ -722,10 +789,14 @@ function _renderNoteCardAlt(p) {
 // L'id "cardsContainer" è mantenuto (riusato per la vista alt) per
 // retrocompatibilità con i selettori esistenti nel resto del codice.
 function _renderCardsHtml(pazienti) {
+  // Senza filtro non si disegna nulla (vedi «FILTRO DELL'HTML» in cima): con
+  // una stringa vuota chi riceve l'HTML non tocca la pagina.
+  if (!_filtroPronto()) return '';
   var html  = '<div class="container-fluid" id="cardsContainer">';
   var noteP = null;
   (pazienti || []).forEach(function(p) {
     if (p.Letto === 'NOTE') { noteP = p; return; }
+    if (_lettoRiservato(p.Letto)) return;
     html += _renderAltCard(p);
   });
   // NOTE sempre in fondo
@@ -750,6 +821,10 @@ function _caricaCardIniziali(container, onDone) {
 
 
 // ── LETTURA TOAST DA URL ──────────────────────────────────────
+// ?toast=success|info&msg=testo → un avviso a scomparsa. L'indirizzo lo può
+// costruire chiunque, anche senza un account: il messaggio è SOLO testo (lo
+// garantisce showToast, che non interpreta HTML), senza caratteri di
+// controllo e accorciato; il tipo è uno dei due previsti.
 (function() {
   try {
     var params = new URLSearchParams(window.location.search);
@@ -757,6 +832,9 @@ function _caricaCardIniziali(container, onDone) {
     var toastMsg  = params.get('msg');
     if (toastType && toastMsg) {
       history.replaceState(null, '', window.location.pathname);
+      toastType = (toastType === 'success') ? 'success' : 'info';
+      toastMsg  = String(toastMsg).replace(/[\u0000-\u001F\u007F]+/g, ' ').trim().slice(0, 200);
+      if (!toastMsg) return;
       window.addEventListener('load', function() {
         setTimeout(function() {
           if (typeof showToast === 'function') {
@@ -802,7 +880,8 @@ function _sbGetLettiFull() {
 }
 
 function _sbSalvaPaziente(letto, datiPaziente) {
-  var row = _toDb(datiPaziente);
+  var row;
+  try { row = _toDb(datiPaziente); } catch (e) { return Promise.reject(e); }
   row.ultimo_aggiornamento = _oraStr();
   row.updated_at = new Date().toISOString();
   // SAFETY: aggiunto .select() per ricevere indietro la/le riga/he aggiornata/e.
@@ -1037,6 +1116,10 @@ function _normalizzaTerapiaBox(root) {
 window._normalizzaTerapiaBox = _normalizzaTerapiaBox;
 
 function _sbAggiungiLetto(numeroLetto) {
+  // Il nome del letto finisce in selettori, attributi e chiavi: solo etichette semplici.
+  if (!_lettoValido(numeroLetto)) {
+    return Promise.resolve({ success: false, message: 'Nome del letto non valido: usa lettere, cifre, spazi e i segni . _ / + - (massimo 30 caratteri).' });
+  }
   return _q(_sb.from('consegne').select('letto').eq('letto', String(numeroLetto)).maybeSingle())
     .then(function(existing) {
       if (existing) return { success: false, message: 'Il letto esiste già!' };
@@ -1740,7 +1823,9 @@ function _sbGetGiorniArchivio() {
         if (seen[r.data_str]) return false;
         seen[r.data_str] = true;
         return true;
-      }).map(function(r) { return r.data_str; });
+      }).map(function(r) { return String(r.data_str); })
+        // solo date AAAA-MM-GG: il valore finisce nei gestori delle liste
+        .filter(function(d) { return /^\d{4}-\d{2}-\d{2}$/.test(d); });
     });
 }
 
@@ -1748,7 +1833,9 @@ function _sbGetTimestampsGiorno(dataStr) {
   // Ritorna array di epoch-ms (come string) ordinati dal più recente
   return _q(_sb.from('archivio').select('ts').eq('data_str', dataStr).order('ts', { ascending: false }))
     .then(function(rows) {
-      return (rows || []).map(function(r) { return String(r.ts); });
+      // solo cifre: il valore finisce nei gestori delle liste
+      return (rows || []).map(function(r) { return String(r.ts); })
+        .filter(function(ts) { return /^\d{10,13}$/.test(ts); });
     });
 }
 
@@ -1758,14 +1845,14 @@ function _sbGetDatiArchivioGiorno(key) {
   if (/^\d{10,13}$/.test(sKey)) {
     return _q(_sb.from('archivio').select('dati,ts,lab').eq('ts', Number(sKey)).maybeSingle())
       .then(function(row) {
-        return row ? { pazienti: row.dati || [], timestamp: row.ts, lab: row.lab || null } : null;
+        return row ? { pazienti: _pazientiPuliti(row.dati), timestamp: row.ts, lab: row.lab || null } : null;
       });
   }
   // Legacy: prende il backup più recente per quella data
   return _q(_sb.from('archivio').select('dati,ts,lab').eq('data_str', sKey.substring(0, 10)).order('ts', { ascending: false }))
     .then(function(rows) {
       var row = rows && rows[0];
-      return row ? { pazienti: row.dati || [], timestamp: row.ts, lab: row.lab || null } : null;
+      return row ? { pazienti: _pazientiPuliti(row.dati), timestamp: row.ts, lab: row.lab || null } : null;
     });
 }
 
@@ -1777,7 +1864,8 @@ function _sbGetDatiArchivioGiorno(key) {
 function _sbGetColoriTipologie() {
   return _q(_sb.from('tipologie').select('nome,colore')).then(function(rows) {
     var mappa = {};
-    (rows || []).forEach(function(r) { mappa[r.nome] = r.colore || ''; });
+    // Il colore finisce dentro attributi style: solo un colore CSS, o niente.
+    (rows || []).forEach(function(r) { mappa[r.nome] = _coloreSicuro(r.colore, ''); });
     return mappa;
   });
 }
@@ -1890,23 +1978,18 @@ function _sbAggiungiLink(nome, url) {
     .then(function(row) { return { success: true, link: row }; });
 }
 
-function _sbModificaLink(indice, nome, url) {
-  // indice = posizione 0-based nell'array restituito da getLinkUtili
-  return _sbGetLinkUtili().then(function(links) {
-    var link = links[indice];
-    if (!link) return { success: false };
-    return _q(_sb.from('link_utili').update({ nome: nome, url: url }).eq('id', link.id))
-      .then(function() { return { success: true }; });
-  });
+// id = chiave della riga in link_utili (quella che la lista porta con sé).
+// Fino alla v174 il valore veniva usato come POSIZIONE nell'elenco: con gli id
+// che partono da 1 (e con dei buchi) si modificava o eliminava un link diverso
+// da quello scelto.
+function _sbModificaLink(id, nome, url) {
+  return _q(_sb.from('link_utili').update({ nome: nome, url: url }).eq('id', id).select('id'))
+    .then(function(rows) { return { success: !!(rows && rows.length) }; });
 }
 
-function _sbEliminaLink(indice) {
-  return _sbGetLinkUtili().then(function(links) {
-    var link = links[indice];
-    if (!link) return { success: false };
-    return _q(_sb.from('link_utili').delete().eq('id', link.id))
-      .then(function() { return { success: true }; });
-  });
+function _sbEliminaLink(id) {
+  return _q(_sb.from('link_utili').delete().eq('id', id).select('id'))
+    .then(function(rows) { return { success: !!(rows && rows.length) }; });
 }
 
 
@@ -2090,6 +2173,7 @@ function _applicaDeltaUpdate(row) {
   if (!row || !row.letto) return false;
   var p = _fromDb(row);
   var letto = String(p.Letto);
+  if (_lettoRiservato(letto)) return true;   // non è un letto: niente da disegnare
 
   // Skip card lockata da questo client (focus mode su questo letto):
   // _applicaAggiornamentoDaHtml ha la stessa guard, replicata qui per coerenza.
@@ -2098,7 +2182,7 @@ function _applicaDeltaUpdate(row) {
   // NOTE ha renderer dedicato (_renderNoteCard*): meglio fallback full sync
   if (letto === 'NOTE') return false;
 
-  var cards = document.querySelectorAll('.patient-card[data-bed="' + letto + '"]');
+  var cards = document.querySelectorAll('.patient-card[data-bed="' + _cssVal(letto) + '"]');
   if (!cards.length) return false; // card non esistente in DOM → full sync
 
   cards.forEach(function(card) { _aggiornaCardDaPaziente(card, p); if (typeof _verificaPianoCura === 'function') _verificaPianoCura(card); if (typeof _verificaTerapiaObsoleta === 'function') _verificaTerapiaObsoleta(card); if (typeof _normalizzaTerapiaBox === 'function') _normalizzaTerapiaBox(card); });
@@ -2120,7 +2204,7 @@ function _applicaDeltaUpdate(row) {
 function _applicaDeltaDelete(letto) {
   if (!letto) return false;
   var rimossi = 0;
-  document.querySelectorAll('.patient-card[data-bed="' + String(letto) + '"]').forEach(function(c) {
+  document.querySelectorAll('.patient-card[data-bed="' + _cssVal(String(letto)) + '"]').forEach(function(c) {
     c.remove();
     rimossi++;
   });
@@ -2141,6 +2225,8 @@ function _applicaDeltaDelete(letto) {
 // Replica la logica di _applicaAggiornamentoDaHtml ma per UN paziente,
 // lavorando sull'oggetto JS senza DOMParser. Preserva caret position.
 function _aggiornaCardDaPaziente(card, p) {
+  // Senza filtro non si scrive nulla in pagina (vedi «FILTRO DELL'HTML» in cima).
+  if (!_filtroPronto()) return;
   var activeEl = document.activeElement;
   var _nomeEl = card.querySelector('[data-field="Nome"]');
   var _nomePrima = _nomeEl ? (_nomeEl.innerText || '').trim() : null;
@@ -2157,7 +2243,11 @@ function _aggiornaCardDaPaziente(card, p) {
     if (dst.classList.contains('plain-text')) {
       if (dst.innerText !== val) dst.innerText = val;
     } else {
-      if (dst.innerHTML !== val) dst.innerHTML = val;
+      // I campi ricchi arrivano già ripuliti da _fromDb; qui si ripassa dal
+      // filtro (costa nulla: il risultato è in memoria) perché nessun
+      // chiamante possa scrivere in pagina HTML non controllato.
+      var pulito = _pulisciHtml(val);
+      if (dst.innerHTML !== pulito) dst.innerHTML = pulito;
     }
     if (hasFocus && caretPos !== null && typeof _ripristinaCaretPos === 'function') {
       dst.focus();
@@ -2360,7 +2450,7 @@ function _scheduleRealtimeSync(lettoSpecifico) {
           if (!rows || !rows.length) return null;
           var p = _fromDb(rows[0]);
           // Applica direttamente alla card senza full re-render
-          var cards = document.querySelectorAll('.patient-card[data-bed="' + lettoTarget + '"]');
+          var cards = document.querySelectorAll('.patient-card[data-bed="' + _cssVal(lettoTarget) + '"]');
           if (cards.length && typeof _aggiornaCardDaPaziente === 'function') {
             cards.forEach(function(card) { _aggiornaCardDaPaziente(card, p); if (typeof _verificaPianoCura === 'function') _verificaPianoCura(card); if (typeof _verificaTerapiaObsoleta === 'function') _verificaTerapiaObsoleta(card); if (typeof _normalizzaTerapiaBox === 'function') _normalizzaTerapiaBox(card); });
             if (typeof window._aggiornaBadgePrincipali === 'function') {
@@ -2471,7 +2561,7 @@ function _forceSaveScan() {
     // Salta se un retry esponenziale è già pianificato per questo letto (evita race
     // tra force-save e retry nativo). Il retry nativo lo gestirà al delay previsto.
     if (typeof _saveRetryTimer !== 'undefined' && _saveRetryTimer[letto]) return;
-    var card = document.querySelector('.patient-card[data-bed="' + letto + '"]');
+    var card = document.querySelector('.patient-card[data-bed="' + _cssVal(letto) + '"]');
     if (!card) return;
     // Annulla il debounce in corso (se presente) e forza il save adesso
     if (typeof timerSalvataggioLetto !== 'undefined' && timerSalvataggioLetto[letto]) {

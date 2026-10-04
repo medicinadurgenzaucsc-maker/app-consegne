@@ -351,7 +351,8 @@
             return;
           }
           // Mostra sempre la lista, anche con un solo backup
-          let listaHtml = timestamps.map(function(ts) {
+          // ts finisce dentro il gestore del bottone: solo cifre (è un bigint).
+          let listaHtml = timestamps.filter(function(ts) { return /^\d{10,13}$/.test(String(ts)); }).map(function(ts) {
             let ora = /^\d{10,13}$/.test(ts)
               ? new Date(Number(ts)).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
               : (ts.indexOf(' ') !== -1 ? ts.split(' ')[1].substring(0, 5) : ts);
@@ -366,7 +367,7 @@
             </div>`;
         })
         .catch(function(e) {
-          document.getElementById('cal-grid').innerHTML = `<div class="text-center py-5"><i class="bi bi-exclamation-triangle-fill text-danger" style="font-size: 4rem;"></i><h4 class="mt-3 text-danger">Errore</h4><p>${e.message}</p><button class="btn btn-outline-secondary mt-3" onclick="ripristinaCalendarioView()">Torna al Calendario</button></div>`;
+          document.getElementById('cal-grid').innerHTML = `<div class="text-center py-5"><i class="bi bi-exclamation-triangle-fill text-danger" style="font-size: 4rem;"></i><h4 class="mt-3 text-danger">Errore</h4><p>${_testoHtml(e && e.message)}</p><button class="btn btn-outline-secondary mt-3" onclick="ripristinaCalendarioView()">Torna al Calendario</button></div>`;
         });
     }
 
@@ -413,9 +414,9 @@
             (tipologie || []).forEach(function(t) {
               var sid = 'ckTip_' + t.replace(/[^a-zA-Z0-9]/g, '_');
               html += '<div class="form-check mb-1">' +
-                '<input class="form-check-input tipologia-check" type="checkbox" id="' + sid + '" value="' + t + '"' +
+                '<input class="form-check-input tipologia-check" type="checkbox" id="' + sid + '" value="' + _testoHtml(t) + '"' +
                 ' style="width:1.1rem;height:1.1rem;cursor:pointer;">' +
-                '<label class="form-check-label ms-2 small" for="' + sid + '">' + t + '</label></div>';
+                '<label class="form-check-label ms-2 small" for="' + sid + '">' + _testoHtml(t) + '</label></div>';
             });
             tipoLista.innerHTML = html || '';
           })
@@ -518,54 +519,88 @@
       mi.show();
     }
 
-    function _luEsc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+    function _luEsc(s) { return _testoHtml(s || ''); }
+
+    // Indirizzo di un link così come va salvato: senza schema si intende
+    // https://; si accettano solo http, https, mailto e tel ('' = non valido).
+    function _luUrl(u) {
+      var s = String(u || '').trim();
+      if (!s) return '';
+      if (!/^[a-z][a-z0-9+.-]*:/i.test(s)) s = 'https://' + s;
+      return _urlSicuro(s) ? s : '';
+    }
+
+    // Nome e indirizzo arrivano dal database: non entrano MAI nel codice di un
+    // gestore in linea (la codifica HTML lì non protegge). I bottoni portano
+    // solo l'id della riga; nome e indirizzo si rileggono da questo elenco.
+    var _luElenco = {};
+    function _luRiga(id) {
+      return document.querySelector('#linkUtiliList [data-lu-riga="' + _cssVal(id) + '"]');
+    }
 
     function _renderLinkUtili(links) {
       var container = document.getElementById('linkUtiliList');
+      _luElenco = {};
       if (!links || !links.length) {
         container.innerHTML = '<p class="text-muted small text-center py-3">Nessun link salvato.<br>Aggiungine uno qui sotto.</p>';
         return;
       }
       var html = '';
       links.forEach(function(l) {
-        html += '<div class="d-flex align-items-center gap-2 py-2 border-bottom" id="luRow_' + l.id + '">' +
-          '<a href="' + _luEsc(l.url) + '" target="_blank" rel="noopener noreferrer"' +
+        var id = String(l.id);
+        _luElenco['k' + id] = { nome: l.nome || '', url: l.url || '' };
+        // Un indirizzo che non è http(s)/mailto/tel non diventa un collegamento.
+        var href = _urlSicuro(l.url);
+        html += '<div class="d-flex align-items-center gap-2 py-2 border-bottom" data-lu-riga="' + _luEsc(id) + '">' +
+          (href
+            ? '<a href="' + _luEsc(href) + '" target="_blank" rel="noopener noreferrer"'
+            : '<span title="Indirizzo non valido: correggilo con la matita"') +
           ' class="flex-grow-1 text-truncate small fw-medium text-decoration-none" style="min-width:0;">' +
           '<i class="bi bi-arrow-up-right-square me-1 text-primary"></i>' + _luEsc(l.nome || l.url) +
-          '</a>' +
-          '<button class="btn btn-outline-secondary btn-sm py-0 px-2" title="Modifica"' +
-          ' onclick="_luEditInline(' + l.id + ',\'' + _luEsc(l.nome).replace(/'/g,'&#39;') + '\',\'' + _luEsc(l.url).replace(/'/g,'&#39;') + '\')">' +
+          (href ? '</a>' : '</span>') +
+          '<button class="btn btn-outline-secondary btn-sm py-0 px-2" title="Modifica" data-lu-modifica="' + _luEsc(id) + '">' +
           '<i class="bi bi-pencil-fill" style="font-size:.72rem;"></i></button>' +
           '</div>';
       });
       container.innerHTML = html;
     }
 
-    function _luEditInline(id, nome, url) {
-      var row = document.getElementById('luRow_' + id);
-      if (!row) return;
+    document.addEventListener('click', function(e) {
+      var b = e.target && e.target.closest ? e.target.closest('[data-lu-modifica],[data-lu-salva],[data-lu-elimina]') : null;
+      if (!b || !b.closest('#linkUtiliList')) return;
+      if (b.hasAttribute('data-lu-modifica')) _luEditInline(b.getAttribute('data-lu-modifica'));
+      else if (b.hasAttribute('data-lu-salva')) _luSalva(b.getAttribute('data-lu-salva'));
+      else _luElimina(b.getAttribute('data-lu-elimina'));
+    });
+
+    function _luEditInline(id) {
+      var row = _luRiga(id);
+      var voce = Object.prototype.hasOwnProperty.call(_luElenco, 'k' + id) ? _luElenco['k' + id] : null;
+      if (!row || !voce) return;
       row.innerHTML =
         '<div class="flex-grow-1">' +
-        '<input type="text" class="form-control form-control-sm mb-1" id="luNome_' + id + '"' +
-        ' value="' + _luEsc(nome) + '" placeholder="Nome visualizzato">' +
-        '<input type="url" class="form-control form-control-sm" id="luUrl_' + id + '"' +
-        ' value="' + _luEsc(url) + '" placeholder="https://...">' +
+        '<input type="text" class="form-control form-control-sm mb-1" data-lu-campo="nome" placeholder="Nome visualizzato">' +
+        '<input type="url" class="form-control form-control-sm" data-lu-campo="url" placeholder="https://...">' +
         '</div>' +
         '<div class="d-flex flex-column gap-1 ms-1">' +
-        '<button class="btn btn-success btn-sm py-0 px-2" title="Salva" onclick="_luSalva(' + id + ')">' +
+        '<button class="btn btn-success btn-sm py-0 px-2" title="Salva" data-lu-salva="' + _luEsc(id) + '">' +
         '<i class="bi bi-check-lg"></i></button>' +
-        '<button class="btn btn-outline-danger btn-sm py-0 px-2" title="Elimina" onclick="_luElimina(' + id + ')">' +
+        '<button class="btn btn-outline-danger btn-sm py-0 px-2" title="Elimina" data-lu-elimina="' + _luEsc(id) + '">' +
         '<i class="bi bi-trash3"></i></button>' +
         '</div>';
+      row.querySelector('[data-lu-campo="nome"]').value = voce.nome;
+      row.querySelector('[data-lu-campo="url"]').value = voce.url;
     }
 
     function _luSalva(id) {
-      var nomeEl = document.getElementById('luNome_' + id);
-      var urlEl  = document.getElementById('luUrl_'  + id);
+      var row = _luRiga(id);
+      var nomeEl = row ? row.querySelector('[data-lu-campo="nome"]') : null;
+      var urlEl  = row ? row.querySelector('[data-lu-campo="url"]') : null;
       if (!nomeEl || !urlEl) return;
-      var row = document.getElementById('luRow_' + id);
+      var urlNuovo = _luUrl(urlEl.value);
+      if (!urlNuovo) { Swal.fire({ icon: 'warning', title: 'Indirizzo non valido', text: 'Il link deve essere un indirizzo web (http:// o https://).' }); return; }
       if (row) row.style.opacity = '0.5';
-      _sbModificaLink(id, nomeEl.value.trim(), urlEl.value.trim())
+      _sbModificaLink(id, nomeEl.value.trim(), urlNuovo)
         .then(function(r) {
           if (r && r.success) {
             _sbGetLinkUtili().then(_renderLinkUtili).catch(function(e) { console.error('getLinkUtili error:', e); });
@@ -601,6 +636,8 @@
       var nome = nomeEl ? nomeEl.value.trim() : '';
       var url  = urlEl  ? urlEl.value.trim()  : '';
       if (!url) { Swal.fire({ icon: 'warning', title: 'URL mancante', text: 'Inserisci almeno il link.' }); return; }
+      url = _luUrl(url);
+      if (!url) { Swal.fire({ icon: 'warning', title: 'Indirizzo non valido', text: 'Il link deve essere un indirizzo web (http:// o https://).' }); return; }
       if (nomeEl) nomeEl.value = '';
       if (urlEl)  urlEl.value  = '';
       _sbAggiungiLink(nome, url)
@@ -623,7 +660,26 @@
       });
     }
 
-    function showToast(title, msg, type) { const toastContainer = document.getElementById('toastContainer'); let bgColor = type === "danger" ? "bg-danger" : (type === "success" ? "bg-success" : "bg-warning text-dark"); let icon = type === "danger" ? "bi-exclamation-triangle" : (type === "success" ? "bi-check-circle" : "bi-exclamation-circle"); const toastHTML = `<div class="toast align-items-center text-white border-0 mb-2 ${bgColor}" role="alert" aria-live="assertive" aria-atomic="true"><div class="d-flex"><div class="toast-body"><i class="bi ${icon} me-2 fs-5 align-middle"></i><strong>${title}</strong><br><span class="${type==='warning'?'text-dark':'text-white'}">${msg}</span></div><button type="button" class="btn-close ${type==='warning'?'':'btn-close-white'} me-2 m-auto" data-bs-dismiss="toast"></button></div></div>`; const div = document.createElement('div'); div.innerHTML = toastHTML; const toastElement = div.firstElementChild; toastContainer.appendChild(toastElement); const bsToast = new bootstrap.Toast(toastElement, { delay: 4000 }); bsToast.show(); toastElement.addEventListener('hidden.bs.toast', () => { toastElement.remove(); }); }
+    // Avviso a scomparsa. Titolo e messaggio sono SOLO testo (textContent): il
+    // messaggio può arrivare dall'indirizzo della pagina (?toast=…&msg=…, vedi
+    // api.js), che chiunque può costruire — qui non si interpreta mai HTML.
+    function showToast(title, msg, type) {
+      const toastContainer = document.getElementById('toastContainer');
+      if (!toastContainer) return;
+      const bgColor = type === 'danger' ? 'bg-danger' : (type === 'success' ? 'bg-success' : 'bg-warning text-dark');
+      const icon = type === 'danger' ? 'bi-exclamation-triangle' : (type === 'success' ? 'bi-check-circle' : 'bi-exclamation-circle');
+      // sfondo giallo (tutto ciò che non è «danger» o «success») → testo scuro, leggibile
+      const chiaro = (type !== 'danger' && type !== 'success');
+      const div = document.createElement('div');
+      div.innerHTML = '<div class="toast align-items-center text-white border-0 mb-2 ' + bgColor + '" role="alert" aria-live="assertive" aria-atomic="true"><div class="d-flex"><div class="toast-body"><i class="bi ' + icon + ' me-2 fs-5 align-middle"></i><strong></strong><br><span class="' + (chiaro ? 'text-dark' : 'text-white') + '"></span></div><button type="button" class="btn-close ' + (chiaro ? '' : 'btn-close-white') + ' me-2 m-auto" data-bs-dismiss="toast"></button></div></div>';
+      const toastElement = div.firstElementChild;
+      toastElement.querySelector('.toast-body strong').textContent = String(title == null ? '' : title);
+      toastElement.querySelector('.toast-body span').textContent = String(msg == null ? '' : msg);
+      toastContainer.appendChild(toastElement);
+      const bsToast = new bootstrap.Toast(toastElement, { delay: 4000 });
+      bsToast.show();
+      toastElement.addEventListener('hidden.bs.toast', () => { toastElement.remove(); });
+    }
     function ordinaLetti(criterio, isSilent = false) { const container = document.getElementById('cardsContainer'); if (!container) return; const cards = Array.from(container.querySelectorAll('.patient-card')); if (cards.length === 0) return; cards.sort((a, b) => { const getLettoVal = (el) => el.getAttribute('data-bed'); if(getLettoVal(a)==='NOTE') return 1; if(getLettoVal(b)==='NOTE') return -1; const cmpLetto = (bedA, bedB) => { let numA = parseInt(bedA, 10); let numB = parseInt(bedB, 10); if(!isNaN(numA) && !isNaN(numB)) return numA - numB; return String(bedA).localeCompare(String(bedB)); }; if (criterio === 'numero') return cmpLetto(getLettoVal(a), getLettoVal(b)); if (criterio === 'nome') { let nA=(a.querySelector('[data-field="Nome"]')?.innerText||'').trim().toLowerCase(), nB=(b.querySelector('[data-field="Nome"]')?.innerText||'').trim().toLowerCase(); if(!nA&&!nB) return cmpLetto(getLettoVal(a), getLettoVal(b)); if(!nA) return 1; if(!nB) return -1; let res = nA.localeCompare(nB); return res!==0 ? res : cmpLetto(getLettoVal(a), getLettoVal(b)); } if (criterio === 'tipologia') { let tA=(a.getAttribute('data-tipologia')||'').trim().toLowerCase(), tB=(b.getAttribute('data-tipologia')||'').trim().toLowerCase(); if(!tA&&!tB) return cmpLetto(getLettoVal(a), getLettoVal(b)); if(!tA) return 1; if(!tB) return -1; let res = tA.localeCompare(tB); return res!==0 ? res : cmpLetto(getLettoVal(a), getLettoVal(b)); } }); cards.forEach(card => container.appendChild(card)); localStorage.setItem('ordinamentoPreferito', criterio); }
     function applicaOrdinamentoSalvato() { const saved = localStorage.getItem('ordinamentoPreferito'); if (saved) ordinaLetti(saved, true); else ordinaLetti('tipologia', true); }
 
@@ -919,7 +975,9 @@
       _syncPaused = true;
       const datiPaziente = {};
       const aree = card.querySelectorAll('.editable-area');
-      aree.forEach(area => { const campo = area.getAttribute('data-field'); if(campo) datiPaziente[campo] = area.classList.contains('plain-text') ? area.innerText : area.innerHTML; });
+      // Solo i campi veri della scheda: un elemento con classe «editable-area»
+      // annidato dentro il contenuto di un campo non è un campo.
+      aree.forEach(area => { if (area.parentElement && area.parentElement.closest('.editable-area')) return; const campo = area.getAttribute('data-field'); if(campo) datiPaziente[campo] = area.classList.contains('plain-text') ? area.innerText : area.innerHTML; });
       const sessoEl = card.querySelector('.sesso-symbol[data-field="Sesso"]');
       if (sessoEl) datiPaziente['Sesso'] = sessoEl.getAttribute('data-sesso') || '';
       const dimRowEl = card.querySelector('.dim-row[data-field="Dimissibile"]');
@@ -968,7 +1026,7 @@
         _saveRetryTimer[letto] = setTimeout(function() {
           _saveRetryTimer[letto] = null;
           // Riprende dalla card più aggiornata in DOM
-          var c2 = document.querySelector('.patient-card[data-bed="' + letto + '"]') || card;
+          var c2 = document.querySelector('.patient-card[data-bed="' + _cssVal(letto) + '"]') || card;
           eseguiSalvataggioLettoCompleto(letto, c2);
         }, delay);
         // Badge intermedio
@@ -1017,7 +1075,7 @@
           _savePending[letto] = false;
           if (_dirtyLetti.has(letto)) {
             setTimeout(function() {
-              var c2 = document.querySelector('.patient-card[data-bed="' + letto + '"]') || card;
+              var c2 = document.querySelector('.patient-card[data-bed="' + _cssVal(letto) + '"]') || card;
               if (c2) eseguiSalvataggioLettoCompleto(letto, c2);
             }, 0);
           }
@@ -1089,6 +1147,8 @@
       if (typeof _emergGuard === 'function' && _emergGuard()) return;
       var numLetto = document.getElementById('inputNuovoLetto').value.trim().toUpperCase();
       if (!numLetto) { Swal.fire({ icon: 'error', text: 'Inserisci un numero valido.' }); return; }
+      // Il nome del letto finisce in selettori, attributi e chiavi: solo etichette semplici.
+      if (!_lettoValido(numLetto)) { Swal.fire({ icon: 'error', title: 'Nome non valido', text: 'Per il nome del letto usa lettere, cifre, spazi e i segni . _ / + - (massimo 30 caratteri).' }); return; }
       var modalEl = document.getElementById('modalAggiungiLetto');
       var mi = bootstrap.Modal.getInstance(modalEl); if (mi) mi.hide();
       Swal.fire({ title: 'Aggiunta letto in corso...', allowOutsideClick: false, showConfirmButton: false, didOpen: function() { Swal.showLoading(); } });
@@ -1120,8 +1180,8 @@
       });
       if (bloccati.length > 0) {
         var msg = bloccati.length === 1
-          ? 'Il letto <strong>' + bloccati[0] + '</strong> è attualmente in modifica. Attendi il rilascio prima di procedere.'
-          : 'I letti <strong>' + bloccati.join('</strong> e <strong>') + '</strong> sono attualmente in modifica. Attendi il rilascio prima di procedere.';
+          ? 'Il letto <strong>' + _testoHtml(bloccati[0]) + '</strong> è attualmente in modifica. Attendi il rilascio prima di procedere.'
+          : 'I letti <strong>' + bloccati.map(_testoHtml).join('</strong> e <strong>') + '</strong> sono attualmente in modifica. Attendi il rilascio prima di procedere.';
         Swal.fire({ icon: 'error', title: 'Letto in uso', html: msg, confirmButtonColor: '#d33' });
         return;
       }
@@ -1168,7 +1228,7 @@
         if (!r.isConfirmed) return;
         _opServer({ barMsg: 'Svuotamento letto in corso...', successTitle: 'Letto svuotato', successText: 'I dati del letto ' + numLetto + ' sono stati cancellati.', errorTitle: 'Errore',
           afterSync: function() {
-            document.querySelectorAll('.patient-card[data-bed="' + numLetto + '"]').forEach(function(card) {
+            document.querySelectorAll('.patient-card[data-bed="' + _cssVal(numLetto) + '"]').forEach(function(card) {
               // NB: DaFare e NoteTerapia NON sono nella lista perché vengono
               // ripopolati col rispettivo template sotto.
               ['Nome','Diagnosi','Eta','Diaria','PianoTerapeutico','EsamiColturali','Allergie','CodiceSanitario','Ossigeno','Vitto'].forEach(function(campo) {
@@ -1233,9 +1293,9 @@
           _verificaLockEProcedi([lettoOrig, lettoDest], function() {
             var conferma;
             if (nomeDestinazione && nomeDestinazione.trim() !== '') {
-              conferma = Swal.fire({ icon: 'warning', title: 'Letto Occupato', html: 'Il letto <strong>' + lettoDest + '</strong> è occupato da:<br><br><span class="fs-5 fw-bold text-danger">' + nomeDestinazione + '</span><br><span class="text-muted">[' + tipoDestinazione + ']</span><br><br>Se confermi, <strong>' + (nomeOrigine||'il paziente') + '</strong> e <strong>' + nomeDestinazione + '</strong> verranno <u>scambiati</u>.', showCancelButton: true, confirmButtonText: 'Sì, scambia', cancelButtonText: 'Annulla', confirmButtonColor: '#dc3545', cancelButtonColor: '#6c757d', reverseButtons: true });
+              conferma = Swal.fire({ icon: 'warning', title: 'Letto Occupato', html: 'Il letto <strong>' + _testoHtml(lettoDest) + '</strong> è occupato da:<br><br><span class="fs-5 fw-bold text-danger">' + _testoHtml(nomeDestinazione) + '</span><br><span class="text-muted">[' + _testoHtml(tipoDestinazione) + ']</span><br><br>Se confermi, <strong>' + _testoHtml(nomeOrigine||'il paziente') + '</strong> e <strong>' + _testoHtml(nomeDestinazione) + '</strong> verranno <u>scambiati</u>.', showCancelButton: true, confirmButtonText: 'Sì, scambia', cancelButtonText: 'Annulla', confirmButtonColor: '#dc3545', cancelButtonColor: '#6c757d', reverseButtons: true });
             } else {
-              conferma = Swal.fire({ icon: 'question', title: 'Conferma Spostamento', html: 'Sposto <strong>' + (nomeOrigine||'il paziente') + '</strong> dal letto <strong>' + lettoOrig + '</strong> al letto <strong>' + lettoDest + '</strong> (vuoto). Confermi?', showCancelButton: true, confirmButtonText: 'Sì, sposta', cancelButtonText: 'Annulla', confirmButtonColor: '#0d6efd', cancelButtonColor: '#6c757d', reverseButtons: true });
+              conferma = Swal.fire({ icon: 'question', title: 'Conferma Spostamento', html: 'Sposto <strong>' + _testoHtml(nomeOrigine||'il paziente') + '</strong> dal letto <strong>' + _testoHtml(lettoOrig) + '</strong> al letto <strong>' + _testoHtml(lettoDest) + '</strong> (vuoto). Confermi?', showCancelButton: true, confirmButtonText: 'Sì, sposta', cancelButtonText: 'Annulla', confirmButtonColor: '#0d6efd', cancelButtonColor: '#6c757d', reverseButtons: true });
             }
             conferma.then(function(r) {
               if (!r.isConfirmed) return;
@@ -1244,8 +1304,8 @@
                 .then(function(res) {
                   if (!res.success) {
                     var msgErr = (res.bloccati && res.bloccati.length > 0)
-                      ? 'I letti <strong>' + res.bloccati.join('</strong> e <strong>') + '</strong> sono stati modificati da un altro utente nel frattempo. Riprova.'
-                      : (res.message || 'Impossibile bloccare i letti. Riprova.');
+                      ? 'I letti <strong>' + res.bloccati.map(_testoHtml).join('</strong> e <strong>') + '</strong> sono stati modificati da un altro utente nel frattempo. Riprova.'
+                      : _testoHtml(res.message || 'Impossibile bloccare i letti. Riprova.');
                     Swal.fire({ icon: 'error', title: 'Letto in uso', html: msgErr, confirmButtonColor: '#d33' });
                     return;
                   }
@@ -1374,9 +1434,9 @@
         var sessoEl = card.querySelector('.sesso-symbol[data-field="Sesso"]');
         var sesso = sessoEl ? (sessoEl.getAttribute('data-sesso') || '').toUpperCase() : '';
         var sessoBg = sesso === 'M' ? '#7ec8e3' : (sesso === 'F' ? '#f4a7c3' : '#212529');
-        var nomeTxt = nome ? nome : '<em class="text-muted">Vuoto</em>';
+        var nomeTxt = nome ? _testoHtml(nome) : '<em class="text-muted">Vuoto</em>';
         var tipoColore = tipo ? ((typeof window._getColoreTipo === 'function') ? window._getColoreTipo(tipo) : stringToColor(tipo)) : '';
-        var tipoBadge = tipo ? ' <span class="badge text-white" style="font-size:0.6rem;background:' + tipoColore + ';">' + tipo + '</span>' : '';
+        var tipoBadge = tipo ? ' <span class="badge text-white" style="font-size:0.6rem;background:' + _coloreSicuro(tipoColore, '#6c757d') + ';">' + _testoHtml(tipo) + '</span>' : '';
         // Icona dimissione se il paziente ha valore dimissibile.
         // Compare in DUE posizioni:
         //   1. Sovrapposta nell'angolo in alto a sinistra del badge L.X
@@ -1385,10 +1445,10 @@
         var dimVal = dimRow ? (dimRow.getAttribute('data-value') || '').trim() : '';
         var dimSvg = (typeof window._dimIconSvg === 'function') ? window._dimIconSvg(11) : '';
         var dimIconAccantoNome = dimVal
-          ? ' <span class="dim-icon-list ms-1" title="In dimissione — ' + dimVal + '">' + dimSvg + '</span>'
+          ? ' <span class="dim-icon-list ms-1" title="In dimissione — ' + _testoHtml(dimVal) + '">' + dimSvg + '</span>'
           : '';
         var dimIconAngolo = dimVal
-          ? '<span class="dim-icon-corner" title="In dimissione — ' + dimVal + '">' + dimSvg + '</span>'
+          ? '<span class="dim-icon-corner" title="In dimissione — ' + _testoHtml(dimVal) + '">' + dimSvg + '</span>'
           : '';
         // Icone di stato accanto al nome: isolamento e/o rianimazione, se attivi
         // (fonte di verità: i banner nel campo Diaria della card).
@@ -1396,11 +1456,11 @@
         var bRianim = card.querySelector('.rianimazione-banner');
         var statusIcons =
           (bIso && typeof window._virusIconSvg === 'function'
-            ? ' <span class="bedstatus-icon-list" title="In isolamento — ' + (bIso.getAttribute('data-isolamento') || '') + '">' + window._virusIconSvg(13) + '</span>' : '') +
+            ? ' <span class="bedstatus-icon-list" title="In isolamento — ' + _testoHtml(bIso.getAttribute('data-isolamento') || '') + '">' + window._virusIconSvg(13) + '</span>' : '') +
           (bRianim && typeof window._rianimIconSvg === 'function'
-            ? ' <span class="bedstatus-icon-list" title="In rianimazione — ' + (bRianim.getAttribute('data-rianimazione') || '') + '">' + window._rianimIconSvg(13) + '</span>' : '');
-        html += '<li><a class="dropdown-item d-flex align-items-center gap-2 py-1" href="javascript:void(0)" data-scroll-letto="' + letto + '">'+
-                '<span class="badge text-white position-relative" style="min-width:36px;font-size:0.8rem;background:' + sessoBg + ';">' + dimIconAngolo + 'L.' + letto + '</span>'+
+            ? ' <span class="bedstatus-icon-list" title="In rianimazione — ' + _testoHtml(bRianim.getAttribute('data-rianimazione') || '') + '">' + window._rianimIconSvg(13) + '</span>' : '');
+        html += '<li><a class="dropdown-item d-flex align-items-center gap-2 py-1" href="javascript:void(0)" data-scroll-letto="' + _testoHtml(letto) + '">'+
+                '<span class="badge text-white position-relative" style="min-width:36px;font-size:0.8rem;background:' + sessoBg + ';">' + dimIconAngolo + 'L.' + _testoHtml(letto) + '</span>'+
                 '<span>' + nomeTxt + tipoBadge + dimIconAccantoNome + statusIcons + '</span>'+
                 '</a></li>';
       });
@@ -1409,7 +1469,7 @@
         var a = e.target.closest('[data-scroll-letto]'); if (!a) return;
         var letto = a.getAttribute('data-scroll-letto');
         var tog = document.getElementById('dropdownListaPazienti'); if (tog) { var dd = bootstrap.Dropdown.getInstance(tog); if (dd) dd.hide(); }
-        var card = document.querySelector('#cardsContainer .patient-card[data-bed="' + letto + '"]'); if (!card) return;
+        var card = document.querySelector('#cardsContainer .patient-card[data-bed="' + _cssVal(letto) + '"]'); if (!card) return;
         // Scroll ROBUSTO a doppio assestamento. Il vecchio one-shot smooth
         // falliva "ogni tanto": se durante l'animazione arrivava un update
         // Realtime / un reflow (equalizza colonne, contenuti applicati),
@@ -1497,7 +1557,7 @@
         aggiunti = true;
 
         if (nuovoContainer && attualeContainer) {
-          var nuovaCard = nuovoContainer.querySelector('.patient-card[data-bed="' + letto + '"]');
+          var nuovaCard = nuovoContainer.querySelector('.patient-card[data-bed="' + _cssVal(letto) + '"]');
           if (nuovaCard) attualeContainer.appendChild(nuovaCard.cloneNode(true));
         }
         // Badge tipologia: solo "badge-tipo-alt-" (era anche "badge-tipo-")
@@ -1585,7 +1645,7 @@
     }
 
     function _autoSalvaOra(letto) {
-      var card = document.querySelector('.patient-card[data-bed="' + letto + '"]');
+      var card = document.querySelector('.patient-card[data-bed="' + _cssVal(letto) + '"]');
       if (!card) return;
       eseguiSalvataggioLettoCompleto(letto, card);
     }

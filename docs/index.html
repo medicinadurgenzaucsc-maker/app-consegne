@@ -116,7 +116,7 @@
       Swal.fire({
         icon: 'warning',
         title: 'Scheda in aggiornamento',
-        html: 'Il letto <strong>' + letto + '</strong> è attualmente in modifica.<br><span class="text-muted small">La scheda si sbloccherà automaticamente al termine.</span>',
+        html: 'Il letto <strong>' + _testoHtml(letto) + '</strong> è attualmente in modifica.<br><span class="text-muted small">La scheda si sbloccherà automaticamente al termine.</span>',
         showConfirmButton: false,
         timer: 2200
       });
@@ -143,12 +143,14 @@
       // Se ci sono modifiche non salvate → salva con fetch keepalive e mostra dialogo nativo
       if (typeof _dirtyLetti !== 'undefined' && _dirtyLetti.size > 0) {
         _dirtyLetti.forEach(function(letto) {
-          var card = document.querySelector('.patient-card[data-bed="' + letto + '"]');
+          var card = document.querySelector('.patient-card[data-bed="' + _cssVal(letto) + '"]');
           if (!card) return;
 
           // Raccoglie i dati dalla card
           var datiPaziente = {};
           card.querySelectorAll('.editable-area').forEach(function(area) {
+            // solo i campi veri della scheda, non elementi annidati nel contenuto
+            if (area.parentElement && area.parentElement.closest('.editable-area')) return;
             var campo = area.getAttribute('data-field');
             if (campo) datiPaziente[campo] = area.classList.contains('plain-text') ? area.innerText : area.innerHTML;
           });
@@ -245,14 +247,18 @@
       nuovoDoc.querySelectorAll('.patient-card[data-bed]').forEach(function(nuova) {
         var letto = nuova.getAttribute('data-bed');
         if (_lettoLockAtt === letto) return;
-        document.querySelectorAll('.patient-card[data-bed="' + letto + '"]').forEach(function(attuale) {
+        document.querySelectorAll('.patient-card[data-bed="' + _cssVal(letto) + '"]').forEach(function(attuale) {
           ['Nome','Diagnosi','Eta','NoteTerapia','Diaria','DaFare','PianoTerapeutico','EsamiColturali','Allergie','CodiceSanitario','Ossigeno','Vitto'].forEach(function(campo) {
             var src = nuova.querySelector('[data-field="' + campo + '"]');
             var dst = attuale.querySelector('[data-field="' + campo + '"]');
             if (!src || !dst) return;
             var hasFocus = (dst === activeEl || dst.contains(activeEl));
             var caretPos = hasFocus ? _salvaCaretPos(dst) : null;
-            dst.innerHTML = src.innerHTML;
+            // La sorgente è l'HTML di _renderCardsHtml (testo codificato, campi
+            // ricchi filtrati). Si scrive comunque «per tipo»: un campo di solo
+            // testo non riceve mai elementi, uno ricco ripassa dal filtro.
+            if (dst.classList.contains('plain-text')) dst.textContent = src.textContent;
+            else dst.innerHTML = _pulisciHtml(src.innerHTML);
             if (hasFocus && caretPos !== null) {
               dst.focus();
               _ripristinaCaretPos(dst, caretPos);
@@ -299,7 +305,7 @@
         // cieca del resubscribe). Lo sweep periodico ri-chiama _applicaLocks
         // così l'overlay sparisce da solo alla scadenza.
         if (info.ts && (_nowLock - Number(info.ts)) > (typeof LOCK_TTL_MS !== 'undefined' ? LOCK_TTL_MS : 600000)) return;
-        var cards = document.querySelectorAll('.patient-card[data-bed="' + letto + '"]');
+        var cards = document.querySelectorAll('.patient-card[data-bed="' + _cssVal(letto) + '"]');
         if (!cards.length) return;
         cards.forEach(function(card) {
           card.classList.add('card-locked');
@@ -1486,7 +1492,7 @@
     function _escIso(s) {
       return String(s == null ? '' : s)
         .replace(/&/g, '&amp;').replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     }
 
     // Raggruppa i banner isolamento/rianimazione in un box in cima al Diaria
@@ -1966,8 +1972,8 @@
             '<span class="sc-lbl">' + _escIso(c.label) + '</span>' +
             '<span class="sc-numwrap">' +
               '<input type="number" inputmode="decimal" class="sc-num" ' +
-                (c.min != null ? 'min="' + c.min + '" ' : '') + (c.max != null ? 'max="' + c.max + '" ' : '') +
-                (c.step != null ? 'step="' + c.step + '" ' : '') + 'placeholder="—">' +
+                (c.min != null ? 'min="' + _escIso(c.min) + '" ' : '') + (c.max != null ? 'max="' + _escIso(c.max) + '" ' : '') +
+                (c.step != null ? 'step="' + _escIso(c.step) + '" ' : '') + 'placeholder="—">' +
               (c.unita ? '<span class="sc-unit">' + _escIso(c.unita) + '</span>' : '') +
             '</span></div>';
         }
@@ -1979,7 +1985,9 @@
         '<div style="font-weight:600;font-size:1.05rem;color:#37474f;">' + _escIso(scala.nome) + '</div>' +
         (scala.descrizione ? '<div class="sc-descr">' + _escIso(scala.descrizione) + '</div>' : '') +
         _scaleInfoAccordion(def) +
-        (def.procedure_rischio ? '<div class="sc-procedure">' + def.procedure_rischio + '</div>' : '') +
+        // testo scritto da chi gestisce le scale (contiene elenchi e classi):
+        // passa da un filtro che lascia la formattazione e toglie tutto ciò che è attivo
+        (def.procedure_rischio ? '<div class="sc-procedure">' + _pulisciHtmlConfig(def.procedure_rischio) + '</div>' : '') +
         '<div class="sc-criteri">' + criteriHtml + '</div>' +
         '<div id="scaleRisultato" class="sc-risultato">' +
           '<span class="sc-ris-val" id="scaleValore">—</span>' +
@@ -1988,7 +1996,7 @@
         (scala.riferimento || scala.fonte_url
           ? '<div class="text-muted mt-2" style="font-size:0.72rem;line-height:1.3;">Fonte: ' +
             _escIso(scala.riferimento || '') +
-            (scala.fonte_url ? ' · <a href="' + _escIso(scala.fonte_url) + '" target="_blank" rel="noopener">MDCalc</a>' : '') +
+            (_urlSicuro(scala.fonte_url) ? ' · <a href="' + _escIso(_urlSicuro(scala.fonte_url)) + '" target="_blank" rel="noopener">MDCalc</a>' : '') +
             '</div>'
           : '') +
         '<div class="d-flex gap-2 mt-3">' +
@@ -2081,7 +2089,7 @@
       var campo = card.querySelector('[data-field="EsamiColturali"]');
       if (!campo) return;
       var box = _scaleBox(campo);
-      var esistente = box.querySelector('.scala-risultato[data-scala="' + scalaId + '"]');
+      var esistente = box.querySelector('.scala-risultato[data-scala="' + _cssVal(scalaId) + '"]');
       if (esistente) {
         esistente.textContent = testo;
       } else {
@@ -2138,7 +2146,7 @@
       var campo = card.querySelector('[data-field="EsamiColturali"]');
       if (!campo) return;
       var box = campo.querySelector(':scope > .scale-box');
-      var riga = (box || campo).querySelector('.scala-risultato[data-scala="' + scalaId + '"]');
+      var riga = (box || campo).querySelector('.scala-risultato[data-scala="' + _cssVal(scalaId) + '"]');
       if (riga) riga.remove();
       if (box && !box.querySelector('.scala-risultato')) box.remove();
       if (typeof window._placeholderCheck === 'function') window._placeholderCheck(campo);
@@ -3297,7 +3305,7 @@
       // Tooltip: data + misurazione del punto sotto il mouse.
       [].slice.call(ui.body.querySelectorAll('circle.lab-pt')).forEach(function(c){
         c.addEventListener('mouseenter', function(ev){
-          tip.innerHTML='<b>'+c.getAttribute('data-d')+'</b><br>'+c.getAttribute('data-n')+': '+c.getAttribute('data-v');
+          tip.innerHTML='<b>'+_escIso(c.getAttribute('data-d'))+'</b><br>'+_escIso(c.getAttribute('data-n'))+': '+_escIso(c.getAttribute('data-v'));
           tip.style.display='block';
           var r=graf.getBoundingClientRect();
           tip.style.left=Math.max(4,Math.min(r.width-190, ev.clientX-r.left+12))+'px';
@@ -3949,11 +3957,12 @@
               '<table style="border-collapse:collapse;width:100%;">' + interpHtml + '</table>' : '') +
             (scala && (scala.riferimento || scala.fonte_url)
               ? '<div class="text-muted mt-2" style="font-size:0.72rem;line-height:1.3;">Fonte: ' + _escIso(scala.riferimento || '') +
-                (scala.fonte_url ? ' · <a href="' + _escIso(scala.fonte_url) + '" target="_blank" rel="noopener">MDCalc</a>' : '') + '</div>'
+                (_urlSicuro(scala.fonte_url) ? ' · <a href="' + _escIso(_urlSicuro(scala.fonte_url)) + '" target="_blank" rel="noopener">MDCalc</a>' : '') + '</div>'
               : '') +
           '</div>';
         Swal.fire({
-          title: scala ? scala.nome : scalaId,
+          // il titolo di Swal è HTML: l'id viene da un attributo salvato nel campo
+          title: _escIso(scala ? scala.nome : scalaId),
           html: html,
           showCancelButton: true,
           confirmButtonText: '<i class="bi bi-trash me-1"></i>Cancella inserimento',
@@ -4199,8 +4208,8 @@
           tipKeys.forEach(function(tip) {
             var colore = (tip === 'STANDARD') ? '#6c757d' : ((typeof window._getColoreTipo === 'function') ? window._getColoreTipo(tip) : stringToColor(tip));
             html += '<div class="d-flex align-items-center justify-content-between mb-1">'
-                  + '<span class="badge text-white text-uppercase" style="background:' + colore + ';max-width:145px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + tip + '">' + tip + '</span>'
-                  + '<span class="badge bg-light text-dark border ms-1">' + r.tipologie[tip] + '</span>'
+                  + '<span class="badge text-white text-uppercase" style="background:' + _coloreSicuro(colore, '#6c757d') + ';max-width:145px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + _testoHtml(tip) + '">' + _testoHtml(tip) + '</span>'
+                  + '<span class="badge bg-light text-dark border ms-1">' + _testoHtml(r.tipologie[tip]) + '</span>'
                   + '</div>';
           });
           html += '</div>';
@@ -5476,6 +5485,12 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@simonwep/pickr@1.9.1/dist/themes/nano.min.css">
   <script src="https://cdn.jsdelivr.net/npm/@simonwep/pickr@1.9.1/dist/pickr.min.js"></script>
 
+  <!-- Filtro dell'HTML dei campi: DOMPurify (versione fissata e verificata con
+       integrity) + js/sanifica.js. Vanno PRIMA di api.js: senza, l'app non
+       disegna e non salva le schede (vedi «FILTRO DELL'HTML» in api.js). -->
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.4.16/dist/purify.min.js" integrity="sha256-LJCptG1kY/JgOKKbaG6CvJHeAf2snVIp58/js2ATTqI=" crossorigin="anonymous"></script>
+  <script src="js/sanifica.js"></script>
+
   <!-- Script principali: api.js (Supabase + helpers), poi logica app -->
   <script src="js/api.js"></script>
   
@@ -5682,7 +5697,7 @@
           title: 'Autorizzazione Google del reparto',
           html: '<div class="text-start small">'
             + '<p>Si fa <b>una volta sola, da un solo PC</b>: l\'autorizzazione resta custodita sul server e vale per <b>tutti i computer</b> del reparto. Serve SOLO a inviare la mail dimissioni dall\'account del reparto, direttamente dal server.</p>'
-            + '<p class="mb-1">Usa l\'account del reparto' + (_emailConsentita ? ' (<b>' + _emailConsentita + '</b>)' : '') + '.</p>'
+            + '<p class="mb-1">Usa l\'account del reparto' + (_emailConsentita ? ' (<b>' + _testoHtml(_emailConsentita) + '</b>)' : '') + '.</p>'
             + (serveSecret
               ? '<hr><p class="mb-1"><b>Primo avvio:</b> incolla il <b>client secret</b> del client OAuth.<br><small class="text-muted">console.cloud.google.com &rarr; API e servizi &rarr; Credenziali &rarr; client &laquo;170256871056-&hellip;&raquo; &rarr; Segreto client</small></p>'
                 + '<input type="password" id="cassaSecret" class="form-control form-control-sm" placeholder="Client secret (GOCSPX-...)" autocomplete="off">'
@@ -5733,7 +5748,7 @@
                   _cassaforteBadge(false);
                   Swal.fire({
                     icon: 'success', title: 'Fatto: autorizzazione registrata',
-                    html: 'D\'ora in poi la mail dimissioni parte da <b>tutti i PC del reparto</b> senza finestre di Google.<br><small class="text-muted">Account: ' + (j.email || '') + '</small>',
+                    html: 'D\'ora in poi la mail dimissioni parte da <b>tutti i PC del reparto</b> senza finestre di Google.<br><small class="text-muted">Account: ' + _testoHtml(j.email || '') + '</small>',
                     confirmButtonColor: '#00695c'
                   });
                   if (typeof window._log === 'function') {
@@ -5741,7 +5756,7 @@
                   }
                 })
                 .catch(function(e) {
-                  Swal.fire({ icon: 'error', title: 'Registrazione non riuscita', html: '<div class="small text-start">' + String((e && e.message) || e) + '</div>', confirmButtonColor: '#d33' });
+                  Swal.fire({ icon: 'error', title: 'Registrazione non riuscita', html: '<div class="small text-start">' + _testoHtml(String((e && e.message) || e)) + '</div>', confirmButtonColor: '#d33' });
                 });
             },
             error_callback: function(err) {
@@ -5751,7 +5766,7 @@
                 title: t === 'popup_failed_to_open' ? 'Popup bloccato dal browser' : 'Autorizzazione non completata',
                 html: t === 'popup_failed_to_open'
                   ? 'Consenti i popup per questo sito (icona a destra nella barra dell\'indirizzo) e riprova.<br><b>Serve solo per questa prima e unica volta.</b>'
-                  : (t || 'errore'),
+                  : _testoHtml(t || 'errore'),
                 confirmButtonColor: '#d33'
               });
             }
@@ -5844,7 +5859,7 @@
         if (sott) {
           sott.innerHTML = 'Accedi con l\'account del reparto:<br>' +
             '<strong style="color:#1565c0;">' +
-            (_emailConsentita || 'medicinadurgenza.ucsc@gmail.com') + '</strong>';
+            _testoHtml(_emailConsentita || 'medicinadurgenza.ucsc@gmail.com') + '</strong>';
         }
         google.accounts.id.renderButton(box, {
           type: 'standard', theme: 'filled_blue', size: 'large',
@@ -6203,8 +6218,8 @@
       if (!parts || !parts.length) { bc.innerHTML = ''; return; }
       bc.innerHTML = parts.map(function(p, i) {
         return i === parts.length - 1
-          ? '<span>' + p + '</span>'
-          : '<span class="text-white-50">' + p + '</span><i class="bi bi-chevron-right mx-1" style="font-size:0.65rem;"></i>';
+          ? '<span>' + _testoHtml(p) + '</span>'
+          : '<span class="text-white-50">' + _testoHtml(p) + '</span><i class="bi bi-chevron-right mx-1" style="font-size:0.65rem;"></i>';
       }).join('');
     }
 
@@ -6241,7 +6256,9 @@
           if (!giorni || !giorni.length) {
             container.innerHTML = '<div class="p-4 text-center text-muted"><i class="bi bi-inbox fs-2 d-block mb-2"></i>Nessun backup trovato.</div>';
           } else {
-            container.innerHTML = giorni.map(function(d) {
+            // d finisce dentro il gestore della riga: solo date AAAA-MM-GG
+            // (lo garantisce già _sbGetGiorniArchivio; qui lo si ripete).
+            container.innerHTML = giorni.filter(function(d) { return /^\d{4}-\d{2}-\d{2}$/.test(String(d)); }).map(function(d) {
               var p = d.split('-');
               var vis = (p[2] || '') + '/' + (p[1] || '') + '/' + (p[0] || '');
               return '<a href="javascript:void(0)" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center px-4 py-3"' +
@@ -6272,7 +6289,8 @@
           if (!timestamps || !timestamps.length) {
             container.innerHTML = '<div class="p-4 text-center text-muted">Nessun orario trovato per questo giorno.</div>';
           } else {
-            container.innerHTML = timestamps.map(function(ts) {
+            // ts finisce dentro il gestore della riga: solo cifre.
+            container.innerHTML = timestamps.filter(function(ts) { return /^\d{10,13}$/.test(String(ts)); }).map(function(ts) {
               var d = new Date(Number(ts));
               var ora = String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0') + ':' + String(d.getSeconds()).padStart(2,'0');
               return '<a href="javascript:void(0)" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center px-4 py-3"' +
@@ -6343,20 +6361,21 @@
           ? ((typeof window._getColoreTipo === 'function') ? window._getColoreTipo(tipo) : stringToColor(tipo))
           : '#6c757d';
         var badgeHtml = tipo
-          ? '<span class="badge text-white" style="background:' + colore + ';font-size:0.6rem;">' + tipo + '</span>'
+          ? '<span class="badge text-white" style="background:' + _coloreSicuro(colore, '#6c757d') + ';font-size:0.6rem;">' + _testoHtml(tipo) + '</span>'
           : '<span class="badge bg-light text-secondary border" style="font-size:0.6rem;">STANDARD</span>';
         var isNote = letto === 'NOTE';
-        return '<div class="ripristina-letto-card" data-letto="' + letto + '" onclick="_toggleRipristinaCard(this)"' +
+        // letto, nome e diagnosi vengono dal backup: sempre come testo
+        return '<div class="ripristina-letto-card" data-letto="' + _testoHtml(letto) + '" onclick="_toggleRipristinaCard(this)"' +
                ' style="width:170px;border:2px dashed #aaa;border-radius:8px;padding:10px;cursor:pointer;' +
                'background:#fff;transition:all 0.15s;user-select:none;">' +
                '<div class="d-flex align-items-center gap-2 mb-1">' +
                '<span style="font-size:1.4rem;font-weight:bold;line-height:1;color:#37474f;">' +
-               (isNote ? '<i class="bi bi-stickies-fill" style="font-size:1rem;color:#546e7a;"></i>' : letto) +
+               (isNote ? '<i class="bi bi-stickies-fill" style="font-size:1rem;color:#546e7a;"></i>' : _testoHtml(letto)) +
                '</span>' + badgeHtml + '</div>' +
-               '<div style="font-size:0.78rem;font-weight:700;color:#263238;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="' + nome + '">' +
-               (nome || '<span class="text-muted fst-italic">Vuoto</span>') + '</div>' +
-               '<div style="font-size:0.68rem;color:#607d8b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;" title="' + diag + '">' +
-               (diag || '') + '</div></div>';
+               '<div style="font-size:0.78rem;font-weight:700;color:#263238;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="' + _testoHtml(nome) + '">' +
+               (nome ? _testoHtml(nome) : '<span class="text-muted fst-italic">Vuoto</span>') + '</div>' +
+               '<div style="font-size:0.68rem;color:#607d8b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;" title="' + _testoHtml(diag) + '">' +
+               _testoHtml(diag) + '</div></div>';
       }).join('');
       _aggiornaConteggioSel();
       document.getElementById('ripristinaViewLetti').style.display = '';
@@ -6424,13 +6443,13 @@
       var oraVis = _riprisinaTsSelezionato ? _riprisinaTsSelezionato.ora : '?';
       var riassunto = tuttoSelezionato
         ? '<b>Tutti i ' + pazientiDaRipristinare.length + ' letti</b> verranno ripristinati'
-        : 'I seguenti letti: <b>' + lettiSelezionati.filter(function(l){return l!=='NOTE';}).join(', ') +
+        : 'I seguenti letti: <b>' + lettiSelezionati.filter(function(l){return l!=='NOTE';}).map(_testoHtml).join(', ') +
           (lettiSelezionati.indexOf('NOTE') !== -1 ? ' + NOTE' : '') + '</b>';
       Swal.fire({
         icon: 'warning',
         title: 'Conferma Ripristino',
         html: '<div class="text-start">' +
-              '<p class="mb-2">Backup: <strong>' + dayVis + ' alle ' + oraVis + '</strong></p>' +
+              '<p class="mb-2">Backup: <strong>' + _testoHtml(dayVis) + ' alle ' + _testoHtml(oraVis) + '</strong></p>' +
               '<p class="mb-2">' + riassunto + '</p>' +
               '<div class="alert alert-danger py-2 mb-0" style="font-size:0.85rem;">' +
               '<i class="bi bi-exclamation-triangle-fill me-1"></i>' +
@@ -6704,14 +6723,14 @@
         function(orfano) {
           var lettoOrfano = orfano.getAttribute('data-letto');
           // Se l'orfano appartiene a una card NON in focus mode → rimuovi
-          var cardOrfana = lettoOrfano ? document.querySelector('.patient-card.focus-mode[data-bed="' + lettoOrfano + '"]') : null;
+          var cardOrfana = lettoOrfano ? document.querySelector('.patient-card.focus-mode[data-bed="' + _cssVal(lettoOrfano) + '"]') : null;
           if (!cardOrfana) {
             if (orfano.parentNode) orfano.parentNode.removeChild(orfano);
           }
         }
       );
       // Evita duplicati (può essere dentro la card o nel body se focus mode)
-      if (document.querySelector('.emerg-save-btn[data-letto="' + letto + '"]')) return;
+      if (document.querySelector('.emerg-save-btn[data-letto="' + _cssVal(letto) + '"]')) return;
 
       // Container di default: dentro la card (vista standard .bed-number-box o
       // alternativa .alt-col-info). Sostituito da document.body se in focus
@@ -6794,7 +6813,7 @@
       // (era stato spostato lì se card in focus mode con transform parent).
       var letto = card.getAttribute('data-bed');
       var btn = letto
-        ? document.querySelector('.emerg-save-btn[data-letto="' + letto + '"]')
+        ? document.querySelector('.emerg-save-btn[data-letto="' + _cssVal(letto) + '"]')
         : card.querySelector('.emerg-save-btn');
       if (btn && btn.parentNode) btn.parentNode.removeChild(btn);
       // Se non ci sono più floppy in giro, ferma il polling
@@ -6815,7 +6834,7 @@
       var btn = btnOpt;
       if (!btn) {
         // Cerca per data-letto (può essere in body o dentro card)
-        btn = document.querySelector('.emerg-save-btn[data-letto="' + letto + '"]');
+        btn = document.querySelector('.emerg-save-btn[data-letto="' + _cssVal(letto) + '"]');
         if (!btn) return;
       }
       // Non sovrascrivere stati transienti (saved/error mostrati per X secondi)
@@ -7032,7 +7051,8 @@
       if (!el) return;
       var c = tipo==='ok'?'#4ec9b0': tipo==='warn'?'#dcdcaa': tipo==='err'?'#f48771':'#9cdcfe';
       var i = tipo==='ok'?'✓': tipo==='warn'?'⚠': tipo==='err'?'✗':'→';
-      el.innerHTML += '<span style="color:'+c+'">'+i+' '+msg+'</span><br>';
+      // msg può contenere valori letti da fuori (errori, risposte): è testo
+      el.innerHTML += '<span style="color:'+c+'">'+i+' '+_testoHtml(msg)+'</span><br>';
       el.scrollTop = el.scrollHeight;
     }
 
@@ -7328,13 +7348,14 @@
         { nome:'SweetAlert2', ok: typeof Swal!=='undefined' },
         { nome:'Bootstrap Icons', ok: !!document.querySelector('link[href*="bootstrap-icons"]') },
         { nome:'Pickr (color picker)', ok: typeof Pickr !== 'undefined' },
-        { nome:'Google Identity Services', ok: typeof google !== 'undefined' && !!(google.accounts && google.accounts.oauth2) }
+        { nome:'Google Identity Services', ok: typeof google !== 'undefined' && !!(google.accounts && google.accounts.oauth2) },
+        { nome:'Filtro HTML (DOMPurify + sanifica.js)', ok: typeof _filtroPronto === 'function' && _filtroPronto() }
       ];
       lib.forEach(function(l) {
         if (l.ok) _diagLog(l.nome+': caricata', 'ok');
         else      _diagLog(l.nome+': NON trovata!', 'err');
       });
-      _diagR.lib = { ok: lib.filter(function(l){return l.nome.indexOf('Pickr')<0 && l.nome.indexOf('Google')<0;}).every(function(l){return l.ok;}) };
+      _diagR.lib = { ok: lib.filter(function(l){return l.nome.indexOf('Pickr')<0 && l.nome.indexOf('Google')<0 && l.nome.indexOf('Filtro')<0;}).every(function(l){return l.ok;}) };
       setTimeout(next, 150);
     }
 
@@ -7896,7 +7917,7 @@
       var problemiBox = problemi.length
         ? '<div class="text-start mb-2"><strong style="font-size:0.85rem;">Problemi rilevati ('+problemi.length+'):</strong>' +
           '<ul class="mb-0 mt-1" style="max-height:140px;overflow-y:auto;">'+problemi.map(function(p){
-            return '<li style="font-size:0.75rem;">'+p+'</li>';
+            return '<li style="font-size:0.75rem;">'+_testoHtml(p)+'</li>';
           }).join('')+'</ul></div>'
         : '<p class="mb-2 text-success fw-bold" style="font-size:0.85rem;"><i class="bi bi-check-circle-fill me-1"></i>Tutti i test superati.</p>';
 
@@ -8370,6 +8391,8 @@
     function _raccogliDatiCard(card) {
       var dati = {};
       card.querySelectorAll('.editable-area').forEach(function(area) {
+        // solo i campi veri della scheda, non elementi annidati nel contenuto
+        if (area.parentElement && area.parentElement.closest('.editable-area')) return;
         var campo = area.getAttribute('data-field');
         if (!campo) return;
         dati[campo] = area.classList.contains('plain-text') ? area.innerText : area.innerHTML;
@@ -8386,6 +8409,7 @@
     }
 
     // ── Applicazione dati alla card (per ripristino) ────────────────
+    var _CAMPI_SCHEDA = ['Nome','Diagnosi','Eta','NoteTerapia','Diaria','DaFare','PianoTerapeutico','EsamiColturali','Allergie','CodiceSanitario','Ossigeno','Vitto'];
     function _applicaDatiCard(card, dati) {
       Object.keys(dati || {}).forEach(function(campo) {
         if (campo === 'Sesso') {
@@ -8440,13 +8464,17 @@
           if (dn) dn.value = dati[campo] || '';
           return;
         }
+        // L'istantanea viene dalla memoria del browser: si accettano solo i
+        // campi della scheda, e quelli a testo ricco ripassano dal filtro.
+        if (_CAMPI_SCHEDA.indexOf(campo) < 0) return;
         var dst = card.querySelector('[data-field="' + campo + '"]');
         if (!dst) return;
         var val = dati[campo] != null ? String(dati[campo]) : '';
         if (dst.classList.contains('plain-text')) {
           if (dst.innerText !== val) dst.innerText = val;
         } else {
-          if (dst.innerHTML !== val) dst.innerHTML = val;
+          var pulito = _pulisciHtml(val);
+          if (dst.innerHTML !== pulito) dst.innerHTML = pulito;
         }
         if (typeof window._placeholderCheck === 'function') window._placeholderCheck(dst);
       });
@@ -8600,7 +8628,7 @@
     function _aggiornaBadgeIcona(letto) {
       var s = window._snapshots[letto];
       var n = s ? (s.storico ? s.storico.length : 0) + (s.current ? 1 : 0) : 0;
-      var card = document.querySelector('.patient-card[data-bed="'+letto+'"]');
+      var card = document.querySelector('.patient-card[data-bed="'+_cssVal(letto)+'"]');
       if (!card) return;
       var badges = card.querySelectorAll('[data-snap-badge]');
       badges.forEach(function(b) {
@@ -8666,7 +8694,7 @@
 
       return '<div class="snap-preview">' +
         '<div class="snap-meta">' +
-          '<div class="snap-tipo">' + _tipoLabel(snap.tipo) + '</div>' +
+          '<div class="snap-tipo">' + _esc(_tipoLabel(snap.tipo)) + '</div>' +
           '<div class="snap-paginazione">Snapshot ' + (indice+1) + ' di ' + totale + '</div>' +
         '</div>' +
         '<div class="snap-orari">' + headerInfo + '</div>' +
@@ -8822,7 +8850,7 @@
         title: 'Sei sicuro?',
         html: 'Il contenuto attuale della scheda verrà sostituito con lo snapshot del<br>' +
               '<strong>' + _fmtTs(snap.tsUpdate || snap.tsClose || snap.tsOpen) + '</strong> ' +
-              '(' + _tipoLabel(snap.tipo) + ').<br><br>' +
+              '(' + _esc(_tipoLabel(snap.tipo)) + ').<br><br>' +
               '<small class="text-muted">Prima del ripristino verrà creato uno <strong>snapshot di sicurezza</strong> dello stato attuale (recuperabile).</small>',
         showCancelButton: true,
         confirmButtonText: '<i class="bi bi-arrow-counterclockwise me-1"></i>Sì, ripristina',
@@ -8841,7 +8869,7 @@
     }
 
     function _eseguiRipristino(snap, letto) {
-      var card = document.querySelector('.patient-card[data-bed="'+letto+'"]');
+      var card = document.querySelector('.patient-card[data-bed="'+_cssVal(letto)+'"]');
       if (!card) {
         Swal.fire({ icon: 'error', title: 'Card non trovata' });
         return;
@@ -9287,9 +9315,9 @@
           : ((typeof window._getColoreTipo === 'function') ? window._getColoreTipo(tip) : '#6c757d');
         return '<label class="d-flex align-items-center gap-2 px-2 py-1" style="cursor:pointer;border:1px solid #e0e0e0;border-radius:4px;background:#fff;margin:0 0 4px 0;font-size:0.9rem;">' +
           '<input type="radio" name="clLetti" value="' + _esc(tip) + '" class="form-check-input mt-0">' +
-          '<span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:' + colore + ';flex-shrink:0;"></span>' +
+          '<span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:' + _coloreSicuro(colore, '#6c757d') + ';flex-shrink:0;"></span>' +
           '<span>' + _esc(tip) + '</span>' +
-          '<span class="badge bg-light text-dark border ms-auto">' + tipologie[tip] + '</span>' +
+          '<span class="badge bg-light text-dark border ms-auto">' + _esc(tipologie[tip]) + '</span>' +
         '</label>';
       }).join('');
 
@@ -9573,7 +9601,9 @@
       var checkboxesHtml = pazTutti.map(function(p) {
         var letto = String(p.Letto);
         var checked = preselected[letto] ? 'checked' : '';
-        var nome  = (p.Nome || '').trim() || '<em class="text-muted">(vuoto)</em>';
+        // il nome viene dal database: testo, mai HTML
+        var nomeTesto = (p.Nome || '').trim();
+        var nome  = nomeTesto ? _esc(nomeTesto) : '<em class="text-muted">(vuoto)</em>';
         var dim   = (p.Dimissibile || '').trim();
         var dimBadge = dim
           ? '<span class="badge bg-warning text-dark ms-1" style="font-size:0.65rem;padding:1px 5px;">' + _esc(dim) + '</span>'
@@ -9581,7 +9611,7 @@
         return '<label class="d-flex align-items-center gap-1 px-2 py-1" style="cursor:pointer;border:1px solid #e0e0e0;border-radius:4px;font-size:0.8rem;background:#fff;margin:0;overflow:hidden;">' +
                '<input type="checkbox" class="form-check-input mb-0 mail-dim-cb" data-letto="' + _esc(letto) + '" ' + checked + ' style="flex-shrink:0;">' +
                '<span style="min-width:32px;font-weight:bold;color:#37474f;flex-shrink:0;">L.' + _esc(letto) + '</span>' +
-               '<span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="' + _esc(nome.replace(/<[^>]+>/g, '')) + (dim ? ' — ' + _esc(dim) : '') + '">' +
+               '<span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="' + _esc(nomeTesto || '(vuoto)') + (dim ? ' — ' + _esc(dim) : '') + '">' +
                  nome + dimBadge +
                '</span></label>';
       }).join('');
@@ -9699,7 +9729,7 @@
       // Verifica formato email base
       var invalide = emails.filter(function(e){ return !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e); });
       if (invalide.length) {
-        Swal.showValidationMessage('Email non valide: ' + invalide.join(', '));
+        Swal.showValidationMessage('Email non valide: ' + _esc(invalide.join(', ')));
         return;
       }
       if (!d.oggetto.trim()) {
@@ -9737,7 +9767,7 @@
             var dEl = document.getElementById('mailDimDest'); if (dEl) dEl.value = d.dest;
             var oEl = document.getElementById('mailDimOggetto'); if (oEl) oEl.value = d.oggetto;
             d.pazientiSel.forEach(function(p) {
-              var cb = document.querySelector('.mail-dim-cb[data-letto="'+String(p.Letto)+'"]');
+              var cb = document.querySelector('.mail-dim-cb[data-letto="'+_cssVal(p.Letto)+'"]');
               if (cb) cb.checked = true;
             });
             // Se l'utente aveva modificato l'anteprima, la ripristino come era

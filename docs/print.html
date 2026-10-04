@@ -279,15 +279,22 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<!-- Filtro dell'HTML dei campi: DOMPurify (versione fissata e verificata con
+     integrity) + js/sanifica.js. Vanno PRIMA di api.js: senza, la stampa si ferma. -->
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.4.16/dist/purify.min.js" integrity="sha256-LJCptG1kY/JgOKKbaG6CvJHeAf2snVIp58/js2ATTqI=" crossorigin="anonymous"></script>
+<script src="js/sanifica.js"></script>
 <script src="js/api.js"></script>
 <script>
 (function() {
 
   // ── Lettura parametri URL ──────────────────────────────────────
   var params     = new URLSearchParams(window.location.search);
-  var layout     = params.get('layout')      || 'main';
+  // I parametri arrivano dall'indirizzo, che chiunque può costruire: layout e
+  // orientamento valgono solo se sono uno dei due valori previsti (il secondo
+  // finisce dentro un foglio di stile).
+  var layout     = params.get('layout') === 'alt' ? 'alt' : 'main';
   var saltaVuoti = params.get('saltaVuoti')  === '1';
-  var orientamento = params.get('orientamento') || 'portrait';
+  var orientamento = params.get('orientamento') === 'landscape' ? 'landscape' : 'portrait';
   var ordinamento  = params.get('ordinamento')  || 'tipologia';
   var dataArchivio = params.get('dataArchivio') || '';
   var tipologieParam = params.get('tipologie')  || 'all';
@@ -306,6 +313,16 @@
   // Margine superiore 20mm (2cm), laterali e inferiore 8mm
   styleEl.textContent = '@page { size: A4 ' + orientamento + '; margin: 20mm 8mm 8mm 8mm; }';
   document.head.appendChild(styleEl);
+
+  // ── Ciò che viene dal database non si scrive mai in pagina così com'è ──
+  // T(): testo semplice (letto, nome, diagnosi, date, messaggi) dentro l'HTML.
+  // H(): HTML di un campo a testo ricco, passato dal filtro (js/sanifica.js).
+  function T(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function H(s) { return _pulisciHtml(s); }
 
   // ── Helper date ────────────────────────────────────────────────
   function parseRicovero(raw) {
@@ -363,7 +380,7 @@
     var tipo = String(p.TipologiaLetto || '').trim().toUpperCase();
     var tipoColore = typeof window._printGetColoreTipo === 'function' ? window._printGetColoreTipo(tipo) : '#546e7a';
     var tipoBadge = tipo
-      ? '<span class="badge text-white text-uppercase mt-1" style="background:' + tipoColore + ';font-size:0.65rem;">' + tipo + '</span>'
+      ? '<span class="badge text-white text-uppercase mt-1" style="background:' + _coloreSicuro(tipoColore, '#546e7a') + ';font-size:0.65rem;">' + T(tipo) + '</span>'
       : '<span style="font-size:0.65rem;color:#999;">STANDARD</span>';
 
     return '<div class="patient-card">' +
@@ -371,7 +388,7 @@
         '<div class="bed-number-box">' +
           '<div class="bed-label">Letto</div>' +
           '<div style="display:flex;align-items:center;justify-content:center;">' +
-            '<div class="bed-number">' + (p.Letto || '') + '</div>' +
+            '<div class="bed-number">' + T(p.Letto) + '</div>' +
             sessoHtml(p.Sesso, '2.2rem') +
           '</div>' +
           tipoBadge +
@@ -381,19 +398,19 @@
             '<div style="width:70%;">' +
               '<div class="d-flex align-items-start mb-1">' +
                 '<span class="text-muted me-2" style="font-size:0.75rem;white-space:nowrap;">Paziente:</span>' +
-                '<div class="fw-bold fs-5 text-uppercase" style="border-bottom:1px solid #999;padding:1px;width:100%;">' + (p.Nome || '') + '</div>' +
+                '<div class="fw-bold fs-5 text-uppercase" style="border-bottom:1px solid #999;padding:1px;width:100%;">' + T(p.Nome) + '</div>' +
               '</div>' +
               '<div class="d-flex align-items-start">' +
                 '<span class="text-muted me-2" style="font-size:0.72rem;white-space:nowrap;">Diagnosi / Motivo Ricovero:</span>' +
-                '<div class="fw-bold" style="border-bottom:1px solid #999;padding:1px;width:100%;">' + (p.Diagnosi || '') + '</div>' +
+                '<div class="fw-bold" style="border-bottom:1px solid #999;padding:1px;width:100%;">' + T(p.Diagnosi) + '</div>' +
               '</div>' +
             '</div>' +
             '<div style="text-align:right;min-width:190px;font-size:0.80rem;">' +
-              '<div class="mb-1"><span class="text-muted">Nasc.: </span><strong>' + nasc.vis + '</strong></div>' +
-              '<div class="mb-1"><span class="text-muted">Et&agrave;: </span><strong>' + eta + '</strong></div>' +
-              '<div class="mb-1"><span class="text-muted">Ricovero: </span><strong>' + ric.vis + '</strong></div>' +
-              '<div class="mb-1"><span class="text-muted">Giorni: </span><strong style="color:#c62828;">' + ric.giorni + '</strong></div>' +
-              '<div><span class="text-muted">C.S.: </span><strong>' + (p.CodiceSanitario || '') + '</strong></div>' +
+              '<div class="mb-1"><span class="text-muted">Nasc.: </span><strong>' + T(nasc.vis) + '</strong></div>' +
+              '<div class="mb-1"><span class="text-muted">Et&agrave;: </span><strong>' + T(eta) + '</strong></div>' +
+              '<div class="mb-1"><span class="text-muted">Ricovero: </span><strong>' + T(ric.vis) + '</strong></div>' +
+              '<div class="mb-1"><span class="text-muted">Giorni: </span><strong style="color:#c62828;">' + T(ric.giorni) + '</strong></div>' +
+              '<div><span class="text-muted">C.S.: </span><strong>' + T(p.CodiceSanitario) + '</strong></div>' +
             '</div>' +
           '</div>' +
         '</div>' +
@@ -401,26 +418,26 @@
       '<div class="content-row">' +
         '<div class="column-box col-terapia">' +
           '<div class="col-header"><i class="bi bi-exclamation-triangle-fill text-danger me-1" style="font-size:0.65rem;"></i>Allergie</div>' +
-          '<div class="field-content">' + (p.Allergie || '') + '</div>' +
+          '<div class="field-content">' + H(p.Allergie) + '</div>' +
           '<div class="col-header" style="border-top:1px solid #ccc;">Ossigeno</div>' +
-          '<div class="field-content">' + (p.Ossigeno || '') + '</div>' +
+          '<div class="field-content">' + T(p.Ossigeno) + '</div>' +
           '<div class="col-header" style="border-top:1px solid #ccc;">Vitto</div>' +
-          '<div class="field-content">' + (p.Vitto || '') + '</div>' +
+          '<div class="field-content">' + T(p.Vitto) + '</div>' +
           '<div class="col-header" style="border-top:2px solid #000;">Note e Terapia</div>' +
-          '<div class="field-content">' + (p.NoteTerapia || '') + '</div>' +
+          '<div class="field-content">' + H(p.NoteTerapia) + '</div>' +
         '</div>' +
         '<div class="column-box col-diaria">' +
           '<div class="col-header">Diaria ed Epicrisi</div>' +
-          '<div class="field-content">' + (p.Diaria || '') + '</div>' +
+          '<div class="field-content">' + H(p.Diaria) + '</div>' +
         '</div>' +
         '<div class="column-box col-da-fare">' +
           '<div class="col-header">Da Fare / Richieste</div>' +
-          '<div class="field-content">' + (p.DaFare || '') + '</div>' +
+          '<div class="field-content">' + H(p.DaFare) + '</div>' +
         '</div>' +
       '</div>' +
       '<div class="piano-row">' +
         '<div class="col-header-piano">Problemi Attivi</div>' +
-        '<div class="field-content-piano">' + (p.PianoTerapeutico || '') + '</div>' +
+        '<div class="field-content-piano">' + H(p.PianoTerapeutico) + '</div>' +
       '</div>' +
     '</div>';
   }
@@ -433,57 +450,57 @@
     var tipo = String(p.TipologiaLetto || '').trim().toUpperCase();
     var tipoColore = typeof window._printGetColoreTipo === 'function' ? window._printGetColoreTipo(tipo) : '#546e7a';
     var tipoBadge = tipo
-      ? '<span class="badge text-white text-uppercase" style="background:' + tipoColore + ';font-size:0.62rem;">' + tipo + '</span>'
+      ? '<span class="badge text-white text-uppercase" style="background:' + _coloreSicuro(tipoColore, '#546e7a') + ';font-size:0.62rem;">' + T(tipo) + '</span>'
       : '<span style="font-size:0.62rem;color:#999;">STANDARD</span>';
 
     return '<div class="alt-row">' +
       '<div class="alt-col alt-col-info">' +
         '<div class="alt-info-box">' +
           '<div style="display:flex;align-items:center;justify-content:center;gap:4px;">' +
-            '<div class="alt-bed-number">' + (p.Letto || '') + '</div>' +
+            '<div class="alt-bed-number">' + T(p.Letto) + '</div>' +
             ((p.Dimissibile || '').trim() && typeof _dimIconSvg === 'function' ? _dimIconSvg(16) : '') +
             (String(p.Diaria || '').indexOf('isolamento-banner') !== -1 && typeof _virusIconSvg === 'function' ? _virusIconSvg(16) : '') +
             (String(p.Diaria || '').indexOf('rianimazione-banner') !== -1 && typeof _rianimIconSvg === 'function' ? _rianimIconSvg(16) : '') +
             sessoHtml(p.Sesso, '1.6rem') +
           '</div>' +
           tipoBadge +
-          '<div class="alt-nome">' + (p.Nome || '') + '</div>' +
+          '<div class="alt-nome">' + T(p.Nome) + '</div>' +
           '<div class="alt-allergie-label"><i class="bi bi-exclamation-triangle-fill"></i> Allergie</div>' +
-          '<div class="alt-allergie-val">' + (p.Allergie || '') + '</div>' +
-          '<div class="alt-info-row"><div class="alt-info-label">Data di Nascita</div><div class="alt-info-val">' + nasc.vis + '</div></div>' +
-          '<div class="alt-info-row"><div class="alt-info-label">Et&agrave;</div><div class="alt-info-val">' + eta + '</div></div>' +
-          '<div class="alt-info-row"><div class="alt-info-label">Data di Ricovero</div><div class="alt-info-val">' + ric.vis + '</div></div>' +
-          '<div class="alt-info-row"><div class="alt-info-label">Giorni di Ricovero</div><div class="alt-info-val" style="color:#c62828;">' + ric.giorni + '</div></div>' +
-          '<div class="alt-info-row"><div class="alt-info-label">C.S.</div><div class="alt-info-val">' + (p.CodiceSanitario || '') + '</div></div>' +
-          '<div class="alt-info-row"><div class="alt-info-label">Ossigeno</div><div class="alt-info-val">' + (p.Ossigeno || '') + '</div></div>' +
-          '<div class="alt-info-row"><div class="alt-info-label">Vitto</div><div class="alt-info-val">' + (p.Vitto || '') + '</div></div>' +
+          '<div class="alt-allergie-val">' + H(p.Allergie) + '</div>' +
+          '<div class="alt-info-row"><div class="alt-info-label">Data di Nascita</div><div class="alt-info-val">' + T(nasc.vis) + '</div></div>' +
+          '<div class="alt-info-row"><div class="alt-info-label">Et&agrave;</div><div class="alt-info-val">' + T(eta) + '</div></div>' +
+          '<div class="alt-info-row"><div class="alt-info-label">Data di Ricovero</div><div class="alt-info-val">' + T(ric.vis) + '</div></div>' +
+          '<div class="alt-info-row"><div class="alt-info-label">Giorni di Ricovero</div><div class="alt-info-val" style="color:#c62828;">' + T(ric.giorni) + '</div></div>' +
+          '<div class="alt-info-row"><div class="alt-info-label">C.S.</div><div class="alt-info-val">' + T(p.CodiceSanitario) + '</div></div>' +
+          '<div class="alt-info-row"><div class="alt-info-label">Ossigeno</div><div class="alt-info-val">' + T(p.Ossigeno) + '</div></div>' +
+          '<div class="alt-info-row"><div class="alt-info-label">Vitto</div><div class="alt-info-val">' + T(p.Vitto) + '</div></div>' +
         '</div>' +
       '</div>' +
       '<div class="alt-col alt-col-diag">' +
         '<div class="alt-diag-top">' +
           '<div class="alt-col-header">Diagnosi / Motivo Ricovero</div>' +
-          '<div class="alt-editable alt-diagnosi">' + (p.Diagnosi || '') + '</div>' +
+          '<div class="alt-editable alt-diagnosi">' + T(p.Diagnosi) + '</div>' +
         '</div>' +
         '<div class="alt-diag-bottom">' +
           '<div class="alt-col-header-split">Problemi Attivi</div>' +
-          '<div class="alt-editable">' + (p.PianoTerapeutico || '') + '</div>' +
+          '<div class="alt-editable">' + H(p.PianoTerapeutico) + '</div>' +
         '</div>' +
         '<div class="alt-diag-fourth">' +
           '<div class="alt-col-header-split">Esami Colturali, Scale di Valutazione e Laboratorio.</div>' +
-          '<div class="alt-editable">' + (p.EsamiColturali || '') + '</div>' +
+          '<div class="alt-editable">' + H(p.EsamiColturali) + '</div>' +
         '</div>' +
         '<div class="alt-diag-third">' +
           '<div class="alt-col-header-split">Da Fare / Richieste</div>' +
-          '<div class="alt-editable">' + (p.DaFare || '') + '</div>' +
+          '<div class="alt-editable">' + H(p.DaFare) + '</div>' +
         '</div>' +
       '</div>' +
       '<div class="alt-col alt-col-diaria">' +
         '<div class="alt-col-header">Diaria ed Epicrisi</div>' +
-        '<div class="alt-editable">' + (p.Diaria || '') + '</div>' +
+        '<div class="alt-editable">' + H(p.Diaria) + '</div>' +
       '</div>' +
       '<div class="alt-col alt-col-terapia">' +
         '<div class="alt-col-header">Note e Terapia</div>' +
-        '<div class="alt-editable">' + (p.NoteTerapia || '') + '</div>' +
+        '<div class="alt-editable">' + H(p.NoteTerapia) + '</div>' +
       '</div>' +
     '</div>';
   }
@@ -497,7 +514,7 @@
           '<div class="bed-number" style="font-size:1.4rem;letter-spacing:1px;">NOTE</div>' +
         '</div>' +
         '<div class="patient-info-box" style="width:83.33333%;">' +
-          '<div style="padding:6px;font-size:0.85rem;">' + (p.Diaria || '') + '</div>' +
+          '<div style="padding:6px;font-size:0.85rem;">' + H(p.Diaria) + '</div>' +
         '</div>' +
       '</div>' +
     '</div>';
@@ -511,7 +528,7 @@
         '</div>' +
       '</div>' +
       '<div class="alt-col" style="flex:1;border-right:none;">' +
-        '<div class="alt-editable" style="padding:6px;font-size:0.85rem;">' + (p.Diaria || '') + '</div>' +
+        '<div class="alt-editable" style="padding:6px;font-size:0.85rem;">' + H(p.Diaria) + '</div>' +
       '</div>' +
     '</div>';
   }
@@ -691,9 +708,12 @@
 
   // ── Caricamento dati — 3 query parallele ─────────────────────────────
   // Usa direttamente le funzioni Supabase definite in api.js
-  var fetchPazienti = dataArchivio
-    ? _sbGetDatiArchivioGiorno(dataArchivio).then(function(r) { return r ? (r.pazienti || []) : []; })
-    : _sbGetPazienti();
+  // Senza il filtro dell'HTML non si disegna nulla (api.js mostra l'avviso).
+  var fetchPazienti = !_filtroPronto()
+    ? Promise.reject(new Error('componente di sicurezza non caricato: ricarica la pagina'))
+    : (dataArchivio
+      ? _sbGetDatiArchivioGiorno(dataArchivio).then(function(r) { return r ? (r.pazienti || []) : []; })
+      : _sbGetPazienti());
 
   Promise.all([
     fetchPazienti,
@@ -706,14 +726,15 @@
     // Funzione colore badge: usa il colore salvato, altrimenti stringToColor come fallback
     window._printGetColoreTipo = function(tipo) {
       if (!tipo) return '#6c757d';
-      return coloriTipologie[tipo] || stringToColor(tipo);
+      var salvato = Object.prototype.hasOwnProperty.call(coloriTipologie, tipo) ? coloriTipologie[tipo] : '';
+      return _coloreSicuro(salvato || stringToColor(tipo), '#546e7a');
     };
     renderPagina(pazienti, nomeReparto);
   }).catch(function(e) {
     document.getElementById('loadingScreen').innerHTML =
       '<i class="bi bi-exclamation-triangle-fill text-warning" style="font-size:3rem;"></i>' +
       '<p style="color:#fff;margin-top:12px;">Errore nel caricamento dati.<br>' +
-      '<small style="opacity:0.7;">' + (e.message || '') + '</small></p>' +
+      '<small style="opacity:0.7;">' + T(e && e.message) + '</small></p>' +
       '<a href="./" style="color:#80cbc4;margin-top:16px;font-size:0.9rem;">' +
       '<i class="bi bi-arrow-left me-1"></i>Torna all\'app</a>';
   });
