@@ -5598,30 +5598,52 @@
     // ──────────────────────────────────────────────────────────────────
     // L'autorizzazione Google si concede UNA VOLTA SOLA, da UN solo PC:
     // il refresh token resta sul server (tabella privata google_oauth) e
-    // ogni computer riceve access token freschi con una fetch invisibile.
-    // Niente piu' popup, niente iframe, niente sessione Google richiesta
-    // nel browser. Se la cassaforte non e' ancora configurata, tutto
-    // continua a funzionare col percorso storico (iframe/popup).
+    // la mail dimissioni parte DENTRO la Edge Function: nessun token Google
+    // raggiunge mai il browser. Le azioni riservate (config, scambia, invia)
+    // la funzione le esegue solo se il Bearer e' la sessione di un utente
+    // autorizzato: stessa regola della RLS, is_autorizzato().
     // ══════════════════════════════════════════════════════════════════
     var _cassaTok = null, _cassaScad = 0, _cassaPending = null, _cassaEmail = '';
+    // La chiave pubblica supera il gateway ma non dice chi chiama: il Bearer
+    // e' il token della sessione Supabase. getSession() lo rinnova se scaduto;
+    // se tarda oltre 6 s si ripiega sull'ultimo token noto.
+    function _cassaBearer() {
+      return new Promise(function(resolve) {
+        var fatto = false;
+        function fine(tok) {
+          if (fatto) return;
+          fatto = true;
+          resolve(tok || window._supaAccessToken || SUPABASE_ANON_KEY);
+        }
+        var attesa = setTimeout(function() { fine(null); }, 6000);
+        try {
+          _sb.auth.getSession().then(function(res) {
+            clearTimeout(attesa);
+            fine(res && res.data && res.data.session && res.data.session.access_token);
+          }, function() { clearTimeout(attesa); fine(null); });
+        } catch (e) { clearTimeout(attesa); fine(null); }
+      });
+    }
     function _cassaCall(body) {
-      var ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-      var tmr = ctl ? setTimeout(function() { try { ctl.abort(); } catch (e) {} }, 12000) : null;
-      return fetch(SUPABASE_URL + '/functions/v1/google-token', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': SUPABASE_ANON_KEY,
-          'Authorization': 'Bearer ' + SUPABASE_ANON_KEY
-        },
-        body: JSON.stringify(body),
-        signal: ctl ? ctl.signal : undefined
-      }).then(function(r) {
-        if (tmr) clearTimeout(tmr);
-        return r.json();
-      }, function(e) {
-        if (tmr) clearTimeout(tmr);
-        throw e;
+      return _cassaBearer().then(function(bearer) {
+        var ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+        var tmr = ctl ? setTimeout(function() { try { ctl.abort(); } catch (e) {} }, 12000) : null;
+        return fetch(SUPABASE_URL + '/functions/v1/google-token', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': 'Bearer ' + bearer
+          },
+          body: JSON.stringify(body),
+          signal: ctl ? ctl.signal : undefined
+        }).then(function(r) {
+          if (tmr) clearTimeout(tmr);
+          return r.json();
+        }, function(e) {
+          if (tmr) clearTimeout(tmr);
+          throw e;
+        });
       });
     }
     function _cassaforteBadge(mostra) {
@@ -7566,6 +7588,10 @@
     }
 
     // ── TEST: REST Supabase (singola) ─────────────────────────
+    // Gira con la chiave pubblica, non con la sessione: il ruolo anon deve
+    // conservare SELECT su «impostazioni» (la RLS restituisce zero righe).
+    // Senza quel permesso risponde 401 e la diagnostica silenziosa fa
+    // scattare la modalita' emergenza su ogni PC.
     function _testREST(next) {
       _diagLog('▶ Connessione REST a Supabase...', 'info');
       _diagLog('  Endpoint: '+SUPABASE_URL+'/rest/v1/impostazioni', 'info');
