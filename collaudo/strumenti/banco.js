@@ -103,7 +103,7 @@ http.createServer(async (req, res) => {
       let pagina = html.replace(SDK, (tag) => '<script src="/banco-avvio.js' + sloggato + '"></script>\n  ' + tag);
       // ?senzaFiltro: la pagina arriva senza la libreria del filtro dell'HTML,
       // come se il suo caricamento fosse fallito (l'app deve fermarsi e dirlo).
-      if (url.searchParams.has('senzaFiltro')) pagina = pagina.replace(/<script\b[^>]*dompurify[^>]*><\/script>/i, '<!-- banco: filtro tolto -->');
+      if (url.searchParams.has('senzaFiltro')) pagina = pagina.replace(/<script\b[^>]*\bpurify[^>]*><\/script>/i, '<!-- banco: filtro tolto -->');
       return rispondi(res, 200, MIME[est], pagina);
     }
     rispondi(res, 200, MIME[est] || 'application/octet-stream', fs.readFileSync(file));

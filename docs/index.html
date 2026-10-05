@@ -5485,10 +5485,12 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@simonwep/pickr@1.9.1/dist/themes/nano.min.css">
   <script src="https://cdn.jsdelivr.net/npm/@simonwep/pickr@1.9.1/dist/pickr.min.js"></script>
 
-  <!-- Filtro dell'HTML dei campi: DOMPurify (versione fissata e verificata con
-       integrity) + js/sanifica.js. Vanno PRIMA di api.js: senza, l'app non
-       disegna e non salva le schede (vedi «FILTRO DELL'HTML» in api.js). -->
-  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.4.16/dist/purify.min.js" integrity="sha256-LJCptG1kY/JgOKKbaG6CvJHeAf2snVIp58/js2ATTqI=" crossorigin="anonymous"></script>
+  <!-- Filtro dell'HTML dei campi: DOMPurify + js/sanifica.js. Vanno PRIMA di
+       api.js: senza, l'app non disegna e non salva le schede (vedi «FILTRO
+       DELL'HTML» in api.js). La libreria è una copia identica del file
+       pubblicato (dompurify 3.4.16, dist/purify.min.js) tenuta nel repository:
+       arriva dalla stessa origine dell'app, e «integrity» ne controlla l'impronta. -->
+  <script src="js/librerie/purify-3.4.16.min.js" integrity="sha256-LJCptG1kY/JgOKKbaG6CvJHeAf2snVIp58/js2ATTqI="></script>
   <script src="js/sanifica.js"></script>
 
   <!-- Script principali: api.js (Supabase + helpers), poi logica app -->

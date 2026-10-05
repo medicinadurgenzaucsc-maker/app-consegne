@@ -1,0 +1,4 @@
+# Librerie di terze parti tenute nel repository: copie IDENTICHE dei file
+# pubblicati. Nessuna conversione dei fine riga, altrimenti l'impronta scritta
+# nell'attributo integrity delle pagine non corrisponderebbe piu'.
+docs/js/librerie/* -text
