@@ -10,6 +10,8 @@
 //  4. la libreria del filtro nel repository è quella dichiarata: la sua impronta
 //     è quella scritta in «integrity» nelle due pagine
 //  5. service worker: versione della cache alzata, e ogni file dell'elenco esiste
+//  6. ogni signOut dichiara scope 'local' (quello predefinito scollegherebbe
+//     tutti i PC del reparto, che usano lo stesso account)
 //
 //   node collaudo/strumenti/controlli-rilascio.js [riferimento]
 //
@@ -114,6 +116,24 @@ mancanti.length ? ko('sw.js elenca file che non esistono (l\'installazione del s
 ['./js/sanifica.js', './js/api.js', './js/app.js', './js/app2.js'].concat(tagSrc(ora).map((t) => t.src).filter((s) => /purify/.test(s)).map((s) => './' + s)).forEach((p) => {
   if (elenco.indexOf("'" + p + "'") < 0) ko('sw.js: ' + p + ' non è fra i file tenuti in cache');
 });
+
+// ── 6. uscita dall'applicazione ──────────────────────────────────────────
+// signOut() senza argomenti è «global»: revoca la sessione dell'account su
+// tutti i dispositivi, e i PC del reparto usano lo stesso account.
+{
+  const sorgenti = fs.readdirSync(path.join(RADICE, 'docs/js')).filter((f) => f.endsWith('.js')).map((f) => 'docs/js/' + f).concat(['docs/index.html', 'docs/print.html']);
+  let chiamate = 0, sbagliate = 0;
+  sorgenti.forEach((f) => {
+    const re = /\.signOut\s*\(([^)]*)\)/g;
+    const testo = leggi(f);
+    let m;
+    while ((m = re.exec(testo))) {
+      chiamate++;
+      if (!/scope\s*:\s*['"]local['"]/.test(m[1])) { sbagliate++; ko(f + ': signOut(' + m[1].trim() + ') senza scope \'local\' → scollegherebbe TUTTI i PC del reparto'); }
+    }
+  });
+  if (!sbagliate) ok('uscita: ' + chiamate + ' chiamate a signOut, tutte con scope \'local\'');
+}
 
 console.log(errori ? ('\n' + errori + ' CONTROLLI FALLITI: non pubblicare') : '\ntutti i controlli superati');
 process.exit(errori ? 1 : 0);

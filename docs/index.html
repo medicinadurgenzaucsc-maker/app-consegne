@@ -5139,6 +5139,9 @@
                 <strong id="navVersionShaText" class="ms-1" style="color:#263238;">(sconosciuta)</strong>
               </span>
             </li>
+            <!-- Uscita: chiude la sessione solo su questo dispositivo (_esciSessione) -->
+            <li><hr class="dropdown-divider"></li>
+            <li><a class="dropdown-item" href="javascript:void(0)" onclick="_esciSessione()"><i class="bi bi-box-arrow-right text-danger me-2"></i>Esci<span id="navAccountEmail" class="d-block text-muted" style="font-size:0.75rem;padding-left:1.65rem;"></span></a></li>
           </ul>
         </li>
       </ul>
@@ -5950,6 +5953,92 @@
       if (vo && vo.style.display !== 'none') vo.style.display = 'none';
     }
 
+    // ── USCITA (menu rotellina → «Esci») ─────────────────────────────────────
+    // Chiude la sessione SOLO su questo dispositivo: signOut con scope 'local'.
+    // Il signOut predefinito è 'global' e revocherebbe la sessione dell'account
+    // su TUTTI i dispositivi: i PC del reparto usano lo stesso account e si
+    // ritroverebbero tutti fuori. Non si esce con una scheda in modifica o un
+    // salvataggio in volo (dopo l'uscita non arriverebbe più al database).
+    // Uscendo si tolgono dal dispositivo anche il token Google d'identità e le
+    // copie di recupero delle schede, che contengono il testo dei pazienti.
+    var _emailSessione = '';
+    var _uscitaInCorso = false;
+    function _annotaAccount(sess) {
+      _emailSessione = (sess && sess.user && sess.user.email) || '';
+      var el = document.getElementById('navAccountEmail');
+      if (el) el.textContent = _emailSessione;
+    }
+    function _lavoroInSospeso() {
+      try {
+        if (document.querySelector('.patient-card.focus-mode')) return true;
+        if (window._lettoLockAttSafe) return true;
+        if (typeof _dirtyLetti !== 'undefined' && _dirtyLetti.size > 0) return true;
+        if (typeof _saveInFlight !== 'undefined') {
+          for (var k in _saveInFlight) { if (_saveInFlight[k]) return true; }
+        }
+      } catch(e) {}
+      return false;
+    }
+    function _eseguiUscita() {
+      if (_uscitaInCorso) return;
+      _uscitaInCorso = true;
+      Swal.fire({
+        title: 'Uscita in corso…', allowOutsideClick: false, allowEscapeKey: false,
+        showConfirmButton: false, returnFocus: false,
+        didOpen: function() { Swal.showLoading(); }
+      });
+      try {
+        if (typeof window._log === 'function') window._log('info', 'supa-auth', 'Uscita dall\'applicazione', _emailSessione);
+      } catch(e) {}
+      var concluso = false;
+      function concludi() {
+        if (concluso) return;
+        concluso = true;
+        // Anche se il server non ha risposto, qui la sessione non deve restare
+        try { localStorage.removeItem('sb-' + new URL(SUPABASE_URL).hostname.split('.')[0] + '-auth-token'); } catch(e) {}
+        try { localStorage.removeItem('appSession'); } catch(e) {}
+        try { if (typeof window._snapshotSvuota === 'function') window._snapshotSvuota(); } catch(e) {}
+        try { google.accounts.id.disableAutoSelect(); } catch(e) {}
+        location.reload();
+      }
+      // Un attimo di respiro: la riga di registro qui sopra parte con la sessione ancora valida
+      setTimeout(function() {
+        var attesa = setTimeout(concludi, 6000);
+        function fine() { clearTimeout(attesa); concludi(); }
+        try { _sb.auth.signOut({ scope: 'local' }).then(fine, fine); } catch(e) { fine(); }
+      }, 300);
+    }
+    window._esciSessione = function() {
+      if (_uscitaInCorso) return;
+      if (_lavoroInSospeso()) {
+        Swal.fire({
+          icon: 'warning', title: 'Salvataggio in corso',
+          text: 'C\'è una scheda aperta in modifica o un salvataggio non ancora concluso. Chiudi la scheda, attendi qualche secondo e riprova.',
+          confirmButtonText: 'Ho capito', confirmButtonColor: '#37474f', returnFocus: false
+        });
+        return;
+      }
+      Swal.fire({
+        icon: 'question',
+        title: 'Uscire dall\'applicazione?',
+        html:
+          '<div style="font-size:0.95rem;line-height:1.5;">' +
+            (_emailSessione ? 'Sei collegato come <strong>' + _testoHtml(_emailSessione) + '</strong>.<br>' : '') +
+            'Su questo dispositivo le consegne non saranno più visibili finché non si rientra' +
+            (_emailConsentita ? ' con l\'account del reparto <strong>' + _testoHtml(_emailConsentita) + '</strong>' : '') + '.' +
+            '<div class="text-muted small mt-2">Gli altri dispositivi restano collegati. Le copie di recupero delle schede salvate qui vengono eliminate.</div>' +
+          '</div>',
+        showCancelButton: true, focusCancel: true, returnFocus: false,
+        confirmButtonText: 'Esci', confirmButtonColor: '#c62828',
+        cancelButtonText: 'Annulla'
+      }).then(function(r) {
+        if (!r || !r.isConfirmed) return;
+        // Nel frattempo può essere partito un salvataggio: si ricontrolla
+        if (_lavoroInSospeso()) { window._esciSessione(); return; }
+        _eseguiUscita();
+      });
+    };
+
     function _mostraErroreLogin(msg) {
       var err  = document.getElementById('loginError');
       var text = document.getElementById('loginErrorText');
@@ -6008,6 +6097,7 @@
       try {
         _sb.auth.onAuthStateChange(function(ev, sess) {
           window._supaAccessToken = (sess && sess.access_token) || null;
+          _annotaAccount(sess);
         });
       } catch(e) {}
 
@@ -6016,6 +6106,7 @@
         var s = res && res.data && res.data.session;
         if (s && s.user) {
           window._supaAccessToken = s.access_token || null;
+          _annotaAccount(s);
           var ov = document.getElementById('loginOverlay');
           if (ov) ov.style.display = 'none';
           if (typeof window._avviaFlussoApp === 'function') window._avviaFlussoApp();
@@ -8388,6 +8479,14 @@
         } catch(e2) { /* niente da fare */ }
       }
     }
+
+    // Elimina tutte le copie di recupero, in memoria e su disco: la chiama
+    // l'uscita dall'applicazione, perché sul dispositivo non resti il testo
+    // delle schede.
+    window._snapshotSvuota = function() {
+      window._snapshots = {};
+      try { localStorage.removeItem(STORAGE_KEY); } catch(e) {}
+    };
 
     // ── Raccolta dati dalla card (replica di eseguiSalvataggioLettoCompleto) ──
     function _raccogliDatiCard(card) {
