@@ -2103,6 +2103,10 @@ function _rtMiniResync() {
   if (typeof _emergenzaCheckSeMutato === 'function') {
     _emergenzaCheckSeMutato().catch(function(){});
   }
+  // Versione (~50B): un rilascio avvenuto mentre il canale era sordo non ha
+  // mostrato l'avviso di aggiornamento. Solo dopo il controllo d'avvio, che
+  // ha la sua logica (aggiornamento automatico al boot).
+  if (_versionCheckInitDone) _versionCheckRemoto();
 }
 
 function _onRealtimeStatus(status, ch) {
@@ -2143,7 +2147,8 @@ function _onRealtimeStatus(status, ch) {
 //  - emergenza attiva → tick immediato (il setInterval 30s era throttlato)
 //  - realtime → se il canale non è joined lo ricrea (il mini-resync parte
 //    da solo al SUBSCRIBED); se è joined fa comunque il mini-resync
-// Egress: ~1.1KB per rientro in foreground. Con 6 PC e decine di rientri
+// Egress: ~1.6KB per rientro in foreground (lock, firma dei dati, versione
+// pubblicata). Con 6 PC e decine di rientri
 // al giorno → pochi MB/mese, irrilevante rispetto alla quota.
 var _lastVisResyncTs = 0;
 document.addEventListener('visibilitychange', function() {
@@ -2775,6 +2780,9 @@ var _badgeAggiornamentoMostrato = false;
 // Flag interno: true dopo il primo check al boot. Le chiamate successive
 // (es. da _sincronizzaEPoiFai dopo un'operazione) NON fanno auto-apply.
 var _versionCheckInitDone = false;
+// Momento dell'ultima lettura di app_version: evita due letture di fila quando
+// più strade (controllo d'avvio, mini-resync, poll) scattano insieme.
+var _versionCheckUltimoTs = 0;
 
 function _versionCheckInit() {
   // Memorizziamo SUBITO se questa è la prima chiamata (= boot della pagina).
@@ -2783,6 +2791,7 @@ function _versionCheckInit() {
   // successione, solo la prima esecuzione potrà auto-applicare.
   var primaVolta = !_versionCheckInitDone;
   _versionCheckInitDone = true;
+  _versionCheckUltimoTs = Date.now();
   // Carica SHA corrente di Supabase all'avvio
   _q(_sb.from('app_version').select('sha').eq('id', 1).maybeSingle())
     .then(function(row) {
@@ -2830,12 +2839,16 @@ function _onAppVersionChange(newSha) {
   }
 }
 
-// POLLING FALLBACK per version check: ogni 5 minuti controlla app_version
-// sul DB e mostra il badge se lo SHA è diverso da _localSha. Serve come
-// safety net nel caso il Realtime listener perda eventi (WebSocket
-// disconnesso, race condition al boot, ecc.). Costo: ~50 byte per query
-// × 12 query/ora × 24h × 30g × 5 PC = ~450 KB/mese, trascurabile.
-function _versionCheckPoll() {
+// Confronta la versione pubblicata con quella caricata da questo client e, se
+// è cambiata, mostra badge e toast (~50 byte). Oltre che dal poll qui sotto è
+// chiamata dal mini-resync, cioè ogni volta che il canale Realtime può aver
+// perso eventi: ritorno della scheda in primo piano, canale ricreato. Senza,
+// una scheda rimasta nascosta o «addormentata» dal browser durante un
+// rilascio perdeva l'evento e mostrava l'avviso solo al giro successivo del
+// poll: fino a 5 minuti dopo che l'utente era tornato sulla pagina.
+function _versionCheckRemoto() {
+  if (Date.now() - _versionCheckUltimoTs < 10000) return; // appena letta
+  _versionCheckUltimoTs = Date.now();
   _q(_sb.from('app_version').select('sha').eq('id', 1).maybeSingle())
     .then(function(row) {
       var remoteSha = (row && row.sha) || '';
@@ -2852,11 +2865,20 @@ function _versionCheckPoll() {
         // _badgeAggiornamentoMostrato era già true da un evento precedente
         // (es. utente non ha applicato e poi è arrivato un nuovo deploy).
         if (!_badgeAggiornamentoMostrato) {
-          console.log('[VersionCheck poll] Nuovo deploy rilevato via polling:', remoteSha.substring(0,8));
+          console.log('[VersionCheck] Nuovo deploy rilevato:', remoteSha.substring(0,8));
           _mostraBadgeAggiornamento();
         }
       }
     }).catch(function(){});
+}
+
+// POLLING FALLBACK per version check: ogni 5 minuti controlla app_version
+// sul DB e mostra il badge se lo SHA è diverso da _localSha. Serve come
+// safety net nel caso il Realtime listener perda eventi (WebSocket
+// disconnesso, race condition al boot, ecc.). Costo: ~50 byte per query
+// × 12 query/ora × 24h × 30g × 5 PC = ~450 KB/mese, trascurabile.
+function _versionCheckPoll() {
+  _versionCheckRemoto();
 
   // ── SAFETY NET DATI (~60B) ──────────────────────────────────────────
   // Prima questo poll controllava SOLO i deploy: un canale Realtime

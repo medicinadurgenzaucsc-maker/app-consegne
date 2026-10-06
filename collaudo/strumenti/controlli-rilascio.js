@@ -12,6 +12,7 @@
 //  5. service worker: versione della cache alzata, e ogni file dell'elenco esiste
 //  6. ogni signOut dichiara scope 'local' (quello predefinito scollegherebbe
 //     tutti i PC del reparto, che usano lo stesso account)
+//  7. la versione scritta nel menu della rotellina è la stessa di CACHE_NAME
 //
 //   node collaudo/strumenti/controlli-rilascio.js [riferimento]
 //
@@ -133,6 +134,16 @@ mancanti.length ? ko('sw.js elenca file che non esistono (l\'installazione del s
     }
   });
   if (!sbagliate) ok('uscita: ' + chiamate + ' chiamate a signOut, tutte con scope \'local\'');
+}
+
+// ── 7. versione mostrata nel menu ────────────────────────────────────────
+// Il menu della rotellina mostra la versione dell'applicazione: è scritta in
+// index.html e deve essere la stessa cifra di CACHE_NAME in sw.js.
+{
+  const m = /id="navVersioneApp"[^>]*>(\d+)</.exec(ora);
+  if (!m) ko('index.html: manca la versione dell\'applicazione nel menu della rotellina (id="navVersioneApp")');
+  else if (Number(m[1]) !== versione(sw)) ko('index.html mostra la versione ' + m[1] + ' ma CACHE_NAME in sw.js è v' + versione(sw) + ': vanno alzate insieme');
+  else ok('versione nel menu della rotellina: ' + m[1] + ', la stessa di CACHE_NAME');
 }
 
 console.log(errori ? ('\n' + errori + ' CONTROLLI FALLITI: non pubblicare') : '\ntutti i controlli superati');
