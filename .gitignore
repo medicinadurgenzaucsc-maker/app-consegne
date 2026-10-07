@@ -13,3 +13,7 @@ desktop.ini
 collaudo/strumenti/.gettone
 collaudo/strumenti/.accesso-*.json
 collaudo/strumenti/struttura-*.json
+
+# Pubblicazione su Cloudflare: cartelle generate
+_sito/
+.github/pubblicazione/node_modules/

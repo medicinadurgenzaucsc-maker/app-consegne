@@ -1,0 +1,104 @@
+name: Pubblica su Cloudflare
+
+# Pubblica il sito (i file di docs/) su Cloudflare Pages.
+#
+# Parte a ogni push sul ramo «master» che tocca il sito, e a mano. Il flusso è lo
+# stesso nei due repository (collaudo e produzione): a quale progetto di
+# Cloudflare pubblicare lo dicono le impostazioni del repository, non il codice.
+#   variabile  CLOUDFLARE_PROGETTO     nome del progetto Pages (es. consegne-collaudo)
+#   segreto    CLOUDFLARE_API_TOKEN    chiave col solo permesso «Cloudflare Pages: Edit»
+#   segreto    CLOUDFLARE_ACCOUNT_ID   identificativo dell'account Cloudflare
+#   variabile  CLOUDFLARE_AVVISA       «si» quando il sito su Cloudflare è quello che
+#                                      usano i PC: a pubblicazione fatta aggiorna
+#                                      app_version (segreti SUPABASE_URL e
+#                                      SUPABASE_SERVICE_ROLE_KEY) e sulle pagine
+#                                      aperte compare «Update»
+# Dove Cloudflare non è configurato il flusso controlla soltanto che i file del
+# sito e lo strumento di pubblicazione siano a posto, e non pubblica nulla.
+#
+# Sicurezza della filiera: l'azione di GitHub è fissata al suo identificativo
+# completo; lo strumento di pubblicazione ha versione fissa e l'impronta di ogni
+# pacchetto (.github/pubblicazione/) ed è installato senza eseguirne gli script;
+# le chiavi di Cloudflare sono date solo ai passi che pubblicano.
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'docs/**'
+      - '.github/workflows/pubblica-cloudflare.yml'
+      - '.github/pubblicazione/**'
+      - 'collaudo/strumenti/prepara-sito.js'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pubblica-cloudflare
+  cancel-in-progress: false
+
+jobs:
+  pubblica:
+    name: Pubblica il sito
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PROGETTO: ${{ vars.CLOUDFLARE_PROGETTO }}
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - name: Sorgente
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: File del sito
+        run: |
+          node .github/pubblicazione/passi.js sito
+
+      - name: Strumento di pubblicazione
+        working-directory: .github/pubblicazione
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npx --no-install wrangler --version
+
+      - name: Cloudflare è configurato in questo repository?
+        id: conf
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          node .github/pubblicazione/passi.js configurazione
+
+      - name: Progetto su Cloudflare
+        if: steps.conf.outputs.pronto == 'si'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          node .github/pubblicazione/passi.js progetto
+
+      - name: Pubblica
+        if: steps.conf.outputs.pronto == 'si'
+        working-directory: .github/pubblicazione
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          npx --no-install wrangler pages deploy "$GITHUB_WORKSPACE/_sito" --project-name "$PROGETTO" --branch master --commit-hash "$GITHUB_SHA" --commit-message "versione $VERSIONE" --commit-dirty=true
+
+      - name: Verifica della pubblicazione
+        if: steps.conf.outputs.pronto == 'si'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          node .github/pubblicazione/passi.js verifica
+
+      - name: Avvisa i PC aperti
+        if: steps.conf.outputs.pronto == 'si' && vars.CLOUDFLARE_AVVISA == 'si'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          node .github/pubblicazione/passi.js avvisa

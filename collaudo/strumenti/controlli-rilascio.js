@@ -13,6 +13,12 @@
 //  6. ogni signOut dichiara scope 'local' (quello predefinito scollegherebbe
 //     tutti i PC del reparto, che usano lo stesso account)
 //  7. la versione scritta nel menu della rotellina è la stessa di CACHE_NAME
+//  8. indirizzi: ogni ambiente elenca i suoi, nessuno è di tutti e due, e un
+//     indirizzo sconosciuto non è di nessuno (l'app lì non deve partire)
+//  9. fra i file pubblicati su Cloudflare ci sono tutti quelli che le pagine e
+//     il service worker caricano
+// 10. flusso di pubblicazione: azione di GitHub fissata all'identificativo
+//     completo, strumento con versione fissa e impronta di ogni pacchetto
 //
 //   node collaudo/strumenti/controlli-rilascio.js [riferimento]
 //
@@ -144,6 +150,86 @@ mancanti.length ? ko('sw.js elenca file che non esistono (l\'installazione del s
   if (!m) ko('index.html: manca la versione dell\'applicazione nel menu della rotellina (id="navVersioneApp")');
   else if (Number(m[1]) !== versione(sw)) ko('index.html mostra la versione ' + m[1] + ' ma CACHE_NAME in sw.js è v' + versione(sw) + ': vanno alzate insieme');
   else ok('versione nel menu della rotellina: ' + m[1] + ', la stessa di CACHE_NAME');
+}
+
+// ── 8. indirizzi e ambienti ──────────────────────────────────────────────
+// Ogni ambiente elenca i propri indirizzi (api.js): nessuno deve stare in tutti
+// e due, fra quelli di produzione non deve essercene uno di prova, e un
+// indirizzo sconosciuto non deve valere né da collaudo né da produzione.
+{
+  const api = leggi('docs/js/api.js').replace(/\r\n/g, '\n');
+  const i0 = api.indexOf('var _AMBIENTI = {'), i1 = api.indexOf('var AMBIENTE = ');
+  let f = null;
+  if (i0 < 0 || i1 < i0) ko('api.js: blocco degli ambienti non trovato');
+  else {
+    try { f = new Function(api.slice(i0, i1) + '\nreturn { ambienti: _AMBIENTI, da: _ambienteDaHost };')(); }
+    catch (e) { ko('api.js: il blocco degli ambienti non compila: ' + e.message); }
+  }
+  if (f) {
+    const P = f.ambienti.produzione.host, C = f.ambienti.collaudo.host;
+    const doppi = P.filter((h) => C.indexOf(h) >= 0);
+    doppi.length ? ko('indirizzi presenti in tutti e due gli ambienti: ' + doppi.join(', ')) : ok('ambienti: ' + P.length + ' indirizzi di produzione, ' + C.length + ' di collaudo, nessuno in comune');
+    const diProva = P.filter((h) => /collaudo|gistech|localhost|127[.]0[.]0[.]1/.test(h));
+    if (diProva.length) ko('fra gli indirizzi di PRODUZIONE ce n\'è uno di prova: ' + diProva.join(', '));
+    if (f.ambienti.produzione.supabaseUrl === f.ambienti.collaudo.supabaseUrl) ko('i due ambienti puntano allo stesso database');
+    const attesi = [['medicinadurgenzaucsc-maker.github.io', 'produzione'], ['gistech2026.github.io', 'collaudo'], ['localhost', 'collaudo'], ['LOCALHOST', 'collaudo'],
+      ['', null], ['example.org', null], ['github.io', null], ['pages.dev', null], ['xgistech2026.github.io', null],
+      ['gistech2026.github.io.example.org', null], ['medicinadurgenzaucsc-maker.github.io.example.org', null]];
+    // una voce col punto vale per i sottodomini, non per un nome incollato davanti né in coda
+    [[P, 'produzione'], [C, 'collaudo']].forEach((x) => x[0].filter((h) => h.charAt(0) === '.').forEach((h) => {
+      attesi.push(['anteprima' + h, x[1]], ['falso' + h.slice(1), null], [h.slice(1) + '.example.org', null]);
+    }));
+    const sbagliati = attesi.filter((x) => f.da(x[0]) !== x[1]).map((x) => '«' + x[0] + '» → ' + f.da(x[0]) + ' (atteso ' + x[1] + ')');
+    sbagliati.length ? ko('riconoscimento degli indirizzi: ' + sbagliati.join('; ')) : ok('riconoscimento degli indirizzi: ' + attesi.length + ' casi giusti, sconosciuti compresi');
+  }
+}
+
+// ── 9. i file pubblicati su Cloudflare ───────────────────────────────────
+// Su Cloudflare arriva una copia dei soli file del sito (prepara-sito.js): deve
+// contenere tutto ciò che le pagine e il service worker caricano.
+{
+  const { elencoSito } = require('./prepara-sito.js');
+  const sito = elencoSito();
+  const locale = (u) => u.split('#')[0].split('?')[0].replace(/^[.][/]/, '');
+  const servono = new Set(['index.html', 'print.html', 'sw.js', '404.html', '_headers']);
+  elenco.map((s) => s.slice(1, -1)).filter((p) => p !== './').forEach((p) => servono.add(locale(p)));
+  [ora, leggi('docs/print.html')].forEach((html) => {
+    (html.match(/<(?:script|link)\b[^>]*\b(?:src|href)=["'][^"']+["']/gi) || []).forEach((t) => {
+      const u = (t.match(/\b(?:src|href)=["']([^"']+)/) || [])[1];
+      if (u && !/^(https?:|data:|#)/i.test(u)) servono.add(locale(u));
+    });
+  });
+  try { JSON.parse(leggi('docs/manifest.json')).icons.forEach((i) => servono.add(locale(i.src))); } catch (e) { ko('manifest.json non leggibile: ' + e.message); }
+  const assenti = [...servono].filter((p) => p && sito.indexOf(p) < 0);
+  assenti.length
+    ? ko('file caricati dalle pagine ma NON fra quelli pubblicati su Cloudflare (non registrati in git, o in una cartella dal nome che comincia con «_»): ' + assenti.join(', '))
+    : ok('sito: ' + sito.length + ' file da pubblicare, compresi i ' + servono.size + ' che pagine e service worker caricano');
+  const fuoriCache = sito.filter((p) => ['_headers', '_redirects', '404.html', 'sw.js'].indexOf(p) < 0 && elenco.indexOf("'./" + p + "'") < 0);
+  if (fuoriCache.length) ko('sw.js: file del sito che il service worker non tiene in cache: ' + fuoriCache.join(', '));
+}
+
+// ── 10. flusso di pubblicazione su Cloudflare ────────────────────────────
+// Ciò che pubblica il sito può cambiare il codice che arriva ai PC del reparto:
+// l'azione di GitHub va fissata al suo identificativo completo, lo strumento di
+// pubblicazione ha versione fissa e l'impronta di ogni pacchetto.
+{
+  compila('.github/pubblicazione/passi.js');
+  compila('collaudo/strumenti/prepara-sito.js');
+  const flusso = leggi('.github/workflows/pubblica-cloudflare.yml');
+  const usi = (flusso.match(/^\s*(?:-\s*)?uses:\s*\S+/gm) || []).map((u) => u.trim());
+  const liberi = usi.filter((u) => !/@[0-9a-f]{40}$/.test(u));
+  liberi.length ? ko('pubblica-cloudflare.yml: azioni non fissate all\'identificativo completo: ' + liberi.join(', ')) : ok('pubblica-cloudflare.yml: ' + usi.length + ' azione di GitHub, fissata all\'identificativo completo');
+  if (!/npm ci --ignore-scripts/.test(flusso)) ko('pubblica-cloudflare.yml: lo strumento va installato con «npm ci --ignore-scripts»');
+  try {
+    const pacchetto = JSON.parse(leggi('.github/pubblicazione/package.json')), impronte = JSON.parse(leggi('.github/pubblicazione/package-lock.json'));
+    const voluta = pacchetto.dependencies.wrangler, fissata = (impronte.packages['node_modules/wrangler'] || {}).version;
+    const nomi = Object.keys(impronte.packages).filter(Boolean);
+    const senza = nomi.filter((k) => !impronte.packages[k].integrity);
+    if (!/^\d+[.]\d+[.]\d+$/.test(voluta)) ko('strumento di pubblicazione: la versione di wrangler non è fissa (' + voluta + ')');
+    else if (voluta !== fissata) ko('strumento di pubblicazione: package.json chiede wrangler ' + voluta + ' ma le impronte sono della ' + fissata + ' (rigenerare package-lock.json)');
+    else if (senza.length) ko('strumento di pubblicazione: pacchetti senza impronta: ' + senza.slice(0, 5).join(', '));
+    else ok('strumento di pubblicazione: wrangler ' + voluta + ', ' + nomi.length + ' pacchetti, tutti con impronta');
+  } catch (e) { ko('strumento di pubblicazione: ' + e.message); }
 }
 
 console.log(errori ? ('\n' + errori + ' CONTROLLI FALLITI: non pubblicare') : '\ntutti i controlli superati');

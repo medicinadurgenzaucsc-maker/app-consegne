@@ -1,0 +1,9 @@
+{
+  "name": "pubblicazione-consegne",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Lo strumento che pubblica il sito su Cloudflare Pages. Lo usa solo il flusso .github/workflows/pubblica-cloudflare.yml: versione fissa, e in package-lock.json l'impronta di ogni pacchetto da cui dipende.",
+  "dependencies": {
+    "wrangler": "4.148.0"
+  }
+}

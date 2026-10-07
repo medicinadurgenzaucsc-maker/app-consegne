@@ -11,9 +11,12 @@ solo il database a cui il sito si collega.
 | Progetto Supabase  | `ifmmcvxzhwdkmzhsxcvb`                                  | `rqvohwpthhumydpbwktq`                       |
 | Mail dimissioni    | parte davvero (dal mittente scelto in «Impostazioni email») | parte davvero solo fra indirizzi di prova; simulata nelle prove automatiche |
 
-Il sito sceglie il database dal nome host (`_AMBIENTI` in `docs/js/api.js`): è
-collaudo solo su `gistech2026.github.io` e su `localhost`; qualunque altro
-indirizzo è produzione. Una cornice arancione con «COLLAUDO — DATI FITTIZI»
+Il sito sceglie il database dal nome host (`_AMBIENTI` in `docs/js/api.js`):
+ogni ambiente elenca i propri indirizzi. Sono di collaudo `gistech2026.github.io`,
+`localhost` e il sito su Cloudflare `consegne-collaudo.pages.dev` con le sue
+anteprime. Un indirizzo che non sta in nessun elenco non è un ambiente: lì l'app
+non parte e mostra «Indirizzo non riconosciuto», quindi un sito nuovo va
+aggiunto all'elenco giusto prima di essere usato. Una cornice arancione con «COLLAUDO — DATI FITTIZI»
 segnala l'ambiente, anche in stampa. Ogni database dichiara chi è nella riga
 `AMBIENTE` di `impostazioni`: se sito e database non concordano l'app si ferma.
 
@@ -65,6 +68,8 @@ repository non c'è alcun segreto.
 | `copia-config.js` | Ricopia la configurazione non personale. |
 | `confronta-forme.js` | Confronta la forma dei contenuti (tag e classi, mai il testo) fra i due ambienti. |
 | `gettone-prova.js [ore] [cartella]` | Token di sessione per l'utente fittizio delle prove automatiche (vale solo nel collaudo). |
+| `banco-sw.js [porta]` | Banco del service worker: il sito servito come farebbero Cloudflare Pages o GitHub Pages, col service worker acceso e i guasti simulati (vedi «Service worker: banco e prove»). |
+| `prepara-sito.js [cartella]` | Elenca (o copia in una cartella) i soli file del sito, quelli che vengono pubblicati su Cloudflare. |
 | `banco.js [porta]` | Banco di prova locale: serve l'app così com'è nella cartella di lavoro, collegata al collaudo e già «dentro» con l'utente fittizio. |
 | `inventario-markup.js [produzione\|collaudo]` | Elenco di tag, attributi, classi e proprietà di stile presenti nei campi delle schede (solo nomi e conteggi, mai il testo): serve a tarare e a ricontrollare il filtro dell'HTML (`docs/js/sanifica.js`). |
 | `pubblica-sito.js` | Pubblica il sito di servizio `gistech2026.github.io/collaudo/` (finto TrakCare e informativa). |
@@ -135,6 +140,64 @@ collaudo pubblicato, dove il service worker è attivo):
 2. `…/?toast=info&msg=%3Cimg%20src%3Dx%20onerror%3D%22alert(document.domain)%22%3E`:
    non deve aprirsi alcuna finestra; a utente collegato il messaggio compare
    nel toast come testo, tale e quale.
+
+## Service worker: banco e prove
+
+Nel banco di prova normale il service worker è spento. Ha un banco suo:
+
+```
+node collaudo/strumenti/banco-sw.js 8766
+```
+
+Serve il sito sotto `/sito/` come lo servirebbero Cloudflare Pages (`x.html`
+rinvia a `x`) o GitHub Pages, con il service worker acceso, e sa fingere i
+guasti che il service worker deve reggere: sito che risponde 404 o 500 (i
+minuti in cui viene ripubblicato), rete assente, un cancello di accesso che
+rinvia ogni richiesta a un altro sito. Sa anche servire la versione oggi in
+produzione (`origin/master`), per provare il passaggio da quella alla versione
+di lavoro.
+
+Dalla pagina `http://localhost:8766/prove/`: `await window.__proveSw()`, 46
+prove nei due stili (`window.__avanzamentoSw()` dice a che punto è). Vanno
+rilanciate a ogni modifica di `docs/sw.js` o dell'elenco dei file del sito.
+
+**Controprova**: `await window.__proveSw({ versione: 'produzione' })` esegue le
+stesse prove sul service worker della v181, che davanti a un 404 mostra
+l'errore e lo salva in cache. Devono fallire (25 su 36): se passano, le prove
+non stanno misurando.
+
+## Pubblicazione su Cloudflare
+
+Il sito viene pubblicato anche su Cloudflare Pages, in vista dello spostamento
+del sito del reparto: sorgente in un repository privato, sito dietro un
+accesso. Si prova tutto qui, con account di collaudo separati, e solo dopo si
+ripete in produzione.
+
+- **Cosa viene pubblicato**: i soli file del sito, cioè i file di `docs/`
+  registrati in git tranne le cartelle dal nome che comincia con `_`
+  (`prepara-sito.js`), più `docs/_headers`. Un file nuovo va quindi registrato
+  in git e, se le pagine lo caricano, aggiunto all'elenco di `sw.js`: lo
+  verificano i controlli di rilascio.
+- **Chi pubblica**: il flusso `.github/workflows/pubblica-cloudflare.yml`, a
+  ogni push su `master` che tocca il sito. È lo stesso nei due repository: a
+  quale progetto pubblicare lo dicono la variabile `CLOUDFLARE_PROGETTO` e i
+  segreti `CLOUDFLARE_API_TOKEN` e `CLOUDFLARE_ACCOUNT_ID` del repository. Le
+  chiavi le mette nei segreti di GitHub chi possiede l'account Cloudflare: non
+  passano dalla chat né dal PC di sviluppo. Dove mancano, il flusso controlla
+  soltanto i file e lo strumento e non pubblica nulla.
+- **Lo strumento** (wrangler) ha versione fissa e l'impronta di ogni pacchetto
+  in `.github/pubblicazione/package-lock.json`, ed è installato senza
+  eseguirne gli script. Per aggiornarlo: nuova versione in `package.json`, poi
+  `npm install --package-lock-only --ignore-scripts` in quella cartella (non
+  installa nulla, riscrive solo le impronte).
+- **L'avviso ai PC**: con la variabile `CLOUDFLARE_AVVISA` a `si` è il flusso
+  ad aggiornare `app_version` a pubblicazione fatta. Va accesa solo quando i PC
+  usano il sito su Cloudflare; finché usano quello su GitHub l'avviso resta a
+  `pubblica-versione.js` (in produzione a `notify-deploy`).
+- **Differenze di Cloudflare Pages**: `print.html` risponde con un rinvio a
+  `/print` e `index.html` a `/`; senza `404.html` un indirizzo sconosciuto
+  riceverebbe la pagina principale; le intestazioni si decidono in
+  `docs/_headers`; il sito sta in radice, non sotto `/app-consegne/`.
 
 ## La mail nel collaudo
 

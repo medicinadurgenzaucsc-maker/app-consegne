@@ -1,0 +1,11 @@
+# Intestazioni che Cloudflare Pages aggiunge alle risposte del sito.
+# GitHub Pages non pubblica questo file (ignora i nomi che cominciano con «_»).
+#
+# - le pagine non si lasciano incorniciare da altri siti
+# - i motori di ricerca non le indicizzano
+# - via l'intestazione che Cloudflare mette di suo e che permetterebbe a
+#   qualunque sito di leggere questi file dal browser di chi li visita
+/*
+  X-Frame-Options: SAMEORIGIN
+  X-Robots-Tag: noindex, nofollow
+  ! Access-Control-Allow-Origin

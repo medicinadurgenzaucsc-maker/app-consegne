@@ -5,29 +5,69 @@
 
 
 // ── CONFIGURAZIONE ────────────────────────────────────────────
-// Un solo codice per due ambienti: database, indirizzo e client Google si
-// scelgono dal nome host. È collaudo SOLO sugli host elencati: qualunque altro
-// indirizzo è produzione, così un errore qui non può dirottare il reparto sul
-// database con i dati fittizi.
+// Un solo codice per due ambienti: database e client Google si scelgono dal
+// nome host. Ogni ambiente elenca i PROPRI indirizzi, e un indirizzo che non
+// sta in nessun elenco non è un ambiente: l'app non parte e lo dice (più
+// sotto). Fino alla v184 valeva «tutto ciò che non è collaudo è produzione»:
+// ora che i siti sono più d'uno (GitHub, Cloudflare e le sue anteprime) un
+// indirizzo dimenticato avrebbe collegato codice in prova al database dei
+// pazienti veri. Una voce che comincia col punto vale per i sottodomini.
 var _AMBIENTI = {
   produzione: {
+    host:            ['medicinadurgenzaucsc-maker.github.io'],
     supabaseUrl:     'https://ifmmcvxzhwdkmzhsxcvb.supabase.co',
     supabaseAnonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlmbW1jdnh6aHdka216aHN4Y3ZiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc2Nzk1ODAsImV4cCI6MjA5MzI1NTU4MH0.LH8h4Fivtl3-TuiA050oF8iS4b80xrd2Dn6z8JjCoeA',
-    appUrl:          'https://medicinadurgenzaucsc-maker.github.io/app-consegne/',
     googleClientId:  '170256871056-gchf386c3oic77ek2j5m3b1e5pbv6cre.apps.googleusercontent.com'
   },
   collaudo: {
+    // consegne-collaudo.pages.dev è il sito di collaudo su Cloudflare; la voce
+    // col punto copre le anteprime che Cloudflare crea a ogni pubblicazione.
+    host:            ['gistech2026.github.io', 'localhost', '127.0.0.1',
+                      'consegne-collaudo.pages.dev', '.consegne-collaudo.pages.dev'],
     supabaseUrl:     'https://rqvohwpthhumydpbwktq.supabase.co',
     supabaseAnonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJxdm9od3B0aGh1bXlkcGJ3a3RxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTExMjUyNjAsImV4cCI6MjEwNjcwMTI2MH0.tA5uy7aJM9x8UmHjYBM9wvRmR5eqR5fH2mVctp4l0xo',
-    appUrl:          null, // l'indirizzo da cui è servita la pagina (sito di collaudo o localhost)
     googleClientId:  '223005241786-ds6ctquq91gtq4d539kflq1ptbb1r5d5.apps.googleusercontent.com'
   }
 };
-var _HOST_COLLAUDO = ['gistech2026.github.io', 'localhost', '127.0.0.1'];
-var AMBIENTE = (_HOST_COLLAUDO.indexOf(location.hostname) >= 0) ? 'collaudo' : 'produzione';
+// Nome host → nome dell'ambiente, oppure null se non è di nessuno dei due.
+function _ambienteDaHost(host) {
+  host = String(host || '').toLowerCase();
+  var trovato = null;
+  ['produzione', 'collaudo'].forEach(function (nome) {
+    _AMBIENTI[nome].host.forEach(function (h) {
+      var vale = (h.charAt(0) === '.') ? (host.length > h.length && host.slice(-h.length) === h) : (host === h);
+      if (vale && !trovato) trovato = nome;
+    });
+  });
+  return trovato;
+}
+var AMBIENTE = _ambienteDaHost(location.hostname);
+if (!AMBIENTE) {
+  // Indirizzo sconosciuto: nessun database e nessun accesso. Lo si dice a tutto
+  // schermo e ci si ferma qui: il resto del file non viene eseguito.
+  (function () {
+    function avvisa() {
+      if (document.getElementById('bloccoIndirizzo')) return;
+      var d = document.createElement('div');
+      d.id = 'bloccoIndirizzo';
+      d.setAttribute('role', 'alert');
+      d.setAttribute('style', 'position:fixed;top:0;right:0;bottom:0;left:0;z-index:2147483647;background:#263238;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;font:600 20px/1.4 system-ui,Arial,sans-serif');
+      var t = document.createElement('div');
+      t.textContent = "Indirizzo non riconosciuto: da qui l'applicazione non si collega a nessun database.";
+      var s = document.createElement('div');
+      s.setAttribute('style', 'font-weight:400;font-size:15px;margin-top:10px;max-width:560px');
+      s.textContent = "Aprila dal suo indirizzo abituale. Se ci sei arrivato da un collegamento, avvisa chi gestisce l'applicazione. Indirizzo di questa pagina: " + location.hostname;
+      d.appendChild(t); d.appendChild(s);
+      (document.body || document.documentElement).appendChild(d);
+    }
+    if (document.body) avvisa(); else document.addEventListener('DOMContentLoaded', avvisa);
+  })();
+  throw new Error('[Ambiente] indirizzo non riconosciuto: ' + location.hostname);
+}
 var SUPABASE_URL      = _AMBIENTI[AMBIENTE].supabaseUrl;
 var SUPABASE_ANON_KEY = _AMBIENTI[AMBIENTE].supabaseAnonKey;
-var APP_URL           = _AMBIENTI[AMBIENTE].appUrl || new URL('./', location.href).href;
+// L'indirizzo dell'app è quello da cui la pagina è servita, qualunque sito sia.
+var APP_URL           = new URL('./', location.href).href;
 var PRINT_URL        = APP_URL + 'print.html';
 var LOCK_TTL_MS      = 600000; // 10 minuti — safety net DB-side, deve essere > timer client (5 min) per evitare race
 

@@ -106,6 +106,20 @@
     await prova(S, 'l\'app si dichiara «collaudo» e punta al progetto di collaudo', function () {
       return (AMBIENTE === 'collaudo' && SUPABASE_URL.indexOf(REF_PRODUZIONE) < 0 && /rqvohwpthhumydpbwktq/.test(SUPABASE_URL)) || ('AMBIENTE=' + AMBIENTE + ' url=' + SUPABASE_URL);
     });
+    await prova(S, 'ogni indirizzo ha il suo ambiente, e uno sconosciuto non ne ha nessuno', function () {
+      var attesi = [['medicinadurgenzaucsc-maker.github.io', 'produzione'], ['gistech2026.github.io', 'collaudo'], ['localhost', 'collaudo'], ['127.0.0.1', 'collaudo'],
+        ['consegne-collaudo.pages.dev', 'collaudo'], ['abc123.consegne-collaudo.pages.dev', 'collaudo'], ['CONSEGNE-COLLAUDO.PAGES.DEV', 'collaudo'],
+        ['falsoconsegne-collaudo.pages.dev', null], ['consegne-collaudo.pages.dev.example.org', null], ['pages.dev', null], ['github.io', null], ['example.org', null], ['', null]];
+      var male = attesi.filter(function (x) { return _ambienteDaHost(x[0]) !== x[1]; }).map(function (x) { return '«' + x[0] + '» → ' + _ambienteDaHost(x[0]); });
+      return !male.length || male.join(' ; ');
+    });
+    await prova(S, 'su un indirizzo conosciuto non compare l\'avviso «indirizzo non riconosciuto»', function () {
+      return !document.getElementById('bloccoIndirizzo') || 'è comparso il blocco dell\'indirizzo';
+    });
+    await prova(S, 'l\'indirizzo dell\'app e della stampa è quello da cui la pagina è servita', function () {
+      var atteso = new URL('./', location.href).href;
+      return (APP_URL === atteso && PRINT_URL === atteso + 'print.html') || ('APP_URL=' + APP_URL + ' PRINT_URL=' + PRINT_URL);
+    });
     await prova(S, 'cornice «COLLAUDO» visibile e titolo marcato', function () {
       var f = document.getElementById('fasciaCollaudo');
       return (!!f && getComputedStyle(f).display !== 'none' && /^\[COLLAUDO\]/.test(document.title)) || 'cornice o titolo assenti';

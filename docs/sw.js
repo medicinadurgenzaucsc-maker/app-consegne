@@ -1,12 +1,14 @@
 // Service Worker — Consegne Reparto
-// Strategia: Network-first per le API GAS, Cache-first per gli asset statici
+// Strategia: per i file dell'app prima la rete e, se la rete non dà una
+// risposta buona, la copia in cache; per le librerie esterne prima la cache;
+// tutto il resto (i dati dei pazienti) solo rete, mai su disco.
 
 // Bump CACHE_NAME quando si aggiungono/cambiano asset nella precache,
 // così i client già connessi invalidano la vecchia cache e ricaricano.
 // v83: fix privacy — la cache non deve MAI contenere risposte Supabase/Google
 // (dati pazienti a riposo su disco). Il bump cancella anche le cache
 // precedenti che li contenevano (handler 'activate').
-var CACHE_NAME = 'consegne-v184';
+var CACHE_NAME = 'consegne-v185';
 
 // Asset statici da pre-cachare all'installazione
 var PRECACHE_ASSETS = [
@@ -29,11 +31,39 @@ var PRECACHE_ASSETS = [
   './js/app2.js'
 ];
 
-// ── Installazione: pre-carica asset statici ──────────────────────
+// Una risposta arrivata dopo un rinvio (su Cloudflare «print.html» viene
+// servita come «/print») non può rispondere a una navigazione: il browser la
+// rifiuta. In cache se ne tiene una copia identica, senza il segno del rinvio.
+function senzaRinvio(res) {
+  if (!res.redirected) return Promise.resolve(res);
+  return res.blob().then(function(corpo) {
+    return new Response(corpo, { status: res.status, statusText: res.statusText, headers: res.headers });
+  });
+}
+
+// I file dell'app non cambiano con i parametri dell'indirizzo: in cache hanno
+// una sola voce ciascuno («/?_r=123» e «/» sono la stessa pagina).
+function senzaParametri(url) {
+  return url.split('#')[0].split('?')[0];
+}
+
+function dallaCache(request) {
+  return caches.match(request, { ignoreSearch: true, ignoreVary: true });
+}
+
+// ── Installazione: pre-carica asset statici ─────────────────────
+// Ogni file è chiesto di nuovo al sito (mai dalla memoria del browser) e deve
+// arrivare con una risposta buona, altrimenti l'installazione fallisce e resta
+// al lavoro il service worker di prima.
 self.addEventListener('install', function(e) {
   e.waitUntil(
     caches.open(CACHE_NAME).then(function(cache) {
-      return cache.addAll(PRECACHE_ASSETS);
+      return Promise.all(PRECACHE_ASSETS.map(function(percorso) {
+        return fetch(new Request(percorso, { cache: 'no-cache' })).then(function(res) {
+          if (!res.ok) throw new Error('file non disponibile: ' + percorso + ' (HTTP ' + res.status + ')');
+          return senzaRinvio(res).then(function(pulita) { return cache.put(percorso, pulita); });
+        });
+      }));
     }).then(function() {
       return self.skipWaiting();
     })
@@ -69,7 +99,8 @@ self.addEventListener('activate', function(e) {
 // contenevano, via l'handler 'activate'.)
 self.addEventListener('fetch', function(e) {
   var url = e.request.url;
-  var sameOrigin = url.indexOf(self.location.origin) === 0;
+  var sameOrigin = false;
+  try { sameOrigin = new URL(url).origin === self.location.origin; } catch (err) {}
 
   // CDN statici (Bootstrap, Bootstrap Icons, SweetAlert2, supabase-js) →
   // Cache-first: sono codice pubblico, nessun dato paziente.
@@ -88,22 +119,36 @@ self.addEventListener('fetch', function(e) {
   }
 
   // Asset PROPRI dell'app (same-origin: index.html, js, css, icone) →
-  // Network-first con fallback alla cache. Nessun dato paziente qui:
-  // github.io serve solo file statici.
-  if (sameOrigin) {
+  // prima la rete, e in cache finisce SOLO una risposta buona. Nessun dato
+  // paziente qui: il sito serve solo file statici.
+  // Se la rete non risponde, o risponde con un errore (il «404» dei minuti in
+  // cui un sito viene ripubblicato), o al posto del file arriva la pagina di
+  // accesso di un cancello messo davanti al sito (risposta «opaca»), si usa la
+  // copia buona già in cache: fino alla v184 l'errore veniva mostrato e
+  // SALVATO al posto della copia buona.
+  if (sameOrigin && e.request.method === 'GET') {
     e.respondWith(
       fetch(e.request).then(function(res) {
-        var clone = res.clone();
-        caches.open(CACHE_NAME).then(function(c) { c.put(e.request, clone); });
-        return res;
+        // rinvio di una navigazione: lo segue il browser, non si salva
+        if (res.type === 'opaqueredirect') return res;
+        if (res.ok) {
+          var clone = res.clone();
+          e.waitUntil(
+            senzaRinvio(clone).then(function(pulita) {
+              return caches.open(CACHE_NAME).then(function(c) { return c.put(senzaParametri(url), pulita); });
+            }).catch(function() {})
+          );
+          return res;
+        }
+        return dallaCache(e.request).then(function(buona) { return buona || res; });
       }).catch(function() {
-        return caches.match(e.request);
+        return dallaCache(e.request).then(function(buona) { return buona || Response.error(); });
       })
     );
     return;
   }
 
-  // TUTTO IL RESTO (supabase.co = dati pazienti, googleapis.com = Drive,
+  // TUTTO IL RESTO (supabase.co = dati pazienti, googleapis.com,
   // accounts.google.com = login, ecc.) → SOLO rete, MAI in cache.
   e.respondWith(fetch(e.request));
 });
