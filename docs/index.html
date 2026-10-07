@@ -383,6 +383,9 @@
             + '</button>'
             + '<button class="tb-btn tb-laboratorio" data-cmd="labtrak" title="Esami di laboratorio (TrakCare)">'
             +   '<i class="bi bi-droplet-half"></i><span class="tb-scale-label">Laboratorio</span>'
+            + '</button>'
+            + '<button class="tb-btn tb-decorso" data-cmd="decorsoia" title="Decorso clinico scritto dall\'IA">'
+            +   '<i class="bi bi-stars"></i><span class="tb-scale-label">Decorso IA</span>'
             + '</button>';
       // Da Fare: pulsante checkbox RIMOSSO su richiesta utente.
       // Il sistema dei caret + ordinamento automatico è disattivato.
@@ -5126,6 +5129,7 @@
             <li><hr class="dropdown-divider"></li>
             <li><a class="dropdown-item" href="javascript:void(0)" data-emerg-disable="1" onclick="apriImpostazioniArchivio()"><i class="bi bi-archive text-secondary me-2"></i>Impostazioni archivio consegne</a></li>
             <li><a class="dropdown-item" href="javascript:void(0)" onclick="_apriImpostazioniEmail()"><i class="bi bi-envelope-at text-primary me-2"></i>Impostazioni email</a></li>
+            <li><a class="dropdown-item" href="javascript:void(0)" onclick="_apriImpostazioniIA()"><i class="bi bi-stars me-2" style="color:#6a1b9a;"></i>Impostazioni IA</a></li>
             <li><a class="dropdown-item" href="javascript:void(0)" data-emerg-disable="1" onclick="_avviaBackupManuale()"><i class="bi bi-cloud-arrow-up-fill text-success me-2"></i>Esegui Backup Manuale</a></li>
             <li><a class="dropdown-item" href="javascript:void(0)" data-emerg-disable="1" onclick="_apriRipristina()"><i class="bi bi-arrow-counterclockwise text-danger me-2"></i>Ripristina da Backup</a></li>
             <li><hr class="dropdown-divider"></li>
@@ -5146,7 +5150,7 @@
             <li>
               <span class="dropdown-item-text d-block px-3" style="font-family:monospace;font-size:0.75rem;color:#546e7a;line-height:1.3;">
                 <i class="bi bi-tag me-1"></i>Versione applicazione:<br>
-                <strong id="navVersioneApp" class="ms-1" style="color:#263238;">181</strong>
+                <strong id="navVersioneApp" class="ms-1" style="color:#263238;">182</strong>
               </span>
             </li>
             <!-- Uscita: chiude la sessione solo su questo dispositivo (_esciSessione) -->
@@ -5654,6 +5658,9 @@
         } catch (e) { clearTimeout(attesa); fine(null); }
       });
     }
+    // Anche le altre funzioni del server (decorso clinico) si chiamano con la
+    // sessione come Bearer: la chiave pubblica da sola non basta a nessuna.
+    window._bearerSessione = _cassaBearer;
     function _cassaCall(body) {
       return _cassaBearer().then(function(bearer) {
         var ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
@@ -6067,6 +6074,448 @@
         });
       });
     }
+
+    // ══════════════════════════════════════════════════════════════════
+    // DECORSO CLINICO CON L'IA — impostazioni, schermate e invio al server
+    // (Edge Function decorso-clinico). Il fascicolo si prepara SUL SERVER:
+    // il browser manda solo i referti e la diaria incollati e le
+    // impostazioni; le consegne e gli esami li legge il server dal database
+    // (per questo la scheda viene salvata prima dell'invio).
+    // FASE DI PROVA: il server rimanda ciò che ha ricevuto e la schermata
+    // finale lo mostra per controllo; il decorso clinico arriverà lì.
+    // Tutto ciò che torna dal server è TESTO (_testoHtml), mai HTML.
+    // ══════════════════════════════════════════════════════════════════
+    (function() {
+      var DETTAGLI = ['molto generico', 'poco dettagliato', 'dettagliato', 'estremamente dettagliato'];
+      var COLORE = '#6a1b9a';
+      var ICONA = '<i class="bi bi-stars me-2" style="color:' + COLORE + ';"></i>';
+      var PASSI = [
+        ['salvataggio', 'Salvataggio della scheda'],
+        ['invio', 'Invio delle informazioni al server'],
+        ['ricezione', 'Ricezione e controllo sul server'],
+        ['consegne', 'Consegne del letto'],
+        ['terapia', 'Terapia'],
+        ['laboratorio', 'Esami di laboratorio'],
+        ['referti', 'Referti e consulenze'],
+        ['diaria', 'Diaria della cartella clinica'],
+        ['fascicolo', 'Preparazione del fascicolo']
+      ];
+      // I testi incollati, per letto: solo in memoria (mai su disco), così
+      // chi chiude per sbaglio o riprova dopo un errore non li riperde.
+      var _bozze = {};
+      // Gli stati dei passi dell'ultima procedura (passo → stato): la schermata
+      // finale prende il posto di quella dell'avanzamento, qui restano leggibili.
+      var _ultimiPassi = {};
+      // Il testo dell'ultimo risultato, per «Copia tutto» (ascoltatore delegato:
+      // non dipende dal momento in cui la finestra viene aperta).
+      var _testoDaCopiare = '';
+      document.addEventListener('click', function(e) {
+        var b = e.target && e.target.closest ? e.target.closest('#iaCopia') : null;
+        if (!b) return;
+        e.preventDefault();
+        _copia(_testoDaCopiare).then(function(ok) {
+          b.innerHTML = ok ? '<i class="bi bi-clipboard-check me-1"></i>Copiato' : '<i class="bi bi-clipboard-x me-1"></i>Copia non riuscita';
+        });
+      });
+      var attendi = function(ms) { return new Promise(function(r) { setTimeout(r, ms); }); };
+      var pad2 = function(n) { return String(n).padStart(2, '0'); };
+      function _dataIt(ms) { var d = new Date(ms); return pad2(d.getDate()) + '/' + pad2(d.getMonth() + 1) + '/' + d.getFullYear() + ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes()); }
+      function _isoIt(s) { var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(s || '')); return m ? m[3] + '/' + m[2] + '/' + m[1] : String(s || ''); }
+      // Regola del fuoco: chiusa l'ultima finestra, il fuoco torna nella scheda
+      // (altrimenti il focus mode si chiude da solo).
+      function _rifocalizza(card) {
+        setTimeout(function() {
+          try {
+            var fe = card && card.querySelector('.editable-area[contenteditable]');
+            if (fe && card.classList.contains('focus-mode')) fe.focus();
+          } catch (e) {}
+        }, 60);
+      }
+      function _contatore(idArea, idConto) {
+        var ta = document.getElementById(idArea), c = document.getElementById(idConto);
+        if (!ta || !c) return;
+        var agg = function() {
+          var v = ta.value || '';
+          var righe = v.trim() ? v.replace(/\r\n?/g, '\n').replace(/\n+$/, '').split('\n').length : 0;
+          c.textContent = righe + (righe === 1 ? ' riga' : ' righe') + ' · ' + v.length + ' caratteri';
+        };
+        ta.addEventListener('input', agg);
+        agg();
+        try { ta.focus(); } catch (e) {}
+      }
+
+      // ── IMPOSTAZIONI IA (menu rotellina) ────────────────────────────────
+      window._apriImpostazioniIA = function() {
+        Swal.fire({ title: ICONA + 'Impostazioni IA', html: '<div class="text-center py-3"><div class="spinner-border text-secondary"></div></div>', showConfirmButton: false, allowOutsideClick: false, returnFocus: false });
+        var pImp = (typeof window._sbCaricaImpostazioniIA === 'function') ? window._sbCaricaImpostazioniIA() : Promise.reject(new Error('funzione non disponibile: ricarica la pagina'));
+        pImp.then(function(imp) {
+          Swal.fire({
+            title: ICONA + 'Impostazioni IA',
+            html: '<div class="text-start" style="font-size:0.9rem;">'
+              + '<p class="text-muted small mb-3">Come deve essere il decorso clinico scritto dall\'IA. Valgono per tutti i computer del reparto.</p>'
+              + '<label class="form-label fw-bold mb-1" for="iaRighe">Quante righe deve avere?</label>'
+              + '<div class="d-flex align-items-center gap-2"><input type="number" id="iaRighe" class="form-control" min="7" max="50" step="1" value="' + imp.righe + '" style="max-width:110px;"><span class="text-muted small">da 7 a 50 righe</span></div>'
+              + '<label class="form-label fw-bold mt-3 mb-1" for="iaDettaglio">Quanto deve essere dettagliato?</label>'
+              + '<input type="range" id="iaDettaglio" class="form-range" min="1" max="4" step="1" list="iaTacche" value="' + imp.dettaglio + '">'
+              + '<datalist id="iaTacche"><option value="1"></option><option value="2"></option><option value="3"></option><option value="4"></option></datalist>'
+              + '<div class="d-flex justify-content-between text-muted" style="font-size:0.7rem;margin-top:-6px;"><span>molto generico</span><span>poco dettagliato</span><span>dettagliato</span><span>estremamente dettagliato</span></div>'
+              + '<div class="text-center fw-bold mt-2" id="iaDettaglioTesto" style="color:' + COLORE + ';">' + _testoHtml(DETTAGLI[imp.dettaglio - 1]) + '</div>'
+              + '</div>',
+            showCancelButton: true, confirmButtonText: 'Salva', cancelButtonText: 'Annulla', confirmButtonColor: COLORE, returnFocus: false,
+            didOpen: function() {
+              var sl = document.getElementById('iaDettaglio'), et = document.getElementById('iaDettaglioTesto');
+              if (sl && et) sl.addEventListener('input', function() { et.textContent = DETTAGLI[(parseInt(sl.value, 10) || 1) - 1]; });
+            },
+            preConfirm: function() {
+              var righe = parseInt((document.getElementById('iaRighe') || {}).value, 10);
+              var dettaglio = parseInt((document.getElementById('iaDettaglio') || {}).value, 10);
+              if (!(righe >= 7 && righe <= 50)) { Swal.showValidationMessage('Le righe devono essere da 7 a 50'); return false; }
+              if (!(dettaglio >= 1 && dettaglio <= 4)) { Swal.showValidationMessage('Scegli il livello di dettaglio'); return false; }
+              return { righe: righe, dettaglio: dettaglio };
+            }
+          }).then(function(r) {
+            if (!r.isConfirmed) return;
+            var n = r.value;
+            Swal.fire({ title: 'Salvataggio…', allowOutsideClick: false, showConfirmButton: false, returnFocus: false, didOpen: function() { Swal.showLoading(); } });
+            window._sbSalvaImpostazioniIA(n.righe, n.dettaglio).then(function() {
+              if ((n.righe !== imp.righe || n.dettaglio !== imp.dettaglio) && typeof window._log === 'function') {
+                window._log('info', 'ia-impostazioni', 'Impostazioni IA cambiate', 'Righe: ' + imp.righe + ' → ' + n.righe + '\nDettaglio: ' + DETTAGLI[imp.dettaglio - 1] + ' → ' + DETTAGLI[n.dettaglio - 1]);
+              }
+              Swal.fire({ icon: 'success', title: 'Impostazioni IA salvate', html: 'Decorso di <b>' + n.righe + ' righe</b>, <b>' + _testoHtml(DETTAGLI[n.dettaglio - 1]) + '</b>.', confirmButtonColor: COLORE, timer: 2500, timerProgressBar: true, returnFocus: false });
+            }).catch(function(e) {
+              Swal.fire({ icon: 'error', title: 'Impostazioni non salvate', html: '<div class="small text-start">' + _testoHtml(String((e && e.message) || e)) + '</div>', confirmButtonColor: '#d33', returnFocus: false });
+            });
+          });
+        }).catch(function(e) {
+          Swal.fire({ icon: 'error', title: 'Impostazioni IA non disponibili', text: String((e && e.message) || e), confirmButtonColor: '#d33', returnFocus: false });
+        });
+      };
+
+      // ── LA PROCEDURA (bottone «Decorso IA» nella barra degli strumenti) ──
+      window._apriDecorsoIA = function(card) {
+        if (!card || !card.classList.contains('focus-mode')) return;
+        var letto = card.getAttribute('data-bed') || '';
+        var nomeEl = card.querySelector('[data-field="Nome"]');
+        var ctx = {
+          card: card, letto: letto,
+          nome: nomeEl ? (nomeEl.textContent || '').trim() : '',
+          bozza: _bozze[letto] || (_bozze[letto] = { referti: '', diaria: '' })
+        };
+        _passoConferma(ctx);
+      };
+      function _intestazione(ctx) {
+        return '<div class="small text-muted mb-2">Letto <b>' + _testoHtml(ctx.letto) + '</b>' + (ctx.nome ? ' · <b>' + _testoHtml(ctx.nome) + '</b>' : '') + '</div>';
+      }
+
+      // 1. conferma: che cosa verrà usato e che cosa va aggiornato prima
+      function _passoConferma(ctx) {
+        var card = ctx.card, letto = ctx.letto;
+        var box = card.querySelector('[data-field="NoteTerapia"] .terapia-box[data-ts]');
+        var ts = box ? parseInt(box.getAttribute('data-ts'), 10) : 0;
+        var terapia = ts ? 'importata da TrakCare il ' + _dataIt(ts) : 'non importata da TrakCare (scritta a mano, o assente)';
+        var lab = (window._labInfoLetti || {})[letto];
+        var esami = (lab && lab.n) ? lab.n + ' esami, ultimo del ' + _isoIt(lab.u) : 'nessun esame salvato';
+        var daSalvare = (typeof _dirtyLetti !== 'undefined' && _dirtyLetti.has(letto));
+        Swal.fire({
+          title: ICONA + 'Decorso clinico con l\'IA',
+          html: '<div class="text-start" style="font-size:0.92rem;">' + _intestazione(ctx)
+            + '<p>L\'IA scriverà il decorso clinico del ricovero partendo da <b>ciò che è salvato nelle consegne di questo letto</b> (scheda, terapia, esami di laboratorio) e da ciò che incollerai nelle prossime schermate (referti, consulenze, diaria).</p>'
+            + '<div class="alert alert-warning py-2 mb-2"><b>Prima di continuare aggiorna</b> la terapia, gli esami di laboratorio e le consegne: il decorso sarà fedele solo a dati aggiornati.</div>'
+            + '<ul class="small mb-2">'
+              + '<li>Terapia: ' + _testoHtml(terapia) + '</li>'
+              + '<li>Esami di laboratorio: ' + _testoHtml(esami) + '</li>'
+              + '<li>Consegne: ' + (daSalvare ? 'ci sono modifiche non ancora salvate, verranno salvate prima dell\'invio' : 'salvate') + '</li>'
+            + '</ul>'
+            + '<p class="small text-muted mb-2"><i class="bi bi-shield-lock me-1"></i>La connessione con il server è cifrata. Il server non conserva le informazioni che riceve.</p>'
+            + '<div class="form-check"><input class="form-check-input" type="checkbox" id="iaConferma"><label class="form-check-label fw-bold" for="iaConferma">Ho aggiornato terapia, esami di laboratorio e consegne</label></div>'
+            + '</div>',
+          width: 'min(720px, 95vw)',
+          showCancelButton: true, confirmButtonText: 'Avanti <i class="bi bi-arrow-right"></i>', cancelButtonText: 'Annulla',
+          confirmButtonColor: COLORE, returnFocus: false, allowOutsideClick: false,
+          preConfirm: function() {
+            var cb = document.getElementById('iaConferma');
+            if (!cb || !cb.checked) { Swal.showValidationMessage('Conferma di aver aggiornato terapia, esami e consegne'); return false; }
+            return true;
+          }
+        }).then(function(r) {
+          if (!r.isConfirmed) { _rifocalizza(card); return; }
+          _passoReferti(ctx);
+        });
+      }
+
+      // 2. referti, procedure e consulenze (un riquadro solo)
+      function _passoReferti(ctx) {
+        Swal.fire({
+          title: ICONA + 'Referti e consulenze',
+          html: '<div class="text-start" style="font-size:0.92rem;">' + _intestazione(ctx)
+            + '<p class="mb-2">Incolla qui i referti degli <b>esami radiologici</b>, delle <b>procedure</b> e delle <b>consulenze</b> del ricovero, uno sotto l\'altro.</p>'
+            + '<p class="small text-muted mb-2">Perché vengano messi in ordine cronologico, metti davanti a ciascuno una riga con <b>titolo e data</b>, per esempio <code>TC cranio del 27/10/2026</code> oppure <code>Consulenza cardiologica del 28/10/2026</code>.</p>'
+            + '<textarea id="iaReferti" class="form-control" rows="12" spellcheck="false" placeholder="TC cranio del 27/10/2026&#10;…testo del referto…&#10;&#10;Consulenza cardiologica del 28/10/2026&#10;…testo della consulenza…">' + _testoHtml(ctx.bozza.referti) + '</textarea>'
+            + '<div class="small text-muted mt-1" id="iaRefertiConto"></div>'
+            + '</div>',
+          width: 'min(860px, 95vw)',
+          showCancelButton: true, showDenyButton: true,
+          confirmButtonText: 'Avanti <i class="bi bi-arrow-right"></i>', denyButtonText: '<i class="bi bi-arrow-left"></i> Indietro', cancelButtonText: 'Annulla',
+          confirmButtonColor: COLORE, denyButtonColor: '#546e7a', returnFocus: false, allowOutsideClick: false,
+          didOpen: function() { _contatore('iaReferti', 'iaRefertiConto'); },
+          willClose: function() { var ta = document.getElementById('iaReferti'); if (ta) ctx.bozza.referti = ta.value; }
+        }).then(function(r) {
+          if (r.isDenied) { _passoConferma(ctx); return; }
+          if (!r.isConfirmed) { _rifocalizza(ctx.card); return; }
+          if (!ctx.bozza.referti.trim()) {
+            Swal.fire({ icon: 'question', title: 'Nessun referto', text: 'Non hai incollato referti né consulenze. Continuare senza?', showCancelButton: true, confirmButtonText: 'Continua senza', cancelButtonText: 'Torna indietro', confirmButtonColor: COLORE, returnFocus: false, allowOutsideClick: false })
+              .then(function(c) { if (c.isConfirmed) _passoDiaria(ctx); else _passoReferti(ctx); });
+            return;
+          }
+          _passoDiaria(ctx);
+        });
+      }
+
+      // 3. diaria della cartella clinica
+      function _passoDiaria(ctx) {
+        Swal.fire({
+          title: ICONA + 'Diaria della cartella clinica',
+          html: '<div class="text-start" style="font-size:0.92rem;">' + _intestazione(ctx)
+            + '<p class="mb-2">Incolla qui la <b>diaria</b> del ricovero presa dal programma della cartella clinica, <b>per intero</b>: dal giorno dell\'ingresso a oggi.</p>'
+            + '<div class="alert alert-warning py-2 mb-2 small"><i class="bi bi-scissors me-1"></i>Fai attenzione a <b>non tagliare il testo</b>: controlla che inizio e fine siano quelli giusti. Il conteggio qui sotto ti aiuta.</div>'
+            + '<textarea id="iaDiaria" class="form-control" rows="14" spellcheck="false" placeholder="…diaria della cartella clinica…">' + _testoHtml(ctx.bozza.diaria) + '</textarea>'
+            + '<div class="small text-muted mt-1" id="iaDiariaConto"></div>'
+            + '</div>',
+          width: 'min(860px, 95vw)',
+          showCancelButton: true, showDenyButton: true,
+          confirmButtonText: 'Avanti <i class="bi bi-arrow-right"></i>', denyButtonText: '<i class="bi bi-arrow-left"></i> Indietro', cancelButtonText: 'Annulla',
+          confirmButtonColor: COLORE, denyButtonColor: '#546e7a', returnFocus: false, allowOutsideClick: false,
+          didOpen: function() { _contatore('iaDiaria', 'iaDiariaConto'); },
+          willClose: function() { var ta = document.getElementById('iaDiaria'); if (ta) ctx.bozza.diaria = ta.value; }
+        }).then(function(r) {
+          if (r.isDenied) { _passoReferti(ctx); return; }
+          if (!r.isConfirmed) { _rifocalizza(ctx.card); return; }
+          if (!ctx.bozza.diaria.trim()) {
+            Swal.fire({ icon: 'question', title: 'Nessuna diaria', text: 'Non hai incollato la diaria. Continuare senza?', showCancelButton: true, confirmButtonText: 'Continua senza', cancelButtonText: 'Torna indietro', confirmButtonColor: COLORE, returnFocus: false, allowOutsideClick: false })
+              .then(function(c) { if (c.isConfirmed) _passoElaborazione(ctx); else _passoDiaria(ctx); });
+            return;
+          }
+          _passoElaborazione(ctx);
+        });
+      }
+
+      // 4. avanzamento: i passi si aggiornano man mano che il server risponde
+      function _passoElaborazione(ctx) {
+        Swal.fire({
+          title: ICONA + 'Preparazione in corso',
+          html: '<div class="text-start" style="font-size:0.92rem;">' + _intestazione(ctx)
+            + '<div class="alert alert-warning py-2 mb-3"><i class="bi bi-exclamation-triangle-fill me-1"></i><b>Non chiudere questa finestra</b> e non cambiare scheda. Quando tutti i passi sono verdi si attiva il pulsante «Mostra risultato».</div>'
+            + '<ul class="list-unstyled mb-3" id="iaPassi">'
+            + PASSI.map(function(p) { return '<li class="d-flex align-items-center gap-2 py-1" data-passo="' + p[0] + '"><span class="ia-ind" style="width:24px;text-align:center;flex-shrink:0;"><i class="bi bi-circle text-muted"></i></span><span>' + p[1] + '</span><span class="small text-muted ms-auto text-end ia-nota"></span></li>'; }).join('')
+            + '</ul>'
+            + '<button type="button" class="btn btn-success btn-lg w-100 fw-bold" id="iaMostra" disabled style="opacity:0.45;cursor:not-allowed;"><i class="bi bi-stars me-2"></i>Mostra risultato</button>'
+            + '</div>',
+          width: 'min(720px, 95vw)',
+          showConfirmButton: false, showCancelButton: false, allowOutsideClick: false, allowEscapeKey: false, returnFocus: false,
+          didOpen: function() {
+            _ultimiPassi = {};
+            _esegui(ctx).catch(function(e) { _fallimento(ctx, String((e && e.message) || e)); });
+          }
+        });
+      }
+      function _segna(passo, stato, nota) {
+        _ultimiPassi[passo] = stato;
+        var li = document.querySelector('#iaPassi li[data-passo="' + passo + '"]');
+        if (!li) return;
+        var ind = li.querySelector('.ia-ind'), n = li.querySelector('.ia-nota');
+        ind.innerHTML = stato === 'inizio' ? '<span class="spinner-border spinner-border-sm text-primary"></span>'
+          : stato === 'ok' ? '<i class="bi bi-check-circle-fill text-success"></i>'
+          : stato === 'salto' ? '<i class="bi bi-dash-circle text-secondary"></i>'
+          : stato === 'errore' ? '<i class="bi bi-x-circle-fill text-danger"></i>'
+          : '<i class="bi bi-circle text-muted"></i>';
+        if (n) n.textContent = nota || '';
+        li.setAttribute('data-stato', stato);
+      }
+      // La scheda va salvata PRIMA: il server legge le consegne dal database.
+      async function _salvaScheda(letto, card) {
+        if (typeof _dirtyLetti === 'undefined' || typeof _saveInFlight === 'undefined') return '';
+        if (!_dirtyLetti.has(letto) && !_saveInFlight[letto]) return '';
+        if (!_saveInFlight[letto] && typeof eseguiSalvataggioLettoCompleto === 'function') {
+          try { clearTimeout(timerSalvataggioLetto[letto]); clearInterval(_countdownIntervallo[letto]); } catch (e) {}
+          eseguiSalvataggioLettoCompleto(letto, card);
+        }
+        var t0 = Date.now();
+        while (Date.now() - t0 < 20000) {
+          await attendi(200);
+          if (!_saveInFlight[letto] && !_dirtyLetti.has(letto)) return '';
+        }
+        return 'il salvataggio della scheda non si è concluso: riprova fra qualche secondo';
+      }
+      async function _esegui(ctx) {
+        var letto = ctx.letto, card = ctx.card;
+        _segna('salvataggio', 'inizio');
+        var guaio = await _salvaScheda(letto, card);
+        if (guaio) { _segna('salvataggio', 'errore', 'non riuscito'); return _fallimento(ctx, guaio); }
+        _segna('salvataggio', 'ok', 'scheda salvata');
+        var imp = await (typeof window._sbCaricaImpostazioniIA === 'function' ? window._sbCaricaImpostazioniIA() : Promise.resolve({ righe: 15, dettaglio: 2 }));
+        _segna('invio', 'inizio');
+        var corpo = JSON.stringify({ letto: letto, referti: ctx.bozza.referti, diaria: ctx.bozza.diaria, impostazioni: imp });
+        var bearer = await window._bearerSessione();
+        var risposta;
+        try {
+          risposta = await fetch(SUPABASE_URL + '/functions/v1/decorso-clinico', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + bearer },
+            body: corpo
+          });
+        } catch (e) {
+          _segna('invio', 'errore', 'il server non risponde');
+          return _fallimento(ctx, 'Il server non è raggiungibile: ' + String((e && e.message) || e));
+        }
+        if (!risposta.ok) {
+          var j = null; try { j = await risposta.json(); } catch (e) {}
+          _segna('invio', 'errore', 'rifiutato');
+          return _fallimento(ctx, (j && (j.errore || j.message)) || ('Il server ha risposto HTTP ' + risposta.status));
+        }
+        _segna('invio', 'ok', Math.max(1, Math.round(corpo.length / 1024)) + ' KB inviati');
+        var fine = null;
+        var gestisci = function(riga) {
+          if (!riga || !riga.trim()) return;
+          var ev; try { ev = JSON.parse(riga); } catch (e) { return; }
+          if (ev.passo === 'fine') { fine = ev; return; }
+          _segna(ev.passo, ev.stato, ev.stato === 'errore' ? (ev.errore || 'errore') : ev.nota);
+        };
+        if (risposta.body && risposta.body.getReader) {
+          var reader = risposta.body.getReader(), dec = new TextDecoder(), resto = '';
+          while (true) {
+            var pezzo = await reader.read();
+            if (pezzo.done) break;
+            resto += dec.decode(pezzo.value, { stream: true });
+            var righe = resto.split('\n');
+            resto = righe.pop();
+            righe.forEach(gestisci);
+          }
+          resto += dec.decode();
+          gestisci(resto);
+        } else {
+          (await risposta.text()).split('\n').forEach(gestisci);
+        }
+        if (!fine) return _fallimento(ctx, 'Il server si è interrotto senza concludere.');
+        if (fine.stato !== 'ok') return _fallimento(ctx, fine.errore || 'errore sul server');
+        // Tutto pronto: il risultato si apre solo quando chi guarda preme il pulsante.
+        var b = document.getElementById('iaMostra');
+        if (!b) return _passoRisultato(ctx, fine);
+        b.disabled = false;
+        b.style.opacity = '1';
+        b.style.cursor = 'pointer';
+        b.addEventListener('click', function() { b.disabled = true; _passoRisultato(ctx, fine); });
+        try { b.focus(); } catch (e) {}
+      }
+      function _fallimento(ctx, msg) {
+        setTimeout(function() {
+          Swal.fire({
+            icon: 'error', title: 'Procedura interrotta',
+            html: '<div class="text-start small">' + _testoHtml(msg) + '<br><br>I testi incollati sono conservati: puoi riprovare.</div>',
+            showCancelButton: true, confirmButtonText: 'Riprova', cancelButtonText: 'Chiudi', confirmButtonColor: COLORE, returnFocus: false, allowOutsideClick: false
+          }).then(function(r) { if (r.isConfirmed) _passoElaborazione(ctx); else _rifocalizza(ctx.card); });
+        }, 900);
+      }
+
+      // 5. risultato — fase di prova: ciò che il server ha ricevuto
+      function _blocco(titolo, testo, aperto, sotto) {
+        return '<details' + (aperto ? ' open' : '') + ' class="mb-2"><summary class="fw-bold" style="cursor:pointer;">' + _testoHtml(titolo)
+          + (sotto ? ' <span class="text-muted fw-normal small">' + _testoHtml(sotto) + '</span>' : '') + '</summary>'
+          + '<pre class="mt-1 mb-0 p-2" style="white-space:pre-wrap;word-break:break-word;font-size:0.8rem;background:#f5f5f5;border:1px solid #e0e0e0;border-radius:4px;max-height:260px;overflow:auto;">' + _testoHtml(testo || '(vuoto)') + '</pre></details>';
+      }
+      function _testoEsami(lab) {
+        if (!lab || !lab.presenti) return '(nessun esame salvato)';
+        return (lab.esami || []).map(function(e) {
+          return e.nome + (e.um ? ' [' + e.um + ']' : '') + (e.range ? ' (range ' + e.range + ')' : '') + ': '
+            + (e.valori || []).map(function(v) { return v.data + ' = ' + v.valore; }).join('; ');
+        }).join('\n');
+      }
+      function _testoReferti(ref) {
+        var el = (ref && ref.elenco) || [];
+        if (!el.length) return '(nessun referto incollato)';
+        return el.map(function(x, i) {
+          return '--- ' + (i + 1) + '. ' + (x.titolo || '(senza titolo)') + ' — ' + (x.data ? 'data ' + _isoIt(x.data) : 'DATA NON RICONOSCIUTA') + '\n' + (x.testo || '');
+        }).join('\n\n');
+      }
+      function _testoPaziente(f) {
+        var id = f.identita || {}, ric = f.ricovero || {}, c = f.consegne || {};
+        var out = [];
+        var riga = function(et, v) { if (v) out.push(et + ': ' + v); };
+        riga('Letto', id.letto); riga('Nome', id.nome); riga('Data di nascita', id.data_nascita); riga('Età', id.eta); riga('Sesso', id.sesso);
+        riga('Ricovero', ric.data_ricovero); riga('Tipologia letto', ric.tipologia_letto); riga('Diagnosi', c.diagnosi); riga('Allergie', c.allergie);
+        riga('Ossigeno', c.ossigeno); riga('Vitto', c.vitto); riga('Dimissibile', c.dimissibile);
+        return out.join('\n');
+      }
+      function _testoFascicolo(f) {
+        var c = f.consegne || {}, t = f.terapia || {}, lab = f.laboratorio || {}, d = f.diaria || {}, imp = f.impostazioni || {};
+        var out = [];
+        var sez = function(titolo) { out.push('', '═══ ' + titolo + ' ═══'); };
+        sez('PAZIENTE E RICOVERO'); out.push(_testoPaziente(f));
+        sez('CONSEGNE — DIARIA ED EPICRISI'); out.push(c.diaria || '(vuoto)');
+        sez('CONSEGNE — PROBLEMI ATTIVI'); out.push(c.problemi_attivi || '(vuoto)');
+        sez('CONSEGNE — DA FARE'); out.push(c.da_fare || '(vuoto)');
+        sez('CONSEGNE — ESAMI COLTURALI E SCALE'); out.push(c.esami_colturali_e_scale || '(vuoto)');
+        sez('TERAPIA' + (t.importata_il ? ' (importata da TrakCare il ' + _isoIt(t.importata_il) + ')' : '')); out.push(t.testo || '(nessuna terapia importata)'); if (t.note) out.push('Note: ' + t.note);
+        sez('ESAMI DI LABORATORIO' + (lab.presenti ? ' (' + lab.n_esami + ' esami, dal ' + lab.dal + ' al ' + lab.al + ')' : '')); out.push(_testoEsami(lab));
+        sez('REFERTI E CONSULENZE (' + (((f.referti || {}).elenco || []).length) + ')'); out.push(_testoReferti(f.referti));
+        sez('DIARIA DELLA CARTELLA CLINICA (' + (d.righe || 0) + ' righe)'); out.push(d.testo || '(vuota)');
+        sez('IMPOSTAZIONI'); out.push('Righe richieste: ' + imp.righe + ' · dettaglio: ' + imp.dettaglioTesto);
+        return out.join('\n').trim();
+      }
+      function _copiaVecchia(testo) {
+        try {
+          var ta = document.createElement('textarea');
+          ta.value = testo; ta.style.position = 'fixed'; ta.style.opacity = '0';
+          document.body.appendChild(ta); ta.select();
+          var ok = document.execCommand('copy');
+          document.body.removeChild(ta);
+          return !!ok;
+        } catch (e) { return false; }
+      }
+      function _copia(testo) {
+        if (!(navigator.clipboard && navigator.clipboard.writeText)) return Promise.resolve(_copiaVecchia(testo));
+        // se il browser non risponde (finestra non in primo piano) si passa al metodo vecchio
+        return new Promise(function(risolvi) {
+          var fatto = false;
+          var fine = function(ok) { if (!fatto) { fatto = true; risolvi(ok); } };
+          setTimeout(function() { fine(_copiaVecchia(testo)); }, 1500);
+          navigator.clipboard.writeText(testo).then(function() { fine(true); }, function() { fine(_copiaVecchia(testo)); });
+        });
+      }
+      function _passoRisultato(ctx, ev) {
+        var f = ev.fascicolo || {}, r = ev.riepilogo || {};
+        var c = f.consegne || {}, t = f.terapia || {}, lab = f.laboratorio || {}, ref = f.referti || { elenco: [] }, d = f.diaria || {}, imp = f.impostazioni || {};
+        _testoDaCopiare = _testoFascicolo(f);
+        var nRighe = function(s) { return s ? (String(s).split('\n').length + ' righe') : 'vuoto'; };
+        var html = '<div class="text-start" style="font-size:0.9rem;">' + _intestazione(ctx)
+          + '<div class="alert alert-info py-2 mb-2"><b>Fase di prova.</b> Il server ha ricevuto e controllato le informazioni e le rimanda qui per verifica (' + Math.round((r.byte || 0) / 1024) + ' KB). Quando il motore sarà pronto, al loro posto comparirà il decorso clinico.</div>'
+          + '<div class="d-flex align-items-center gap-2 mb-2 flex-wrap"><button type="button" class="btn btn-sm btn-outline-secondary" id="iaCopia"><i class="bi bi-clipboard me-1"></i>Copia tutto</button>'
+          + '<span class="small text-muted">' + _testoHtml((r.campi_consegne || 0) + ' campi delle consegne · ' + (r.esami || 0) + ' esami · ' + (r.referti || 0) + ' referti' + (r.referti_senza_data ? ' (' + r.referti_senza_data + ' senza data)' : '') + ' · ' + (r.righe_diaria || 0) + ' righe di diaria · ' + imp.righe + ' righe, ' + (imp.dettaglioTesto || '')) + '</span></div>'
+          + _blocco('Paziente e ricovero', _testoPaziente(f), true)
+          + _blocco('Consegne: diaria ed epicrisi', c.diaria, false, nRighe(c.diaria))
+          + _blocco('Consegne: problemi attivi', c.problemi_attivi, false, nRighe(c.problemi_attivi))
+          + _blocco('Consegne: da fare', c.da_fare, false, nRighe(c.da_fare))
+          + _blocco('Consegne: esami colturali e scale', c.esami_colturali_e_scale, false, nRighe(c.esami_colturali_e_scale))
+          + _blocco('Terapia', (t.testo || '(nessuna terapia importata)') + (t.note ? '\n\nNote: ' + t.note : ''), false, t.importata_il ? 'importata da TrakCare il ' + _isoIt(t.importata_il) : (t.importata_da_trakcare ? 'importata da TrakCare' : 'non importata da TrakCare'))
+          + _blocco('Esami di laboratorio', _testoEsami(lab), false, lab.presenti ? lab.n_esami + ' esami, ' + lab.n_valori + ' valori, dal ' + lab.dal + ' al ' + lab.al : 'nessuno')
+          + _blocco('Referti e consulenze', _testoReferti(ref), true, (ref.elenco || []).length + ' riconosciuti' + (ref.senza_data ? ', ' + ref.senza_data + ' senza data' : ''))
+          + _blocco('Diaria della cartella clinica', d.testo, false, d.righe ? d.righe + ' righe, ' + d.caratteri + ' caratteri · inizia con «' + (d.inizio || '').slice(0, 60) + '» · finisce con «' + (d.fine || '').slice(0, 60) + '»' : 'vuota')
+          + '</div>';
+        Swal.fire({
+          title: ICONA + 'Informazioni arrivate al server',
+          html: html, width: 'min(980px, 95vw)',
+          confirmButtonText: 'Chiudi', confirmButtonColor: COLORE, returnFocus: false, allowOutsideClick: false
+        }).then(function() { _rifocalizza(ctx.card); });
+        if (typeof window._log === 'function') {
+          window._log('info', 'ia-decorso', 'Fascicolo preparato per il letto ' + ctx.letto + ' (fase di prova)',
+            'Consegne: ' + (r.campi_consegne || 0) + ' campi · Esami: ' + (r.esami || 0) + ' (' + (r.valori_esami || 0) + ' valori) · Referti: ' + (r.referti || 0)
+            + (r.referti_senza_data ? ' (' + r.referti_senza_data + ' senza data)' : '') + ' · Diaria: ' + (r.righe_diaria || 0) + ' righe · ' + Math.round((r.byte || 0) / 1024) + ' KB · ' + (r.durata_ms || 0) + ' ms');
+        }
+      }
+      // per le prove automatiche
+      window._iaTestoFascicolo = _testoFascicolo;
+      window._iaBozze = _bozze;
+      window._iaUltimiPassi = function() { return _ultimiPassi; };
+    })();
 
     // ══════════════════════════════════════════════════════════════════
     // PATH A (dual-run) — sessione Supabase Auth ACCANTO al login GIS

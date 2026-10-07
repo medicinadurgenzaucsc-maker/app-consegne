@@ -1410,6 +1410,15 @@
         }
         return;
       }
+      if (cmd === 'decorsoia') {
+        // Click sul pulsante «Decorso IA»: la procedura del decorso clinico
+        // per la card corrente (solo in focus mode).
+        var cardIa = tb.closest('.patient-card');
+        if (cardIa && typeof window._apriDecorsoIA === 'function') {
+          window._apriDecorsoIA(cardIa);
+        }
+        return;
+      }
       _tbRestoreSelection();
       if (fmult !== null) { _tbApplyFontMultiplier(parseFloat(fmult)); var p = tb.querySelector('[data-tb-submenu="fsmenu"]'); if (p) p.classList.remove('open'); return; }
       if (cmd) { document.execCommand(cmd, false, null); }

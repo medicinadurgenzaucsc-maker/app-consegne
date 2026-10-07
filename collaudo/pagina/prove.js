@@ -1683,7 +1683,279 @@
     }
   }
 
-  var SEZIONI = { ambiente: sezioneAmbiente, trak: sezioneTrak, xss: sezioneXss, mail: sezioneMail };
+  // ══════════════════════════════════════════════════════════════════════
+  // DECORSO CLINICO CON L'IA (fase di prova): «Impostazioni IA» nel menu,
+  // il bottone nella barra degli strumenti, le schermate della procedura e
+  // la schermata finale con ciò che il server ha ricevuto. Gira sul letto
+  // libero di prova, con testi incollati noti (uno ostile).
+  // ══════════════════════════════════════════════════════════════════════
+  async function sezioneIa() {
+    var S = 'ia';
+    var LETTO = LETTO_PROVA;
+    var CHIAVI = ['IA_DECORSO_RIGHE', 'IA_DECORSO_DETTAGLIO'];
+    var prima = {}, letto = false, erroriPrima = (window.__erroriBanco || []).length, inizio = Date.now();
+    var aperta = function () { var p = Swal.getPopup(); return (p && Swal.isVisible() && !p.classList.contains('swal2-hide')) ? p : null; };
+    var titolo = function () { var p = aperta(), t = p ? p.querySelector('.swal2-title') : null; return t ? t.textContent.trim() : ''; };
+    var testoFinestra = function () { var p = aperta(); return p ? p.textContent.replace(/\s+/g, ' ').trim() : ''; };
+    var attendiTitolo = function (re, ms) { return finche(function () { return re.test(titolo()) ? titolo() : false; }, ms || 15000); };
+    var avviso = function () { var p = aperta(), v = p ? p.querySelector('.swal2-validation-message') : null; return (v && getComputedStyle(v).display !== 'none') ? v.textContent.trim() : ''; };
+    var nel = function (id) { var p = aperta(); return p ? p.querySelector('#' + id) : null; };
+    var imp = async function (chiave) {
+      var r = await _sb.from('impostazioni').select('valore').eq('chiave', chiave).maybeSingle();
+      if (r.error) throw new Error(r.error.message);
+      return r.data ? r.data.valore : null;
+    };
+    var scriviImp = async function (chiave, valore) {
+      var r = (valore === null || valore === undefined)
+        ? await _sb.from('impostazioni').delete().eq('chiave', chiave)
+        : await _sb.from('impostazioni').upsert([{ chiave: chiave, valore: valore }], { onConflict: 'chiave' });
+      if (r.error) throw new Error(r.error.message);
+    };
+    var REFERTI = 'TC cranio del 03/10/2026\nNon lesioni acute.\n\nConsulenza cardiologica del 02/10/2026\nRitmo sinusale. ' + esca('referto') + '\n';
+    var DIARIA = '01/10/2026 Ingresso in reparto, paziente vigile.\n02/10/2026 Apiretico.\n03/10/2026 Fine diaria di prova ' + esca('diaria');
+
+    try {
+      for (var i = 0; i < CHIAVI.length; i++) prima[CHIAVI[i]] = await imp(CHIAVI[i]);
+      letto = true;
+      await scriviImp('IA_DECORSO_RIGHE', null);
+      await scriviImp('IA_DECORSO_DETTAGLIO', null);
+
+      await prova(S, 'menu della rotellina: voce «Impostazioni IA» con l\'icona dell\'IA', function () {
+        var a = document.querySelector('a.dropdown-item[onclick="_apriImpostazioniIA()"]');
+        return (!!a && /Impostazioni IA/.test(a.textContent) && !!a.querySelector('.bi-stars')) || 'voce assente o senza icona';
+      });
+
+      await prova(S, 'Impostazioni IA: senza valori salvati propone 15 righe e «poco dettagliato»', async function () {
+        window._apriImpostazioniIA();
+        var campo = await finche(function () { return nel('iaRighe'); }, 15000);
+        if (!campo) return 'la finestra non si è aperta: «' + titolo() + '»';
+        var sl = nel('iaDettaglio'), et = nel('iaDettaglioTesto');
+        if (campo.value !== '15' || !sl || sl.value !== '2') return 'righe ' + campo.value + ', dettaglio ' + (sl && sl.value);
+        if (campo.min !== '7' || campo.max !== '50' || sl.min !== '1' || sl.max !== '4') return 'limiti sbagliati';
+        if (!et || et.textContent.trim() !== 'poco dettagliato') return 'etichetta «' + (et && et.textContent) + '»';
+        sl.value = '4'; sl.dispatchEvent(new Event('input', { bubbles: true }));
+        return et.textContent.trim() === 'estremamente dettagliato' || 'l\'etichetta non segue il cursore: «' + et.textContent + '»';
+      });
+
+      await prova(S, 'Impostazioni IA: 6 e 51 righe rifiutate, nulla salvato', async function () {
+        var campo = nel('iaRighe'); if (!campo) return 'finestra chiusa';
+        campo.value = '6'; Swal.clickConfirm(); await attendi(500);
+        if (!/da 7 a 50/.test(avviso())) return 'avviso per 6: «' + avviso() + '»';
+        campo = nel('iaRighe'); if (!campo) return 'finestra chiusa dopo il primo errore';
+        campo.value = '51'; Swal.clickConfirm(); await attendi(500);
+        if (!/da 7 a 50/.test(avviso())) return 'avviso per 51: «' + avviso() + '»';
+        return ((await imp('IA_DECORSO_RIGHE')) === null) || 'salvato lo stesso';
+      });
+
+      await prova(S, 'Impostazioni IA: 20 righe e «dettagliato» salvate per tutto il reparto, nel registro', async function () {
+        var campo = nel('iaRighe'), sl = nel('iaDettaglio'); if (!campo || !sl) return 'finestra chiusa';
+        campo.value = '20'; sl.value = '3'; sl.dispatchEvent(new Event('input', { bubbles: true }));
+        Swal.clickConfirm();
+        if (!(await attendiTitolo(/Impostazioni IA salvate/))) return 'esito: «' + titolo() + '» ' + avviso();
+        if ((await imp('IA_DECORSO_RIGHE')) !== '20' || (await imp('IA_DECORSO_DETTAGLIO')) !== '3') return 'valori salvati: ' + (await imp('IA_DECORSO_RIGHE')) + '/' + (await imp('IA_DECORSO_DETTAGLIO'));
+        var c = await window._sbCaricaImpostazioniIA();
+        if (c.righe !== 20 || c.dettaglio !== 3) return 'rilettura: ' + JSON.stringify(c);
+        return (await finche(async function () {
+          var q = await _sb.from('logs').select('descrizione').eq('tipo', 'ia-impostazioni').gte('ts', inizio).limit(1);
+          return !!(q.data && q.data[0] && /15 → 20/.test(q.data[0].descrizione) && /dettagliato/.test(q.data[0].descrizione));
+        }, 8000, 500)) || 'riga del registro non trovata';
+      });
+
+      await prova(S, 'Impostazioni IA: riaperta mostra i valori salvati', async function () {
+        await chiudiSwal();
+        window._apriImpostazioniIA();
+        var campo = await finche(function () { return nel('iaRighe'); }, 15000);
+        if (!campo) return 'non si riapre';
+        var esito = (campo.value === '20' && nel('iaDettaglio').value === '3' && nel('iaDettaglioTesto').textContent.trim() === 'dettagliato') || 'mostra ' + campo.value + '/' + nel('iaDettaglio').value;
+        Swal.clickCancel(); await attendi(500);
+        return esito;
+      });
+
+      // ── la procedura, dalla scheda in modifica ──
+      var c = scheda(LETTO);
+      await prova(S, 'in modifica, la barra degli strumenti ha il bottone «Decorso IA»', async function () {
+        if (!c) return 'scheda del letto di prova non trovata';
+        _attivaFocusMode(c);
+        var tb = await finche(function () { return c.querySelector('.focus-toolbar'); }, 12000);
+        if (!tb) return 'la scheda non si è aperta in modifica';
+        var b = c.querySelector('.focus-toolbar .tb-decorso[data-cmd="decorsoia"]');
+        return (!!b && !!b.querySelector('.bi-stars') && /Decorso IA/.test(b.textContent)) || 'bottone assente';
+      });
+
+      await prova(S, 'prima schermata: ricorda di aggiornare terapia, esami e consegne; senza la spunta non si va avanti', async function () {
+        var b = c.querySelector('.focus-toolbar .tb-decorso');
+        b.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+        b.click();
+        if (!(await attendiTitolo(/Decorso clinico con l.IA/))) return 'la procedura non si è aperta: «' + titolo() + '»';
+        var t = testoFinestra();
+        if (!/aggiorna.*terapia.*esami.*consegne/i.test(t)) return 'manca il promemoria: ' + t.slice(0, 200);
+        if (!/cifrata/.test(t)) return 'manca la frase sulla cifratura';
+        if (!/Letto 5/.test(t)) return 'non dice il letto: ' + t.slice(0, 80);
+        Swal.clickConfirm(); await attendi(500);
+        return (/Conferma di aver aggiornato/.test(avviso()) && /Decorso clinico/.test(titolo())) || 'è andata avanti senza la spunta: «' + titolo() + '» ' + avviso();
+      });
+
+      await prova(S, 'seconda schermata: referti, con il consiglio del titolo con la data e il conteggio', async function () {
+        nel('iaConferma').checked = true;
+        Swal.clickConfirm();
+        if (!(await attendiTitolo(/Referti e consulenze/))) return 'schermata attesa non comparsa: «' + titolo() + '»';
+        var ta = nel('iaReferti');
+        if (!ta) return 'manca il riquadro';
+        if (!/TC cranio del 27\/10\/2026/.test(testoFinestra())) return 'manca l\'esempio del titolo con la data';
+        ta.value = REFERTI; ta.dispatchEvent(new Event('input', { bubbles: true }));
+        await attendi(100);
+        return /5 righe/.test(nel('iaRefertiConto').textContent) || 'conteggio: «' + nel('iaRefertiConto').textContent + '»';
+      });
+
+      await prova(S, '«Indietro» e poi «Avanti»: il testo incollato non va perso', async function () {
+        Swal.clickDeny();
+        if (!(await attendiTitolo(/Decorso clinico con l.IA/))) return 'non torna alla prima schermata: «' + titolo() + '»';
+        nel('iaConferma').checked = true; Swal.clickConfirm();
+        if (!(await attendiTitolo(/Referti e consulenze/))) return 'non torna ai referti: «' + titolo() + '»';
+        return (nel('iaReferti').value === REFERTI) || 'testo perso';
+      });
+
+      await prova(S, 'terza schermata: diaria, con l\'avviso di non tagliare il testo e il conteggio', async function () {
+        Swal.clickConfirm();
+        if (!(await attendiTitolo(/Diaria della cartella clinica/))) return 'schermata attesa non comparsa: «' + titolo() + '»';
+        if (!/non tagliare/i.test(testoFinestra())) return 'manca l\'avviso';
+        var ta = nel('iaDiaria'); if (!ta) return 'manca il riquadro';
+        ta.value = DIARIA; ta.dispatchEvent(new Event('input', { bubbles: true }));
+        await attendi(100);
+        return /3 righe/.test(nel('iaDiariaConto').textContent) || 'conteggio: «' + nel('iaDiariaConto').textContent + '»';
+      });
+
+      var indicatori = [];
+      var statiPassi = function () { var m = {}; var p = aperta(); if (p) p.querySelectorAll('#iaPassi li[data-stato]').forEach(function (li) { m[li.getAttribute('data-passo')] = li.getAttribute('data-stato'); }); return m; };
+      var pulsanteMostra = function () { var p = aperta(); return p ? p.querySelector('#iaMostra') : null; };
+      await prova(S, 'avanzamento: il pulsante «Mostra risultato» è grigio e non cliccabile finché i passi non sono conclusi', async function () {
+        Swal.clickConfirm();
+        if (!(await attendiTitolo(/Preparazione in corso/))) return 'schermata attesa non comparsa: «' + titolo() + '»';
+        if (!/Non chiudere questa finestra/.test(testoFinestra())) return 'manca l\'avviso di non chiudere';
+        var b = pulsanteMostra();
+        if (!b || !/Mostra risultato/.test(b.textContent)) return 'pulsante assente';
+        if (!b.disabled || getComputedStyle(b).cursor !== 'not-allowed') return 'il pulsante è già cliccabile';
+        var cliccato = false; b.addEventListener('click', function () { cliccato = true; }, { once: true });
+        b.click();
+        if (cliccato || /Informazioni arrivate/.test(titolo())) return 'un clic sul pulsante grigio ha avuto effetto';
+        var pronto = await finche(function () { var x = pulsanteMostra(); return x && !x.disabled; }, 45000, 100);
+        var visti = statiPassi();
+        indicatori = Object.keys(visti).map(function (k) { return k + ':' + visti[k]; });
+        if (!pronto) return 'il pulsante non si è attivato: «' + titolo() + '» ' + testoFinestra().slice(0, 160) + ' | ' + indicatori.join(' ');
+        if (/Informazioni arrivate/.test(titolo())) return 'è passata al risultato da sola';
+        if (Object.keys(visti).join(',') !== 'salvataggio,invio,ricezione,consegne,terapia,laboratorio,referti,diaria,fascicolo') return 'ordine dei passi: ' + Object.keys(visti).join(',');
+        var attesi = ['salvataggio', 'invio', 'ricezione', 'consegne', 'referti', 'diaria', 'fascicolo'];
+        var mancanti = attesi.filter(function (k) { return visti[k] !== 'ok'; });
+        if (mancanti.length) return 'passi non verdi: ' + mancanti.join(', ') + ' | ' + indicatori.join(' ');
+        return (visti.terapia === 'salto' || visti.terapia === 'ok') && (visti.laboratorio === 'salto' || visti.laboratorio === 'ok') || 'terapia/laboratorio: ' + visti.terapia + '/' + visti.laboratorio;
+      });
+
+      await prova(S, 'gli indicatori restano a video finché non si preme il pulsante; al clic arriva la schermata finale', async function () {
+        await attendi(1500);
+        if (!/Preparazione in corso/.test(titolo())) return 'la schermata è cambiata da sola: «' + titolo() + '»';
+        var verdi = aperta().querySelectorAll('#iaPassi .bi-check-circle-fill').length;
+        if (verdi < 7) return 'indicatori verdi: ' + verdi;
+        pulsanteMostra().click();
+        return !!(await attendiTitolo(/Informazioni arrivate al server/, 15000)) || 'schermata finale non comparsa: «' + titolo() + '»';
+      });
+
+      await prova(S, 'schermata finale: ciò che è arrivato al server, con i testi incollati tali e quali e nessun HTML attivo', async function () {
+        window.__xss = [];
+        var p = aperta(); if (!p) return 'finestra chiusa';
+        var t = p.textContent;
+        if (!/Fase di prova/.test(t)) return 'non dice che è la fase di prova';
+        if (!/2 riconosciuti/.test(t)) return 'referti non riconosciuti: ' + (t.match(/Referti e consulenze[^\n]{0,80}/) || [''])[0];
+        var pre = Array.prototype.map.call(p.querySelectorAll('pre'), function (x) { return x.textContent; }).join('\n');
+        if (pre.indexOf('Consulenza cardiologica del 02/10/2026') < 0 || pre.indexOf('TC cranio del 03/10/2026') < 0) return 'referti non mostrati';
+        if (pre.indexOf('Fine diaria di prova') < 0 || pre.indexOf('Ingresso in reparto') < 0) return 'diaria non mostrata per intero';
+        if (pre.indexOf('<img src=x onerror') < 0) return 'il testo ostile incollato non è mostrato come testo';
+        if (!/3 righe/.test(t)) return 'manca il conteggio delle righe della diaria';
+        if (!/inizia con «01\/10\/2026/.test(t) || !/finisce con «03\/10\/2026/.test(t)) return 'mancano inizio e fine della diaria';
+        if (!/20 righe, dettagliato/.test(t)) return 'non riporta le impostazioni usate: ' + (t.match(/righe, [a-z ]+/) || [''])[0];
+        if (esche(p) || eseguiti().length) return 'HTML attivo nella finestra (' + esche(p) + ') o codice eseguito: ' + eseguiti().join(',');
+        var b = p.querySelector('#iaCopia');
+        return !!b || 'manca il bottone «Copia tutto»';
+      });
+
+      await prova(S, 'il testo da copiare contiene tutto e l\'ordine dei referti è cronologico', async function () {
+        var bozza = (window._iaBozze || {})[LETTO];
+        if (!bozza || bozza.referti !== REFERTI || bozza.diaria !== DIARIA) return 'i testi incollati non sono quelli conservati';
+        var p = aperta(); var b = p && p.querySelector('#iaCopia'); if (!b) return 'bottone assente';
+        b.click();
+        if (!(await finche(function () { return /Copiato|Copia non riuscita/.test(b.textContent); }, 6000, 200))) return 'il bottone non ha risposto: «' + b.textContent + '»';
+        var testo = window._iaTestoFascicolo({ identita: { letto: LETTO }, ricovero: {}, consegne: {}, terapia: {}, laboratorio: {}, diaria: { testo: DIARIA, righe: 3 }, impostazioni: { righe: 20, dettaglioTesto: 'dettagliato' },
+          referti: { elenco: [{ titolo: 'Consulenza cardiologica del 02/10/2026', data: '2026-10-02', testo: 'a' }, { titolo: 'TC cranio del 03/10/2026', data: '2026-10-03', testo: 'b' }] } });
+        return (testo.indexOf('Consulenza cardiologica') < testo.indexOf('TC cranio') && testo.indexOf('Fine diaria di prova') > 0 && /Righe richieste: 20/.test(testo)) || 'testo da copiare incompleto';
+      });
+
+      await prova(S, 'la riga del registro dice solo i conteggi, non i contenuti', async function () {
+        var q = await finche(async function () {
+          var r = await _sb.from('logs').select('messaggio,descrizione').eq('tipo', 'ia-decorso').gte('ts', inizio).order('ts', { ascending: false }).limit(1);
+          return (r.data && r.data[0]) ? r.data[0] : false;
+        }, 8000, 500);
+        if (!q) return 'riga non trovata';
+        if (q.messaggio.indexOf('letto ' + LETTO) < 0 || !/Referti: 2/.test(q.descrizione) || !/Diaria: 3 righe/.test(q.descrizione)) return 'contenuto: ' + q.messaggio + ' | ' + q.descrizione;
+        return (q.descrizione.indexOf('Ingresso') < 0 && q.descrizione.indexOf('onerror') < 0) || 'il registro contiene testo incollato';
+      });
+
+      await prova(S, 'chiusa la schermata finale, la scheda resta in modifica', async function () {
+        Swal.clickConfirm(); await attendi(1200);
+        return (c.classList.contains('focus-mode') && !!c.querySelector('.focus-toolbar')) || 'il focus mode si è chiuso';
+      });
+
+      await prova(S, 'senza referti né diaria: lo chiede, si può continuare, i passi risultano saltati', async function () {
+        window._iaBozze[LETTO] = { referti: '', diaria: '' };
+        window._apriDecorsoIA(c);
+        if (!(await attendiTitolo(/Decorso clinico con l.IA/))) return 'non si apre';
+        nel('iaConferma').checked = true; Swal.clickConfirm();
+        if (!(await attendiTitolo(/Referti e consulenze/))) return 'referti non comparsi';
+        Swal.clickConfirm();
+        if (!(await attendiTitolo(/Nessun referto/))) return 'non chiede conferma per i referti vuoti: «' + titolo() + '»';
+        Swal.clickConfirm();
+        if (!(await attendiTitolo(/Diaria della cartella clinica/))) return 'diaria non comparsa';
+        Swal.clickConfirm();
+        if (!(await attendiTitolo(/Nessuna diaria/))) return 'non chiede conferma per la diaria vuota: «' + titolo() + '»';
+        Swal.clickConfirm();
+        var pronto = await finche(function () { var x = pulsanteMostra(); return x && !x.disabled; }, 45000, 100);
+        var visti = statiPassi();
+        if (!pronto) return 'il pulsante non si è attivato: «' + titolo() + '»';
+        pulsanteMostra().click();
+        var fine = await attendiTitolo(/Informazioni arrivate al server/, 15000);
+        if (!fine) return 'schermata finale non arrivata: «' + titolo() + '»';
+        var esito = (visti.referti === 'salto' && visti.diaria === 'salto' && visti.fascicolo === 'ok') || 'passi: ' + JSON.stringify(visti);
+        Swal.clickConfirm(); await attendi(600);
+        return esito;
+      });
+
+      await prova(S, '«Annulla» dalla prima schermata: nessuna chiamata, la scheda resta in modifica', async function () {
+        var chiamate = 0, fv = window.fetch;
+        window.fetch = function (u) { if (String(u).indexOf('decorso-clinico') >= 0) chiamate++; return fv.apply(window, arguments); };
+        try {
+          window._apriDecorsoIA(c);
+          if (!(await attendiTitolo(/Decorso clinico con l.IA/))) return 'non si apre';
+          Swal.clickCancel(); await attendi(1200);
+          return (chiamate === 0 && c.classList.contains('focus-mode')) || 'chiamate ' + chiamate + ', in modifica ' + c.classList.contains('focus-mode');
+        } finally { window.fetch = fv; }
+      });
+    } finally {
+      await chiudiSwal();
+      try { _disattivaFocusMode(false); } catch (e) {}
+      if (window._iaBozze) delete window._iaBozze[LETTO];
+      if (letto) { for (var k = 0; k < CHIAVI.length; k++) { try { await scriviImp(CHIAVI[k], prima[CHIAVI[k]]); } catch (e) {} } }
+      try { await _sb.from('logs').delete().gte('ts', inizio).in('tipo', ['ia-impostazioni', 'ia-decorso']); } catch (e) {}
+      await prova(S, 'impostazioni IA rimesse com\'erano', async function () {
+        if (!letto) return 'le impostazioni di partenza non erano state lette';
+        for (var j = 0; j < CHIAVI.length; j++) { if ((await imp(CHIAVI[j])) !== prima[CHIAVI[j]]) return CHIAVI[j] + ' non ripristinata'; }
+        return true;
+      });
+      await prova(S, 'nessun errore JavaScript durante le prove dell\'IA', function () {
+        var nuovi = (window.__erroriBanco || []).slice(erroriPrima);
+        return !nuovi.length || nuovi.slice(0, 4).join(' | ');
+      });
+    }
+  }
+
+  var SEZIONI = { ambiente: sezioneAmbiente, trak: sezioneTrak, xss: sezioneXss, mail: sezioneMail, ia: sezioneIa };
 
   window.__prove = async function (opz) {
     opz = opz || {};

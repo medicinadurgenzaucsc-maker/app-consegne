@@ -707,6 +707,16 @@ body { padding-top: 70px; background-color: #d4e6f1 !important; }
   color: #1565c0;
 }
 .tb-btn.tb-scale .tb-scale-label { font-size: 0.8rem; font-weight: 600; }
+/* Pulsante toolbar «Decorso IA» (decorso clinico con l'IA) */
+.tb-btn.tb-decorso {
+  width: auto;
+  padding: 0 8px;
+  gap: 5px;
+  display: inline-flex;
+  align-items: center;
+  color: #6a1b9a;
+}
+.tb-btn.tb-decorso .tb-scale-label { font-size: 0.8rem; font-weight: 600; }
 /* Riga risultato scala: prima riga NON editabile del campo Esami Colturali.
    Azzurro tenue, distinta dal testo libero sotto. */
 .scala-risultato {
