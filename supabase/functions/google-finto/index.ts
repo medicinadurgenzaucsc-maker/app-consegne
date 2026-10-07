@@ -32,6 +32,12 @@
 //   <segreto>.intruso            consenso dato da intruso@example.com
 // Token di rinnovo «<segreto>.guasto»: Google non risponde (503), per provare
 // la verifica dei permessi quando Google non e' raggiungibile.
+// Client secret finti: quello delle prove, un secondo altrettanto «valido»
+// (<quello>-bis, per provare la sostituzione) e, con lo stesso inizio,
+// qualunque altro: per il finto Google e' un secret SBAGLIATO, e risponde
+// invalid_client come farebbe Google.
+// Destinatario «apispenta@example.com»: risponde come Google quando nel
+// progetto le Gmail API non sono abilitate.
 // Destinatari che simulano un guasto: «rifiuta@example.com» fa rispondere 401
 // se il token d'accesso ha piu' di due secondi (google-token deve rinnovarlo
 // e riprovare), «guasto@example.com» fa rispondere 500.
@@ -41,6 +47,8 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 const SEGRETO = Deno.env.get('FINTO_SEGRETO') || '';
 const CHIAVE = Deno.env.get('FINTO_CHIAVE') || '';
 const CLIENT_FINTO = 'segreto-client-finto-del-collaudo';
+const segretoFinto = (s: string) => s.startsWith(CLIENT_FINTO);
+const segretoFintoValido = (s: string) => s === CLIENT_FINTO || s === CLIENT_FINTO + '-bis';
 const GOOGLE = {
   token: 'https://oauth2.googleapis.com/token',
   userinfo: 'https://www.googleapis.com/oauth2/v3/userinfo',
@@ -123,8 +131,12 @@ Deno.serve(async (req) => {
   if (percorso === '/token' && req.method === 'POST') {
     const corpo = await req.text();
     const f = new URLSearchParams(corpo);
-    if (f.get('client_secret') !== CLIENT_FINTO) {
+    const segretoClient = f.get('client_secret') || '';
+    if (!segretoFinto(segretoClient)) {
       return daGoogle(GOOGLE.token, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: corpo });
+    }
+    if (!segretoFintoValido(segretoClient)) {
+      return json({ error: 'invalid_client', error_description: 'The provided client secret is invalid.' }, 401);
     }
     const rilascia = (accesso: string, rinnovo?: string) =>
       json({ access_token: accesso, ...(rinnovo ? { refresh_token: rinnovo } : {}), expires_in: 3599, scope: AMBITI, token_type: 'Bearer' });
@@ -177,6 +189,13 @@ Deno.serve(async (req) => {
     if (!bearer.startsWith(SEGRETO + '.t')) return json({ error: { code: 401, message: 'Invalid Credentials' } }, 401);
     const m = leggiMessaggio(raw);
     if (/guasto@example\.com/i.test(m.destinatari)) return json({ error: { code: 500, message: 'Guasto simulato del servizio di posta' } }, 500);
+    if (/apispenta@example\.com/i.test(m.destinatari)) {
+      return json({ error: {
+        code: 403, status: 'PERMISSION_DENIED',
+        message: 'Gmail API has not been used in project 0 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/gmail.googleapis.com/overview?project=0 then retry.',
+        details: [{ '@type': 'type.googleapis.com/google.rpc.ErrorInfo', reason: 'SERVICE_DISABLED', domain: 'googleapis.com' }],
+      } }, 403);
+    }
     if (/rifiuta@example\.com/i.test(m.destinatari) && etaToken(bearer) > 2000) {
       return json({ error: { code: 401, message: 'Invalid Credentials' } }, 401);
     }

@@ -1228,12 +1228,24 @@
     };
   }
   function statoMailVero() { if (_fetchVero) { window.fetch = _fetchVero; _fetchVero = null; } }
+  // lo stesso per un'azione qualunque («config», «scambia», …); si toglie con statoMailVero()
+  function fingiMail(azione, risposta) {
+    if (!_fetchVero) _fetchVero = window.fetch;
+    var vero = _fetchVero;
+    window.fetch = function (u, o) {
+      if (String(u).indexOf('/functions/v1/google-token') >= 0 && o && String(o.body || '').indexOf('"azione":"' + azione + '"') >= 0) {
+        return Promise.resolve(new Response(JSON.stringify(risposta), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+      }
+      return vero.apply(window, arguments);
+    };
+  }
 
   async function sezioneMail() {
     var S = 'mail';
     var ALTRO = 'mittente-prova@example.com', TERZO = 'terzo-mittente@example.com';
     var CHIAVI = ['MAIL_DIMISSIONI_MITTENTE', 'MAIL_DIMISSIONI_DESTINATARI', 'MAIL_DIMISSIONI_OGGETTO', 'MAIL_DIMISSIONI_CORPO', 'MAIL_DIMISSIONI_CHIUSURA'];
-    var segreto = null, prima = {}, letto = false, gisVero = null, richieste = [], prossimoCodice = null, reparto = '';
+    var segreto = null, clientFinto = '', prima = {}, letto = false, gisVero = null, richieste = [], prossimoCodice = null, reparto = '';
+    var richiestePrima = 0, richiesteDopo = function () { return richieste.length - richiestePrima; };
     var erroriPrima = (window.__erroriBanco || []).length, inizio = Date.now();
     var imp = async function (chiave) {
       var r = await _sb.from('impostazioni').select('valore').eq('chiave', chiave).maybeSingle();
@@ -1273,10 +1285,10 @@
 
     try {
       var rs = await fetch('/banco/cassaforte?modo=finta', { method: 'POST' });
-      if (rs.ok) segreto = (await rs.json()).segreto;
+      if (rs.ok) { var jr = await rs.json(); segreto = jr.segreto; clientFinto = jr.clientFinto || ''; }
     } catch (e) {}
-    await prova(S, 'il banco passa la cassaforte del collaudo alle credenziali finte', function () { return !!segreto || 'credenziali finte non disponibili (banco.js aggiornato? funzioni-collaudo.js configura?)'; });
-    if (!segreto) return;
+    await prova(S, 'il banco passa la cassaforte del collaudo alle credenziali finte', function () { return (!!segreto && !!clientFinto) || 'credenziali finte non disponibili (banco.js aggiornato e riavviato? funzioni-collaudo.js configura?)'; });
+    if (!segreto || !clientFinto) return;
 
     try {
       for (var i = 0; i < CHIAVI.length; i++) prima[CHIAVI[i]] = await imp(CHIAVI[i]);
@@ -1512,6 +1524,124 @@
           window._apriImpostazioniEmail();
           return !!(await finche(function () { return /non è ancora aggiornato/.test(testoFinestra()); }, 15000)) || 'Impostazioni email: ' + testoFinestra().slice(0, 160);
         } finally { statoMailVero(); }
+      });
+
+      // ── il client secret: si scrive, non si legge ──
+      var scriviSegreto = async function (valore) {       // scrive nel campo e preme «Verifica e salva»
+        var campo = await finche(function () { var p = aperta(); return p ? p.querySelector('#cassaSecret') : null; }, 15000);
+        if (!campo) return 'la finestra del client secret non è aperta: «' + titolo() + '»';
+        campo.value = valore;
+        Swal.clickConfirm();
+        return '';
+      };
+      var avvisoCampo = function () { var p = aperta(), v = p ? p.querySelector('.swal2-validation-message') : null; return (v && getComputedStyle(v).display !== 'none') ? v.textContent.trim() : ''; };
+
+      await prova(S, 'Impostazioni email: il client secret risulta registrato e non compare da nessuna parte', async function () {
+        await chiudiSwal();
+        window._apriImpostazioniEmail();
+        var riga = await finche(function () { return document.getElementById('impMailSegretoStato'); }, 15000);
+        if (!riga) return 'riquadro del client secret assente: «' + titolo() + '»';
+        var b = document.getElementById('impMailSegreto');
+        if (!/: registrato/.test(riga.textContent) || !b || !/Cambia/.test(b.textContent)) return 'stato «' + riga.textContent + '», bottone «' + (b ? b.textContent : 'assente') + '»';
+        return document.documentElement.innerHTML.indexOf(clientFinto) < 0 || 'il client secret custodito è nella pagina';
+      });
+
+      await prova(S, 'cambio del client secret: il campo è vuoto, non è un campo password e non viene mai precompilato', async function () {
+        document.getElementById('impMailSegreto').click();
+        var campo = await finche(function () { var p = aperta(); return p ? p.querySelector('#cassaSecret') : null; }, 15000);
+        if (!campo) return 'la finestra del client secret non si è aperta: «' + titolo() + '»';
+        if (campo.value !== '' || campo.getAttribute('value')) return 'campo precompilato';
+        if (campo.type !== 'text' || getComputedStyle(campo).webkitTextSecurity !== 'disc') return 'tipo ' + campo.type + ', mascheratura ' + getComputedStyle(campo).webkitTextSecurity;
+        return testoFinestra().indexOf('Stai sostituendo') >= 0 || 'non dice che si sta sostituendo quello custodito';
+      });
+
+      await prova(S, 'un ID client incollato al posto del secret viene riconosciuto, e il campo si svuota', async function () {
+        var guaio = await scriviSegreto(GOOGLE_CLIENT_ID); if (guaio) return guaio;
+        if (!(await finche(function () { return /ID client/.test(avvisoCampo()); }, 6000))) return 'avviso: «' + avvisoCampo() + '»';
+        var campo = document.getElementById('cassaSecret');
+        return (!!campo && campo.value === '' && !!aperta()) || 'la finestra si è chiusa o il campo non è stato svuotato';
+      });
+
+      await prova(S, 'un secret che Google non riconosce: errore, richiesto di nuovo, e quello custodito resta al suo posto', async function () {
+        var guaio = await scriviSegreto(clientFinto + '-sbagliato'); if (guaio) return guaio;
+        if (!(await finche(function () { return /non riconosce/.test(avvisoCampo()); }, 15000))) return 'avviso: «' + avvisoCampo() + '» titolo «' + titolo() + '»';
+        var campo = document.getElementById('cassaSecret');
+        if (!(campo && campo.value === '' && /Client secret di Google/.test(titolo()))) return 'la finestra non è rimasta a richiederlo';
+        var st = await window._cassaforteStato(true);
+        return (st.autorizzato === true && st.configurato === true && !st.segreto_errato) || 'il secret custodito è cambiato: ' + JSON.stringify(st);
+      });
+
+      await prova(S, 'un secret valido: salvato dopo la verifica, i permessi restano attivi, nulla resta in pagina', async function () {
+        var guaio = await scriviSegreto(clientFinto + '-bis'); if (guaio) return guaio;
+        if (!(await attendiTitolo(/Client secret registrato/, 15000))) return 'esito: «' + titolo() + '» ' + avvisoCampo();
+        if (testoFinestra().indexOf('permessi di invio sono attivi') < 0) return 'messaggio: ' + testoFinestra().slice(0, 160);
+        var st = await window._cassaforteStato(true);
+        if (!(st.autorizzato === true && st.verificato === true)) return 'stato dopo il cambio: ' + JSON.stringify(st);
+        if ('client_secret' in st || JSON.stringify(st).indexOf(clientFinto) >= 0) return 'lo stato del server contiene il secret';
+        return document.documentElement.innerHTML.indexOf(clientFinto) < 0 || 'il secret scritto è rimasto nella pagina';
+      });
+
+      await prova(S, 'il messaggio d\'errore del server sul secret è mostrato come testo', async function () {
+        await chiudiSwal();
+        window.__xss = [];
+        window._apriImpostazioniEmail();
+        var b = await finche(function () { return document.getElementById('impMailSegreto'); }, 15000);
+        if (!b) return 'Impostazioni email non si apre';
+        b.click();
+        fingiMail('config', { errore: 'ROSSI ' + esca('secret') });
+        try {
+          var guaio = await scriviSegreto('una-stringa-qualunque-lunga-abbastanza'); if (guaio) return guaio;
+          if (!(await finche(function () { return /ROSSI/.test(avvisoCampo()); }, 8000))) return 'avviso: «' + avvisoCampo() + '»';
+          await attendi(300);
+          return (avvisoCampo().indexOf('ROSSI <img') >= 0 && !esche(aperta()) && !eseguiti().length) || 'il messaggio è diventato HTML';
+        } finally { statoMailVero(); }
+      });
+
+      await prova(S, 'annullare il cambio del secret riporta a Impostazioni email', async function () {
+        Swal.clickCancel();
+        return !!(await finche(function () { var p = aperta(); return p ? p.querySelector('#impMailMittente') : null; }, 15000)) || 'non si torna alle impostazioni: «' + titolo() + '»';
+      });
+
+      await prova(S, 'il secret custodito smette di valere: Invia mail lo dice, lo fa reinserire e riparte senza rifare il consenso', async function () {
+        await chiudiSwal();
+        var r1 = await fetch('/banco/cassaforte?modo=segreto-sbagliato', { method: 'POST' });
+        if (!r1.ok) return 'il banco non ha cambiato il secret: HTTP ' + r1.status;
+        richiestePrima = richieste.length;
+        window.apriModalMailDimissioni();
+        if (!(await attendiTitolo(/Client secret non più valido/))) return 'cancello: «' + titolo() + '»';
+        if (procedura()) return 'la procedura è visibile';
+        Swal.clickConfirm();
+        var guaio = await scriviSegreto(clientFinto); if (guaio) return guaio;
+        await finche(function () { return /Client secret registrato/.test(titolo()) || procedura(); }, 20000);
+        if (/Client secret registrato/.test(titolo())) { if (testoFinestra().indexOf('già attivi') < 0) return 'chiede di rifare il consenso: ' + testoFinestra().slice(0, 160); Swal.clickConfirm(); }
+        var campo = await finche(function () { return procedura() ? document.getElementById('mailDimMittente') : null; }, 25000);
+        return (!!campo && campo.value === ALTRO && richiesteDopo() === 0) || 'la procedura non è ripartita: «' + titolo() + '», richieste a Google ' + richiesteDopo();
+      });
+
+      await prova(S, 'primo avvio: prima il client secret (uno sbagliato viene respinto), poi il consenso di Google, poi la procedura', async function () {
+        await chiudiSwal();
+        var r2 = await fetch('/banco/cassaforte?modo=senza-segreto', { method: 'POST' });
+        if (!r2.ok) return 'il banco non ha tolto il secret: HTTP ' + r2.status;
+        var prima0 = richieste.length;
+        window.apriModalMailDimissioni();
+        if (!(await attendiTitolo(/Servono i permessi di invio/))) return 'cancello: «' + titolo() + '»';
+        Swal.clickConfirm();
+        var campo = await finche(function () { var p = aperta(); return p ? p.querySelector('#cassaSecret') : null; }, 15000);
+        if (!campo) return 'il client secret non viene chiesto: «' + titolo() + '»';
+        if (testoFinestra().indexOf('Primo avvio') < 0) return 'non spiega perché lo chiede';
+        if (richieste.length !== prima0) return 'la finestra di Google si è aperta prima del client secret';
+        var guaio = await scriviSegreto(clientFinto + '-sbagliato'); if (guaio) return guaio;
+        if (!(await finche(function () { return /non riconosce/.test(avvisoCampo()); }, 15000))) return 'secret sbagliato accettato: «' + titolo() + '» ' + avvisoCampo();
+        if (richieste.length !== prima0) return 'con un secret sbagliato si è aperta la finestra di Google';
+        guaio = await scriviSegreto(clientFinto); if (guaio) return guaio;
+        if (!(await attendiTitolo(/Client secret registrato/, 15000))) return 'esito: «' + titolo() + '» ' + avvisoCampo();
+        if (testoFinestra().indexOf('Ora manca il permesso') < 0) return 'messaggio: ' + testoFinestra().slice(0, 160);
+        prossimoCodice = come(ALTRO);
+        Swal.clickConfirm();
+        await finche(function () { return /Permessi concessi/.test(titolo()) || procedura(); }, 20000);
+        if (/Permessi concessi/.test(titolo())) Swal.clickConfirm();
+        var mitt = await finche(function () { return procedura() ? document.getElementById('mailDimMittente') : null; }, 25000);
+        return (!!mitt && mitt.value === ALTRO && richieste.length === prima0 + 1) || 'la procedura non è comparsa: «' + titolo() + '», richieste a Google ' + (richieste.length - prima0);
       });
 
       await prova(S, 'un mittente ostile scritto nel database non diventa HTML e non viene usato', async function () {

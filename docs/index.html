@@ -5146,7 +5146,7 @@
             <li>
               <span class="dropdown-item-text d-block px-3" style="font-family:monospace;font-size:0.75rem;color:#546e7a;line-height:1.3;">
                 <i class="bi bi-tag me-1"></i>Versione applicazione:<br>
-                <strong id="navVersioneApp" class="ms-1" style="color:#263238;">180</strong>
+                <strong id="navVersioneApp" class="ms-1" style="color:#263238;">181</strong>
               </span>
             </li>
             <!-- Uscita: chiude la sessione solo su questo dispositivo (_esciSessione) -->
@@ -5691,6 +5691,7 @@
         if (!j || !j.ok) {
           var e = new Error((j && j.errore) || 'invio non riuscito');
           if (j && j.riautorizzare) { e.riautorizzare = true; _cassaforteBadge(true); }
+          if (j && j.segreto_errato) e.segretoErrato = true;
           throw e;
         }
         return j;
@@ -5726,13 +5727,78 @@
       });
     };
 
+    // ── CLIENT SECRET ─────────────────────────────────────────────────────
+    // Il client secret si scrive, non si legge: il campo parte sempre vuoto e
+    // il server non restituisce mai quello custodito, né intero né in parte.
+    // Viene salvato solo se Google lo riconosce (lo prova il server prima di
+    // salvarlo); se no la finestra resta aperta con l'errore, a campo vuoto,
+    // e lo richiede.
+    //   opz.motivo  riga di spiegazione in testa (perché viene chiesto)
+    // Promessa: la risposta del server {ok, autorizzato}, oppure null se
+    // l'utente rinuncia.
+    function _chiediSegretoClient(opz) {
+      opz = opz || {};
+      return Swal.fire({
+        title: '<i class="bi bi-key-fill me-2 text-warning"></i>Client secret di Google',
+        html: '<div class="text-start small">'
+          + (opz.motivo ? '<p class="mb-2 fw-bold">' + _testoHtml(opz.motivo) + '</p>' : '')
+          + '<p class="mb-2">È la chiave con cui il server si presenta a Google per conto di questa app. Si trova nella console Google Cloud: <b>API e servizi</b>, <b>Credenziali</b>, clic sul <b>nome</b> del client OAuth, riquadro <b>Client secret</b>. Se lì è mascherato da asterischi creane uno nuovo con «Aggiungi secret» e copialo subito.</p>'
+          + '<p class="mb-2 text-danger">Non è l\'«ID client», la stringa che finisce con apps.googleusercontent.com.</p>'
+          + '<input type="text" id="cassaSecret" class="form-control form-control-sm" placeholder="Incolla qui il client secret (di solito comincia con GOCSPX-)" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" style="-webkit-text-security:disc;">'
+          + '<div class="form-check mt-1"><input class="form-check-input" type="checkbox" id="cassaSecretMostra"><label class="form-check-label" for="cassaSecretMostra">Mostra ciò che ho incollato</label></div>'
+          + '<p class="text-muted mt-2 mb-0">Il campo parte sempre vuoto: il secret custodito non lascia mai il server. Quello che scrivi viene provato subito con Google e salvato solo se è giusto.</p>'
+          + '</div>',
+        showCancelButton: true,
+        confirmButtonText: 'Verifica e salva',
+        cancelButtonText: 'Annulla',
+        confirmButtonColor: '#00695c',
+        showLoaderOnConfirm: true,
+        allowOutsideClick: function() { return !Swal.isLoading(); },
+        returnFocus: false,
+        didOpen: function() {
+          var campo = document.getElementById('cassaSecret'), mostra = document.getElementById('cassaSecretMostra');
+          if (campo && mostra) mostra.addEventListener('change', function() { campo.style.webkitTextSecurity = mostra.checked ? 'none' : 'disc'; });
+        },
+        preConfirm: function() {
+          var campo = document.getElementById('cassaSecret');
+          var v = String((campo && campo.value) || '').trim();
+          // errore: il campo si svuota e la finestra resta aperta a richiederlo
+          function rifai(msg) {
+            if (campo) { campo.value = ''; try { campo.focus(); } catch (e) {} }
+            Swal.showValidationMessage(_testoHtml(msg));
+            return false;
+          }
+          if (!v) return rifai('Incolla il client secret');
+          if (/\.apps\.googleusercontent\.com$/i.test(v) || v === GOOGLE_CLIENT_ID) return rifai('Questo è l\'ID client, non il client secret. Il secret è un\'altra stringa: di solito comincia con GOCSPX-');
+          if (!/^[\w~.-]{20,100}$/.test(v)) return rifai('Non ha la forma di un client secret: controlla di averlo copiato per intero, senza spazi');
+          return _cassaCall({ azione: 'config', client_secret: v }).then(function(j) {
+            if (j && j.ok) return j;
+            return rifai((j && (j.errore || j.message)) || 'salvataggio non riuscito');
+          }, function(e) {
+            return rifai('Il server della mail non risponde: ' + String((e && e.message) || e));
+          });
+        }
+      }).then(function(r) {
+        var j = (r.isConfirmed && r.value) ? r.value : null;
+        if (j && typeof window._log === 'function') {
+          window._log('warning', 'google-cassaforte', 'Client secret di Google registrato', 'Verificato con Google prima del salvataggio');
+        }
+        return j;
+      });
+    }
+
     // Concessione dei permessi di invio a Google. Parte dal bottoncino giallo,
-    // da «Impostazioni email» e da «Invia mail dimissioni».
-    //   opz.stato    lo stato già letto dal chiamante: evita una richiesta al
-    //                server, perché la finestra di Google deve aprirsi dentro
-    //                il gesto dell'utente o il browser la blocca
+    // da «Impostazioni email» e da «Invia mail dimissioni». Due passi:
+    //  1. il client secret, solo se manca o se Google non riconosce più quello
+    //     custodito (_chiediSegretoClient);
+    //  2. il consenso nella finestra di Google, che deve aprirsi dentro un
+    //     gesto dell'utente (un clic) o il browser la blocca.
+    //   opz.stato    lo stato già letto dal chiamante: evita un'attesa prima
+    //                della finestra di Google
     //   opz.diretto  true = niente finestra di spiegazione (l'ha già mostrata
-    //                il chiamante), salvo quando va chiesto il client secret
+    //                il chiamante)
+    //   opz.segretoDaRifare       true = si parte comunque dal passo 1
+    //   opz.segretoAppenaSalvato  true = il passo 1 è appena stato fatto altrove
     // Restituisce una promessa: true se i permessi sono stati registrati, false
     // se l'utente ha rinunciato o qualcosa non è riuscito (già mostrato).
     window._cassaforteAutorizza = function(opz) {
@@ -5740,23 +5806,15 @@
       return new Promise(function(risolvi) {
         var pStato = opz.stato ? Promise.resolve(opz.stato) : window._cassaforteStato(false);
         pStato.then(function(st) {
-          var serveSecret = !(st && st.configurato);
           var mittente = (st && (st.mittente || st.email)) || _emailConsentita || '';
 
-          function chiediAGoogle(secret) {
+          // Passo 2: la finestra di Google. Va chiamato dentro un clic.
+          function chiediAGoogle() {
             if (typeof google === 'undefined' || !google.accounts || !google.accounts.oauth2) {
               Swal.fire({ icon: 'error', title: 'Componente Google non caricato', text: 'Ricarica la pagina e riprova.', returnFocus: false });
               risolvi(false);
               return;
             }
-            // La finestra del consenso parte SUBITO (dentro il gesto utente, il
-            // blocco popup non scatta); il salvataggio del secret viaggia in
-            // parallelo e lo scambio del code lo attende.
-            var pConfig = secret
-              ? _cassaCall({ azione: 'config', client_secret: secret }).then(function(j) {
-                  if (!j || !j.ok) throw new Error((j && j.errore) || 'salvataggio del client secret non riuscito');
-                })
-              : Promise.resolve();
             var cc = google.accounts.oauth2.initCodeClient({
               client_id: GOOGLE_CLIENT_ID,
               scope: 'email profile https://www.googleapis.com/auth/gmail.send',
@@ -5769,10 +5827,13 @@
                   return;
                 }
                 Swal.fire({ title: 'Registro i permessi…', allowOutsideClick: false, showConfirmButton: false, returnFocus: false, didOpen: function() { Swal.showLoading(); } });
-                pConfig
-                  .then(function() { return _cassaCall({ azione: 'scambia', code: resp.code }); })
+                _cassaCall({ azione: 'scambia', code: resp.code })
                   .then(function(j) {
-                    if (!j || !j.ok) throw new Error((j && j.errore) || 'registrazione non riuscita');
+                    if (!j || !j.ok) {
+                      var guasto = new Error((j && (j.errore || j.message)) || 'registrazione non riuscita');
+                      guasto.segretoErrato = !!(j && j.segreto_errato);
+                      throw guasto;
+                    }
                     _cassaforteBadge(false);
                     if (typeof window._log === 'function') {
                       window._log('info', 'google-cassaforte', 'Permessi di invio della mail registrati', 'Account: ' + (j.email || '?'));
@@ -5785,6 +5846,11 @@
                   })
                   .then(function() { risolvi(true); })
                   .catch(function(e) {
+                    if (e && e.segretoErrato) {
+                      // Google non riconosce il secret custodito: lo si richiede e si riparte
+                      passoSegreto('Google non riconosce il client secret custodito: va inserito di nuovo.');
+                      return;
+                    }
                     Swal.fire({
                       icon: 'error', title: 'Permessi non registrati',
                       html: '<div class="small text-start">' + _testoHtml(String((e && e.message) || e)) + '</div>'
@@ -5808,39 +5874,62 @@
               }
             });
             cc.requestCode();
-            pConfig.catch(function() {});
           }
 
-          if (opz.diretto && !serveSecret) { chiediAGoogle(''); return; }
+          // Fra il passo 1 e il passo 2 serve un clic: lo dà questa finestra.
+          function passoConsenso() {
+            Swal.fire({
+              icon: 'success', title: 'Client secret registrato',
+              html: '<div class="text-start" style="font-size:0.92rem;">Google lo ha riconosciuto. Ora manca il permesso di spedire' + (mittente ? ' a nome di <b>' + _testoHtml(mittente) + '</b>' : '') + ': nella finestra di Google scegli ' + (mittente ? 'quell\'account' : 'l\'account del mittente') + ' e spunta il permesso di invio.</div>',
+              showCancelButton: true,
+              confirmButtonText: '<i class="bi bi-key-fill me-1"></i>Concedi con Google',
+              cancelButtonText: 'Più tardi',
+              confirmButtonColor: '#00695c',
+              reverseButtons: true,
+              returnFocus: false
+            }).then(function(c) { if (c.isConfirmed) chiediAGoogle(); else risolvi(false); });
+          }
+
+          // Passo 1: il client secret.
+          function passoSegreto(motivo) {
+            _chiediSegretoClient({ motivo: motivo }).then(function(j) {
+              if (!j) { risolvi(false); return; }
+              if (j.autorizzato) {       // il consenso custodito funziona già con questo secret
+                _cassaforteBadge(false);
+                Swal.fire({
+                  icon: 'success', title: 'Client secret registrato',
+                  html: 'Google lo ha riconosciuto e i permessi di invio sono già attivi' + (mittente ? ' per <b>' + _testoHtml(mittente) + '</b>' : '') + '.',
+                  confirmButtonColor: '#00695c', timer: 2500, timerProgressBar: true, returnFocus: false
+                }).then(function() { risolvi(true); });
+                return;
+              }
+              passoConsenso();
+            });
+          }
+
+          if (opz.segretoAppenaSalvato) { passoConsenso(); return; }
+          if (!(st && st.configurato) || opz.segretoDaRifare) {
+            passoSegreto(opz.segretoDaRifare
+              ? 'Google non riconosce più il client secret custodito: va inserito di nuovo.'
+              : 'Primo avvio: prima del permesso di Google serve il client secret di questa app.');
+            return;
+          }
+          if (opz.diretto) { chiediAGoogle(); return; }
           Swal.fire({
             icon: 'info',
             title: 'Permessi di invio della mail',
             html: '<div class="text-start small">'
               + '<p>La mail delle dimissioni parte da ' + (mittente ? '<b>' + _testoHtml(mittente) + '</b>' : 'un indirizzo Google') + '. Perché possa partire, quell\'account deve dare a Google il permesso di spedire a suo nome: si fa <b>una volta sola, da un solo computer</b>. Il permesso resta custodito sul server, vale per <b>tutti i computer</b> e serve SOLO a inviare questa mail.</p>'
               + '<p class="mb-1">Nella finestra di Google scegli ' + (mittente ? '<b>' + _testoHtml(mittente) + '</b>' : 'l\'account del mittente') + '.<br><span class="text-muted">Per usare un altro indirizzo: ⚙ → Impostazioni email.</span></p>'
-              + (serveSecret
-                ? '<hr><p class="mb-1"><b>Primo avvio:</b> incolla il <b>client secret</b> del client OAuth dell\'app.<br><small class="text-muted">console.cloud.google.com → API e servizi → Credenziali → client OAuth</small></p>'
-                  + '<input type="password" id="cassaSecret" class="form-control form-control-sm" placeholder="Client secret (GOCSPX-...)" autocomplete="off">'
-                : '')
               + '</div>',
             showCancelButton: true,
             confirmButtonText: 'Concedi con Google',
             cancelButtonText: 'Annulla',
             confirmButtonColor: '#00695c',
-            returnFocus: false,
-            preConfirm: function() {
-              var el = document.getElementById('cassaSecret');
-              return el ? el.value.trim() : '';
-            }
+            returnFocus: false
           }).then(function(r) {
             if (!r.isConfirmed) { risolvi(false); return; }
-            var secret = r.value || '';
-            if (serveSecret && !secret) {
-              Swal.fire({ icon: 'warning', title: 'Manca il client secret', text: 'Senza il segreto del client OAuth il server non può scambiare i codici con Google.', confirmButtonColor: '#00695c', returnFocus: false });
-              risolvi(false);
-              return;
-            }
-            chiediAGoogle(secret);
+            chiediAGoogle();
           });
         }).catch(function(e) {
           Swal.fire({ icon: 'error', title: 'Server della mail non raggiungibile', text: String((e && e.message) || e), confirmButtonColor: '#d33', returnFocus: false });
@@ -5877,8 +5966,30 @@
       });
     };
     function _permessiInvioHtml(st) {
+      if (st && st.segreto_errato) return '<b class="text-danger">bloccati, Google non riconosce più il client secret</b>';
       if (st && st.autorizzato && st.verificato === false) return '<b style="color:#b26a00;">non verificabili in questo momento</b>';
       return (st && st.autorizzato) ? '<b class="text-success">concessi</b>' : '<b class="text-danger">da concedere</b>';
+    }
+    // Da «Impostazioni email»: scrivere, o riscrivere, il client secret.
+    function _cambiaSegretoDaImpostazioni(st) {
+      _chiediSegretoClient({ motivo: (st && st.configurato) ? 'Stai sostituendo il client secret custodito.' : '' }).then(function(j) {
+        if (!j) { window._apriImpostazioniEmail(); return; }      // rinuncia: si torna alle impostazioni
+        if (j.autorizzato) {
+          _cassaforteBadge(false);
+          Swal.fire({
+            icon: 'success', title: 'Client secret registrato',
+            html: 'Google lo ha riconosciuto e i permessi di invio sono attivi.',
+            confirmButtonColor: '#00695c', timer: 2500, timerProgressBar: true, returnFocus: false
+          });
+          return;
+        }
+        // registrato, ma manca (o non vale più) il consenso: lo si chiede subito
+        window._cassaforteStato(false).then(function(st2) {
+          window._cassaforteAutorizza({ stato: st2, segretoAppenaSalvato: true });
+        }, function() {
+          Swal.fire({ icon: 'success', title: 'Client secret registrato', text: 'Per concedere i permessi di invio riapri «Invia mail dimissioni».', confirmButtonColor: '#00695c', returnFocus: false });
+        });
+      });
     }
     function _impostazioniEmailFinestra(st) {
       var attuale = String(st.mittente || _emailConsentita || '').toLowerCase().trim();
@@ -5889,7 +6000,19 @@
           + '<input type="email" id="impMailMittente" class="form-control" value="' + _testoHtml(attuale) + '" autocomplete="off" autocapitalize="off" spellcheck="false">'
           + '<div class="mt-2 small" id="impMailPermessi">Permessi di invio per ' + _testoHtml(attuale || 'questo indirizzo') + ': ' + _permessiInvioHtml(st) + '</div>'
           + '<div class="text-muted small mt-2">Deve essere una casella Google. La mail parte a suo nome e una copia resta nella sua posta inviata: contiene i nomi dei pazienti, quindi usa solo una casella del reparto. Cambiando indirizzo, quell\'account dovrà concedere i permessi di invio.</div>'
+          + '<hr class="my-3">'
+          + '<div class="d-flex align-items-center justify-content-between" style="gap:10px;">'
+            + '<div id="impMailSegretoStato"><b>Client secret di Google:</b> '
+              + (st.segreto_errato ? '<b class="text-danger">non più riconosciuto da Google</b>'
+                : (st.configurato ? '<b class="text-success">registrato</b>' : '<b class="text-danger">non registrato</b>')) + '</div>'
+            + '<button type="button" class="btn btn-outline-secondary btn-sm" id="impMailSegreto" style="white-space:nowrap;"><i class="bi bi-key me-1"></i>' + (st.configurato ? 'Cambia' : 'Inserisci') + '</button>'
+          + '</div>'
+          + '<div class="text-muted small mt-1">Serve al server per parlare con Google. Per cambiarlo se ne scrive uno nuovo: quello custodito non viene mai mostrato.</div>'
           + '</div>',
+        didOpen: function() {
+          var b = document.getElementById('impMailSegreto');
+          if (b) b.addEventListener('click', function() { _cambiaSegretoDaImpostazioni(st); });
+        },
         showCancelButton: true,
         confirmButtonText: 'Salva',
         cancelButtonText: 'Annulla',
@@ -9829,6 +9952,24 @@
         // Il mittente lo dice il server. Un server non ancora aggiornato non
         // ha la voce «mittente»: lì la mail parte dall'account del consenso.
         var mitt = ('mittente' in st) ? (st.mittente || '') : (st.email || '');
+        if (st.segreto_errato) {
+          Swal.fire({
+            icon: 'warning', title: 'Client secret non più valido',
+            html: '<div class="text-start" style="font-size:0.92rem;">Google non riconosce più il client secret di questa app, quindi la mail non può partire.<br><br>Va inserito di nuovo: si trova nella console Google Cloud. I permessi già concessi restano validi.</div>',
+            showCancelButton: true,
+            confirmButtonText: '<i class="bi bi-key-fill me-1"></i>Inserisci il client secret',
+            cancelButtonText: 'Annulla',
+            confirmButtonColor: '#00695c',
+            reverseButtons: true,
+            returnFocus: false
+          }).then(function(c) {
+            if (!c.isConfirmed || typeof window._cassaforteAutorizza !== 'function') return;
+            window._cassaforteAutorizza({ stato: st, segretoDaRifare: true }).then(function(ok) {
+              if (ok) window.apriModalMailDimissioni();
+            });
+          });
+          return;
+        }
         if (st.autorizzato && st.verificato === false) {
           Swal.fire({
             icon: 'warning', title: 'Permessi di invio non verificabili',
@@ -10180,10 +10321,13 @@
         .catch(function(e) {
           var msg = String((e && e.message) || e);
           var daAutorizzare = !!(e && e.riautorizzare) || /non configurata|revocata/i.test(msg);
+          var segretoErrato = !!(e && e.segretoErrato);
           Swal.fire({
             icon: 'error',
-            title: daAutorizzare ? 'Mancano i permessi di invio' : 'Errore invio',
-            html: daAutorizzare
+            title: segretoErrato ? 'Client secret non più valido' : (daAutorizzare ? 'Mancano i permessi di invio' : 'Errore invio'),
+            html: segretoErrato
+              ? 'La mail non è partita: Google non riconosce più il client secret di questa app.<br>Riapri <b>«Invia mail dimissioni»</b>: ti verrà chiesto di inserirlo di nuovo.'
+              : daAutorizzare
               ? 'La mail non è partita: Google non ha (più) il permesso di spedire a nome del mittente.<br>Riapri <b>«Invia mail dimissioni»</b>: ti verrà chiesto di concederlo, una volta sola per tutti i computer.'
               : '<div class="text-start small">' + _esc(msg) + '</div>',
             confirmButtonColor: '#d33'

@@ -1,4 +1,4 @@
-// google-token v5 — cassaforte OAuth del reparto, SOLO mail.
+// google-token v6 — cassaforte OAuth del reparto, SOLO mail.
 // Il token Google non lascia mai il server: l'unica operazione possibile
 // e' l'invio della mail dimissioni ('invia'), eseguito interamente qui.
 //
@@ -11,7 +11,14 @@
 //             risposta porta allora «verificato»: true = «autorizzato» e' la
 //             verita' di adesso (un consenso revocato da' false); false =
 //             Google non ha risposto, «problema» dice perche'
-//  config  -> {client_secret} (sostituzione solo conoscendo quello attuale)
+//  config  -> {client_secret} salva il client secret, SOLO se Google lo
+//             riconosce per questo client: lo si prova subito (rinnovo del
+//             token se c'e' un consenso, altrimenti uno scambio con un codice
+//             inventato). Uno sbagliato non prende mai il posto di quello
+//             buono. Il secret custodito NON viene mai restituito, ne' intero
+//             ne' in parte: per cambiarlo se ne scrive uno nuovo. Un ID client
+//             incollato al posto del secret viene riconosciuto e rifiutato.
+//             Risponde {ok, autorizzato}
 //  scambia -> {code} scambio authorization code (redirect 'postmessage');
 //             accetta SOLO l'account configurato come mittente; se il
 //             mittente non e' determinabile rifiuta: non si registra un
@@ -83,6 +90,48 @@ async function mittenteConfigurato(): Promise<string> {
 const MITTENTE_RE = /^[a-z0-9._%+-]{1,64}@[a-z0-9.-]{1,190}\.[a-z]{2,24}$/;
 const stessoIndirizzo = (a: unknown, b: string) => String(a || '').toLowerCase().trim() === b;
 
+// Chiede a Google se «secret» e' il client secret di questo client, senza
+// salvare nulla.
+//  - con un consenso custodito: rinnovo del token (prova anche il consenso)
+//  - senza: uno scambio con un codice inventato. Google controlla prima il
+//    client (invalid_client = secret sbagliato) e solo dopo il codice
+//    (invalid_grant = secret giusto, codice ovviamente no)
+// valido: true / false / null (Google non ha saputo rispondere).
+async function provaSegreto(secret: string, r: Record<string, string> | null): Promise<{
+  valido: boolean | null; consenso?: 'vivo' | 'revocato'; accesso?: { token: string; scad: string }; dettaglio?: string;
+}> {
+  const chiedi = async (campi: Record<string, string>) => {
+    const tr = await fetch(URL_TOKEN, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ client_id: CLIENT_ID, client_secret: secret, ...campi }),
+    });
+    const tok = await tr.json().catch(() => ({} as Record<string, any>));
+    return { ok: tr.ok, stato: tr.status, tok };
+  };
+  const dettaglio = (x: { stato: number; tok: Record<string, any> }) => String(x.tok.error_description || x.tok.error || ('HTTP ' + x.stato));
+  try {
+    if (r && r.refresh_token) {
+      const a = await chiedi({ grant_type: 'refresh_token', refresh_token: r.refresh_token });
+      if (a.ok && a.tok.access_token) {
+        return {
+          valido: true, consenso: 'vivo',
+          accesso: { token: a.tok.access_token, scad: new Date(Date.now() + Math.max(60, (a.tok.expires_in || 3600) - 300) * 1000).toISOString() },
+        };
+      }
+      if (a.tok.error === 'invalid_client') return { valido: false, dettaglio: dettaglio(a) };
+      if (a.tok.error === 'invalid_grant') return { valido: true, consenso: 'revocato' };
+      return { valido: null, dettaglio: dettaglio(a) };
+    }
+    const b = await chiedi({ grant_type: 'authorization_code', code: 'verifica-del-client-secret', redirect_uri: 'postmessage' });
+    if (b.tok.error === 'invalid_grant') return { valido: true };
+    if (b.tok.error === 'invalid_client') return { valido: false, dettaglio: dettaglio(b) };
+    return { valido: null, dettaglio: dettaglio(b) };
+  } catch (e) {
+    return { valido: null, dettaglio: String((e as Error)?.message || e) };
+  }
+}
+
 // Il chiamante e' un utente loggato e in lista? Si chiede al database con il
 // SUO Bearer: la chiave pubblica (ruolo anon) e gli account fuori lista danno
 // false, come pure qualunque errore.
@@ -123,6 +172,11 @@ async function tokenInterno(r: Record<string, string>, forza = false): Promise<{
   if (!tr.ok || !tok.access_token) {
     const revocato = tok.error === 'invalid_grant';
     if (revocato) await sb.from('google_oauth').update({ refresh_token: null, access_token: null, access_scad: null, updated_at: new Date().toISOString() }).eq('id', 'reparto');
+    // Google non riconosce (piu') il client secret custodito: il consenso non
+    // si tocca, va solo inserito un secret valido.
+    if (tok.error === 'invalid_client') {
+      return { ok: false, resp: json({ errore: 'Google non riconosce il client secret custodito (' + (tok.error_description || 'invalid_client') + '): va inserito di nuovo da «Impostazioni email»', segreto_errato: true, riautorizzare: false }, 401) };
+    }
     return { ok: false, resp: json({ errore: revocato ? 'autorizzazione revocata: va concessa di nuovo' : ('refresh rifiutato: ' + (tok.error_description || tok.error || tr.status)), riautorizzare: revocato }, 401) };
   }
   await sb.from('google_oauth').update({
@@ -198,7 +252,7 @@ Deno.serve(async (req) => {
       if (body.verifica === true && fidato) {
         risposta.verificato = true;
         if (risposta.autorizzato) {
-          let esito: { ok: boolean; riautorizzare?: boolean; errore?: string };
+          let esito: { ok: boolean; riautorizzare?: boolean; segreto_errato?: boolean; errore?: string };
           try {
             const t = await tokenInterno(r, true);
             esito = t.ok ? { ok: true } : { ok: false, ...(await t.resp.json()) };
@@ -207,6 +261,10 @@ Deno.serve(async (req) => {
           }
           if (!esito.ok && esito.riautorizzare) {
             risposta.autorizzato = false;            // revocato: va concesso di nuovo
+          } else if (!esito.ok && esito.segreto_errato) {
+            risposta.autorizzato = false;            // il secret custodito non vale piu': va inserito di nuovo
+            risposta.segreto_errato = true;
+            risposta.problema = esito.errore;
           } else if (!esito.ok) {
             risposta.verificato = false;             // Google non ha risposto: non si sa
             risposta.problema = esito.errore || 'Google non risponde';
@@ -218,13 +276,32 @@ Deno.serve(async (req) => {
 
     if (azione === 'config') {
       const nuovo = String(body.client_secret || '').trim();
-      if (!/^[\w~.-]{20,100}$/.test(nuovo)) return json({ errore: 'client secret non valido' }, 400);
-      if (r && r.client_secret && r.client_secret !== String(body.secret_attuale || '').trim()) {
-        return json({ errore: 'esiste già un client secret: per sostituirlo serve quello attuale' }, 403);
+      if (/\.apps\.googleusercontent\.com$/i.test(nuovo) || nuovo === CLIENT_ID) {
+        return json({ errore: 'questo è l\'ID client, non il client secret: il secret è un\'altra stringa, di solito comincia con «GOCSPX-»', id_client: true }, 400);
       }
-      const { error } = await sb.from('google_oauth').upsert({ id: 'reparto', client_secret: nuovo, updated_at: new Date().toISOString() });
+      if (!/^[\w~.-]{20,100}$/.test(nuovo)) {
+        return json({ errore: 'il client secret non ha la forma attesa (da 20 a 100 caratteri, senza spazi)', formato: true }, 400);
+      }
+      // Si salva solo cio' che Google riconosce: chi scrive un secret sbagliato
+      // lo sa subito, e quello custodito resta al suo posto.
+      const p = await provaSegreto(nuovo, r);
+      if (p.valido === false) {
+        return json({ errore: 'Google non riconosce questo client secret' + (p.dettaglio ? ' («' + p.dettaglio + '»)' : '') + ': non è stato salvato. Controlla di aver copiato il secret del client giusto e riprova.', segreto_errato: true }, 400);
+      }
+      if (p.valido === null) {
+        return json({ errore: 'Google non ha saputo verificare il client secret' + (p.dettaglio ? ' (' + p.dettaglio + ')' : '') + ': non è stato salvato, riprova fra qualche minuto.', non_verificato: true }, 502);
+      }
+      const campi: Record<string, unknown> = { id: 'reparto', client_secret: nuovo, updated_at: new Date().toISOString() };
+      if (p.accesso) { campi.access_token = p.accesso.token; campi.access_scad = p.accesso.scad; }
+      const { error } = await sb.from('google_oauth').upsert(campi);
       if (error) return json({ errore: error.message }, 500);
-      return json({ ok: true });
+      const mittente = await mittenteConfigurato();
+      return json({
+        ok: true,
+        // con questo secret il consenso custodito funziona, ed e' quello del mittente?
+        autorizzato: p.consenso === 'vivo' && scopesMancanti(r?.scopes).length === 0
+          && !!mittente && stessoIndirizzo(r?.email, mittente),
+      });
     }
 
     if (azione === 'scambia') {
@@ -241,6 +318,9 @@ Deno.serve(async (req) => {
       });
       const tok = await tr.json();
       if (!tr.ok || !tok.access_token) {
+        if (tok.error === 'invalid_client') {
+          return json({ errore: 'Google non riconosce il client secret custodito (' + (tok.error_description || 'invalid_client') + '): va inserito di nuovo', segreto_errato: true }, 400);
+        }
         return json({ errore: 'scambio rifiutato da Google: ' + (tok.error_description || tok.error || tr.status) }, 400);
       }
       const ui = await fetch(URL_USERINFO, {
@@ -321,8 +401,17 @@ Deno.serve(async (req) => {
         });
       }
       if (!g.ok) {
-        const b = await g.json().catch(() => ({} as Record<string, { message?: string }>));
-        return json({ errore: (b.error && b.error.message) || ('Gmail HTTP ' + g.status) }, 502);
+        const b = await g.json().catch(() => ({} as Record<string, any>));
+        const messaggio = String((b.error && b.error.message) || '');
+        // Le Gmail API vanno accese una volta nel progetto Google dell'app:
+        // l'errore di Google e' in inglese e non dice dove mettere le mani.
+        if (g.status === 403 && (/SERVICE_DISABLED/.test(JSON.stringify((b.error && b.error.details) || '')) || /has not been used in project|it is disabled/i.test(messaggio))) {
+          return json({
+            errore: 'Nel progetto Google di questa app le Gmail API non sono attive: la mail non è partita. Vanno abilitate nella console Google Cloud (API e servizi, Libreria, Gmail API, Abilita); poi si riprova dopo un paio di minuti.',
+            api_spenta: true,
+          }, 502);
+        }
+        return json({ errore: messaggio || ('Gmail HTTP ' + g.status) }, 502);
       }
       return json({ ok: true, destinatari: dest.length, mittente });
     }

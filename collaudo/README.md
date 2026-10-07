@@ -72,8 +72,8 @@ repository non c'è alcun segreto.
 | `confronta-filtro.js [produzione\|collaudo] [--backup N]` | Prima di pubblicare una versione che introduce o cambia il filtro dell'HTML: controlla che le schede (e gli ultimi N backup) non usino tag, attributi, classi o stili che il filtro toglierebbe. L'analisi gira dentro il database: escono solo nomi e conteggi, mai il testo. `--autoprova` verifica lo strumento stesso su un contenuto costruito apposta. |
 | `prova-uscita.js` | Dimostra con sessioni vere che «Esci» su un dispositivo non scollega gli altri: utente provvisorio, tre sessioni, uscita `local` dalla prima, le altre due restano; controprova con `global`. L'utente viene eliminato alla fine. |
 | `funzioni-collaudo.js pubblica\|configura` | Pubblica `google-token` e `google-finto` nel collaudo (dopo averne controllato la sintassi) e ne imposta variabili e credenziali finte. |
-| `cassaforte-collaudo.js stato\|finta\|vera` | Dice in che stato è la cassaforte della mail del collaudo e la passa dalle credenziali vere a quelle finte e ritorno. Lo scambio avviene dentro il database: i token veri non passano dallo script. |
-| `prova-funzione-mail.js` | 54 prove della funzione mail contro il finto Google: chi può chiamare (anche il finto Google stesso), mittente scelto, consenso dell'account giusto, verifica dal vivo dei permessi, mittente mostrato diverso da quello in uso. Mette da parte il consenso vero e lo rimette alla fine. |
+| `cassaforte-collaudo.js stato\|finta\|vera` | Dice in che stato è la cassaforte della mail del collaudo e la passa dalle credenziali vere a quelle finte e ritorno. Lo scambio avviene dentro il database: i token veri non passano dallo script. Per le prove sa anche togliere il client secret (`senzaSegreto`, come al primo avvio) e metterne uno che il finto Google non riconosce (`segretoSbagliato`), sempre e solo su una cassaforte finta. |
+| `prova-funzione-mail.js` | 69 prove della funzione mail contro il finto Google: chi può chiamare (anche il finto Google stesso), mittente scelto, consenso dell'account giusto, verifica dal vivo dei permessi, mittente mostrato diverso da quello in uso, client secret (salvato solo se riconosciuto, mai restituito, ID client respinto, secret custodito non più valido). Mette da parte il consenso vero e lo rimette alla fine. |
 | `supabase-accesso.js`, `github-accesso.js` | Autorizzazione «a codice» dei due account di collaudo, senza far passare chiavi dalla chat. |
 
 ## Provare in locale da utente collegato
@@ -112,7 +112,7 @@ Dentro la pagina dell'app si caricano, dalla console, gli script di
 | `ambiente` | la pagina lavora sul collaudo e solo lì; reparto finto al completo; nessun errore |
 | `trak` | i due segnalibri veri, eseguiti sul finto TrakCare, leggono ciò che il catalogo descrive; reimportare non cambia nulla; giorni simulati |
 | `xss` | ciò che arriva da fuori (indirizzo, righe del database, backup, memoria del browser) non diventa mai codice né markup attivo; i contenuti leciti restano identici; senza filtro l'app si ferma |
-| `mail` | «Impostazioni email» (mittente precompilato, convalida, registro); senza i permessi del mittente la procedura di invio non compare e vengono chiesti; il consenso di un altro account è rifiutato; il mittente è mostrato e non modificabile; annullare la conferma riporta alla procedura com'era; se il mittente cambia a finestra aperta la mail non parte; risposte anomale del server |
+| `mail` | «Impostazioni email» (mittente precompilato, convalida, registro); senza i permessi del mittente la procedura di invio non compare e vengono chiesti; il consenso di un altro account è rifiutato; il mittente è mostrato e non modificabile; annullare la conferma riporta alla procedura com'era; se il mittente cambia a finestra aperta la mail non parte; risposte anomale del server; il client secret si inserisce e si cambia da «Impostazioni email» a campo sempre vuoto, uno sbagliato viene respinto e richiesto, primo avvio in due passi |
 
 La sezione `xss` scrive sul letto libero «5», crea e cancella righe di prova
 (un letto, una tipologia, due backup, due link) e alla fine rimette tutto
@@ -147,7 +147,10 @@ risponde solo sotto un indirizzo che contiene una chiave casuale
 nelle sole variabili delle due funzioni. Decide poi dalle credenziali che riceve:
 
 - **credenziali finte** (client secret e token delle prove) → fa la parte di
-  Google e «spedisce» scrivendo in `posta_simulata` (`reale = false`);
+  Google e «spedisce» scrivendo in `posta_simulata` (`reale = false`). Conosce
+  due client secret finti validi (quello delle prove e lo stesso con `-bis`);
+  ogni altro che comincia allo stesso modo è per lui un secret sbagliato, e
+  risponde `invalid_client` come farebbe Google;
 - **credenziali vere** (il consenso dato davvero dal sito di collaudo) → gira la
   richiesta a Google: la mail **parte davvero**, dal mittente di prova ai
   destinatari di prova, e in `posta_simulata` ne resta una copia (`reale = true`).
@@ -158,9 +161,11 @@ configura`) e, solo mentre girano le prove, `reparto_vero` (il consenso vero
 messo da parte). A riposo la riga `reparto` contiene il consenso vero.
 
 Il **consenso vero** lo dà una persona, una volta, dal sito di collaudo: il
-bottone giallo «Autorizza Google» chiede il client secret del client OAuth del
-collaudo e poi apre la finestra di Google, dove va scelto l'account impostato
-come mittente. Nel progetto Google Cloud del collaudo devono essere attive le
+bottone giallo «Autorizza Google» chiede prima il client secret del client OAuth
+del collaudo (nella console Google: Credenziali, clic sul nome del client,
+«Client secret»; non è l'ID client) e, quando Google lo ha riconosciuto, apre
+la finestra di Google, dove va scelto l'account impostato come mittente. Il
+secret si cambia in ogni momento da «Impostazioni email». Nel progetto Google Cloud del collaudo devono essere attive le
 Gmail API; finché la schermata di consenso è «In fase di test» il mittente deve
 essere fra gli utenti di prova e il consenso scade dopo 7 giorni (l'app se ne
 accorge e lo richiede prima di mostrare la procedura di invio).

@@ -88,8 +88,12 @@ http.createServer(async (req, res) => {
         return rispondi(res, 200, MIME['.json'], JSON.stringify(righe[0] || null));
       }
       const modo = url.searchParams.get('modo');
-      if (req.method !== 'POST' || (modo !== 'finta' && modo !== 'vera')) return rispondi(res, 400, 'text/plain; charset=utf-8', 'uso: POST /banco/cassaforte?modo=finta|vera');
-      if (modo === 'finta') return rispondi(res, 200, MIME['.json'], JSON.stringify({ segreto: await cassaforte.finta() }));
+      if (req.method !== 'POST' || ['finta', 'vera', 'senza-segreto', 'segreto-sbagliato'].indexOf(modo) < 0) return rispondi(res, 400, 'text/plain; charset=utf-8', 'uso: POST /banco/cassaforte?modo=finta|vera|senza-segreto|segreto-sbagliato');
+      if (modo === 'finta') return rispondi(res, 200, MIME['.json'], JSON.stringify({ segreto: await cassaforte.finta(), clientFinto: cassaforte.CLIENT_FINTO }));
+      // come al primo avvio: né client secret né consenso (solo su una cassaforte finta)
+      if (modo === 'senza-segreto') return rispondi(res, 200, MIME['.json'], JSON.stringify(await cassaforte.senzaSegreto()));
+      // il secret custodito non è più riconosciuto da «Google» (solo su una cassaforte finta)
+      if (modo === 'segreto-sbagliato') return rispondi(res, 200, MIME['.json'], JSON.stringify(await cassaforte.segretoSbagliato()));
       return rispondi(res, 200, MIME['.json'], JSON.stringify(await cassaforte.vera()));
     }
 

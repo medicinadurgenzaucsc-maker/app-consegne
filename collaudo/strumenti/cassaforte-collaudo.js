@@ -13,6 +13,10 @@
 //   riga «prova»         le credenziali finte (le crea funzioni-collaudo.js configura)
 //   riga «reparto_vero»  dove riposa il consenso vero mentre girano le prove
 //
+// Sono «finte» tutte le righe il cui client secret comincia come quello finto
+// (google-finto ne conosce due validi e considera sbagliati tutti gli altri:
+// servono a provare il cambio del secret), o che hanno solo un consenso finto.
+//
 //   node collaudo/strumenti/cassaforte-collaudo.js stato | finta | vera
 const { collaudo } = require('./sb.js');
 
@@ -21,11 +25,13 @@ const COLONNE = 'client_secret, refresh_token, email, scopes, access_token, acce
 
 async function stato() {
   const righe = await collaudo().query(
-    "select id, (client_secret = '" + CLIENT_FINTO + "') as finta, (client_secret is not null) as ha_client, (refresh_token is not null) as ha_consenso, email "
+    "select id, (left(coalesce(client_secret, ''), " + CLIENT_FINTO.length + ") = '" + CLIENT_FINTO + "') as client_finto, (client_secret is not null) as ha_client, "
+    + "(refresh_token is not null) as ha_consenso, (left(coalesce(refresh_token, ''), 6) = 'finto_') as consenso_finto, email "
     + "from public.google_oauth where id in ('reparto', 'prova', 'reparto_vero')");
   const r = righe.find((x) => x.id === 'reparto');
+  const finta = !!r && (r.client_finto || (!r.ha_client && r.consenso_finto));
   return {
-    modo: !r ? 'assente' : r.finta ? 'finta' : (r.ha_client || r.ha_consenso) ? 'vera' : 'vuota',
+    modo: !r ? 'assente' : finta ? 'finta' : (r.ha_client || r.ha_consenso) ? 'vera' : 'vuota',
     email: r ? r.email : null,
     consenso: !!(r && r.ha_consenso),
     credenzialiFinte: righe.some((x) => x.id === 'prova'),
@@ -39,8 +45,12 @@ async function finta() {
   const c = collaudo();
   const s = await stato();
   if (!s.credenzialiFinte) throw new Error('mancano le credenziali finte: lanciare «node collaudo/strumenti/funzioni-collaudo.js configura»');
-  if (s.modo !== 'finta') {
-    if (s.veraInAttesa) throw new Error('c\'è già un consenso vero messo da parte (riga «reparto_vero») e la riga «reparto» non è finta: stato da guardare a mano');
+  if (s.modo === 'vera' && s.veraInAttesa) {
+    throw new Error('c\'è già un consenso vero messo da parte (riga «reparto_vero») e la riga «reparto» ne contiene un altro: stato da guardare a mano');
+  }
+  // Riga vuota con qualcosa già da parte = una prova interrotta a metà: si
+  // riparte senza mettere da parte nulla (ciò che è da parte resta lì).
+  if (s.modo !== 'finta' && !s.veraInAttesa) {
     await c.query(
       "insert into public.google_oauth (id, " + COLONNE + ", richiedi_utente, updated_at) "
       + "select 'reparto_vero', " + COLONNE + ", richiedi_utente, updated_at from public.google_oauth where id = 'reparto'");
@@ -74,7 +84,29 @@ async function vera() {
   return stato();
 }
 
-module.exports = { stato, finta, vera, CLIENT_FINTO };
+// Solo per le prove, e solo su una cassaforte finta: toglie client secret e
+// consenso, come al primo avvio (l'app deve chiedere il secret).
+async function senzaSegreto() {
+  const s = await stato();
+  if (s.modo !== 'finta') throw new Error('la cassaforte non è in modalità finta: non tolgo nulla');
+  await collaudo().query(
+    "update public.google_oauth set client_secret = null, refresh_token = null, email = null, scopes = null, access_token = null, access_scad = null, "
+    + "updated_at = now() where id = 'reparto'");
+  return stato();
+}
+
+// Solo per le prove, e solo su una cassaforte finta: mette un client secret
+// che il finto Google non riconosce (come se quello custodito fosse stato
+// cancellato nella console Google). Il consenso resta.
+async function segretoSbagliato() {
+  const s = await stato();
+  if (s.modo !== 'finta') throw new Error('la cassaforte non è in modalità finta: non cambio nulla');
+  await collaudo().query(
+    "update public.google_oauth set client_secret = '" + CLIENT_FINTO + "-sbagliato', access_token = null, access_scad = null, updated_at = now() where id = 'reparto'");
+  return stato();
+}
+
+module.exports = { stato, finta, vera, senzaSegreto, segretoSbagliato, CLIENT_FINTO };
 
 if (require.main === module) {
   const cmd = process.argv[2] || 'stato';

@@ -8,6 +8,8 @@ const { finta, vera, CLIENT_FINTO } = require('./cassaforte-collaudo.js');
 const amb = require('./ambiente.json');
 
 const esiti = [];
+// Le azioni le cui risposte contenevano il client secret custodito: deve restare vuoto.
+const secretUsciti = [];
 function prova(nome, ok, dettaglio) {
   esiti.push(ok);
   console.log((ok ? 'OK  ' : 'KO  ') + nome + (dettaglio ? ' — ' + dettaglio : ''));
@@ -26,9 +28,13 @@ function prova(nome, ok, dettaglio) {
       method: 'POST', headers: { 'Content-Type': 'application/json', apikey: amb.anon, Authorization: 'Bearer ' + bearer },
       body: JSON.stringify(corpo),
     });
-    let j = null; try { j = await r.json(); } catch (e) {}
+    const testo = await r.text();
+    if (testo.indexOf(CLIENT_FINTO) >= 0) secretUsciti.push(String(corpo.azione));
+    let j = null; try { j = JSON.parse(testo); } catch (e) {}
     return { http: r.status, j: j || {} };
   };
+  const secretCustodito = async () => (await c.query("select client_secret as s from public.google_oauth where id = 'reparto'"))[0].s;
+  const consensoCustodito = async () => (await c.query("select (refresh_token is not null) as c from public.google_oauth where id = 'reparto'"))[0].c;
   const posta = async (oggetto) => c.query("select mittente, destinatari, oggetto, corpo_html from public.posta_simulata where oggetto = " + "$o$" + oggetto + "$o$" + " order by id desc limit 1");
 
   await c.query("delete from public.posta_simulata where reale = false; update public.google_oauth set richiedi_utente = true where id = 'reparto'");
@@ -88,7 +94,46 @@ function prova(nome, ok, dettaglio) {
   r = await chiama(amb.anon, { azione: 'config', client_secret: 'x'.repeat(30) });
   prova('configurazione da estraneo: rifiutata', r.http === 403 && r.j.non_autorizzato === true);
   r = await chiama(utente, { azione: 'config', client_secret: 'y'.repeat(30) });
-  prova('sostituire il segreto senza conoscerlo: rifiutato', r.http === 403 && /esiste già/.test(r.j.errore || ''));
+  prova('un client secret che Google (quello vero) non riconosce: rifiutato, quello custodito resta', r.http === 400 && r.j.segreto_errato === true && (await secretCustodito()) === CLIENT_FINTO, r.j.errore);
+  r = await chiama(utente, { azione: 'config', client_secret: CLIENT_FINTO + '-sbagliato' });
+  prova('client secret sbagliato: errore, nulla salvato', r.http === 400 && r.j.segreto_errato === true && /non riconosce/.test(r.j.errore || '') && (await secretCustodito()) === CLIENT_FINTO, r.j.errore);
+  r = await chiama(utente, { azione: 'config', client_secret: '223005241786-abcdefghijklmnopqrstuvwxyz012345.apps.googleusercontent.com' });
+  prova('ID client incollato al posto del secret: riconosciuto e rifiutato', r.http === 400 && r.j.id_client === true && (await secretCustodito()) === CLIENT_FINTO, r.j.errore);
+  r = await chiama(utente, { azione: 'config', client_secret: 'troppo corto' });
+  prova('client secret con una forma impossibile: rifiutato', r.http === 400 && r.j.formato === true);
+  r = await chiama(utente, { azione: 'config', client_secret: CLIENT_FINTO + '-bis' });
+  prova('client secret valido: sostituisce quello custodito senza doverlo conoscere, il consenso resta buono', r.http === 200 && r.j.ok === true && r.j.autorizzato === true && (await secretCustodito()) === CLIENT_FINTO + '-bis', JSON.stringify(r.j));
+  r = await chiama(utente, { azione: 'invia', destinatari: ['destinatario1@example.com'], oggetto: 'Prova dopo il cambio del secret ' + Date.now(), html: '<p>x</p>' });
+  prova('…e con il secret nuovo la mail parte', r.http === 200 && r.j.ok === true, JSON.stringify(r.j));
+  await c.query("update public.google_oauth set refresh_token = " + "$s$" + segreto + ".guasto$s$" + " where id = 'reparto'");
+  r = await chiama(utente, { azione: 'config', client_secret: CLIENT_FINTO });
+  prova('Google non risponde durante la verifica: il secret NON viene salvato', r.http === 502 && r.j.non_verificato === true && (await secretCustodito()) === CLIENT_FINTO + '-bis', r.j.errore);
+  await c.query("update public.google_oauth set refresh_token = 'finto_revocato' where id = 'reparto'");
+  r = await chiama(utente, { azione: 'config', client_secret: CLIENT_FINTO });
+  prova('secret valido ma consenso revocato: salvato, e i permessi risultano da concedere', r.http === 200 && r.j.ok === true && r.j.autorizzato === false && (await secretCustodito()) === CLIENT_FINTO, JSON.stringify(r.j));
+  await c.query("update public.google_oauth set refresh_token = null, access_token = null, access_scad = null where id = 'reparto'");
+  r = await chiama(utente, { azione: 'config', client_secret: CLIENT_FINTO + '-sbagliato' });
+  prova('primo avvio con un secret sbagliato: rifiutato prima ancora del consenso', r.http === 400 && r.j.segreto_errato === true && (await secretCustodito()) === CLIENT_FINTO);
+  r = await chiama(utente, { azione: 'config', client_secret: CLIENT_FINTO + '-bis' });
+  prova('primo avvio con un secret valido: salvato, in attesa del consenso', r.http === 200 && r.j.ok === true && r.j.autorizzato === false && (await secretCustodito()) === CLIENT_FINTO + '-bis', JSON.stringify(r.j));
+  await c.query("update public.google_oauth set client_secret = '" + CLIENT_FINTO + "', refresh_token = " + "$s$" + segreto + "$s$" + ", access_token = null, access_scad = null where id = 'reparto'");
+
+  // ── il secret custodito smette di valere (cancellato o sostituito nella console Google) ──
+  await c.query("update public.google_oauth set client_secret = '" + CLIENT_FINTO + "-sbagliato', access_token = null, access_scad = null where id = 'reparto'");
+  try {
+    r = await chiama(utente, { azione: 'stato', verifica: true });
+    prova('secret custodito non più riconosciuto: la verifica lo dice, il consenso non viene toccato', r.j.autorizzato === false && r.j.segreto_errato === true && r.j.verificato === true && (await consensoCustodito()) === true, JSON.stringify(r.j).replace(CLIENT_FINTO, '***'));
+    r = await chiama(utente, { azione: 'scambia', code: segreto });
+    prova('…lo scambio del consenso lo segnala (l\'app richiede il secret)', r.http === 400 && r.j.segreto_errato === true, r.j.errore);
+    r = await chiama(utente, { azione: 'invia', destinatari: ['destinatario1@example.com'], oggetto: 'Prova secret non riconosciuto', html: '<p>x</p>' });
+    prova('…e l\'invio pure, senza spedire', r.http === 401 && r.j.segreto_errato === true && (await posta('Prova secret non riconosciuto')).length === 0, r.j.errore);
+    r = await chiama(utente, { azione: 'config', client_secret: CLIENT_FINTO });
+    prova('…inserito un secret valido tutto torna a funzionare, senza rifare il consenso', r.http === 200 && r.j.autorizzato === true, JSON.stringify(r.j));
+  } finally {
+    await c.query("update public.google_oauth set client_secret = '" + CLIENT_FINTO + "', access_token = null, access_scad = null where id = 'reparto'");
+  }
+  r = await chiama(utente, { azione: 'invia', destinatari: ['apispenta@example.com'], oggetto: 'Prova Gmail API spente', html: '<p>x</p>' });
+  prova('Gmail API non abilitate nel progetto Google: messaggio che dice dove mettere le mani', r.http === 502 && r.j.api_spenta === true && /Gmail API non sono attive/.test(r.j.errore || ''), r.j.errore);
 
   // ── consenso revocato ──
   await c.query("update public.google_oauth set refresh_token = 'finto_revocato', access_token = null, access_scad = null where id = 'reparto'");
@@ -182,7 +227,7 @@ function prova(nome, ok, dettaglio) {
   await c.query("update public.google_oauth set client_secret = 'segreto-inventato-per-la-prova' where id = 'reparto'");
   try {
     r = await chiama(utente, { azione: 'scambia', code: 'codice-inventato' });
-    prova('con un client secret non finto la richiesta viene girata a Google (che la rifiuta)', r.http === 400 && /scambio rifiutato da Google/.test(r.j.errore || '') && !/expired or revoked/.test(r.j.errore || ''), r.j.errore);
+    prova('con un client secret non finto la richiesta viene girata a Google (che non lo riconosce)', r.http === 400 && r.j.segreto_errato === true && /client secret is invalid/.test(r.j.errore || ''), r.j.errore);
   } finally {
     await c.query("update public.google_oauth set client_secret = '" + CLIENT_FINTO + "' where id = 'reparto'");
   }
@@ -221,6 +266,8 @@ function prova(nome, ok, dettaglio) {
     const dopo = await vera();
     console.log('\ncassaforte di collaudo rimessa a riposo: ' + dopo.modo + (dopo.consenso ? ' (consenso di ' + dopo.email + ')' : ''));
   }
+
+  prova('il client secret custodito non è comparso in nessuna risposta della funzione', secretUsciti.length === 0, secretUsciti.join(', '));
 
   const n = esiti.filter(Boolean).length;
   console.log('\nESITO: ' + n + '/' + esiti.length + (n === esiti.length ? ' — tutte superate' : ' — CI SONO PROVE FALLITE'));
