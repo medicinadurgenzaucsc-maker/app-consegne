@@ -1657,7 +1657,8 @@ var _MAIL_DIM_KEYS = {
   destinatari: 'MAIL_DIMISSIONI_DESTINATARI',
   oggetto:     'MAIL_DIMISSIONI_OGGETTO',
   corpo:       'MAIL_DIMISSIONI_CORPO',
-  chiusura:    'MAIL_DIMISSIONI_CHIUSURA'
+  chiusura:    'MAIL_DIMISSIONI_CHIUSURA',
+  mittente:    'MAIL_DIMISSIONI_MITTENTE'
 };
 
 // Sostituisce ogni occorrenza di data DD/MM/YYYY o D/M/YYYY in `str`
@@ -1715,6 +1716,15 @@ function _sbSalvaTemplateMail(destinatari, oggetto, corpo, chiusura) {
   return _q(_sb.from('impostazioni').upsert(rows, { onConflict: 'chiave' }));
 }
 
+// Salva l'indirizzo da cui deve partire la mail dimissioni («Impostazioni
+// email»). Qui si scrive soltanto la scelta: i permessi di invio per quell'
+// indirizzo li verifica il server (Edge Function google-token, azione stato).
+function _sbSalvaMittenteMail(email) {
+  return _q(_sb.from('impostazioni').upsert(
+    [{ chiave: _MAIL_DIM_KEYS.mittente, valore: String(email || '').toLowerCase().trim() }],
+    { onConflict: 'chiave' }));
+}
+
 // Verifica se OGGI è già stata inviata una mail dimissioni.
 // Cerca in `logs` tipo='mail-dimissioni' con ts >= mezzanotte di oggi.
 // Restituisce { gia: bool, ultimo: log|null }.
@@ -1768,6 +1778,7 @@ function _isDimissibileDomani(strDim) {
 // Richiede token con scope https://www.googleapis.com/auth/gmail.send
 window._sbCaricaTemplateMail        = _sbCaricaTemplateMail;
 window._sbSalvaTemplateMail         = _sbSalvaTemplateMail;
+window._sbSalvaMittenteMail         = _sbSalvaMittenteMail;
 window._sbMailDimissioniInviataOggi = _sbMailDimissioniInviataOggi;
 window._domaniMezzanotte            = _domaniMezzanotte;
 window._isDimissibileDomani         = _isDimissibileDomani;

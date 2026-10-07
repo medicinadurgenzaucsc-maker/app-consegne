@@ -9,7 +9,9 @@
 //  - link_utili: nomi identici; i link a documenti privati (Google Docs/Drive,
 //    Teams) sono ridotti al solo sito, senza il percorso del documento
 //  - impostazioni: stesse chiavi; i destinatari della mail dimissioni diventano
-//    indirizzi fittizi (example.com), i riferimenti Drive restano vuoti
+//    indirizzi fittizi (example.com), i riferimenti Drive restano vuoti; il
+//    mittente della mail scelto in produzione NON viene copiato. Restano quelli
+//    propri del collaudo: AMBIENTE, mittente e destinatari di prova
 //  - utenti_autorizzati: gli account della produzione vengono aggiunti; quelli
 //    che esistono solo nel collaudo (utente delle prove automatiche, persone
 //    ammesse al solo collaudo) restano
@@ -47,23 +49,33 @@ function dollaro(testo) {
         when i.chiave = 'ULTIMO_BACKUP' then '0'
         else i.valore
       end) order by i.chiave), '[]'::jsonb)::text as j
-    from public.impostazioni i`);
+    from public.impostazioni i
+    where i.chiave <> 'MAIL_DIMISSIONI_MITTENTE'`);
   const utenti = await testo("select coalesce(jsonb_agg(to_jsonb(u) order by u.email), '[]'::jsonb)::text as j from public.utenti_autorizzati u");
   const interruttore = (await p.leggi("select richiedi_utente from public.google_oauth where id = 'reparto'"))[0];
+  // Ciò che è proprio del collaudo e la copia non deve cancellare: chi è questo
+  // database, da quale indirizzo di prova partono le mail e a chi arrivano.
+  const proprie = await c.query("select chiave, valore from public.impostazioni where chiave in ('AMBIENTE', 'MAIL_DIMISSIONI_MITTENTE', 'MAIL_DIMISSIONI_DESTINATARI')");
+  if (!proprie.some((x) => x.chiave === 'AMBIENTE')) proprie.push({ chiave: 'AMBIENTE', valore: 'collaudo' });
 
   const sql = `
     truncate public.tipologie, public.scale_valutazione, public.link_utili, public.impostazioni,
-             public.app_version, public.keepalive, public.google_oauth;
+             public.app_version, public.keepalive;
     insert into public.tipologie select * from jsonb_populate_recordset(null::public.tipologie, ${dollaro(tipologie)}::jsonb);
     insert into public.scale_valutazione select * from jsonb_populate_recordset(null::public.scale_valutazione, ${dollaro(scale)}::jsonb);
     insert into public.link_utili select * from jsonb_populate_recordset(null::public.link_utili, ${dollaro(link)}::jsonb);
     select setval('public.link_utili_id_seq', (select coalesce(max(id), 1) from public.link_utili));
     insert into public.impostazioni select * from jsonb_populate_recordset(null::public.impostazioni, ${dollaro(impostazioni)}::jsonb);
+    insert into public.impostazioni (chiave, valore)
+      select chiave, valore from jsonb_populate_recordset(null::public.impostazioni, ${dollaro(JSON.stringify(proprie))}::jsonb)
+      on conflict (chiave) do update set valore = excluded.valore;
     insert into public.utenti_autorizzati select * from jsonb_populate_recordset(null::public.utenti_autorizzati, ${dollaro(utenti)}::jsonb)
       on conflict (email) do nothing;
     insert into public.app_version (id, sha, deployed_at, message) values (1, '', 0, 'collaudo');
     insert into public.keepalive (id) values (1);
-    insert into public.google_oauth (id, richiedi_utente) values ('reparto', ${interruttore && interruttore.richiedi_utente ? 'true' : 'false'});
+    -- la cassaforte del collaudo (consenso di prova, credenziali finte) resta com'è: si allinea solo l'interruttore
+    insert into public.google_oauth (id, richiedi_utente) values ('reparto', ${interruttore && interruttore.richiedi_utente ? 'true' : 'false'})
+      on conflict (id) do update set richiedi_utente = excluded.richiedi_utente;
     select jsonb_build_object(
       'tipologie', (select count(*) from public.tipologie),
       'scale', (select count(*) from public.scale_valutazione),
@@ -84,7 +96,7 @@ function dollaro(testo) {
 
   // Riepilogo del collaudo, senza contenuti sensibili.
   const imp = await c.query(`select chiave, length(coalesce(valore, '')) as n,
-      case when chiave in ('MAIL_DIMISSIONI_DESTINATARI', 'ULTIMO_BACKUP', 'GIORNI_ARCHIVIO') then valore else null end as mostra
+      case when chiave in ('ULTIMO_BACKUP', 'GIORNI_ARCHIVIO') then valore else null end as mostra
     from public.impostazioni order by chiave`);
   imp.forEach((x) => console.log('  ' + x.chiave.padEnd(28) + ' lunghezza ' + String(x.n).padStart(4) + (x.mostra !== null ? ' → ' + x.mostra : '')));
   const lk = await c.query("select count(*) filter (where url ~ '^https?://[^/]+/$') as ridotti, count(*) as tot from public.link_utili");

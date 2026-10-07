@@ -1,15 +1,30 @@
-// google-token v4 — cassaforte OAuth del reparto, SOLO mail.
+// google-token v5 — cassaforte OAuth del reparto, SOLO mail.
 // Il token Google non lascia mai il server: l'unica operazione possibile
 // e' l'invio della mail dimissioni ('invia'), eseguito interamente qui.
 //
 // Azioni (POST JSON {azione:...}):
-//  stato   -> {configurato, autorizzato[, email]}  (aperta: nulla di riservato)
+//  stato   -> {configurato, autorizzato[, email, mittente]}  (aperta: nulla di
+//             riservato). «autorizzato» = ci sono i permessi di invio PER IL
+//             MITTENTE configurato; email e mittente solo a chi e' in lista.
+//             Con {verifica:true}, e solo per chi e' in lista, i permessi si
+//             controllano DAL VIVO: si chiede a Google un token nuovo. La
+//             risposta porta allora «verificato»: true = «autorizzato» e' la
+//             verita' di adesso (un consenso revocato da' false); false =
+//             Google non ha risposto, «problema» dice perche'
 //  config  -> {client_secret} (sostituzione solo conoscendo quello attuale)
 //  scambia -> {code} scambio authorization code (redirect 'postmessage');
-//             accetta SOLO l'account del reparto (impostazioni.ACCOUNT_LOGIN);
-//             se l'impostazione manca rifiuta: non si registra un account
-//             che non si puo' verificare
-//  invia   -> {destinatari:[...], oggetto, html} spedisce via Gmail API
+//             accetta SOLO l'account configurato come mittente; se il
+//             mittente non e' determinabile rifiuta: non si registra un
+//             account che non si puo' verificare
+//  invia   -> {destinatari:[...], oggetto, html[, mittente]} spedisce via Gmail
+//             API, solo se la cassaforte e' autorizzata per il mittente
+//             configurato. «mittente» e' quello che la pagina ha mostrato a
+//             chi scrive: se nel frattempo e' cambiato la mail non parte
+//
+// IL MITTENTE. E' impostazioni.MAIL_DIMISSIONI_MITTENTE (menu «Impostazioni
+// email» dell'app); finche' nessuno lo imposta vale l'account del reparto
+// (impostazioni.ACCOUNT_LOGIN). La cassaforte custodisce UN solo consenso
+// Google: se il mittente cambia, il consenso va dato di nuovo da quell'account.
 //
 // CHI PUO' CHIAMARE. La chiave pubblica del sito basta a superare il
 // verify_jwt del gateway, quindi da sola non prova nulla: config, scambia e
@@ -51,6 +66,22 @@ function scopesMancanti(scopes: string | null | undefined): string[] {
   const have = String(scopes || '').split(/\s+/);
   return SCOPES_RICHIESTI.filter((s) => !have.includes(s));
 }
+
+// L'indirizzo da cui deve partire la mail: quello scelto in «Impostazioni
+// email», altrimenti l'account del reparto. Stringa vuota = non determinabile
+// (impostazioni illeggibili, oppure un valore che non e' un indirizzo): in
+// quel caso non si autorizza e non si spedisce.
+async function mittenteConfigurato(): Promise<string> {
+  const { data, error } = await sb.from('impostazioni').select('chiave,valore').in('chiave', ['MAIL_DIMISSIONI_MITTENTE', 'ACCOUNT_LOGIN']);
+  if (error || !data) return '';
+  const valore = (chiave: string) => String((data.find((x) => x.chiave === chiave) || {}).valore || '').toLowerCase().trim();
+  const scelto = valore('MAIL_DIMISSIONI_MITTENTE') || valore('ACCOUNT_LOGIN');
+  return MITTENTE_RE.test(scelto) ? scelto : '';
+}
+// Solo un indirizzo «semplice»: il valore arriva da una tabella che ogni utente
+// dell'app puo' scrivere e torna indietro nelle risposte.
+const MITTENTE_RE = /^[a-z0-9._%+-]{1,64}@[a-z0-9.-]{1,190}\.[a-z]{2,24}$/;
+const stessoIndirizzo = (a: unknown, b: string) => String(a || '').toLowerCase().trim() === b;
 
 // Il chiamante e' un utente loggato e in lista? Si chiede al database con il
 // SUO Bearer: la chiave pubblica (ruolo anon) e gli account fuori lista danno
@@ -149,11 +180,40 @@ Deno.serve(async (req) => {
 
 
     if (azione === 'stato') {
-      return json({
+      // A interruttore spento le azioni riservate sono aperte: anche qui si
+      // risponde per intero, altrimenti l'app non potrebbe lavorare.
+      const fidato = utente || !richiedi;
+      const mittente = await mittenteConfigurato();
+      const risposta: Record<string, unknown> = {
         configurato: !!(r && r.client_secret),
-        autorizzato: !!(r && r.refresh_token) && scopesMancanti(r?.scopes).length === 0,
-        email: utente ? (r?.email || null) : null,
-      });
+        autorizzato: !!(r && r.refresh_token) && scopesMancanti(r?.scopes).length === 0
+          && !!mittente && stessoIndirizzo(r?.email, mittente),
+        email: fidato ? (r?.email || null) : null,
+        mittente: fidato ? (mittente || null) : null,
+      };
+      // Verifica dal vivo. Il consenso custodito puo' essere stato revocato
+      // (da Google, o dal titolare dell'account) senza che qui se ne sappia
+      // nulla: lo si scopre chiedendo a Google un token nuovo. L'app lo fa
+      // PRIMA di mostrare la procedura di invio.
+      if (body.verifica === true && fidato) {
+        risposta.verificato = true;
+        if (risposta.autorizzato) {
+          let esito: { ok: boolean; riautorizzare?: boolean; errore?: string };
+          try {
+            const t = await tokenInterno(r, true);
+            esito = t.ok ? { ok: true } : { ok: false, ...(await t.resp.json()) };
+          } catch (e) {
+            esito = { ok: false, errore: String((e as Error)?.message || e) };
+          }
+          if (!esito.ok && esito.riautorizzare) {
+            risposta.autorizzato = false;            // revocato: va concesso di nuovo
+          } else if (!esito.ok) {
+            risposta.verificato = false;             // Google non ha risposto: non si sa
+            risposta.problema = esito.errore || 'Google non risponde';
+          }
+        }
+      }
+      return json(risposta);
     }
 
     if (azione === 'config') {
@@ -187,13 +247,15 @@ Deno.serve(async (req) => {
         headers: { Authorization: 'Bearer ' + tok.access_token },
       }).then((x) => x.json()).catch(() => ({}));
       const email = String(ui.email || '').toLowerCase();
-      const { data: imp, error: errImp } = await sb.from('impostazioni').select('valore').eq('chiave', 'ACCOUNT_LOGIN').maybeSingle();
-      const atteso = String(imp?.valore || '').toLowerCase().trim();
-      if (errImp || !atteso) {
-        return json({ errore: "impostazione ACCOUNT_LOGIN non leggibile: impossibile verificare l'account" }, 500);
+      const atteso = await mittenteConfigurato();
+      if (!atteso) {
+        return json({ errore: "mittente della mail non determinabile (impostazioni MAIL_DIMISSIONI_MITTENTE e ACCOUNT_LOGIN): impossibile verificare l'account" }, 500);
       }
       if (!email || email !== atteso) {
-        return json({ errore: 'account non ammesso: autorizza con ' + atteso }, 403);
+        return json({
+          errore: 'account non ammesso: il consenso è stato dato con «' + (email || 'un account senza indirizzo') + '», ma il mittente impostato è «' + atteso + '»',
+          account: email || null, mittente: atteso,
+        }, 403);
       }
       if (scopesMancanti(tok.scope).length > 0) {
         return json({ errore: 'manca il permesso di invio mail: rifai l\'autorizzazione spuntando tutte le caselle' }, 400);
@@ -224,6 +286,23 @@ Deno.serve(async (req) => {
       if (!oggetto || oggetto.length > 500) return json({ errore: 'oggetto mancante o troppo lungo' }, 400);
       if (!html || html.length > 500000) return json({ errore: 'corpo mancante o troppo grande' }, 400);
 
+      // Si spedisce solo a nome del mittente configurato: se la cassaforte
+      // custodisce il consenso di un altro account non si prova nemmeno.
+      const mittente = await mittenteConfigurato();
+      if (!mittente) return json({ errore: 'mittente della mail non determinabile: aprire «Impostazioni email»' }, 409);
+      // Chi scrive ha visto un mittente: se non e' piu' quello, non si spedisce
+      // a nome di un altro senza che lo sappia.
+      const mostrato = String(body.mittente || '').toLowerCase().trim();
+      if (mostrato && mostrato !== mittente) {
+        return json({
+          errore: 'il mittente della mail è cambiato (ora è ' + mittente + '): la mail non è partita. Chiudi e riapri «Invia mail dimissioni».',
+          mittente_cambiato: true, mittente,
+        }, 409);
+      }
+      if (r && r.refresh_token && !stessoIndirizzo(r.email, mittente)) {
+        return json({ errore: 'mancano i permessi di invio per ' + mittente, riautorizzare: true, mittente }, 401);
+      }
+
       let t = await tokenInterno(r);
       if (!t.ok) return t.resp;
       const raw = costruisciRaw(r.email || '', dest, oggetto, html);
@@ -245,7 +324,7 @@ Deno.serve(async (req) => {
         const b = await g.json().catch(() => ({} as Record<string, { message?: string }>));
         return json({ errore: (b.error && b.error.message) || ('Gmail HTTP ' + g.status) }, 502);
       }
-      return json({ ok: true, destinatari: dest.length });
+      return json({ ok: true, destinatari: dest.length, mittente });
     }
 
     return json({ errore: 'azione sconosciuta' }, 400);

@@ -1,8 +1,10 @@
 // Batteria di prove della funzione google-token nel progetto di COLLAUDO.
-// Gira contro il finto Google (google-finto): nessuna mail parte davvero.
-// Le prove che toccano la configurazione la rimettono com'era alla fine.
+// Gira con le credenziali finte (google-finto fa la parte di Google): nessuna
+// mail parte davvero. Se nella cassaforte c'è un consenso vero viene messo da
+// parte all'inizio e rimesso al suo posto alla fine, come il mittente scelto.
 const { collaudo } = require('./sb.js');
 const { genera } = require('./gettone-prova.js');
+const { finta, vera, CLIENT_FINTO } = require('./cassaforte-collaudo.js');
 const amb = require('./ambiente.json');
 
 const esiti = [];
@@ -14,7 +16,10 @@ function prova(nome, ok, dettaglio) {
 (async () => {
   const c = collaudo();
   const { token: utente } = await genera(1);
-  const segreto = (await c.query("select refresh_token from public.google_oauth where id = 'reparto'"))[0].refresh_token;
+  const segreto = await finta();
+  const mittenteDiRiposo = (await c.query("select valore from public.impostazioni where chiave = 'MAIL_DIMISSIONI_MITTENTE'"))[0];
+  await c.query("delete from public.impostazioni where chiave = 'MAIL_DIMISSIONI_MITTENTE'");
+  try {
   const accountAtteso = (await c.query("select lower(trim(valore)) as v from public.impostazioni where chiave = 'ACCOUNT_LOGIN'"))[0].v;
   const chiama = async (bearer, corpo) => {
     const r = await fetch(amb.url + '/functions/v1/google-token', {
@@ -26,7 +31,7 @@ function prova(nome, ok, dettaglio) {
   };
   const posta = async (oggetto) => c.query("select mittente, destinatari, oggetto, corpo_html from public.posta_simulata where oggetto = " + "$o$" + oggetto + "$o$" + " order by id desc limit 1");
 
-  await c.query("delete from public.posta_simulata; update public.google_oauth set richiedi_utente = true where id = 'reparto'");
+  await c.query("delete from public.posta_simulata where reale = false; update public.google_oauth set richiedi_utente = true where id = 'reparto'");
 
   // ── stato ──
   let r = await chiama(amb.anon, { azione: 'stato' });
@@ -98,6 +103,101 @@ function prova(nome, ok, dettaglio) {
   r = await chiama(utente, { azione: 'stato' });
   prova('cassaforte di collaudo ripristinata', r.j.autorizzato === true);
 
+  // ── verifica dal vivo dei permessi (stato con «verifica») ──
+  // Del token si confronta solo l'impronta: il valore non esce dal database.
+  const inCassaforte = async () => (await c.query("select md5(coalesce(access_token, '')) as t, (refresh_token is not null) as consenso from public.google_oauth where id = 'reparto'"))[0];
+  let primaT = await inCassaforte();
+  r = await chiama(utente, { azione: 'stato', verifica: true });
+  let dopoT = await inCassaforte();
+  prova('verifica dal vivo: Google rilascia un token nuovo, permessi confermati', r.http === 200 && r.j.autorizzato === true && r.j.verificato === true && primaT.t !== dopoT.t, JSON.stringify(r.j));
+  r = await chiama(utente, { azione: 'stato' });
+  prova('senza richiesta di verifica lo stato non interroga Google', r.j.verificato === undefined && (await inCassaforte()).t === dopoT.t);
+  r = await chiama(amb.anon, { azione: 'stato', verifica: true });
+  prova('un estraneo non può far interrogare Google', r.http === 200 && r.j.verificato === undefined && (await inCassaforte()).t === dopoT.t, JSON.stringify(r.j));
+  await c.query("update public.google_oauth set refresh_token = " + "$s$" + segreto + ".guasto$s$" + " where id = 'reparto'");
+  try {
+    r = await chiama(utente, { azione: 'stato', verifica: true });
+    prova('Google non risponde: permessi «non verificati», il consenso resta dov\'è', r.http === 200 && r.j.autorizzato === true && r.j.verificato === false && /Guasto simulato/.test(r.j.problema || '') && (await inCassaforte()).consenso === true, JSON.stringify(r.j));
+    await c.query("update public.google_oauth set refresh_token = 'finto_revocato' where id = 'reparto'");
+    r = await chiama(utente, { azione: 'stato', verifica: true });
+    prova('consenso revocato: la verifica lo scopre prima dell\'invio', r.http === 200 && r.j.autorizzato === false && r.j.verificato === true && (await inCassaforte()).consenso === false, JSON.stringify(r.j));
+  } finally {
+    await c.query("update public.google_oauth set refresh_token = " + "$s$" + segreto + "$s$" + ", access_token = null, access_scad = null where id = 'reparto'");
+  }
+  r = await chiama(utente, { azione: 'stato', verifica: true });
+  prova('rimesso il consenso, la verifica torna a confermare', r.j.autorizzato === true && r.j.verificato === true);
+
+  // ── il mittente configurabile («Impostazioni email») ──
+  const impostaMittente = (v) => c.query("insert into public.impostazioni (chiave, valore) values ('MAIL_DIMISSIONI_MITTENTE', $m$" + v + "$m$) on conflict (chiave) do update set valore = excluded.valore");
+  const togliMittente = () => c.query("delete from public.impostazioni where chiave = 'MAIL_DIMISSIONI_MITTENTE'");
+  const altro = 'mittente-prova@example.com';
+  const come = (email) => segreto + '.come.' + Buffer.from(email).toString('base64url');
+  r = await chiama(utente, { azione: 'stato' });
+  prova('mittente mai impostato: vale l\'account del reparto', r.j.mittente === accountAtteso && r.j.autorizzato === true, JSON.stringify(r.j));
+  r = await chiama(amb.anon, { azione: 'stato' });
+  prova('a un estraneo il mittente non viene detto', r.j.mittente === null && r.j.email === null);
+  await impostaMittente(altro);
+  r = await chiama(utente, { azione: 'stato' });
+  prova('mittente cambiato: i permessi risultano mancanti', r.j.autorizzato === false && r.j.mittente === altro && r.j.email === accountAtteso, JSON.stringify(r.j));
+  const senzaPermessi = { azione: 'invia', destinatari: ['destinatario1@example.com'], oggetto: 'Prova senza permessi ' + Date.now(), html: '<p>x</p>' };
+  r = await chiama(utente, senzaPermessi);
+  prova('invio senza i permessi del mittente: rifiutato, chiede di concederli', r.http === 401 && r.j.riautorizzare === true && /mancano i permessi/.test(r.j.errore || ''), r.j.errore);
+  prova('…e nulla è stato spedito', (await posta(senzaPermessi.oggetto)).length === 0);
+  r = await chiama(utente, { azione: 'scambia', code: segreto });
+  prova('consenso dato con un account diverso dal mittente: rifiutato', r.http === 403 && /account non ammesso/.test(r.j.errore || '') && r.j.mittente === altro, r.j.errore);
+  riga = (await c.query("select email from public.google_oauth where id = 'reparto'"))[0];
+  prova('…e la cassaforte non è cambiata', riga.email === accountAtteso);
+  r = await chiama(utente, { azione: 'scambia', code: come(altro) });
+  prova('consenso dato con l\'account del mittente: accettato', r.http === 200 && r.j.ok === true && r.j.email === altro, JSON.stringify(r.j));
+  r = await chiama(utente, { azione: 'stato' });
+  prova('…e i permessi risultano concessi', r.j.autorizzato === true && r.j.mittente === altro && r.j.email === altro);
+  const dalNuovo = { azione: 'invia', destinatari: ['destinatario1@example.com'], oggetto: 'Prova dal nuovo mittente ' + Date.now(), html: '<p>x</p>' };
+  r = await chiama(utente, dalNuovo);
+  p = await posta(dalNuovo.oggetto);
+  prova('la mail parte a nome del nuovo mittente', r.http === 200 && r.j.mittente === altro && p.length === 1 && p[0].mittente === altro, JSON.stringify(r.j));
+  const mittenteVecchio = { azione: 'invia', mittente: accountAtteso, destinatari: ['destinatario1@example.com'], oggetto: 'Prova mittente cambiato ' + Date.now(), html: '<p>x</p>' };
+  r = await chiama(utente, mittenteVecchio);
+  prova('la pagina mostrava un mittente che non è più quello: la mail non parte', r.http === 409 && r.j.mittente_cambiato === true && r.j.mittente === altro && (await posta(mittenteVecchio.oggetto)).length === 0, r.j.errore);
+  r = await chiama(utente, Object.assign({}, mittenteVecchio, { mittente: ' Mittente-Prova@EXAMPLE.com ' }));
+  prova('…se il mittente mostrato è quello giusto, parte', r.http === 200 && r.j.ok === true && (await posta(mittenteVecchio.oggetto)).length === 1, JSON.stringify(r.j));
+  await impostaMittente('  Mittente-Prova@Example.COM ');
+  r = await chiama(utente, { azione: 'stato' });
+  prova('maiuscole e spazi nell\'indirizzo non contano', r.j.autorizzato === true && r.j.mittente === altro);
+  await impostaMittente('non-un-indirizzo');
+  r = await chiama(utente, { azione: 'stato' });
+  prova('mittente che non è un indirizzo: nessun permesso e nessun ripiego silenzioso', r.j.autorizzato === false && r.j.mittente === null, JSON.stringify(r.j));
+  r = await chiama(utente, { azione: 'invia', destinatari: ['destinatario1@example.com'], oggetto: 'Prova mittente non valido', html: '<p>x</p>' });
+  prova('…l\'invio viene rifiutato', r.http === 409 && /non determinabile/.test(r.j.errore || ''), r.j.errore);
+  r = await chiama(utente, { azione: 'scambia', code: come(altro) });
+  prova('…e anche il consenso', r.http === 500 && /non determinabile/.test(r.j.errore || ''));
+  await togliMittente();
+  r = await chiama(utente, { azione: 'stato' });
+  prova('tolto il mittente si torna all\'account del reparto, che deve ridare il consenso', r.j.mittente === accountAtteso && r.j.autorizzato === false);
+  r = await chiama(utente, { azione: 'scambia', code: segreto });
+  prova('consenso dell\'account del reparto: di nuovo accettato', r.http === 200 && r.j.email === accountAtteso);
+
+  // ── credenziali vere: la richiesta deve arrivare a Google ──
+  // (qui con un codice inventato e un client secret inventato: Google rifiuta,
+  // ed è proprio la sua risposta che si vuole vedere, non quella del finto)
+  await c.query("update public.google_oauth set client_secret = 'segreto-inventato-per-la-prova' where id = 'reparto'");
+  try {
+    r = await chiama(utente, { azione: 'scambia', code: 'codice-inventato' });
+    prova('con un client secret non finto la richiesta viene girata a Google (che la rifiuta)', r.http === 400 && /scambio rifiutato da Google/.test(r.j.errore || '') && !/expired or revoked/.test(r.j.errore || ''), r.j.errore);
+  } finally {
+    await c.query("update public.google_oauth set client_secret = '" + CLIENT_FINTO + "' where id = 'reparto'");
+  }
+
+  // ── google-finto non è un passaggio aperto verso Google ──
+  // (gira richieste a Google: deve rispondere solo a google-token, che ne
+  // conosce l'indirizzo completo; chi lo chiama da fuori non trova nulla)
+  const finto = async (percorso, init) => (await fetch(amb.url + '/functions/v1/google-finto' + percorso, init)).status;
+  const modulo = { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'grant_type=authorization_code&code=x&client_id=x&client_secret=x&redirect_uri=postmessage' };
+  prova('finto Google senza la chiave nell\'indirizzo: non trovato (scambio)', (await finto('/token', modulo)) === 404);
+  prova('finto Google con una chiave sbagliata: non trovato', (await finto('/k/' + '0'.repeat(40) + '/token', modulo)) === 404);
+  prova('finto Google senza chiave: non trovato (utente e invio)',
+    (await finto('/userinfo', { headers: { Authorization: 'Bearer x' } })) === 404
+    && (await finto('/gmail-invio', { method: 'POST', headers: { Authorization: 'Bearer x', 'Content-Type': 'application/json' }, body: '{"raw":""}' })) === 404);
+
   // ── varie ──
   r = await chiama(utente, { azione: 'token' });
   prova('la vecchia azione «token» non esiste', r.http === 400 && /sconosciuta/.test(r.j.errore || ''));
@@ -109,8 +209,17 @@ function prova(nome, ok, dettaglio) {
     prova('interruttore spento: l\'invio da estraneo passa (è il varco che l\'interruttore chiude)', r.http === 200 && r.j.ok === true);
     r = await chiama(amb.anon, { azione: 'scambia', code: segreto + '.intruso' });
     prova('interruttore spento: l\'account intruso è comunque rifiutato (correzione v4)', r.http === 403 && /account non ammesso/.test(r.j.errore || ''));
+    r = await chiama(amb.anon, { azione: 'stato' });
+    prova('interruttore spento: lo stato dice il mittente anche senza sessione (l\'app deve poter lavorare)', r.j.mittente === accountAtteso && r.j.email === accountAtteso, JSON.stringify(r.j));
   } finally {
     await c.query("update public.google_oauth set richiedi_utente = true where id = 'reparto'");
+  }
+
+  } finally {
+    await c.query("delete from public.impostazioni where chiave = 'MAIL_DIMISSIONI_MITTENTE'");
+    if (mittenteDiRiposo) await c.query("insert into public.impostazioni (chiave, valore) values ('MAIL_DIMISSIONI_MITTENTE', $m$" + mittenteDiRiposo.valore + "$m$)");
+    const dopo = await vera();
+    console.log('\ncassaforte di collaudo rimessa a riposo: ' + dopo.modo + (dopo.consenso ? ' (consenso di ' + dopo.email + ')' : ''));
   }
 
   const n = esiti.filter(Boolean).length;

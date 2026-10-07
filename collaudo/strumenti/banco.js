@@ -10,6 +10,7 @@
 //   http://localhost:8765/?senzaFiltro      la stessa, senza la libreria del filtro HTML
 //   http://localhost:8765/trak-finto/       il finto TrakCare
 //   http://localhost:8765/pagina/…          generatore e prove che girano dentro l'app
+//   /banco/cassaforte, /banco/posta         servono alle prove della mail (vedi sotto)
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -73,6 +74,23 @@ http.createServer(async (req, res) => {
         console.log('sessione di prova non disponibile: ' + e.message);
         return rispondi(res, 200, MIME['.js'], avvio(chiave, null) + 'console.error("banco: sessione di prova non disponibile");\n');
       }
+    }
+
+    // Prove della mail: la cassaforte del collaudo passa alle credenziali finte
+    // (e torna com'era alla fine), e il finto Google dice che cosa ha «spedito».
+    // Solo dalle pagine del banco: di qui passa il segreto del finto Google.
+    if (percorso === '/banco/cassaforte' || percorso === '/banco/posta') {
+      if (req.headers['sec-fetch-site'] !== 'same-origin') return rispondi(res, 403, 'text/plain; charset=utf-8', 'riservato alle pagine del banco');
+      const cassaforte = require('./cassaforte-collaudo.js');
+      if (percorso === '/banco/posta') {
+        const oggetto = String(url.searchParams.get('oggetto') || '').replace(/\$/g, '');
+        const righe = await require('./sb.js').collaudo().query("select mittente, destinatari, oggetto, reale from public.posta_simulata where oggetto = $o$" + oggetto + "$o$ order by id desc limit 1");
+        return rispondi(res, 200, MIME['.json'], JSON.stringify(righe[0] || null));
+      }
+      const modo = url.searchParams.get('modo');
+      if (req.method !== 'POST' || (modo !== 'finta' && modo !== 'vera')) return rispondi(res, 400, 'text/plain; charset=utf-8', 'uso: POST /banco/cassaforte?modo=finta|vera');
+      if (modo === 'finta') return rispondi(res, 200, MIME['.json'], JSON.stringify({ segreto: await cassaforte.finta() }));
+      return rispondi(res, 200, MIME['.json'], JSON.stringify(await cassaforte.vera()));
     }
 
     // Le prove salvano qui la «fotografia» degli esiti attesi: un solo file,

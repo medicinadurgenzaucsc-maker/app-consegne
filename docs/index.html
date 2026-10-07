@@ -5067,13 +5067,14 @@
             <span>Update</span>
           </button>
         </li>
-        <!-- Autorizzazione Google del reparto mancante: si fa UNA volta,
-             da UN solo PC, e il badge sparisce ovunque per sempre. -->
+        <!-- Mancano i permessi di invio della mail per il mittente scelto in
+             «Impostazioni email»: si concedono UNA volta, da UN solo PC, e
+             valgono per tutti. -->
         <li class="nav-item me-2" id="navItemCassaforte" style="display:none;">
           <button id="btnCassaforte"
                   class="btn btn-warning btn-sm fw-bold py-0 px-2"
                   onclick="window._cassaforteAutorizza && window._cassaforteAutorizza()"
-                  title="Serve l'autorizzazione Google del reparto (una sola volta, vale per tutti i PC)"
+                  title="Mancano i permessi di invio della mail dimissioni: si concedono una volta sola e valgono per tutti i PC"
                   style="font-size:0.75rem;">
             <i class="bi bi-key-fill me-1"></i>Autorizza Google
           </button>
@@ -5124,6 +5125,7 @@
             <li><a class="dropdown-item" href="javascript:void(0)" data-emerg-disable="1" data-bs-toggle="modal" data-bs-target="#modalRinomina"><i class="bi bi-pencil-square text-primary me-2"></i>Modifica Nome Consegne</a></li>
             <li><hr class="dropdown-divider"></li>
             <li><a class="dropdown-item" href="javascript:void(0)" data-emerg-disable="1" onclick="apriImpostazioniArchivio()"><i class="bi bi-archive text-secondary me-2"></i>Impostazioni archivio consegne</a></li>
+            <li><a class="dropdown-item" href="javascript:void(0)" onclick="_apriImpostazioniEmail()"><i class="bi bi-envelope-at text-primary me-2"></i>Impostazioni email</a></li>
             <li><a class="dropdown-item" href="javascript:void(0)" data-emerg-disable="1" onclick="_avviaBackupManuale()"><i class="bi bi-cloud-arrow-up-fill text-success me-2"></i>Esegui Backup Manuale</a></li>
             <li><a class="dropdown-item" href="javascript:void(0)" data-emerg-disable="1" onclick="_apriRipristina()"><i class="bi bi-arrow-counterclockwise text-danger me-2"></i>Ripristina da Backup</a></li>
             <li><hr class="dropdown-divider"></li>
@@ -5144,7 +5146,7 @@
             <li>
               <span class="dropdown-item-text d-block px-3" style="font-family:monospace;font-size:0.75rem;color:#546e7a;line-height:1.3;">
                 <i class="bi bi-tag me-1"></i>Versione applicazione:<br>
-                <strong id="navVersioneApp" class="ms-1" style="color:#263238;">179</strong>
+                <strong id="navVersioneApp" class="ms-1" style="color:#263238;">180</strong>
               </span>
             </li>
             <!-- Uscita: chiude la sessione solo su questo dispositivo (_esciSessione) -->
@@ -5680,8 +5682,12 @@
     }
     // Invio mail SERVER-SIDE: la Edge Function spedisce lei; nessun token
     // Google raggiunge mai il browser (la falla dell'azione 'token' è chiusa).
-    window._cassaforteInvia = function(destinatari, oggetto, html) {
-      return _cassaCall({ azione: 'invia', destinatari: destinatari, oggetto: oggetto, html: html }).then(function(j) {
+    // «mittente» è l'indirizzo mostrato a chi scrive: se nel frattempo è
+    // cambiato il server non spedisce (non si scrive a nome di un altro).
+    window._cassaforteInvia = function(destinatari, oggetto, html, mittente) {
+      var corpo = { azione: 'invia', destinatari: destinatari, oggetto: oggetto, html: html };
+      if (mittente) corpo.mittente = mittente;
+      return _cassaCall(corpo).then(function(j) {
         if (!j || !j.ok) {
           var e = new Error((j && j.errore) || 'invio non riuscito');
           if (j && j.riautorizzare) { e.riautorizzare = true; _cassaforteBadge(true); }
@@ -5701,96 +5707,243 @@
         }
       }).catch(function() { /* offline: si riprova al prossimo avvio */ });
     };
-    // Percorso di autorizzazione una-tantum (click sul bottoncino giallo).
-    window._cassaforteAutorizza = function() {
-      _cassaCall({ azione: 'stato' }).then(function(st) {
-        var serveSecret = !(st && st.configurato);
-        Swal.fire({
-          icon: 'info',
-          title: 'Autorizzazione Google del reparto',
-          html: '<div class="text-start small">'
-            + '<p>Si fa <b>una volta sola, da un solo PC</b>: l\'autorizzazione resta custodita sul server e vale per <b>tutti i computer</b> del reparto. Serve SOLO a inviare la mail dimissioni dall\'account del reparto, direttamente dal server.</p>'
-            + '<p class="mb-1">Usa l\'account del reparto' + (_emailConsentita ? ' (<b>' + _testoHtml(_emailConsentita) + '</b>)' : '') + '.</p>'
-            + (serveSecret
-              ? '<hr><p class="mb-1"><b>Primo avvio:</b> incolla il <b>client secret</b> del client OAuth.<br><small class="text-muted">console.cloud.google.com &rarr; API e servizi &rarr; Credenziali &rarr; client &laquo;170256871056-&hellip;&raquo; &rarr; Segreto client</small></p>'
-                + '<input type="password" id="cassaSecret" class="form-control form-control-sm" placeholder="Client secret (GOCSPX-...)" autocomplete="off">'
-              : '')
-            + '</div>',
-          showCancelButton: true,
-          confirmButtonText: 'Autorizza con Google',
-          cancelButtonText: 'Annulla',
-          confirmButtonColor: '#00695c',
-          preConfirm: function() {
-            var el = document.getElementById('cassaSecret');
-            return el ? el.value.trim() : '';
-          }
-        }).then(function(r) {
-          if (!r.isConfirmed) return;
-          var secret = r.value || '';
-          if (serveSecret && !secret) {
-            Swal.fire({ icon: 'warning', title: 'Manca il client secret', text: 'Senza il segreto del client OAuth la cassaforte non puo\' scambiare i codici con Google.', confirmButtonColor: '#00695c' });
-            return;
-          }
-          if (typeof google === 'undefined' || !google.accounts || !google.accounts.oauth2) {
-            Swal.fire({ icon: 'error', title: 'Componente Google non caricato', text: 'Ricarica la pagina e riprova.' });
-            return;
-          }
-          // Il popup del consenso parte SUBITO (dentro il gesto utente, il
-          // blocco popup non scatta); il salvataggio del secret viaggia in
-          // parallelo e lo scambio del code lo attende.
-          var pConfig = secret
-            ? _cassaCall({ azione: 'config', client_secret: secret }).then(function(j) {
-                if (!j || !j.ok) throw new Error((j && j.errore) || 'salvataggio del client secret non riuscito');
-              })
-            : Promise.resolve();
-          var cc = google.accounts.oauth2.initCodeClient({
-            client_id: GOOGLE_CLIENT_ID,
-            scope: 'email profile https://www.googleapis.com/auth/gmail.send',
-            ux_mode: 'popup',
-            login_hint: _emailConsentita || '',
-            callback: function(resp) {
-              if (!resp || !resp.code) {
-                Swal.fire({ icon: 'error', title: 'Autorizzazione annullata', text: (resp && resp.error) || '' });
-                return;
-              }
-              Swal.fire({ title: 'Registro l\'autorizzazione…', allowOutsideClick: false, showConfirmButton: false, didOpen: function() { Swal.showLoading(); } });
-              pConfig
-                .then(function() { return _cassaCall({ azione: 'scambia', code: resp.code }); })
-                .then(function(j) {
-                  if (!j || !j.ok) throw new Error((j && j.errore) || 'registrazione non riuscita');
-                  _cassaforteBadge(false);
-                  Swal.fire({
-                    icon: 'success', title: 'Fatto: autorizzazione registrata',
-                    html: 'D\'ora in poi la mail dimissioni parte da <b>tutti i PC del reparto</b> senza finestre di Google.<br><small class="text-muted">Account: ' + _testoHtml(j.email || '') + '</small>',
-                    confirmButtonColor: '#00695c'
-                  });
-                  if (typeof window._log === 'function') {
-                    window._log('info', 'google-cassaforte', 'Autorizzazione Google di reparto registrata', 'Account: ' + (j.email || '?') + '\nScopes: ' + (j.scopes || '?'));
-                  }
-                })
-                .catch(function(e) {
-                  Swal.fire({ icon: 'error', title: 'Registrazione non riuscita', html: '<div class="small text-start">' + _testoHtml(String((e && e.message) || e)) + '</div>', confirmButtonColor: '#d33' });
-                });
-            },
-            error_callback: function(err) {
-              var t = (err && err.type) || '';
-              Swal.fire({
-                icon: 'error',
-                title: t === 'popup_failed_to_open' ? 'Popup bloccato dal browser' : 'Autorizzazione non completata',
-                html: t === 'popup_failed_to_open'
-                  ? 'Consenti i popup per questo sito (icona a destra nella barra dell\'indirizzo) e riprova.<br><b>Serve solo per questa prima e unica volta.</b>'
-                  : _testoHtml(t || 'errore'),
-                confirmButtonColor: '#d33'
-              });
-            }
-          });
-          cc.requestCode();
-          pConfig.catch(function() {});
-        });
-      }).catch(function(e) {
-        Swal.fire({ icon: 'error', title: 'Cassaforte non raggiungibile', text: String((e && e.message) || e), confirmButtonColor: '#d33' });
+    // Stato dei permessi di invio, chiesto al server:
+    //   {configurato, autorizzato, email, mittente}
+    // «autorizzato» vale per il MITTENTE scelto in «Impostazioni email».
+    // Con verifica = true il server chiede a Google un token nuovo, quindi
+    // dice se i permessi ci sono ADESSO: «verificato» true = risposta certa
+    // (un consenso revocato dà autorizzato false); false = Google non ha
+    // risposto, e «problema» dice perché.
+    // Una risposta che non è uno stato (errore del server, funzione spenta)
+    // diventa un errore: mai scambiarla per «permessi mancanti».
+    window._cassaforteStato = function(verifica) {
+      return _cassaCall(verifica ? { azione: 'stato', verifica: true } : { azione: 'stato' }).then(function(st) {
+        if (!st || typeof st.autorizzato !== 'boolean') {
+          throw new Error((st && (st.errore || st.message)) || 'risposta non valida del server della mail');
+        }
+        _cassaforteBadge(!st.autorizzato);   // il bottone giallo segue lo stato appena letto
+        return st;
       });
     };
+
+    // Concessione dei permessi di invio a Google. Parte dal bottoncino giallo,
+    // da «Impostazioni email» e da «Invia mail dimissioni».
+    //   opz.stato    lo stato già letto dal chiamante: evita una richiesta al
+    //                server, perché la finestra di Google deve aprirsi dentro
+    //                il gesto dell'utente o il browser la blocca
+    //   opz.diretto  true = niente finestra di spiegazione (l'ha già mostrata
+    //                il chiamante), salvo quando va chiesto il client secret
+    // Restituisce una promessa: true se i permessi sono stati registrati, false
+    // se l'utente ha rinunciato o qualcosa non è riuscito (già mostrato).
+    window._cassaforteAutorizza = function(opz) {
+      opz = opz || {};
+      return new Promise(function(risolvi) {
+        var pStato = opz.stato ? Promise.resolve(opz.stato) : window._cassaforteStato(false);
+        pStato.then(function(st) {
+          var serveSecret = !(st && st.configurato);
+          var mittente = (st && (st.mittente || st.email)) || _emailConsentita || '';
+
+          function chiediAGoogle(secret) {
+            if (typeof google === 'undefined' || !google.accounts || !google.accounts.oauth2) {
+              Swal.fire({ icon: 'error', title: 'Componente Google non caricato', text: 'Ricarica la pagina e riprova.', returnFocus: false });
+              risolvi(false);
+              return;
+            }
+            // La finestra del consenso parte SUBITO (dentro il gesto utente, il
+            // blocco popup non scatta); il salvataggio del secret viaggia in
+            // parallelo e lo scambio del code lo attende.
+            var pConfig = secret
+              ? _cassaCall({ azione: 'config', client_secret: secret }).then(function(j) {
+                  if (!j || !j.ok) throw new Error((j && j.errore) || 'salvataggio del client secret non riuscito');
+                })
+              : Promise.resolve();
+            var cc = google.accounts.oauth2.initCodeClient({
+              client_id: GOOGLE_CLIENT_ID,
+              scope: 'email profile https://www.googleapis.com/auth/gmail.send',
+              ux_mode: 'popup',
+              login_hint: mittente,
+              callback: function(resp) {
+                if (!resp || !resp.code) {
+                  Swal.fire({ icon: 'error', title: 'Permessi non concessi', text: (resp && resp.error) || '', returnFocus: false });
+                  risolvi(false);
+                  return;
+                }
+                Swal.fire({ title: 'Registro i permessi…', allowOutsideClick: false, showConfirmButton: false, returnFocus: false, didOpen: function() { Swal.showLoading(); } });
+                pConfig
+                  .then(function() { return _cassaCall({ azione: 'scambia', code: resp.code }); })
+                  .then(function(j) {
+                    if (!j || !j.ok) throw new Error((j && j.errore) || 'registrazione non riuscita');
+                    _cassaforteBadge(false);
+                    if (typeof window._log === 'function') {
+                      window._log('info', 'google-cassaforte', 'Permessi di invio della mail registrati', 'Account: ' + (j.email || '?'));
+                    }
+                    return Swal.fire({
+                      icon: 'success', title: 'Permessi concessi',
+                      html: 'La mail delle dimissioni può partire da <b>' + _testoHtml(j.email || mittente) + '</b>, da tutti i computer.',
+                      confirmButtonColor: '#00695c', timer: 2500, timerProgressBar: true, returnFocus: false
+                    });
+                  })
+                  .then(function() { risolvi(true); })
+                  .catch(function(e) {
+                    Swal.fire({
+                      icon: 'error', title: 'Permessi non registrati',
+                      html: '<div class="small text-start">' + _testoHtml(String((e && e.message) || e)) + '</div>'
+                        + (mittente ? '<div class="small text-start text-muted mt-2">Nella finestra di Google va scelto l\'account <b>' + _testoHtml(mittente) + '</b>. Per usarne un altro cambia prima il mittente in ⚙ → Impostazioni email.</div>' : ''),
+                      confirmButtonColor: '#d33', returnFocus: false
+                    });
+                    risolvi(false);
+                  });
+              },
+              error_callback: function(err) {
+                var t = (err && err.type) || '';
+                Swal.fire({
+                  icon: 'error',
+                  title: t === 'popup_failed_to_open' ? 'Finestra di Google bloccata dal browser' : 'Permessi non concessi',
+                  html: t === 'popup_failed_to_open'
+                    ? 'Consenti i popup per questo sito (icona a destra nella barra dell\'indirizzo) e riprova.'
+                    : _testoHtml(t === 'popup_closed' ? 'Hai chiuso la finestra di Google prima di concedere i permessi.' : (t || 'errore')),
+                  confirmButtonColor: '#d33', returnFocus: false
+                });
+                risolvi(false);
+              }
+            });
+            cc.requestCode();
+            pConfig.catch(function() {});
+          }
+
+          if (opz.diretto && !serveSecret) { chiediAGoogle(''); return; }
+          Swal.fire({
+            icon: 'info',
+            title: 'Permessi di invio della mail',
+            html: '<div class="text-start small">'
+              + '<p>La mail delle dimissioni parte da ' + (mittente ? '<b>' + _testoHtml(mittente) + '</b>' : 'un indirizzo Google') + '. Perché possa partire, quell\'account deve dare a Google il permesso di spedire a suo nome: si fa <b>una volta sola, da un solo computer</b>. Il permesso resta custodito sul server, vale per <b>tutti i computer</b> e serve SOLO a inviare questa mail.</p>'
+              + '<p class="mb-1">Nella finestra di Google scegli ' + (mittente ? '<b>' + _testoHtml(mittente) + '</b>' : 'l\'account del mittente') + '.<br><span class="text-muted">Per usare un altro indirizzo: ⚙ → Impostazioni email.</span></p>'
+              + (serveSecret
+                ? '<hr><p class="mb-1"><b>Primo avvio:</b> incolla il <b>client secret</b> del client OAuth dell\'app.<br><small class="text-muted">console.cloud.google.com → API e servizi → Credenziali → client OAuth</small></p>'
+                  + '<input type="password" id="cassaSecret" class="form-control form-control-sm" placeholder="Client secret (GOCSPX-...)" autocomplete="off">'
+                : '')
+              + '</div>',
+            showCancelButton: true,
+            confirmButtonText: 'Concedi con Google',
+            cancelButtonText: 'Annulla',
+            confirmButtonColor: '#00695c',
+            returnFocus: false,
+            preConfirm: function() {
+              var el = document.getElementById('cassaSecret');
+              return el ? el.value.trim() : '';
+            }
+          }).then(function(r) {
+            if (!r.isConfirmed) { risolvi(false); return; }
+            var secret = r.value || '';
+            if (serveSecret && !secret) {
+              Swal.fire({ icon: 'warning', title: 'Manca il client secret', text: 'Senza il segreto del client OAuth il server non può scambiare i codici con Google.', confirmButtonColor: '#00695c', returnFocus: false });
+              risolvi(false);
+              return;
+            }
+            chiediAGoogle(secret);
+          });
+        }).catch(function(e) {
+          Swal.fire({ icon: 'error', title: 'Server della mail non raggiungibile', text: String((e && e.message) || e), confirmButtonColor: '#d33', returnFocus: false });
+          risolvi(false);
+        });
+      });
+    };
+
+    // ── IMPOSTAZIONI EMAIL (menu rotellina) ──────────────────────────────
+    // Da quale indirizzo parte la mail delle dimissioni. La scelta sta in
+    // impostazioni.MAIL_DIMISSIONI_MITTENTE; finché nessuno la fa vale
+    // l'account del reparto. I permessi li verifica il SERVER, e per quel solo
+    // indirizzo: cambiato il mittente, il suo account deve concederli.
+    var _MITTENTE_VALIDO = /^[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,190}\.[A-Za-z]{2,24}$/;
+    window._apriImpostazioniEmail = function() {
+      Swal.fire({
+        title: '<i class="bi bi-envelope-at me-2 text-primary"></i>Impostazioni email',
+        html: '<div class="text-center py-3"><div class="spinner-border text-secondary"></div></div>',
+        showConfirmButton: false, allowOutsideClick: false, returnFocus: false
+      });
+      window._cassaforteStato(true).then(function(st) {
+        if (!('mittente' in st)) {
+          Swal.fire({ icon: 'info', title: 'Impostazioni email', text: 'Il server della mail non è ancora aggiornato: riprova fra qualche minuto.', confirmButtonColor: '#37474f', returnFocus: false });
+          return;
+        }
+        // Se il server non ha un mittente valido si propone l'account del
+        // reparto (riletto, quando la pagina era stata aperta prima dell'accesso).
+        var pReparto = (st.mittente || _emailConsentita || typeof _sbOttieniAccountLogin !== 'function')
+          ? Promise.resolve()
+          : _sbOttieniAccountLogin().then(function(e) { _emailConsentita = e || ''; }, function() {});
+        return pReparto.then(function() { _impostazioniEmailFinestra(st); });
+      }).catch(function(e) {
+        Swal.fire({ icon: 'error', title: 'Impostazioni email non disponibili', text: 'Il server della mail non risponde: controlla la connessione e riprova. (' + String((e && e.message) || e) + ')', confirmButtonColor: '#d33', returnFocus: false });
+      });
+    };
+    function _permessiInvioHtml(st) {
+      if (st && st.autorizzato && st.verificato === false) return '<b style="color:#b26a00;">non verificabili in questo momento</b>';
+      return (st && st.autorizzato) ? '<b class="text-success">concessi</b>' : '<b class="text-danger">da concedere</b>';
+    }
+    function _impostazioniEmailFinestra(st) {
+      var attuale = String(st.mittente || _emailConsentita || '').toLowerCase().trim();
+      Swal.fire({
+        title: '<i class="bi bi-envelope-at me-2 text-primary"></i>Impostazioni email',
+        html: '<div class="text-start" style="font-size:0.9rem;">'
+          + '<label class="form-label fw-bold mb-1" for="impMailMittente">Da quale indirizzo deve partire la mail delle dimissioni?</label>'
+          + '<input type="email" id="impMailMittente" class="form-control" value="' + _testoHtml(attuale) + '" autocomplete="off" autocapitalize="off" spellcheck="false">'
+          + '<div class="mt-2 small" id="impMailPermessi">Permessi di invio per ' + _testoHtml(attuale || 'questo indirizzo') + ': ' + _permessiInvioHtml(st) + '</div>'
+          + '<div class="text-muted small mt-2">Deve essere una casella Google. La mail parte a suo nome e una copia resta nella sua posta inviata: contiene i nomi dei pazienti, quindi usa solo una casella del reparto. Cambiando indirizzo, quell\'account dovrà concedere i permessi di invio.</div>'
+          + '</div>',
+        showCancelButton: true,
+        confirmButtonText: 'Salva',
+        cancelButtonText: 'Annulla',
+        confirmButtonColor: '#00695c',
+        returnFocus: false,
+        preConfirm: function() {
+          var v = String((document.getElementById('impMailMittente') || {}).value || '').toLowerCase().trim();
+          if (!_MITTENTE_VALIDO.test(v)) { Swal.showValidationMessage('Scrivi un indirizzo email valido'); return false; }
+          return v;
+        }
+      }).then(function(r) {
+        if (!r.isConfirmed) return;
+        var nuovo = r.value;
+        // si scrive solo se cambia qualcosa: confermare il valore proposto
+        // non trasforma «l'account del reparto» in una scelta esplicita
+        var daScrivere = nuovo !== attuale || !st.mittente;
+        Swal.fire({ title: 'Salvataggio…', allowOutsideClick: false, showConfirmButton: false, returnFocus: false, didOpen: function() { Swal.showLoading(); } });
+        var pSalva = (daScrivere && typeof window._sbSalvaMittenteMail === 'function') ? window._sbSalvaMittenteMail(nuovo) : Promise.resolve();
+        pSalva.then(function() {
+          if (daScrivere && typeof window._log === 'function') {
+            window._log('warning', 'mail-mittente', 'Mittente della mail dimissioni cambiato', 'Da: ' + (st.mittente || '(non impostato o non valido)') + '\nA: ' + nuovo);
+          }
+          return window._cassaforteStato(true);
+        }).then(function(st2) {
+          var ok = !!st2.autorizzato;
+          _cassaforteBadge(!ok);
+          if (ok) {
+            Swal.fire({
+              icon: 'success', title: 'Mittente impostato',
+              html: 'La mail delle dimissioni parte da <b>' + _testoHtml(nuovo) + '</b>.<br><small class="text-muted">'
+                + (st2.verificato === false
+                  ? 'Google non ha confermato i permessi in questo momento: verranno ricontrollati all\'invio.'
+                  : 'I permessi di invio sono già concessi.') + '</small>',
+              confirmButtonColor: '#00695c', timer: 3000, timerProgressBar: true, returnFocus: false
+            });
+            return;
+          }
+          Swal.fire({
+            icon: 'warning', title: 'Servono i permessi di invio',
+            html: '<div class="text-start" style="font-size:0.92rem;">Mittente impostato: <b>' + _testoHtml(nuovo) + '</b>.<br><br>Perché la mail possa partire da questo indirizzo, il suo account deve dare il permesso a Google: si fa <b>una volta sola</b> e vale per tutti i computer.</div>',
+            showCancelButton: true,
+            confirmButtonText: '<i class="bi bi-key-fill me-1"></i>Concedi i permessi',
+            cancelButtonText: 'Più tardi',
+            confirmButtonColor: '#00695c',
+            reverseButtons: true,
+            returnFocus: false
+          }).then(function(c) {
+            if (c.isConfirmed) window._cassaforteAutorizza({ stato: st2, diretto: true });
+          });
+        }).catch(function(e) {
+          Swal.fire({ icon: 'error', title: 'Mittente non salvato', html: '<div class="small text-start">' + _testoHtml(String((e && e.message) || e)) + '</div>', confirmButtonColor: '#d33', returnFocus: false });
+        });
+      });
+    }
 
     // ══════════════════════════════════════════════════════════════════
     // PATH A (dual-run) — sessione Supabase Auth ACCANTO al login GIS
@@ -9653,10 +9806,87 @@
     var _stato = {
       template: { destinatari:'', corpo:'', chiusura:'' },
       pazientiTutti: [],   // tutti i pazienti del DB (per checkbox)
-      ultimoInvio: null    // {ts, device_name, ...} se mail già inviata oggi
+      ultimoInvio: null,   // {ts, device_name, ...} se mail già inviata oggi
+      mittente: ''         // l'indirizzo da cui parte la mail: lo dice il server (permessi verificati)
     };
 
+    // PRIMA di mostrare la procedura: ci sono i permessi di invio per il
+    // mittente scelto in «Impostazioni email»? Lo dice il server. Se mancano
+    // li si chiede qui, e la procedura non compare finché non ci sono: così
+    // non si prepara una mail che poi non può partire.
     window.apriModalMailDimissioni = function() {
+      Swal.fire({
+        title: '<i class="bi bi-send-fill me-2 text-primary"></i>Invia mail dimissioni',
+        html: '<div class="text-center py-3"><div class="spinner-border text-secondary"></div><div class="mt-2 text-muted small">Controllo i permessi di invio…</div></div>',
+        showConfirmButton: false,
+        allowOutsideClick: false,
+        returnFocus: false
+      });
+      var pStato = (typeof window._cassaforteStato === 'function')
+        ? window._cassaforteStato(true)
+        : Promise.reject(new Error('funzione mail non disponibile: ricarica la pagina'));
+      pStato.then(function(st) {
+        // Il mittente lo dice il server. Un server non ancora aggiornato non
+        // ha la voce «mittente»: lì la mail parte dall'account del consenso.
+        var mitt = ('mittente' in st) ? (st.mittente || '') : (st.email || '');
+        if (st.autorizzato && st.verificato === false) {
+          Swal.fire({
+            icon: 'warning', title: 'Permessi di invio non verificabili',
+            html: 'Google non conferma in questo momento i permessi di invio' + (mitt ? ' per <b>' + _esc(mitt) + '</b>' : '') + '.<br>Riprova fra qualche minuto: finché non risponde la mail non può partire.'
+              + (st.problema ? '<br><small class="text-muted">' + _esc(st.problema) + '</small>' : ''),
+            confirmButtonColor: '#37474f', returnFocus: false
+          });
+          return;
+        }
+        if (st.autorizzato && mitt) {
+          _stato.mittente = mitt;
+          _apriModalMailCaricamento();
+          return;
+        }
+        if (!mitt) {
+          Swal.fire({
+            icon: 'warning', title: 'Mittente non disponibile',
+            html: 'Non riesco a leggere da quale indirizzo deve partire la mail.<br>Se la sessione è scaduta ricarica la pagina (F5); altrimenti impostalo da <b>⚙ → Impostazioni email</b>.',
+            showCancelButton: true, confirmButtonText: 'Apri Impostazioni email', cancelButtonText: 'Annulla',
+            confirmButtonColor: '#00695c', reverseButtons: true, returnFocus: false
+          }).then(function(c) {
+            if (c.isConfirmed && typeof window._apriImpostazioniEmail === 'function') window._apriImpostazioniEmail();
+          });
+          return;
+        }
+        Swal.fire({
+          icon: 'warning',
+          title: 'Servono i permessi di invio',
+          html: '<div class="text-start" style="font-size:0.92rem;">La mail delle dimissioni parte da <b>' + _esc(mitt) + '</b>, ma Google non ha ancora il permesso di spedire a suo nome.<br><br>Si concede <b>una volta sola</b> e vale per tutti i computer. Finché manca, la mail non può partire.<br><small class="text-muted">Se l\'indirizzo non è quello giusto: «Cambia mittente».</small></div>',
+          showCancelButton: true,
+          showDenyButton: true,
+          confirmButtonText: '<i class="bi bi-key-fill me-1"></i>Concedi i permessi',
+          denyButtonText: '<i class="bi bi-envelope-at me-1"></i>Cambia mittente',
+          cancelButtonText: 'Annulla',
+          confirmButtonColor: '#00695c',
+          denyButtonColor: '#546e7a',
+          reverseButtons: true,
+          returnFocus: false
+        }).then(function(c) {
+          if (c.isDenied) {
+            if (typeof window._apriImpostazioniEmail === 'function') window._apriImpostazioniEmail();
+            return;
+          }
+          if (!c.isConfirmed || typeof window._cassaforteAutorizza !== 'function') return;
+          window._cassaforteAutorizza({ stato: st, diretto: true }).then(function(ok) {
+            if (ok) window.apriModalMailDimissioni();
+          });
+        });
+      }).catch(function(e) {
+        Swal.fire({
+          icon: 'error', title: 'Permessi di invio non verificabili',
+          html: 'Non riesco a sapere dal server se la mail può partire: controlla la connessione e riprova.<br><small class="text-muted">' + _esc(String((e && e.message) || e)) + '</small>',
+          confirmButtonColor: '#37474f', returnFocus: false
+        });
+      });
+    };
+
+    function _apriModalMailCaricamento() {
       // Carica in parallelo: template + lista pazienti + check oggi
       var pTpl   = (typeof window._sbCaricaTemplateMail === 'function') ? window._sbCaricaTemplateMail()        : Promise.resolve({destinatari:'',corpo:'',chiusura:''});
       var pPaz   = (typeof _sbGetPazienti === 'function')                ? _sbGetPazienti()                      : Promise.resolve([]);
@@ -9684,7 +9914,7 @@
           });
         }
       });
-    };
+    }
 
     function _renderModalMail() {
       var dom    = _stato.template;
@@ -9727,6 +9957,10 @@
 
       var bodyHtml =
         warningHtml +
+        '<div class="text-start mb-2" style="font-size:0.85rem;">' +
+          '<label class="form-label fw-bold mb-1" for="mailDimMittente">Mittente <small class="text-muted">(si cambia da ⚙ → Impostazioni email)</small></label>' +
+          '<input id="mailDimMittente" class="form-control form-control-sm" value="' + _esc(_stato.mittente || '') + '" readonly disabled style="background:#eceff1;color:#37474f;">' +
+        '</div>' +
         '<div class="text-start mb-2" style="font-size:0.85rem;">' +
           '<label class="form-label fw-bold mb-1">Destinatari <small class="text-muted">(separati da virgola o ; — più indirizzi consentiti)</small></label>' +
           '<input id="mailDimDest" class="form-control form-control-sm" placeholder="es. primario@email.it, coord@email.it" value="' + _esc(dom.destinatari) + '">' +
@@ -9855,10 +10089,11 @@
         icon: 'question',
         title: 'Confermi l\'invio?',
         html: '<div class="text-start small">' +
+              '<p class="mb-1"><b>Mittente:</b> ' + _esc(_stato.mittente || '') + '</p>' +
               '<p class="mb-1"><b>Oggetto:</b> ' + _esc(d.oggetto) + '</p>' +
               '<p class="mb-1"><b>Destinatari:</b> ' + emails.length + '</p>' +
               '<p class="mb-1"><b>Pazienti inclusi:</b> ' + d.pazientiSel.length + '</p>' +
-              '<p class="mb-0 text-muted">La mail parte dall\'account Google del reparto (resta copia in "Inviati").</p>' +
+              '<p class="mb-0 text-muted">Una copia resta nella posta inviata del mittente.</p>' +
               '</div>',
         showCancelButton: true,
         confirmButtonText: 'Sì, invia',
@@ -9867,25 +10102,42 @@
         reverseButtons: true
       }).then(function(c) {
         if (!c.isConfirmed) {
-          // Riapri il modal precedente con i dati attuali
-          _renderModalMail();
-          // Ripristina valori (i campi 'Testo iniziale' e 'Chiusura' non
-          // esistono piu' nel modal: il corpo della mail e' interamente
-          // nell'anteprima editabile, che viene rigenerata dal template)
-          setTimeout(function() {
-            var dEl = document.getElementById('mailDimDest'); if (dEl) dEl.value = d.dest;
-            var oEl = document.getElementById('mailDimOggetto'); if (oEl) oEl.value = d.oggetto;
-            d.pazientiSel.forEach(function(p) {
-              var cb = document.querySelector('.mail-dim-cb[data-letto="'+_cssVal(p.Letto)+'"]');
-              if (cb) cb.checked = true;
-            });
-            // Se l'utente aveva modificato l'anteprima, la ripristino come era
-            var aEl = document.getElementById('mailDimAnteprima');
-            if (aEl && d.htmlBody) aEl.innerHTML = d.htmlBody;
-          }, 50);
+          _riapriProceduraMail(d);
           return;
         }
         _inviaConToken(emails, d);
+      });
+    }
+
+    // Annullata la conferma si torna alla procedura com'era. La conferma ha
+    // preso il posto della finestra: va riaperta (Swal.update su una finestra
+    // chiusa non fa nulla) e riempita con ciò che l'utente aveva davanti.
+    function _riapriProceduraMail(d) {
+      Swal.fire({
+        title: '<i class="bi bi-send-fill me-2 text-primary"></i>Invia mail dimissioni',
+        html: '<div class="text-center py-3"><div class="spinner-border text-secondary"></div></div>',
+        width: '85%',
+        customClass: { popup: 'mail-dim-modal' },
+        showConfirmButton: false,
+        allowOutsideClick: false,
+        didOpen: function() {
+          _renderModalMail();
+          var dEl = document.getElementById('mailDimDest'); if (dEl) dEl.value = d.dest;
+          var oEl = document.getElementById('mailDimOggetto'); if (oEl) oEl.value = d.oggetto;
+          var scelti = {};
+          d.pazientiSel.forEach(function(p) { scelti[String(p.Letto)] = true; });
+          document.querySelectorAll('.mail-dim-cb').forEach(function(cb) { cb.checked = !!scelti[cb.getAttribute('data-letto')]; });
+          var aEl = document.getElementById('mailDimAnteprima');
+          if (aEl) {
+            // L'anteprima torna quella di prima. Se era stata ritoccata a mano
+            // resta «modificata»: cambiare la selezione chiederà conferma
+            // prima di rigenerarla.
+            var generata = document.createElement('div');
+            generata.innerHTML = _buildBodyHtml(_getTestoInizialeFisso(), d.pazientiSel, _stato.template.chiusura || '');
+            aEl.innerHTML = d.htmlBody;
+            if (generata.innerHTML !== d.htmlBody) aEl.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+        }
       });
     }
 
@@ -9905,7 +10157,7 @@
         '<div style="font-family:Arial,sans-serif;font-size:14px;color:#222;line-height:1.5;">' +
           d.htmlBody +
         '</div>';
-      window._cassaforteInvia(emails, d.oggetto, htmlBody)
+      window._cassaforteInvia(emails, d.oggetto, htmlBody, _stato.mittente)
         .then(function() {
           if (typeof window._sbSalvaTemplateMail === 'function') {
             window._sbSalvaTemplateMail(d.dest, d.oggetto, '', '').catch(function(){});
@@ -9914,13 +10166,14 @@
             window._log('info', 'mail-dimissioni',
               'Mail dimissioni inviata (' + d.pazientiSel.length + ' pazienti, ' + emails.length + ' destinatari)',
               'Destinatari: ' + emails.join(', ') +
+              '\nMittente: ' + (_stato.mittente || '?') +
               '\nInvio: server di reparto (cassaforte)' +
               '\nPazienti: ' + d.pazientiSel.map(function(p){return 'L.'+p.Letto+' '+(p.Nome||'-');}).join('; '));
           }
           Swal.fire({
             icon: 'success', title: 'Mail inviata!',
             html: 'Mail inviata a <strong>' + emails.length + '</strong> destinatari.<br>' +
-                  '<small class="text-muted">Copia nella casella "Inviati" dell\'account di reparto.</small>',
+                  '<small class="text-muted">Copia nella posta inviata di ' + _esc(_stato.mittente || 'chi l\'ha spedita') + '.</small>',
             timer: 3500, showConfirmButton: false, timerProgressBar: true
           });
         })
@@ -9929,9 +10182,9 @@
           var daAutorizzare = !!(e && e.riautorizzare) || /non configurata|revocata/i.test(msg);
           Swal.fire({
             icon: 'error',
-            title: daAutorizzare ? 'Serve l\'autorizzazione del reparto' : 'Errore invio',
+            title: daAutorizzare ? 'Mancano i permessi di invio' : 'Errore invio',
             html: daAutorizzare
-              ? 'La mail parte dal server del reparto, ma l\'autorizzazione Google non è attiva.<br><b>Premi il bottone giallo «Autorizza Google»</b> in alto nella barra: si fa una volta sola e vale per tutti i PC.'
+              ? 'La mail non è partita: Google non ha (più) il permesso di spedire a nome del mittente.<br>Riapri <b>«Invia mail dimissioni»</b>: ti verrà chiesto di concederlo, una volta sola per tutti i computer.'
               : '<div class="text-start small">' + _esc(msg) + '</div>',
             confirmButtonColor: '#d33'
           });

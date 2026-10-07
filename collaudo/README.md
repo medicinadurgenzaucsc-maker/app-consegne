@@ -9,7 +9,7 @@ solo il database a cui il sito si collega.
 | Sito               | `medicinadurgenzaucsc-maker.github.io/app-consegne/`    | `gistech2026.github.io/app-consegne/`        |
 | Repository         | `medicinadurgenzaucsc-maker/app-consegne` (`origin`)    | `gistech2026/app-consegne` (`collaudo`)      |
 | Progetto Supabase  | `ifmmcvxzhwdkmzhsxcvb`                                  | `rqvohwpthhumydpbwktq`                       |
-| Mail dimissioni    | parte davvero (Gmail del reparto)                       | registrata in `posta_simulata`, mai spedita  |
+| Mail dimissioni    | parte davvero (dal mittente scelto in «Impostazioni email») | parte davvero solo fra indirizzi di prova; simulata nelle prove automatiche |
 
 Il sito sceglie il database dal nome host (`_AMBIENTI` in `docs/js/api.js`): è
 collaudo solo su `gistech2026.github.io` e su `localhost`; qualunque altro
@@ -39,14 +39,18 @@ sul progetto di collaudo, poi identiche in produzione.
   dimostra confrontando le due descrizioni; `baseline.sql` è lo script generato
   dalla produzione il 04/10/2026.
 - **Configurazione**: tipologie e scale di valutazione copiate identiche; link
-  utili con i documenti privati ridotti al solo sito; destinatari della mail
-  sostituiti con indirizzi `example.com`.
+  utili con i documenti privati ridotti al solo sito. Mittente e destinatari
+  della mail sono **indirizzi di prova di chi gestisce l'app** (impostazioni
+  `MAIL_DIMISSIONI_MITTENTE` e `MAIL_DIMISSIONI_DESTINATARI`): `copia-config.js`
+  non li tocca, così gli indirizzi del reparto non arrivano mai nel collaudo.
 - **Pazienti**: 28 letti come il reparto, 24 occupati da pazienti inventati,
   generati facendo girare le funzioni vere dell'app (`generatore-pazienti.js`).
   Nessuna riga di pazienti veri è mai stata copiata.
 - **In più rispetto alla produzione**, per scelta: la funzione di RLS
-  automatica (`rls_auto_enable`), la tabella `posta_simulata` e la funzione
-  `google-finto`, che fa la parte di Google.
+  automatica (`rls_auto_enable`), la tabella `posta_simulata`, la funzione
+  `google-finto` che sta fra `google-token` e Google, le variabili `GOOGLE_*`
+  che la fanno chiamare, e nella cassaforte `google_oauth` le righe `prova` e
+  `reparto_vero` (vedi «La mail nel collaudo»).
 
 ## Strumenti (`collaudo/strumenti/`)
 
@@ -67,8 +71,9 @@ repository non c'è alcun segreto.
 | `controlli-rilascio.js [riferimento]` | Controlli statici prima di ogni pubblicazione: sintassi, segnalibri collassati e loro versione, tag script al completo, impronta della libreria del filtro, service worker, uscita solo locale (`signOut` con `scope: 'local'`), versione nel menu uguale a `CACHE_NAME`. Confronta con `origin/master` (la produzione) se non si indica altro. |
 | `confronta-filtro.js [produzione\|collaudo] [--backup N]` | Prima di pubblicare una versione che introduce o cambia il filtro dell'HTML: controlla che le schede (e gli ultimi N backup) non usino tag, attributi, classi o stili che il filtro toglierebbe. L'analisi gira dentro il database: escono solo nomi e conteggi, mai il testo. `--autoprova` verifica lo strumento stesso su un contenuto costruito apposta. |
 | `prova-uscita.js` | Dimostra con sessioni vere che «Esci» su un dispositivo non scollega gli altri: utente provvisorio, tre sessioni, uscita `local` dalla prima, le altre due restano; controprova con `global`. L'utente viene eliminato alla fine. |
-| `funzioni-collaudo.js pubblica\|configura` | Pubblica `google-token` e `google-finto` nel collaudo e ne imposta le variabili. |
-| `prova-funzione-mail.js` | 25 prove della funzione mail contro il finto Google. |
+| `funzioni-collaudo.js pubblica\|configura` | Pubblica `google-token` e `google-finto` nel collaudo (dopo averne controllato la sintassi) e ne imposta variabili e credenziali finte. |
+| `cassaforte-collaudo.js stato\|finta\|vera` | Dice in che stato è la cassaforte della mail del collaudo e la passa dalle credenziali vere a quelle finte e ritorno. Lo scambio avviene dentro il database: i token veri non passano dallo script. |
+| `prova-funzione-mail.js` | 54 prove della funzione mail contro il finto Google: chi può chiamare (anche il finto Google stesso), mittente scelto, consenso dell'account giusto, verifica dal vivo dei permessi, mittente mostrato diverso da quello in uso. Mette da parte il consenso vero e lo rimette alla fine. |
 | `supabase-accesso.js`, `github-accesso.js` | Autorizzazione «a codice» dei due account di collaudo, senza far passare chiavi dalla chat. |
 
 ## Provare in locale da utente collegato
@@ -107,12 +112,20 @@ Dentro la pagina dell'app si caricano, dalla console, gli script di
 | `ambiente` | la pagina lavora sul collaudo e solo lì; reparto finto al completo; nessun errore |
 | `trak` | i due segnalibri veri, eseguiti sul finto TrakCare, leggono ciò che il catalogo descrive; reimportare non cambia nulla; giorni simulati |
 | `xss` | ciò che arriva da fuori (indirizzo, righe del database, backup, memoria del browser) non diventa mai codice né markup attivo; i contenuti leciti restano identici; senza filtro l'app si ferma |
+| `mail` | «Impostazioni email» (mittente precompilato, convalida, registro); senza i permessi del mittente la procedura di invio non compare e vengono chiesti; il consenso di un altro account è rifiutato; il mittente è mostrato e non modificabile; annullare la conferma riporta alla procedura com'era; se il mittente cambia a finestra aperta la mail non parte; risposte anomale del server |
 
 La sezione `xss` scrive sul letto libero «5», crea e cancella righe di prova
 (un letto, una tipologia, due backup, due link) e alla fine rimette tutto
 com'era. Per essere sicuri che le prove misurino davvero, le si rilancia dopo
 aver neutralizzato a mano una protezione (`window._testoHtml = String` oppure
 `window._pulisciHtml = String`): devono fallire.
+
+La sezione `mail` gira con le credenziali finte: il banco (`/banco/cassaforte`)
+mette da parte il consenso vero e lo rimette alla fine, e al posto della
+finestra di Google la prova risponde con un codice che il finto Google capisce.
+Nessuna mail parte. A pannello del browser nascosto una finestra già chiusa può
+restare nel DOM (il browser non consegna la fine dell'animazione): per questo le
+prove guardano la classe `swal2-hide` e non `Swal.isVisible()`.
 
 **Prova di fumo, da fare a mano prima di ogni rilascio** (anche sul sito di
 collaudo pubblicato, dove il service worker è attivo):
@@ -122,6 +135,35 @@ collaudo pubblicato, dove il service worker è attivo):
 2. `…/?toast=info&msg=%3Cimg%20src%3Dx%20onerror%3D%22alert(document.domain)%22%3E`:
    non deve aprirsi alcuna finestra; a utente collegato il messaggio compare
    nel toast come testo, tale e quale.
+
+## La mail nel collaudo
+
+La funzione `google-token` è la stessa della produzione; nel collaudo le
+variabili `GOOGLE_URL_*` le fanno chiamare `google-finto` al posto di Google, e
+`GOOGLE_CLIENT_ID` è il client Google del collaudo. `google-finto` gira
+richieste a Google e non verifica il JWT: perché non diventi un passaggio aperto
+risponde solo sotto un indirizzo che contiene una chiave casuale
+(`…/google-finto/k/<chiave>/…`), scritta da `funzioni-collaudo.js configura`
+nelle sole variabili delle due funzioni. Decide poi dalle credenziali che riceve:
+
+- **credenziali finte** (client secret e token delle prove) → fa la parte di
+  Google e «spedisce» scrivendo in `posta_simulata` (`reale = false`);
+- **credenziali vere** (il consenso dato davvero dal sito di collaudo) → gira la
+  richiesta a Google: la mail **parte davvero**, dal mittente di prova ai
+  destinatari di prova, e in `posta_simulata` ne resta una copia (`reale = true`).
+
+La cassaforte `google_oauth` ha quindi tre righe: `reparto` (quella che la
+funzione usa), `prova` (le credenziali finte, create da `funzioni-collaudo.js
+configura`) e, solo mentre girano le prove, `reparto_vero` (il consenso vero
+messo da parte). A riposo la riga `reparto` contiene il consenso vero.
+
+Il **consenso vero** lo dà una persona, una volta, dal sito di collaudo: il
+bottone giallo «Autorizza Google» chiede il client secret del client OAuth del
+collaudo e poi apre la finestra di Google, dove va scelto l'account impostato
+come mittente. Nel progetto Google Cloud del collaudo devono essere attive le
+Gmail API; finché la schermata di consenso è «In fase di test» il mittente deve
+essere fra gli utenti di prova e il consenso scade dopo 7 giorni (l'app se ne
+accorge e lo richiede prima di mostrare la procedura di invio).
 
 ## Finto TrakCare e sito di servizio
 

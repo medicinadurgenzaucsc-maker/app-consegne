@@ -869,11 +869,19 @@
         await chiudiSwal();
         return esito;
       });
-      await prova(S, 'finestra della mail dimissioni (elenco dei pazienti) — senza inviare nulla', async function () {
+      await prova(S, 'finestra della mail dimissioni (mittente ed elenco dei pazienti) — senza inviare nulla', async function () {
         window.__xss = [];
-        apriModalMailDimissioni();
-        await finche(function () { return document.querySelector('.mail-dim-cb'); }, 9000);
+        // I permessi di invio li «conferma» un server simulato: la prova non deve
+        // dipendere dalla cassaforte del collaudo. Il mittente che dichiara è ostile.
+        var mittenteOstile = 'ROSSI ' + esca('mittente');
+        fingiStatoMail({ configurato: true, autorizzato: true, verificato: true, email: 'x@example.com', mittente: mittenteOstile });
+        try {
+          apriModalMailDimissioni();
+          await finche(function () { return document.querySelector('.mail-dim-cb'); }, 9000);
+        } finally { statoMailVero(); }
         var esito = await controllaSwal('mail dimissioni', 'ROSSI <img');
+        var campo = document.getElementById('mailDimMittente');
+        if (esito === true && !(campo && campo.value === mittenteOstile)) esito = 'mail dimissioni: il mittente non è mostrato come testo';
         await chiudiSwal();
         return esito;
       });
@@ -1197,7 +1205,355 @@
     });
   }
 
-  var SEZIONI = { ambiente: sezioneAmbiente, trak: sezioneTrak, xss: sezioneXss };
+  // ══════════════════════════════════════════════════════════════════════
+  // MAIL DIMISSIONI: il mittente scelto in «Impostazioni email» e i permessi
+  // di invio, verificati PRIMA di mostrare la procedura.
+  // La cassaforte del collaudo passa alle credenziali finte (il banco mette da
+  // parte il consenso vero e lo rimette alla fine): nessuna mail parte davvero.
+  // Al posto della finestra di Google c'è un codice che il finto Google capisce.
+  // ══════════════════════════════════════════════════════════════════════
+
+  // Il server della mail risponde alle richieste di «stato» ciò che decide la
+  // prova (tutte le altre chiamate passano): serve a mettere la pagina davanti
+  // a risposte che il collaudo non sa produrre a comando.
+  var _fetchVero = null;
+  function fingiStatoMail(risposta) {
+    if (!_fetchVero) _fetchVero = window.fetch;
+    var vero = _fetchVero;
+    window.fetch = function (u, o) {
+      if (String(u).indexOf('/functions/v1/google-token') >= 0 && o && /"azione":"stato"/.test(String(o.body || ''))) {
+        return Promise.resolve(new Response(JSON.stringify(risposta), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+      }
+      return vero.apply(window, arguments);
+    };
+  }
+  function statoMailVero() { if (_fetchVero) { window.fetch = _fetchVero; _fetchVero = null; } }
+
+  async function sezioneMail() {
+    var S = 'mail';
+    var ALTRO = 'mittente-prova@example.com', TERZO = 'terzo-mittente@example.com';
+    var CHIAVI = ['MAIL_DIMISSIONI_MITTENTE', 'MAIL_DIMISSIONI_DESTINATARI', 'MAIL_DIMISSIONI_OGGETTO', 'MAIL_DIMISSIONI_CORPO', 'MAIL_DIMISSIONI_CHIUSURA'];
+    var segreto = null, prima = {}, letto = false, gisVero = null, richieste = [], prossimoCodice = null, reparto = '';
+    var erroriPrima = (window.__erroriBanco || []).length, inizio = Date.now();
+    var imp = async function (chiave) {
+      var r = await _sb.from('impostazioni').select('valore').eq('chiave', chiave).maybeSingle();
+      if (r.error) throw new Error(r.error.message);
+      return r.data ? r.data.valore : null;
+    };
+    var scriviImp = async function (chiave, valore) {
+      var r = (valore === null || valore === undefined)
+        ? await _sb.from('impostazioni').delete().eq('chiave', chiave)
+        : await _sb.from('impostazioni').upsert([{ chiave: chiave, valore: valore }], { onConflict: 'chiave' });
+      if (r.error) throw new Error(r.error.message);
+    };
+    var come = function (email) { return segreto + '.come.' + btoa(email).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); };
+    // La finestra Swal aperta ADESSO. Una finestra chiusa può restare nel DOM
+    // (classe swal2-hide) finché il browser non consegna la fine dell'animazione,
+    // cosa che a pannello nascosto non fa: per l'app è chiusa, e così per le prove.
+    var aperta = function () { var p = Swal.getPopup(); return (p && Swal.isVisible() && !p.classList.contains('swal2-hide')) ? p : null; };
+    var titolo = function () { var p = aperta(), t = p ? p.querySelector('.swal2-title') : null; return t ? t.textContent.trim() : ''; };
+    var testoFinestra = function () { var p = aperta(); return p ? p.textContent.replace(/\s+/g, ' ').trim() : ''; };
+    var attendiTitolo = function (re, ms) { return finche(function () { return re.test(titolo()) ? titolo() : false; }, ms || 15000); };
+    var bottoneGiallo = function () { var li = document.getElementById('navItemCassaforte'); return !!li && getComputedStyle(li).display !== 'none'; };
+    var procedura = function () { var p = aperta(); return !!(p && (p.querySelector('#mailDimDest') || p.querySelector('#mailDimAnteprima'))); };
+    var postaDi = async function (oggetto) { var r = await fetch('/banco/posta?oggetto=' + encodeURIComponent(oggetto)); return r.ok ? await r.json() : { errore: 'HTTP ' + r.status }; };
+    // riempie la procedura e arriva alla conferma; restituisce '' oppure il motivo per cui non ci riesce
+    var compila = async function (oggetto) {
+      if (!document.getElementById('mailDimDest')) return 'procedura non aperta: «' + titolo() + '»';
+      document.getElementById('mailDimDest').value = 'destinatario1@example.com';
+      document.getElementById('mailDimOggetto').value = oggetto;
+      if (!document.querySelector('.mail-dim-cb:checked')) {
+        var cb = document.querySelector('.mail-dim-cb'); if (!cb) return 'nessun letto in elenco';
+        cb.checked = true; cb.dispatchEvent(new Event('change', { bubbles: true })); await attendi(250);
+      }
+      Swal.getConfirmButton().click();
+      if (!(await attendiTitolo(/Confermi l.invio/))) return 'conferma non comparsa: «' + titolo() + '» ' + testoFinestra().slice(0, 160);
+      return '';
+    };
+
+    try {
+      var rs = await fetch('/banco/cassaforte?modo=finta', { method: 'POST' });
+      if (rs.ok) segreto = (await rs.json()).segreto;
+    } catch (e) {}
+    await prova(S, 'il banco passa la cassaforte del collaudo alle credenziali finte', function () { return !!segreto || 'credenziali finte non disponibili (banco.js aggiornato? funzioni-collaudo.js configura?)'; });
+    if (!segreto) return;
+
+    try {
+      for (var i = 0; i < CHIAVI.length; i++) prima[CHIAVI[i]] = await imp(CHIAVI[i]);
+      letto = true;
+      reparto = String((await imp('ACCOUNT_LOGIN')) || '').toLowerCase().trim();
+      await scriviImp('MAIL_DIMISSIONI_MITTENTE', null);          // si parte dal caso «mai impostato»
+
+      var haGoogle = typeof google !== 'undefined' && !!google.accounts && !!google.accounts.oauth2;
+      await prova(S, 'la libreria di Google è caricata (serve alla finestra del consenso)', function () { return haGoogle || 'accounts.google.com non raggiungibile: le prove del consenso non possono girare'; });
+      if (!haGoogle) return;
+      gisVero = google.accounts.oauth2.initCodeClient;
+      google.accounts.oauth2.initCodeClient = function (cfg) {   // la finestra di Google: risponde ciò che decide la prova
+        richieste.push({ login_hint: cfg.login_hint, scope: cfg.scope, client_id: cfg.client_id });
+        return { requestCode: function () {
+          var c = prossimoCodice; prossimoCodice = null;
+          setTimeout(function () { if (c) cfg.callback({ code: c }); else cfg.error_callback({ type: 'popup_closed' }); }, 60);
+        } };
+      };
+
+      await prova(S, 'menu della rotellina: voce «Impostazioni email»', function () {
+        var a = document.querySelector('a.dropdown-item[onclick="_apriImpostazioniEmail()"]');
+        return (!!a && /Impostazioni email/.test(a.textContent)) || 'voce assente';
+      });
+
+      await prova(S, 'Impostazioni email: precompilata con l\'indirizzo del reparto, permessi già concessi', async function () {
+        window._apriImpostazioniEmail();
+        var campo = await finche(function () { return document.getElementById('impMailMittente'); }, 15000);
+        if (!campo) return 'la finestra non si è aperta: «' + titolo() + '»';
+        var p = document.getElementById('impMailPermessi').textContent;
+        if (!reparto || campo.value !== reparto) return 'campo «' + campo.value + '» invece di «' + reparto + '»';
+        return (/: concessi/.test(p) && p.indexOf(reparto) >= 0) || 'stato dei permessi: ' + p;
+      });
+
+      await prova(S, 'un indirizzo non valido non viene salvato', async function () {
+        var campo = document.getElementById('impMailMittente'); if (!campo) return 'finestra chiusa';
+        campo.value = 'non un indirizzo';
+        Swal.clickConfirm(); await attendi(600);
+        var v = document.querySelector('.swal2-validation-message');
+        if (!(v && getComputedStyle(v).display !== 'none')) return 'nessun messaggio di errore';
+        return (!!document.getElementById('impMailMittente') && (await imp('MAIL_DIMISSIONI_MITTENTE')) === null) || 'salvato lo stesso';
+      });
+
+      await prova(S, 'nuovo mittente: salvato in minuscolo, i permessi risultano da concedere e compare il bottone giallo', async function () {
+        var campo = document.getElementById('impMailMittente'); if (!campo) return 'finestra chiusa';
+        campo.value = '  Mittente-Prova@Example.com ';
+        Swal.clickConfirm();
+        if (!(await attendiTitolo(/Servono i permessi di invio/))) return 'finestra attesa non comparsa: «' + titolo() + '»';
+        var salvato = await imp('MAIL_DIMISSIONI_MITTENTE'), st = await window._cassaforteStato(true);
+        if (salvato !== ALTRO) return 'salvato «' + salvato + '»';
+        if (st.autorizzato !== false || st.mittente !== ALTRO || st.verificato !== true) return 'stato del server: ' + JSON.stringify(st);
+        return bottoneGiallo() || 'il bottone giallo non è comparso';
+      });
+
+      await prova(S, '«Più tardi»: nessuna finestra di Google', async function () {
+        Swal.clickCancel(); await attendi(700);
+        return (richieste.length === 0 && !aperta()) || 'richieste a Google: ' + richieste.length + ', finestra «' + titolo() + '»';
+      });
+
+      await prova(S, 'il cambio di mittente resta nel registro', async function () {
+        return (await finche(async function () {
+          var q = await _sb.from('logs').select('descrizione').eq('tipo', 'mail-mittente').gte('ts', inizio).order('ts', { ascending: false }).limit(1);
+          return !!(q.data && q.data[0] && String(q.data[0].descrizione).indexOf('A: ' + ALTRO) >= 0 && String(q.data[0].descrizione).indexOf('Da: ' + reparto) >= 0);
+        }, 8000, 500)) || 'riga non trovata';
+      });
+
+      await prova(S, 'Invia mail dimissioni senza permessi: li chiede e NON mostra la procedura', async function () {
+        window.apriModalMailDimissioni();
+        if (!(await attendiTitolo(/Servono i permessi di invio/))) return 'finestra attesa non comparsa: «' + titolo() + '»';
+        if (procedura()) return 'la procedura è visibile';
+        return testoFinestra().indexOf(ALTRO) >= 0 || 'non dice per quale indirizzo: ' + testoFinestra().slice(0, 160);
+      });
+
+      await prova(S, '«Cambia mittente» dalla richiesta dei permessi apre Impostazioni email', async function () {
+        var b = Swal.getDenyButton();
+        if (!b || getComputedStyle(b).display === 'none' || !/Cambia mittente/.test(b.textContent)) return 'bottone assente';
+        Swal.clickDeny();
+        var campo = await finche(function () { return document.getElementById('impMailMittente'); }, 15000);
+        if (!campo) return 'Impostazioni email non si è aperta: «' + titolo() + '»';
+        if (campo.value !== ALTRO || richieste.length !== 0) return 'campo «' + campo.value + '», richieste a Google ' + richieste.length;
+        await chiudiSwal();
+        window.apriModalMailDimissioni();                // si torna alla richiesta dei permessi per le prove che seguono
+        return !!(await attendiTitolo(/Servono i permessi di invio/)) || 'la richiesta dei permessi non ricompare: «' + titolo() + '»';
+      });
+
+      await prova(S, 'consenso dato con un altro account: rifiutato, procedura ancora nascosta', async function () {
+        prossimoCodice = segreto;                       // il finto Google risponde: ha acconsentito l'account del reparto
+        Swal.clickConfirm();
+        if (!(await attendiTitolo(/Permessi non registrati/))) return 'finestra attesa non comparsa: «' + titolo() + '»';
+        var testo = testoFinestra();
+        if (richieste.length !== 1 || richieste[0].login_hint !== ALTRO) return 'a Google non è stato suggerito il mittente: ' + JSON.stringify(richieste);
+        if (!/gmail\.send/.test(richieste[0].scope)) return 'permesso richiesto: ' + richieste[0].scope;
+        if (procedura()) return 'la procedura è visibile';
+        return (testo.indexOf('account non ammesso') >= 0 && testo.indexOf(reparto) >= 0) || 'messaggio: ' + testo.slice(0, 220);
+      });
+
+      await prova(S, 'finestra di Google chiusa senza consenso: niente procedura', async function () {
+        await chiudiSwal();
+        window.apriModalMailDimissioni();
+        if (!(await attendiTitolo(/Servono i permessi di invio/))) return 'finestra attesa non comparsa: «' + titolo() + '»';
+        prossimoCodice = null;                          // l'utente chiude la finestra di Google
+        Swal.clickConfirm();
+        if (!(await attendiTitolo(/Permessi non concessi/))) return 'esito: «' + titolo() + '»';
+        return !procedura() || 'la procedura è visibile';
+      });
+
+      await prova(S, 'consenso dato con l\'account del mittente: la procedura compare, col mittente non modificabile', async function () {
+        await chiudiSwal();
+        window.apriModalMailDimissioni();
+        if (!(await attendiTitolo(/Servono i permessi di invio/))) return 'finestra attesa non comparsa: «' + titolo() + '»';
+        prossimoCodice = come(ALTRO);
+        Swal.clickConfirm();
+        await finche(function () { return /Permessi concessi/.test(titolo()) || !!document.getElementById('mailDimMittente'); }, 20000);
+        if (/Permessi concessi/.test(titolo())) Swal.clickConfirm();      // senza aspettare che si chiuda da sola
+        var campo = await finche(function () { return document.getElementById('mailDimMittente'); }, 25000);
+        if (!campo) return 'la procedura non è comparsa: «' + titolo() + '» ' + testoFinestra().slice(0, 160);
+        if (campo.value !== ALTRO) return 'mittente mostrato «' + campo.value + '»';
+        if (!(campo.readOnly && campo.disabled)) return 'il campo del mittente è modificabile';
+        return (procedura() && !bottoneGiallo()) || 'manca il resto della procedura, o il bottone giallo è rimasto';
+      });
+
+      await prova(S, 'annullare la conferma riporta alla procedura com\'era (destinatari, oggetto, selezione, anteprima ritoccata)', async function () {
+        var caselle = document.querySelectorAll('.mail-dim-cb');
+        if (caselle.length < 3) return 'servono almeno tre letti in elenco';
+        // selezione scelta a mano: solo il secondo e il terzo letto
+        for (var n = 0; n < caselle.length; n++) {
+          var voluta = (n === 1 || n === 2);
+          if (caselle[n].checked !== voluta) { caselle[n].checked = voluta; caselle[n].dispatchEvent(new Event('change', { bubbles: true })); }
+        }
+        await attendi(250);
+        var ante = document.getElementById('mailDimAnteprima');
+        ante.insertAdjacentHTML('beforeend', '<p>Riga aggiunta a mano dalla prova</p>');
+        ante.dispatchEvent(new Event('input', { bubbles: true }));
+        var corpoPrima = ante.innerHTML, lettiPrima = [caselle[1].getAttribute('data-letto'), caselle[2].getAttribute('data-letto')].join(',');
+        document.getElementById('mailDimDest').value = 'primo@example.com; secondo@example.com';
+        document.getElementById('mailDimOggetto').value = 'Oggetto della prova di ritorno';
+        Swal.getConfirmButton().click();
+        if (!(await attendiTitolo(/Confermi l.invio/))) return 'conferma non comparsa: «' + titolo() + '» ' + testoFinestra().slice(0, 160);
+        Swal.clickCancel();
+        var campo = await finche(function () { return procedura() ? document.getElementById('mailDimDest') : false; }, 8000);
+        if (!campo) return 'la procedura non è tornata: «' + titolo() + '»';
+        await attendi(200);
+        var lettiDopo = Array.prototype.map.call(document.querySelectorAll('.mail-dim-cb:checked'), function (c) { return c.getAttribute('data-letto'); }).join(',');
+        var guai = [];
+        if (campo.value !== 'primo@example.com; secondo@example.com') guai.push('destinatari «' + campo.value + '»');
+        if (document.getElementById('mailDimOggetto').value !== 'Oggetto della prova di ritorno') guai.push('oggetto «' + document.getElementById('mailDimOggetto').value + '»');
+        if (lettiDopo !== lettiPrima) guai.push('selezione ' + lettiDopo + ' invece di ' + lettiPrima);
+        if (document.getElementById('mailDimAnteprima').innerHTML !== corpoPrima) guai.push('anteprima diversa');
+        if (document.getElementById('mailDimMittente').value !== ALTRO) guai.push('mittente «' + document.getElementById('mailDimMittente').value + '»');
+        // l'anteprima era stata ritoccata: cambiare la selezione deve chiedere prima di rigenerarla
+        var prima0 = document.querySelectorAll('.mail-dim-cb')[0];
+        prima0.checked = true; prima0.dispatchEvent(new Event('change', { bubbles: true }));
+        if (!(await attendiTitolo(/Rigenerare l.anteprima/, 4000))) guai.push('nessuna domanda prima di rigenerare un\'anteprima ritoccata');
+        return guai.length ? guai.join(' ‖ ') : true;
+      });
+
+      await prova(S, 'mittente cambiato mentre la finestra è aperta: la mail non parte a nome di un altro', async function () {
+        var oggetto = 'Prova mittente cambiato ' + Date.now();
+        // la prova precedente ha lasciato aperta una domanda: si riparte dalla procedura
+        await chiudiSwal();
+        window.apriModalMailDimissioni();
+        if (!(await finche(function () { return procedura(); }, 25000))) return 'la procedura non si riapre: «' + titolo() + '»';
+        await attendi(300);
+        await scriviImp('MAIL_DIMISSIONI_MITTENTE', TERZO);
+        try {
+          var guaio = await compila(oggetto); if (guaio) return guaio;
+          Swal.clickConfirm();
+          if (!(await attendiTitolo(/Errore invio/, 25000))) return 'esito: «' + titolo() + '» ' + testoFinestra().slice(0, 200);
+          var testo = testoFinestra();
+          if (testo.indexOf('il mittente della mail è cambiato') < 0 || testo.indexOf(TERZO) < 0) return 'messaggio: ' + testo.slice(0, 220);
+          return (await postaDi(oggetto)) === null || 'la mail è partita lo stesso';
+        } finally { await scriviImp('MAIL_DIMISSIONI_MITTENTE', ALTRO); }
+      });
+
+      await prova(S, 'conferma e invio: il mittente è dichiarato e la mail parte a suo nome (simulata)', async function () {
+        var oggetto = 'Prova del mittente ' + Date.now();
+        await chiudiSwal();
+        window.apriModalMailDimissioni();
+        if (!(await finche(function () { return document.getElementById('mailDimMittente'); }, 25000))) return 'la procedura non si riapre: «' + titolo() + '» ' + testoFinestra().slice(0, 160);
+        await attendi(300);
+        var guaio = await compila(oggetto); if (guaio) return guaio;
+        if (testoFinestra().indexOf('Mittente: ' + ALTRO) < 0) return 'la conferma non dichiara il mittente: ' + testoFinestra().slice(0, 200);
+        Swal.clickConfirm();
+        if (!(await attendiTitolo(/Mail inviata/, 25000))) return 'esito: «' + titolo() + '» ' + testoFinestra().slice(0, 200);
+        var esito = testoFinestra(), m = await postaDi(oggetto);
+        if (!m || m.errore) return 'il finto Google non ha ricevuto la mail';
+        if (m.mittente !== ALTRO || m.reale !== false || m.destinatari !== 'destinatario1@example.com') return 'spedita da «' + m.mittente + '» a «' + m.destinatari + '», reale: ' + m.reale;
+        return esito.indexOf(ALTRO) >= 0 || 'l\'esito non nomina il mittente: ' + esito.slice(0, 160);
+      });
+
+      await prova(S, 'Google non conferma i permessi: avviso, e la procedura non compare', async function () {
+        await chiudiSwal();
+        fingiStatoMail({ configurato: true, autorizzato: true, verificato: false, problema: 'refresh rifiutato: Guasto simulato di Google', email: ALTRO, mittente: ALTRO });
+        try {
+          window.apriModalMailDimissioni();
+          if (!(await attendiTitolo(/Permessi di invio non verificabili/))) return 'cancello: «' + titolo() + '»';
+          var testo = testoFinestra();
+          if (procedura()) return 'la procedura è visibile';
+          if (testo.indexOf('Google non conferma') < 0 || testo.indexOf('Guasto simulato') < 0) return 'messaggio: ' + testo.slice(0, 200);
+          await chiudiSwal();
+          window._apriImpostazioniEmail();
+          var riga = await finche(function () { return document.getElementById('impMailPermessi'); }, 15000);
+          return (!!riga && /non verificabili in questo momento/.test(riga.textContent)) || 'Impostazioni email: ' + (riga ? riga.textContent : 'non aperta');
+        } finally { statoMailVero(); }
+      });
+
+      await prova(S, 'il server della mail risponde con un errore: avviso, mai la richiesta del client secret', async function () {
+        await chiudiSwal();
+        fingiStatoMail({ code: 'BOOT_ERROR', message: 'Function failed to start (prova)' });
+        try {
+          window.apriModalMailDimissioni();
+          if (!(await attendiTitolo(/Permessi di invio non verificabili/))) return 'cancello: «' + titolo() + '»';
+          if (procedura() || testoFinestra().indexOf('Function failed to start') < 0) return 'cancello: ' + testoFinestra().slice(0, 200);
+          await chiudiSwal();
+          var esito = window._cassaforteAutorizza();          // il bottone giallo
+          if (!(await attendiTitolo(/Server della mail non raggiungibile/))) return 'bottone giallo: «' + titolo() + '»';
+          if (document.getElementById('cassaSecret')) return 'viene chiesto il client secret';
+          if ((await esito) !== false) return 'la concessione risulta riuscita';
+          await chiudiSwal();
+          window._apriImpostazioniEmail();
+          return !!(await attendiTitolo(/Impostazioni email non disponibili/)) || 'Impostazioni email: «' + titolo() + '»';
+        } finally { statoMailVero(); }
+      });
+
+      await prova(S, 'server della mail non ancora aggiornato: la procedura si apre col mittente della cassaforte', async function () {
+        await chiudiSwal();
+        fingiStatoMail({ configurato: true, autorizzato: true, email: 'vecchio-server@example.com' });
+        try {
+          window.apriModalMailDimissioni();
+          var campo = await finche(function () { return document.getElementById('mailDimMittente'); }, 25000);
+          if (!campo) return 'la procedura non si apre: «' + titolo() + '»';
+          if (campo.value !== 'vecchio-server@example.com') return 'mittente mostrato «' + campo.value + '»';
+          await chiudiSwal();
+          window._apriImpostazioniEmail();
+          return !!(await finche(function () { return /non è ancora aggiornato/.test(testoFinestra()); }, 15000)) || 'Impostazioni email: ' + testoFinestra().slice(0, 160);
+        } finally { statoMailVero(); }
+      });
+
+      await prova(S, 'un mittente ostile scritto nel database non diventa HTML e non viene usato', async function () {
+        await chiudiSwal();
+        window.__xss = [];
+        // senza spazi: passerebbe un controllo «qualcosa@qualcosa.xx» fatto alla buona
+        await scriviImp('MAIL_DIMISSIONI_MITTENTE', '"><svg/onload=' + traccia('mittente') + '>@example.com');
+        var st = await window._cassaforteStato(true);
+        if (st.mittente !== null || st.autorizzato !== false) return 'il server lo accetta: ' + JSON.stringify(st);
+        window.apriModalMailDimissioni();
+        if (!(await attendiTitolo(/Mittente non disponibile/))) return 'finestra attesa non comparsa: «' + titolo() + '»';
+        if (procedura() || esche(aperta())) return 'la procedura è visibile, o il valore è finito in pagina';
+        await chiudiSwal();
+        window._apriImpostazioniEmail();
+        var campo = await finche(function () { return document.getElementById('impMailMittente'); }, 15000);
+        if (!campo) return 'Impostazioni email non si apre: «' + titolo() + '»';
+        await attendi(300);
+        var p = Swal.getPopup();
+        return (campo.value === reparto && !esche(p) && !p.querySelector('svg') && !eseguiti().length) || 'campo «' + campo.value + '», elementi iniettati ' + esche(p) + ', eseguito ' + eseguiti().join(',');
+      });
+    } finally {
+      await chiudiSwal();
+      statoMailVero();
+      if (gisVero) google.accounts.oauth2.initCodeClient = gisVero;
+      if (letto) { for (var k = 0; k < CHIAVI.length; k++) { try { await scriviImp(CHIAVI[k], prima[CHIAVI[k]]); } catch (e) {} } }
+      try { await _sb.from('logs').delete().gte('ts', inizio).in('tipo', ['mail-mittente', 'mail-dimissioni', 'google-cassaforte']); } catch (e) {}
+      var dopo = null;
+      try { var rv = await fetch('/banco/cassaforte?modo=vera', { method: 'POST' }); dopo = rv.ok ? await rv.json() : null; } catch (e) {}
+      if (typeof window._cassaforteAvvio === 'function') window._cassaforteAvvio();
+      await prova(S, 'impostazioni e cassaforte del collaudo rimesse com\'erano', async function () {
+        if (!letto) return 'le impostazioni di partenza non erano state lette';
+        for (var j = 0; j < CHIAVI.length; j++) { if ((await imp(CHIAVI[j])) !== prima[CHIAVI[j]]) return CHIAVI[j] + ' non ripristinata'; }
+        return (!!dopo && dopo.modo !== 'finta' && !dopo.veraInAttesa) || 'cassaforte: ' + JSON.stringify(dopo);
+      });
+      await prova(S, 'nessun errore JavaScript durante le prove della mail', function () {
+        var nuovi = (window.__erroriBanco || []).slice(erroriPrima);
+        return !nuovi.length || nuovi.slice(0, 4).join(' | ');
+      });
+    }
+  }
+
+  var SEZIONI = { ambiente: sezioneAmbiente, trak: sezioneTrak, xss: sezioneXss, mail: sezioneMail };
 
   window.__prove = async function (opz) {
     opz = opz || {};

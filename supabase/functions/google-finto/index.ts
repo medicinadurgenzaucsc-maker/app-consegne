@@ -1,24 +1,51 @@
 // google-finto — esiste SOLO nel progetto di collaudo.
-// Fa la parte di Google per la funzione google-token: rilascia token finti,
-// dice chi e' l'utente e «spedisce» la mail scrivendola nella tabella
-// posta_simulata invece di inviarla. Cosi' nel collaudo gira tutto il codice
-// vero di google-token (rinnovo del token, costruzione del messaggio, nuovo
-// tentativo sul 401) senza che parta mai una mail.
+// Sta fra google-token e Google, e ha due comportamenti:
 //
-// Accetta solo chi presenta il segreto del collaudo (variabile FINTO_SEGRETO):
-// e' lo stesso valore salvato come refresh token nella cassaforte di collaudo,
-// quindi lo conosce soltanto google-token.
+//  1. CREDENZIALI FINTE (quelle delle prove automatiche) -> fa la parte di
+//     Google: rilascia token finti, dice chi e' l'utente e «spedisce» la mail
+//     scrivendola in posta_simulata. Gira cosi' tutto il codice vero di
+//     google-token (rinnovo del token, costruzione del messaggio, nuovo
+//     tentativo sul 401) senza che parta mai una mail.
 //
-// Per provare i percorsi d'errore: un destinatario «rifiuta@example.com» fa
-// rispondere 401 se il token d'accesso ha piu' di due secondi (google-token
-// deve rinnovarlo e riprovare: col token appena rilasciato l'invio passa),
-// «guasto@example.com» fa rispondere 500; il codice di
-// autorizzazione «<segreto>.intruso» simula il consenso dato da un account
-// Google diverso da quello del reparto.
+//  2. CREDENZIALI VERE (il consenso dato davvero, dal sito di collaudo, con un
+//     account Google vero) -> gira la richiesta a Google cosi' com'e' e ne
+//     restituisce la risposta: la mail parte davvero, dal mittente di prova
+//     ai destinatari di prova. Di ogni invio riuscito resta una copia in
+//     posta_simulata, segnata come «reale».
+//
+// Come si distinguono: allo scambio e al rinnovo dal «client secret» (quello
+// finto e' una frase fissa, CLIENT_FINTO); per userinfo e invio dal token
+// (quelli finti cominciano col segreto del collaudo, FINTO_SEGRETO, che
+// conoscono solo google-token e gli strumenti di prova).
+//
+// CHI PUO' CHIAMARLA. Questa funzione gira richieste a Google e non verifica
+// il JWT: senza un controllo sarebbe un passaggio aperto per chiunque. Risponde
+// quindi solo sotto un indirizzo che contiene una chiave casuale
+// (…/google-finto/k/<chiave>/token, /userinfo, /gmail-invio): la chiave sta
+// nella variabile FINTO_CHIAVE e nelle variabili GOOGLE_URL_* che google-token
+// usa come indirizzi di Google. Nessun altro la conosce; ogni altro indirizzo
+// risponde «non trovato».
+//
+// Codici di autorizzazione finti:
+//   <segreto>                    consenso dato dall'account del reparto
+//   <segreto>.come.<b64url>      consenso dato dall'indirizzo codificato
+//   <segreto>.intruso            consenso dato da intruso@example.com
+// Token di rinnovo «<segreto>.guasto»: Google non risponde (503), per provare
+// la verifica dei permessi quando Google non e' raggiungibile.
+// Destinatari che simulano un guasto: «rifiuta@example.com» fa rispondere 401
+// se il token d'accesso ha piu' di due secondi (google-token deve rinnovarlo
+// e riprovare), «guasto@example.com» fa rispondere 500.
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
 const SEGRETO = Deno.env.get('FINTO_SEGRETO') || '';
+const CHIAVE = Deno.env.get('FINTO_CHIAVE') || '';
+const CLIENT_FINTO = 'segreto-client-finto-del-collaudo';
+const GOOGLE = {
+  token: 'https://oauth2.googleapis.com/token',
+  userinfo: 'https://www.googleapis.com/oauth2/v3/userinfo',
+  invio: 'https://gmail.googleapis.com/gmail/v1/users/me/messages/send',
+};
 const sb = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
 const AMBITI = 'openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/gmail.send';
 
@@ -59,49 +86,101 @@ function leggiMessaggio(raw: string) {
   };
 }
 
-// Ogni token d'accesso porta l'istante del rilascio: serve a simulare la
-// scadenza senza tenere stato in memoria (le chiamate non lo condividono).
-const nuovoToken = () => SEGRETO + '.t' + Date.now();
-const etaToken = (t: string) => Date.now() - Number(t.split('.t')[1] || 0);
+// Ogni token d'accesso finto porta l'istante del rilascio (serve a simulare
+// la scadenza senza tenere stato in memoria: le chiamate non lo condividono)
+// e, se il consenso e' stato dato «come» un certo indirizzo, quell'indirizzo.
+const nuovoToken = (come = '') => SEGRETO + '.t' + Date.now() + (come ? '.e.' + come : '');
+const etaToken = (t: string) => Date.now() - (parseInt(t.slice((SEGRETO + '.t').length), 10) || 0);
+function indirizzoDelToken(t: string): string {
+  const i = t.indexOf('.e.');
+  if (i < 0) return '';
+  try { return utf8.decode(daBase64(t.slice(i + 3))).toLowerCase().trim(); } catch { return ''; }
+}
+
+// Gira la richiesta a Google e ne restituisce la risposta, stato compreso.
+async function daGoogle(url: string, init: RequestInit): Promise<Response> {
+  const r = await fetch(url, init);
+  return new Response(await r.text(), { status: r.status, headers: { 'Content-Type': r.headers.get('Content-Type') || 'application/json' } });
+}
+
+// Confronto che impiega lo stesso tempo qualunque sia il punto in cui le due
+// stringhe differiscono.
+function uguali(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diversi = 0;
+  for (let i = 0; i < a.length; i++) diversi |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diversi === 0;
+}
 
 Deno.serve(async (req) => {
-  if (!SEGRETO) return json({ error: 'segreto del collaudo non configurato' }, 500);
-  const percorso = new URL(req.url).pathname.replace(/^.*\/google-finto/, '') || '/';
+  if (!SEGRETO || CHIAVE.length < 24) return json({ error: 'collaudo non configurato' }, 500);
+  // …/google-finto/k/<chiave>/<percorso>: senza la chiave giusta non c'e' nulla.
+  const pezzi = /^\/k\/([^/]+)(\/.*)$/.exec(new URL(req.url).pathname.replace(/^.*\/google-finto/, ''));
+  if (!pezzi || !uguali(pezzi[1], CHIAVE)) return json({ error: 'non trovato' }, 404);
+  const percorso = pezzi[2];
 
+  // ── scambio del codice e rinnovo del token ──────────────────────────
   if (percorso === '/token' && req.method === 'POST') {
-    const f = new URLSearchParams(await req.text());
-    if (f.get('grant_type') === 'refresh_token' && f.get('refresh_token') === SEGRETO) {
-      return json({ access_token: nuovoToken(), expires_in: 3599, scope: AMBITI, token_type: 'Bearer' });
+    const corpo = await req.text();
+    const f = new URLSearchParams(corpo);
+    if (f.get('client_secret') !== CLIENT_FINTO) {
+      return daGoogle(GOOGLE.token, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: corpo });
     }
-    if (f.get('grant_type') === 'authorization_code' && f.get('code') === SEGRETO) {
-      return json({ access_token: nuovoToken(), refresh_token: SEGRETO, expires_in: 3599, scope: AMBITI, token_type: 'Bearer' });
+    const rilascia = (accesso: string, rinnovo?: string) =>
+      json({ access_token: accesso, ...(rinnovo ? { refresh_token: rinnovo } : {}), expires_in: 3599, scope: AMBITI, token_type: 'Bearer' });
+    if (f.get('grant_type') === 'refresh_token' && f.get('refresh_token') === SEGRETO) return rilascia(nuovoToken());
+    if (f.get('grant_type') === 'refresh_token' && f.get('refresh_token') === SEGRETO + '.guasto') {
+      return json({ error: 'temporarily_unavailable', error_description: 'Guasto simulato di Google' }, 503);
     }
-    if (f.get('grant_type') === 'authorization_code' && f.get('code') === SEGRETO + '.intruso') {
-      return json({ access_token: SEGRETO + '.intruso', refresh_token: SEGRETO + '.intruso', expires_in: 3599, scope: AMBITI, token_type: 'Bearer' });
+    if (f.get('grant_type') === 'authorization_code') {
+      const code = f.get('code') || '';
+      if (code === SEGRETO) return rilascia(nuovoToken(), SEGRETO);
+      if (code === SEGRETO + '.intruso') return rilascia(SEGRETO + '.intruso', SEGRETO + '.intruso');
+      if (code.startsWith(SEGRETO + '.come.')) return rilascia(nuovoToken(code.slice((SEGRETO + '.come.').length)), SEGRETO);
     }
     return json({ error: 'invalid_grant', error_description: 'Token has been expired or revoked.' }, 400);
   }
 
-  const bearer = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '');
-  if (percorso === '/userinfo' && bearer === SEGRETO + '.intruso') {
-    return json({ email: 'intruso@example.com', email_verified: true });
-  }
-  if (!bearer.startsWith(SEGRETO + '.t')) return json({ error: { code: 401, message: 'Invalid Credentials' } }, 401);
+  const autorizzazione = req.headers.get('Authorization') || '';
+  const bearer = autorizzazione.replace(/^Bearer\s+/i, '');
+  const finto = bearer.startsWith(SEGRETO);
 
+  // ── chi e' l'utente ──────────────────────────────────────────────────
   if (percorso === '/userinfo') {
+    if (!finto) return daGoogle(GOOGLE.userinfo, { headers: { Authorization: autorizzazione } });
+    if (bearer === SEGRETO + '.intruso') return json({ email: 'intruso@example.com', email_verified: true });
+    if (!bearer.startsWith(SEGRETO + '.t')) return json({ error: { code: 401, message: 'Invalid Credentials' } }, 401);
+    const come = indirizzoDelToken(bearer);
+    if (come) return json({ email: come, email_verified: true });
     const { data } = await sb.from('impostazioni').select('valore').eq('chiave', 'ACCOUNT_LOGIN').maybeSingle();
     return json({ email: String(data?.valore || '').trim(), email_verified: true });
   }
 
+  // ── invio della mail ─────────────────────────────────────────────────
   if (percorso === '/gmail-invio' && req.method === 'POST') {
+    const corpo = await req.text();
     let raw = '';
-    try { raw = String((await req.json()).raw || ''); } catch { return json({ error: { message: 'corpo non valido' } }, 400); }
+    try { raw = String(JSON.parse(corpo).raw || ''); } catch { return json({ error: { message: 'corpo non valido' } }, 400); }
+
+    if (!finto) {
+      // Consenso vero: la mail parte davvero. Se Google la accetta ne resta copia.
+      const g = await fetch(GOOGLE.invio, { method: 'POST', headers: { Authorization: autorizzazione, 'Content-Type': 'application/json' }, body: corpo });
+      const risposta = await g.text();
+      if (g.ok) {
+        let id = '';
+        try { id = String(JSON.parse(risposta).id || ''); } catch { /* risposta non JSON */ }
+        try { await sb.from('posta_simulata').insert({ ...leggiMessaggio(raw), grezzo: raw, reale: true, esito: 'inviata da Google, id ' + id }); } catch { /* la copia non deve far fallire l'invio */ }
+      }
+      return new Response(risposta, { status: g.status, headers: { 'Content-Type': g.headers.get('Content-Type') || 'application/json' } });
+    }
+
+    if (!bearer.startsWith(SEGRETO + '.t')) return json({ error: { code: 401, message: 'Invalid Credentials' } }, 401);
     const m = leggiMessaggio(raw);
     if (/guasto@example\.com/i.test(m.destinatari)) return json({ error: { code: 500, message: 'Guasto simulato del servizio di posta' } }, 500);
     if (/rifiuta@example\.com/i.test(m.destinatari) && etaToken(bearer) > 2000) {
       return json({ error: { code: 401, message: 'Invalid Credentials' } }, 401);
     }
-    const { data, error } = await sb.from('posta_simulata').insert({ ...m, grezzo: raw }).select('id').single();
+    const { data, error } = await sb.from('posta_simulata').insert({ ...m, grezzo: raw, reale: false, esito: 'simulata' }).select('id').single();
     if (error) return json({ error: { code: 500, message: error.message } }, 500);
     return json({ id: 'finta-' + data.id, threadId: 'finta-' + data.id, labelIds: ['SENT'] });
   }
