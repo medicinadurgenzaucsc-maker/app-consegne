@@ -1,8 +1,7 @@
 // Pubblica e configura le Edge Function nel SOLO progetto di collaudo.
 //
-//   node funzioni-collaudo.js pubblica   -> google-token e decorso-clinico (lo stesso
-//                                          sorgente della produzione) + google-finto
-//                                          (finto Google)
+//   node funzioni-collaudo.js pubblica   -> google-token (lo stesso sorgente della
+//                                          produzione) + google-finto (finto Google)
 //   node funzioni-collaudo.js configura  -> tabella posta_simulata, segreto del
 //                                          finto Google, variabili GOOGLE_* (con
 //                                          una chiave nuova nell'indirizzo del
@@ -27,7 +26,6 @@ const RADICE = path.resolve(__dirname, process.env.RADICE_REPO || '../..');
 const FUNZIONI = [
   { slug: 'google-token', verify_jwt: true },
   { slug: 'google-finto', verify_jwt: false },   // la chiama google-token con credenziali «alla Google», non con un JWT Supabase
-  { slug: 'decorso-clinico', verify_jwt: true },  // fascicolo per il decorso clinico (stesso sorgente della produzione)
 ];
 
 // La sintassi si controlla come modulo. vm.SourceTextModule esiste solo se node

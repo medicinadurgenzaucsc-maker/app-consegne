@@ -1581,35 +1581,6 @@ function _sbSalvaGiorniConservazione(giorni) {
   )).then(function() { return { success: true, giorni: giorni }; });
 }
 
-// ══════════════════════════════════════════════════════════════
-// DECORSO CLINICO CON L'IA — impostazioni condivise dal reparto
-// (menu rotellina → «Impostazioni IA»): quante righe deve avere il
-// decorso (7–50) e quanto dettagliato (1 = molto generico … 4 =
-// estremamente dettagliato). Fuori dai limiti valgono i predefiniti.
-// ══════════════════════════════════════════════════════════════
-var _IA_KEYS = { righe: 'IA_DECORSO_RIGHE', dettaglio: 'IA_DECORSO_DETTAGLIO' };
-var _IA_DEFAULT = { righe: 15, dettaglio: 2 };
-function _sbCaricaImpostazioniIA() {
-  return _q(_sb.from('impostazioni').select('chiave,valore').in('chiave', [_IA_KEYS.righe, _IA_KEYS.dettaglio]))
-    .then(function(rows) {
-      var m = {};
-      (rows || []).forEach(function(r) { m[r.chiave] = r.valore; });
-      var righe = parseInt(m[_IA_KEYS.righe], 10), dettaglio = parseInt(m[_IA_KEYS.dettaglio], 10);
-      return {
-        righe:     (righe >= 7 && righe <= 50) ? righe : _IA_DEFAULT.righe,
-        dettaglio: (dettaglio >= 1 && dettaglio <= 4) ? dettaglio : _IA_DEFAULT.dettaglio
-      };
-    });
-}
-function _sbSalvaImpostazioniIA(righe, dettaglio) {
-  return _q(_sb.from('impostazioni').upsert([
-    { chiave: _IA_KEYS.righe,     valore: String(righe) },
-    { chiave: _IA_KEYS.dettaglio, valore: String(dettaglio) }
-  ], { onConflict: 'chiave' }));
-}
-window._sbCaricaImpostazioniIA = _sbCaricaImpostazioniIA;
-window._sbSalvaImpostazioniIA  = _sbSalvaImpostazioniIA;
-
 var BACKUP_INTERVALLO_MS = 1 * 60 * 60 * 1000; // 1 ora (era 6h)
 
 function _sbArchiviaGiornoCorrente() {
