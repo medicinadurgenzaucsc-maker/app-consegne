@@ -1512,6 +1512,13 @@ function _sbAcquistaLock(letto, token) {
     .catch(function() { return { success: false, blocked: false, message: 'Errore server, riprova.' }; });
 }
 
+// Rinnova il proprio lock (aggiorna ts): il TTL è 10 minuti e senza rinnovo
+// una modifica lunga resterebbe scoperta. Tocca solo la riga con il proprio
+// token; gli altri PC ricevono l'UPDATE via Realtime e tengono l'overlay.
+function _sbRinnovaLock(letto, token) {
+  return _q(_sb.from('locks').update({ ts: Date.now() }).eq('letto', String(letto)).eq('token', token));
+}
+
 function _sbRilasciaLock(letto, token) {
   return _q(_sb.from('locks').delete().eq('letto', String(letto)).eq('token', token))
     .then(function() { return { success: true }; })

@@ -45,6 +45,7 @@
     var _lettoLockAtt       = null;
     var _timerRilascio      = null;
     var _timerFocusInattivo = null;
+    var _ultimoRinnovoLockTs = 0;      // ultima scrittura del ts del lock nel database
     var _focusHaInput       = false;
     // Flag: true durante l'apertura del focus mode (dal click sulla matita
     // fino a _completaApertura inclusa). Serve a far skip al listener
@@ -83,6 +84,12 @@
         // In focus mode: solo timer 5 minuti, no rilascio anticipato
         if (_timerRilascio) { clearTimeout(_timerRilascio); _timerRilascio = null; }
         _avviaTimerFocusInattivo();
+        // Il lock nel database scade dopo 10 minuti: una modifica più lunga lo
+        // rinnova, al massimo una scrittura ogni 4 minuti di attività.
+        if (_lettoLockAtt === letto && Date.now() - _ultimoRinnovoLockTs > 240000 && typeof _sbRinnovaLock === 'function') {
+          _ultimoRinnovoLockTs = Date.now();
+          _sbRinnovaLock(letto, _mioToken).catch(function() {});
+        }
         return;
       }
       // Fuori focus mode: safety 20s per lock orfano
@@ -103,6 +110,14 @@
     }
     // Espone _rinnovaDebounce e _lettoLockAtt al sistema snapshot (IIFE separato)
     window._rinnovaDebounce = _rinnovaDebounce;
+    // Rinnovo esplicito del lock della scheda in modifica (procedura del
+    // decorso: le sue finestre stanno fuori dalla scheda, i tasti lì non
+    // contano come attività). Solo per il letto di cui si ha il lock.
+    window._rinnovaLockScheda = function(letto) {
+      if (!_focusCard || _lettoLockAtt !== letto || typeof _sbRinnovaLock !== 'function') return Promise.resolve(false);
+      _ultimoRinnovoLockTs = Date.now();
+      return _sbRinnovaLock(letto, _mioToken).then(function() { return true; }, function() { return false; });
+    };
     Object.defineProperty(window, '_lettoLockAttSafe', {
       get: function() { return _lettoLockAtt; }
     });
@@ -1229,6 +1244,7 @@
               _sbRilasciaLock(_lettoLockAtt, _mioToken).catch(function(){});
             }
             _lettoLockAtt = letto;
+            _ultimoRinnovoLockTs = Date.now();
             _rinnovaDebounce(letto);
 
             // ── FRESH FETCH del singolo letto prima di abilitare l'editing ──
@@ -1294,6 +1310,7 @@
             // Fail-open solo in emergenza
             if (!_focusCard || _focusCard !== card) return;
             _lettoLockAtt = letto;
+            _ultimoRinnovoLockTs = Date.now();
             _rinnovaDebounce(letto);
             // Tentativo di fresh-fetch (potrebbe fallire come il lock, ma proviamo)
             var fff = (typeof window._sbGetPazienteSingolo === 'function')
@@ -5150,7 +5167,7 @@
             <li>
               <span class="dropdown-item-text d-block px-3" style="font-family:monospace;font-size:0.75rem;color:#546e7a;line-height:1.3;">
                 <i class="bi bi-tag me-1"></i>Versione applicazione:<br>
-                <strong id="navVersioneApp" class="ms-1" style="color:#263238;">182</strong>
+                <strong id="navVersioneApp" class="ms-1" style="color:#263238;">183</strong>
               </span>
             </li>
             <!-- Uscita: chiude la sessione solo su questo dispositivo (_esciSessione) -->
@@ -6109,6 +6126,48 @@
       // Il testo dell'ultimo risultato, per «Copia tutto» (ascoltatore delegato:
       // non dipende dal momento in cui la finestra viene aperta).
       var _testoDaCopiare = '';
+      // La procedura è parte della modifica della scheda: finché le sue
+      // finestre sono aperte, la scheda resta in modifica (timer di inattività
+      // rinnovato) e bloccata per gli altri PC (lock rinnovato nel database).
+      // Le finestre stanno fuori dalla scheda, quindi i tasti e i clic lì
+      // dentro non conterebbero: li conta questo. Senza alcuna attività nelle
+      // finestre per 30 minuti il rinnovo si ferma e valgono le regole solite.
+      var _vivo = { timer: null, letto: '', ultimaAttivita: 0, ultimoRinnovoLock: 0, rinnovi: 0 };
+      var VIVO_OGNI_MS = 60000, VIVO_LOCK_OGNI_MS = 240000, VIVO_ABBANDONO_MS = 30 * 60000;
+      function _tieniViva(ctx) {
+        _vivo.letto = ctx.letto;
+        _vivo.ultimaAttivita = Date.now();
+        if (_vivo.timer) return;
+        var ogni = window.__iaVivoMs || VIVO_OGNI_MS, lockOgni = window.__iaRinnovoLockMs || VIVO_LOCK_OGNI_MS;
+        var tocco = function() {
+          _vivo.ultimaAttivita = Date.now();
+          if (typeof window._rinnovaDebounce === 'function' && _vivo.letto) window._rinnovaDebounce(_vivo.letto);
+          if (Date.now() - _vivo.ultimoRinnovoLock > lockOgni && typeof window._rinnovaLockScheda === 'function') {
+            _vivo.ultimoRinnovoLock = Date.now();
+            window._rinnovaLockScheda(_vivo.letto).then(function(ok) { if (ok) _vivo.rinnovi++; });
+          }
+        };
+        tocco();
+        _vivo.timer = setInterval(function() {
+          if (Date.now() - _vivo.ultimaAttivita > VIVO_ABBANDONO_MS) return;   // abbandonata: non si insiste
+          var prima = _vivo.ultimaAttivita;
+          tocco();
+          _vivo.ultimaAttivita = prima;
+        }, ogni);
+      }
+      function _lasciaAndare() {
+        if (_vivo.timer) { clearInterval(_vivo.timer); _vivo.timer = null; }
+        _vivo.letto = '';
+      }
+      // in fase di cattura: arriva prima di chiunque fermi la propagazione
+      ['input', 'keydown', 'click'].forEach(function(tipo) {
+        document.addEventListener(tipo, function(e) {
+          if (_vivo.timer && e.target && e.target.closest && e.target.closest('.swal2-container')) _vivo.ultimaAttivita = Date.now();
+        }, true);
+      });
+      // fine della procedura, da qualunque strada: si smette di tenerla viva e
+      // il fuoco torna nella scheda
+      function _fine(ctx) { _lasciaAndare(); _rifocalizza(ctx.card); }
       document.addEventListener('click', function(e) {
         var b = e.target && e.target.closest ? e.target.closest('#iaCopia') : null;
         if (!b) return;
@@ -6201,6 +6260,7 @@
           nome: nomeEl ? (nomeEl.textContent || '').trim() : '',
           bozza: _bozze[letto] || (_bozze[letto] = { referti: '', diaria: '' })
         };
+        _tieniViva(ctx);
         _passoConferma(ctx);
       };
       function _intestazione(ctx) {
@@ -6238,7 +6298,7 @@
             return true;
           }
         }).then(function(r) {
-          if (!r.isConfirmed) { _rifocalizza(card); return; }
+          if (!r.isConfirmed) { _fine(ctx); return; }
           _passoReferti(ctx);
         });
       }
@@ -6261,7 +6321,7 @@
           willClose: function() { var ta = document.getElementById('iaReferti'); if (ta) ctx.bozza.referti = ta.value; }
         }).then(function(r) {
           if (r.isDenied) { _passoConferma(ctx); return; }
-          if (!r.isConfirmed) { _rifocalizza(ctx.card); return; }
+          if (!r.isConfirmed) { _fine(ctx); return; }
           if (!ctx.bozza.referti.trim()) {
             Swal.fire({ icon: 'question', title: 'Nessun referto', text: 'Non hai incollato referti né consulenze. Continuare senza?', showCancelButton: true, confirmButtonText: 'Continua senza', cancelButtonText: 'Torna indietro', confirmButtonColor: COLORE, returnFocus: false, allowOutsideClick: false })
               .then(function(c) { if (c.isConfirmed) _passoDiaria(ctx); else _passoReferti(ctx); });
@@ -6289,7 +6349,7 @@
           willClose: function() { var ta = document.getElementById('iaDiaria'); if (ta) ctx.bozza.diaria = ta.value; }
         }).then(function(r) {
           if (r.isDenied) { _passoReferti(ctx); return; }
-          if (!r.isConfirmed) { _rifocalizza(ctx.card); return; }
+          if (!r.isConfirmed) { _fine(ctx); return; }
           if (!ctx.bozza.diaria.trim()) {
             Swal.fire({ icon: 'question', title: 'Nessuna diaria', text: 'Non hai incollato la diaria. Continuare senza?', showCancelButton: true, confirmButtonText: 'Continua senza', cancelButtonText: 'Torna indietro', confirmButtonColor: COLORE, returnFocus: false, allowOutsideClick: false })
               .then(function(c) { if (c.isConfirmed) _passoElaborazione(ctx); else _passoDiaria(ctx); });
@@ -6412,7 +6472,7 @@
             icon: 'error', title: 'Procedura interrotta',
             html: '<div class="text-start small">' + _testoHtml(msg) + '<br><br>I testi incollati sono conservati: puoi riprovare.</div>',
             showCancelButton: true, confirmButtonText: 'Riprova', cancelButtonText: 'Chiudi', confirmButtonColor: COLORE, returnFocus: false, allowOutsideClick: false
-          }).then(function(r) { if (r.isConfirmed) _passoElaborazione(ctx); else _rifocalizza(ctx.card); });
+          }).then(function(r) { if (r.isConfirmed) _passoElaborazione(ctx); else _fine(ctx); });
         }, 900);
       }
 
@@ -6504,7 +6564,7 @@
           title: ICONA + 'Informazioni arrivate al server',
           html: html, width: 'min(980px, 95vw)',
           confirmButtonText: 'Chiudi', confirmButtonColor: COLORE, returnFocus: false, allowOutsideClick: false
-        }).then(function() { _rifocalizza(ctx.card); });
+        }).then(function() { _fine(ctx); });
         if (typeof window._log === 'function') {
           window._log('info', 'ia-decorso', 'Fascicolo preparato per il letto ' + ctx.letto + ' (fase di prova)',
             'Consegne: ' + (r.campi_consegne || 0) + ' campi · Esami: ' + (r.esami || 0) + ' (' + (r.valori_esami || 0) + ' valori) · Referti: ' + (r.referti || 0)
@@ -6515,6 +6575,7 @@
       window._iaTestoFascicolo = _testoFascicolo;
       window._iaBozze = _bozze;
       window._iaUltimiPassi = function() { return _ultimiPassi; };
+      window._iaVivoStato = function() { return { attivo: !!_vivo.timer, letto: _vivo.letto, ultimaAttivita: _vivo.ultimaAttivita, rinnovi: _vivo.rinnovi }; };
     })();
 
     // ══════════════════════════════════════════════════════════════════

@@ -1927,6 +1927,31 @@
         return esito;
       });
 
+      await prova(S, 'mentre la procedura è aperta la scheda resta in modifica: timer rinnovato e lock rinnovato nel database', async function () {
+        var l0 = await _sb.from('locks').select('ts,token').eq('letto', LETTO).maybeSingle();
+        if (!l0.data) return 'la scheda in modifica non ha un lock nel database';
+        window.__iaVivoMs = 300; window.__iaRinnovoLockMs = 200;       // per la prova: rinnovi ogni 300 ms
+        try {
+          window._apriDecorsoIA(c);
+          if (!(await attendiTitolo(/Decorso clinico con l.IA/))) return 'non si apre';
+          var st = window._iaVivoStato();
+          if (!st.attivo || st.letto !== LETTO) return 'la procedura non tiene viva la scheda: ' + JSON.stringify(st);
+          var rinnovato = await finche(async function () {
+            var l1 = await _sb.from('locks').select('ts,token').eq('letto', LETTO).maybeSingle();
+            return !!(l1.data && l1.data.token === l0.data.token && Number(l1.data.ts) > Number(l0.data.ts));
+          }, 8000, 300);
+          if (!rinnovato) return 'il lock nel database non è stato rinnovato';
+          if (!(window._iaVivoStato().rinnovi >= 1)) return 'rinnovi contati: ' + window._iaVivoStato().rinnovi;
+          var prima = window._iaVivoStato().ultimaAttivita;
+          await attendi(50);
+          var cb = nel('iaConferma'); cb.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: ' ' }));
+          if (!(window._iaVivoStato().ultimaAttivita > prima)) return 'i tasti nella finestra non contano come attività';
+          Swal.clickCancel(); await attendi(800);
+          st = window._iaVivoStato();
+          return (!st.attivo && c.classList.contains('focus-mode')) || 'dopo la chiusura: ' + JSON.stringify(st) + ', in modifica ' + c.classList.contains('focus-mode');
+        } finally { delete window.__iaVivoMs; delete window.__iaRinnovoLockMs; }
+      });
+
       await prova(S, '«Annulla» dalla prima schermata: nessuna chiamata, la scheda resta in modifica', async function () {
         var chiamate = 0, fv = window.fetch;
         window.fetch = function (u) { if (String(u).indexOf('decorso-clinico') >= 0) chiamate++; return fv.apply(window, arguments); };
