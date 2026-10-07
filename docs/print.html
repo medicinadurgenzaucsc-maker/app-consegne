@@ -710,7 +710,11 @@
   // ── Caricamento dati — 3 query parallele ─────────────────────────────
   // Usa direttamente le funzioni Supabase definite in api.js
   // Senza il filtro dell'HTML non si disegna nulla (api.js mostra l'avviso).
-  var fetchPazienti = !_filtroPronto()
+  // Lo si chiede direttamente a sanifica.js, che questa pagina carica da sé:
+  // così il controllo non dipende dalla versione di api.js che il browser può
+  // avere ancora in cache nei minuti successivi a un rilascio.
+  var filtroPronto = typeof window._sanificaPronta === 'function' && window._sanificaPronta();
+  var fetchPazienti = !filtroPronto
     ? Promise.reject(new Error('componente di sicurezza non caricato: ricarica la pagina'))
     : (dataArchivio
       ? _sbGetDatiArchivioGiorno(dataArchivio).then(function(r) { return r ? (r.pazienti || []) : []; })
