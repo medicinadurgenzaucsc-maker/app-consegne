@@ -41,7 +41,9 @@ concurrency:
 jobs:
   pubblica:
     name: Pubblica il sito
-    runs-on: ubuntu-latest
+    # Immagine fissa: «ubuntu-latest» cambia quando vuole GitHub (dal 19/10/2026
+    # passa a Ubuntu 26) e con lei la versione di Node; lo strumento vuole Node 22+.
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
       PROGETTO: ${{ vars.CLOUDFLARE_PROGETTO }}
