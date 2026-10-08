@@ -18,6 +18,9 @@
 // servono a provare il cambio del secret), o che hanno solo un consenso finto.
 //
 //   node collaudo/strumenti/cassaforte-collaudo.js stato | finta | vera
+//   node collaudo/strumenti/cassaforte-collaudo.js verifica   chiede a Google, dal vivo, se il
+//        consenso custodito vale ancora (da rifare dopo ogni cambio alle impostazioni di
+//        sicurezza dell'account che l'ha dato). Non spedisce nulla.
 const { collaudo } = require('./sb.js');
 
 const CLIENT_FINTO = 'segreto-client-finto-del-collaudo';   // lo stesso di google-finto
@@ -106,7 +109,28 @@ async function segretoSbagliato() {
   return stato();
 }
 
-module.exports = { stato, finta, vera, senzaSegreto, segretoSbagliato, CLIENT_FINTO };
+// Verifica dal vivo: la funzione google-token, chiamata dall'utente fittizio
+// delle prove, si fa rilasciare da Google un token nuovo. È ciò che fa l'app
+// prima di mostrare la procedura di invio. Nessuna mail parte.
+async function verifica() {
+  const fs = require('fs'), path = require('path');
+  const api = fs.readFileSync(path.join(__dirname, '../../docs/js/api.js'), 'utf8');
+  const blocco = api.slice(api.indexOf('collaudo: {'));
+  const url = (/supabaseUrl:\s*'([^']+)'/.exec(blocco) || [])[1], anon = (/supabaseAnonKey:\s*'([^']+)'/.exec(blocco) || [])[1];
+  if (!url || !anon || url.indexOf(collaudo().ref) < 0) throw new Error('indirizzo o chiave pubblica del collaudo non trovati in docs/js/api.js');
+  const s = await require('./gettone-prova.js').genera(1);
+  const r = await fetch(url + '/functions/v1/google-token', {
+    method: 'POST',
+    headers: { apikey: anon, Authorization: 'Bearer ' + s.sessione.access_token, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ azione: 'stato', verifica: true }),
+  });
+  let j = null;
+  try { j = await r.json(); } catch (e) { j = null; }
+  if (r.status !== 200 || !j || typeof j.autorizzato !== 'boolean') throw new Error('la funzione non ha risposto con uno stato (HTTP ' + r.status + ')');
+  return j;
+}
+
+module.exports = { stato, finta, vera, verifica, senzaSegreto, segretoSbagliato, CLIENT_FINTO };
 
 if (require.main === module) {
   const cmd = process.argv[2] || 'stato';
@@ -115,7 +139,18 @@ if (require.main === module) {
     + (s.modo === 'vuota' ? ' (da configurare dal sito di collaudo)' : '')
     + (s.veraInAttesa ? ' — un consenso vero è messo da parte' : '')
     + (s.credenzialiFinte ? '' : ' — MANCANO le credenziali finte');
-  (cmd === 'finta' ? finta().then(stato) : cmd === 'vera' ? vera() : cmd === 'stato' ? stato() : Promise.reject(new Error('uso: stato | finta | vera')))
+  if (cmd === 'verifica') {
+    verifica().then((j) => {
+      const esito = j.verificato !== true ? 'Google non ha risposto: non si sa' + (j.problema ? ' (' + String(j.problema).slice(0, 120) + ')' : '')
+        : j.autorizzato ? 'il consenso VALE: Google ha rilasciato un token nuovo'
+        : j.segreto_errato ? 'Google non riconosce più il client secret custodito: va inserito di nuovo'
+        : 'il consenso NON vale più: va dato di nuovo dal sito di collaudo';
+      console.log('verifica dal vivo: ' + esito + ' | mittente ' + j.mittente + ' | consenso di ' + j.email);
+      if (j.verificato !== true || !j.autorizzato) process.exitCode = 1;
+    }).catch((e) => { console.log('ERRORE: ' + String(e.message).replace(/eyJ[A-Za-z0-9_.-]{20,}/g, 'eyJ***')); process.exitCode = 1; });
+    return;
+  }
+  (cmd === 'finta' ? finta().then(stato) : cmd === 'vera' ? vera() : cmd === 'stato' ? stato() : Promise.reject(new Error('uso: stato | finta | vera | verifica')))
     .then((s) => console.log(descrivi(s)))
     .catch((e) => { console.log('ERRORE: ' + String(e.message).replace(/finto_[0-9a-f]+/g, 'finto_***')); process.exitCode = 1; });
 }

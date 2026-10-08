@@ -215,6 +215,12 @@ icona installata vanno aggiornati con calma: il rinvio resta.
 ## Fase C. Dopo
 
 - Togliere la vecchia origine dal client Google dell'app.
+- In un rilascio successivo, quando il ritorno indietro non serve più:
+  togliere il vecchio indirizzo dall'elenco dell'ambiente in `docs/js/api.js`.
+- Dopo ogni cambio alle impostazioni di sicurezza dell'account Google che ha
+  dato il permesso della mail, controllare che il permesso valga ancora. Nel
+  collaudo: `cassaforte-collaudo.js verifica`. L'08/10/2026 l'accensione
+  della verifica in due passaggi non l'ha toccato.
 - Cambiare la chiave di GitHub scritta nel remoto `origin` di questa cartella
   con un accesso «a codice», e revocare quella vecchia.
 - Aggiornare `CLAUDE.md` e questo documento con nomi e date veri.
