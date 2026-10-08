@@ -297,22 +297,35 @@ Fatto l'08/10/2026, senza toccare il sito in uso al reparto:
   `consegne-reparto - sito` col criterio `autorizzati-produzione` (casella del
   reparto, gistech, Stefano), sessione di un mese, cookie protetti; anteprime
   chiuse. Da estraneo sito, file e anteprime rimandano già all'accesso;
-- nel repository del reparto la variabile `CLOUDFLARE_PROGETTO` e il segreto
-  `CLOUDFLARE_ACCOUNT_ID`;
+- ingresso **solo con Google** e autenticazione immediata: provider Google
+  aggiunto da Stefano col client «Accesso Cloudflare produzione»; da estraneo
+  la pagina di accesso manda dritta a Google, che riconosce client e
+  indirizzo di ritorno. Nome mostrato: «Consegne Reparto»;
+- nel repository del reparto la variabile `CLOUDFLARE_PROGETTO` e i segreti
+  `CLOUDFLARE_ACCOUNT_ID` e `CLOUDFLARE_API_TOKEN` (il token l'ha messo
+  Stefano: se è giusto lo dirà la prima pubblicazione);
 - repository `app-consegne-rinvio` con la pagina di rinvio, chiuso alle
   scritture;
 - versione 187 provata nel collaudo: riconosce il nuovo indirizzo.
 
 Da fare, nell'ordine:
 
-1. Stefano: il token di Cloudflare nel segreto `CLOUDFLARE_API_TOKEN`; il
-   client Google «Accesso Cloudflare produzione» e il provider Google in
-   Cloudflare.
-2. Claude: solo Google con autenticazione immediata nell'applicazione del sito.
-3. La sera, con l'ok: rilascio della 187 sul sito di oggi; riga `AMBIENTE`;
-   gistech fra gli autorizzati dell'app; nuova origine nel client Google
-   dell'app; prove dal browser di Stefano sul sito nuovo.
-4. Quando i PC hanno ricevuto la 187: lo scambio, fase B.
+1. Stefano, quando vuole: «Test» accanto a Google in «Integrations»,
+   «Identity providers». È l'unico modo di sapere prima che il segreto del
+   client incollato in Cloudflare è quello giusto.
+2. La sera, con l'ok a ogni passo:
+   - rilascio: `git checkout master`, poi
+     `git merge --ff-only refs/heads/collaudo` (il nome `collaudo` da solo è
+     ambiguo: è anche il nome di un remoto), poi `git push origin master`.
+     GitHub Pages serve la 187 e `notify-deploy` avvisa i PC; lo stesso push
+     fa partire la pubblicazione su Cloudflare, che si segue con
+     `pubblicazione.js produzione`;
+   - nel database: riga `AMBIENTE = produzione` in `impostazioni` e gistech
+     in `utenti_autorizzati`;
+   - nel client Google dell'app «ConsegneReparto»: origine
+     `https://consegne-reparto.pages.dev`;
+   - prove dal browser di Stefano sul sito nuovo.
+3. Quando i PC hanno ricevuto la 187: lo scambio, fase B.
 
 ## Da preparare negli strumenti prima del giorno
 
