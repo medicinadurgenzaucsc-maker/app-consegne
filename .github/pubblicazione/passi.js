@@ -1,6 +1,6 @@
 // I passi del flusso pubblica-cloudflare.yml che non sono un semplice comando.
 //
-//   node .github/pubblicazione/passi.js sito            prepara _sito/ e legge la versione
+//   node .github/pubblicazione/passi.js sito            prepara _sito/ (copia compressa) e legge la versione
 //   node .github/pubblicazione/passi.js configurazione  Cloudflare è configurato qui?
 //   node .github/pubblicazione/passi.js progetto        il progetto Pages esiste (o lo crea)
 //   node .github/pubblicazione/passi.js verifica        la pubblicazione è quella di questo commit
@@ -36,17 +36,24 @@ function motivi(r) {
 }
 
 const PASSI = {
-  // I file del sito in _sito/ e il numero di versione, che serve ai passi dopo.
+  // I file del sito in _sito/, nella forma compressa che viene pubblicata, e il
+  // numero di versione, che serve ai passi dopo. La copia si controlla da sé:
+  // se un controllo fallisce il flusso si ferma qui e non pubblica nulla.
   sito() {
     if (Number(process.versions.node.split('.')[0]) < 22) errore('serve Node 22 o successivo, trovato ' + process.version);
     const { prepara } = require(path.join(RADICE, 'collaudo/strumenti/prepara-sito.js'));
-    const r = prepara(path.join(RADICE, '_sito'));
-    r.elenco.forEach((p) => console.log('  ' + p));
-    console.log(r.elenco.length + ' file, ' + r.byte + ' byte');
+    let r = null;
+    try { r = prepara(path.join(RADICE, '_sito'), { compressa: true }); } catch (e) { errore(String((e && e.message) || e).split('\n').join(' | ').slice(0, 900)); }
+    const kb = (n) => (n / 1024).toFixed(0).padStart(5) + ' KB';
+    r.compressione.righe.forEach((x) => console.log('  ' + kb(x.prima) + ' → ' + kb(x.dopo) + '  ' + x.file.padEnd(34) + x.nota));
+    console.log(r.elenco.length + ' file: da ' + kb(r.compressione.prima).trim() + ' a ' + kb(r.compressione.dopo).trim() + ' (' + r.compressione.strumento + '); ' + r.compressione.nomiGlobali + ' nomi globali rimasti identici');
+    console.log('impronte dei file pubblicati (sha256):');
+    r.compressione.righe.forEach((x) => console.log('  ' + x.impronta + '  ' + x.file));
     ['index.html', 'print.html', '404.html', 'sw.js', 'manifest.json', 'js/api.js'].forEach((p) => {
       if (r.elenco.indexOf(p) < 0) errore('fra i file del sito manca ' + p);
     });
-    const m = /CACHE_NAME = 'consegne-v(\d+)'/.exec(fs.readFileSync(path.join(RADICE, '_sito/sw.js'), 'utf8'));
+    // dal sorgente: nella copia compressa la riga ha un'altra forma
+    const m = /CACHE_NAME = 'consegne-v(\d+)'/.exec(fs.readFileSync(path.join(RADICE, 'docs/sw.js'), 'utf8'));
     if (!m) errore('numero di versione non trovato in sw.js');
     esporta(env.GITHUB_ENV, 'VERSIONE=' + m[1]);
     console.log('versione del sito: ' + m[1]);

@@ -2,11 +2,16 @@
 // del sito. Sono i file di docs/ registrati in git, tolto tutto ciò che sta in
 // una cartella dal nome che comincia con «_» o con «.» (come docs/_legacy): gli
 // stessi che pubblica GitHub Pages. In più passano i due file di configurazione
-// di Cloudflare, _headers e _redirects, se ci sono. I file sono copiati così
-// come sono, byte per byte: ciò che si prova è ciò che si pubblica.
+// di Cloudflare, _headers e _redirects, se ci sono.
 //
-//   node collaudo/strumenti/prepara-sito.js <cartella>   prepara la cartella
-//   node collaudo/strumenti/prepara-sito.js              stampa solo l'elenco
+// Senza altro i file sono copiati così come sono, byte per byte. Con
+// «compressa» la copia passa poi da .github/compressione/comprimi.js: è la
+// forma in cui il sito viene pubblicato su Cloudflare, e va provata in quella
+// forma (banco.js e banco-sw.js sanno servirla).
+//
+//   node collaudo/strumenti/prepara-sito.js <cartella>             prepara la cartella
+//   node collaudo/strumenti/prepara-sito.js <cartella> compressa   la prepara e la comprime
+//   node collaudo/strumenti/prepara-sito.js                        stampa solo l'elenco
 //
 // Usato dal flusso .github/workflows/pubblica-cloudflare.yml, dai controlli di
 // rilascio e dal banco del service worker (banco-sw.js).
@@ -29,7 +34,7 @@ function elencoSito(riferimento) {
   }).sort();
 }
 
-function prepara(destinazione) {
+function prepara(destinazione, opzioni) {
   const dest = path.resolve(destinazione);
   if (dest === RADICE || dest === path.join(RADICE, 'docs') || !dest.startsWith(RADICE + path.sep)) {
     throw new Error('la cartella di destinazione deve stare dentro il repository e non essere docs/: ' + dest);
@@ -44,7 +49,9 @@ function prepara(destinazione) {
     fs.copyFileSync(da, a);
     byte += fs.statSync(a).size;
   });
-  return { elenco, byte };
+  if (!(opzioni && opzioni.compressa)) return { elenco, byte };
+  const esito = require(path.join(RADICE, '.github', 'compressione', 'comprimi.js')).comprimi(dest, elenco);
+  return { elenco, byte: esito.dopo, compressione: esito };
 }
 
 module.exports = { elencoSito, prepara, RADICE };
@@ -53,8 +60,17 @@ if (require.main === module) {
   try {
     const dest = process.argv[2];
     if (!dest) { elencoSito().forEach((p) => console.log(p)); process.exit(0); }
-    const r = prepara(dest);
-    r.elenco.forEach((p) => console.log('  ' + p));
-    console.log(r.elenco.length + ' file, ' + r.byte + ' byte in ' + path.relative(RADICE, path.resolve(dest)).split(path.sep).join('/') + '/');
+    const compressa = process.argv[3] === 'compressa';
+    if (process.argv[3] && !compressa) throw new Error('secondo argomento non riconosciuto: ' + process.argv[3]);
+    const r = prepara(dest, { compressa });
+    const dove = path.relative(RADICE, path.resolve(dest)).split(path.sep).join('/') + '/';
+    if (!compressa) {
+      r.elenco.forEach((p) => console.log('  ' + p));
+      console.log(r.elenco.length + ' file, ' + r.byte + ' byte in ' + dove);
+    } else {
+      const c = r.compressione, kb = (n) => (n / 1024).toFixed(0).padStart(5) + ' KB';
+      c.righe.forEach((x) => console.log('  ' + kb(x.prima) + ' → ' + kb(x.dopo) + '  ' + x.file.padEnd(34) + x.nota));
+      console.log(r.elenco.length + ' file in ' + dove + ': da ' + kb(c.prima).trim() + ' a ' + kb(c.dopo).trim() + ' (' + c.strumento + '); ' + c.nomiGlobali + ' nomi globali rimasti identici');
+    }
   } catch (e) { console.log('ERRORE: ' + e.message); process.exit(1); }
 }

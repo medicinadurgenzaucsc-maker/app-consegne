@@ -6,6 +6,8 @@
 //
 //   await window.__proveSw()                             tutto, nei due stili
 //   await window.__proveSw({ stili: ['cloudflare'] })    un solo stile
+//   await window.__proveSw({ versione: 'compressa' })    le stesse prove sulla copia compressa del
+//                                                        sito, la forma pubblicata su Cloudflare
 //   await window.__proveSw({ versione: 'produzione' })   CONTROPROVA: le stesse prove sul service
 //                                                        worker oggi in produzione, che ai guasti
 //                                                        non regge (le prove devono saperlo dire)
@@ -92,9 +94,10 @@
   // Nome della cache ed elenco dei file che il service worker pubblicato tiene in cache.
   async function elencoPrecache() {
     var t = await (await fetch(BASE + 'sw.js?' + unico(), { cache: 'no-store' })).text();
-    var nome = (/CACHE_NAME = '([^']+)'/.exec(t) || [])[1];
-    var corpo = (/PRECACHE_ASSETS = \[([^\]]*)\]/.exec(t) || [])[1] || '';
-    return { nome: nome, percorsi: (corpo.match(/'[^']+'/g) || []).map(function (s) { return s.slice(1, -1); }) };
+    // nella copia compressa la stessa riga è scritta senza spazi e con le virgolette doppie
+    var nome = (/CACHE_NAME\s*=\s*['"]([^'"]+)['"]/.exec(t) || [])[1];
+    var corpo = (/PRECACHE_ASSETS\s*=\s*\[([^\]]*)\]/.exec(t) || [])[1] || '';
+    return { nome: nome, percorsi: (corpo.match(/['"][^'"]+['"]/g) || []).map(function (s) { return s.slice(1, -1); }) };
   }
 
   // La cache del service worker nuovo: una sola, con tutti i file dell'elenco, e
@@ -156,7 +159,7 @@
 
   // ── il service worker della versione di lavoro davanti ai guasti ─────────
   async function batteria(stile, versione) {
-    gruppo = stile + (versione === 'produzione' ? ' · versione in produzione (controprova)' : ' · versione di lavoro');
+    gruppo = stile + (versione === 'produzione' ? ' · versione in produzione (controprova)' : versione === 'compressa' ? ' · copia compressa' : ' · versione di lavoro');
     await azzera();
     await imposta({ stile: stile, modo: 'ok', versione: versione });
     var atteso = await elencoPrecache();
@@ -217,7 +220,7 @@
   }
 
   // ── il passaggio dalla versione oggi in produzione a quella di lavoro ────
-  async function passaggio(stile) {
+  async function passaggio(stile, arrivo) {
     gruppo = stile + ' · passaggio dalla versione in produzione';
     await azzera();
     await imposta({ stile: stile, modo: 'ok', versione: 'produzione' });
@@ -228,7 +231,7 @@
       var n = await caches.keys();
       return (n.length === 1 && n[0] === vecchio.nome) || ('cache: ' + n.join(', '));
     });
-    await imposta({ versione: 'lavoro' });
+    await imposta({ versione: arrivo || 'lavoro' });
     var nuovo = await elencoPrecache();
     await prova('esce la versione nuova (' + nuovo.nome + '): il service worker si aggiorna, resta una sola cache ed è completa', async function () {
       if (nuovo.nome === vecchio.nome) return 'le due versioni hanno lo stesso nome di cache: ' + nuovo.nome;
@@ -265,8 +268,9 @@
     var stili = opz.stili || ['cloudflare', 'github'];
     try {
       for (var i = 0; i < stili.length; i++) {
-        await batteria(stili[i], opz.versione === 'produzione' ? 'produzione' : 'lavoro');
-        if (!opz.senzaPassaggio && opz.versione !== 'produzione') await passaggio(stili[i]);
+        var daProvare = opz.versione === 'produzione' ? 'produzione' : opz.versione === 'compressa' ? 'compressa' : 'lavoro';
+        await batteria(stili[i], daProvare);
+        if (!opz.senzaPassaggio && opz.versione !== 'produzione') await passaggio(stili[i], daProvare);
       }
     } catch (e) {
       esiti.push({ gruppo: gruppo, nome: 'le prove si sono interrotte', ok: false, dettaglio: String((e && e.message) || e).slice(0, 500), ms: 0 });

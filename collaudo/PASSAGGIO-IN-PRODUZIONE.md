@@ -28,6 +28,7 @@ produzione non è stato toccato nulla.
 |---|---|---|
 | Sito | `<proprietario>.github.io/app-consegne/`, aperto a tutti | `<progetto>.pages.dev`, dietro l'accesso con Google |
 | Sorgente | repository pubblico `app-consegne` | repository **privato** `app-consegne-sorgente` |
+| Codice che arriva al browser | i file di `docs/` così come sono | copia compressa: senza commenti, nomi locali accorciati |
 | Vecchio indirizzo | l'applicazione | una pagina che rimanda a quello nuovo |
 | Chi pubblica | GitHub Pages | il flusso «Pubblica su Cloudflare» del repository privato |
 | Avviso «Update» | flusso `notify-deploy` | lo stesso flusso di Cloudflare (`CLOUDFLARE_AVVISA = si`) |
@@ -172,6 +173,9 @@ I due siti convivono sullo stesso database: si può provare con calma.
   un'importazione da TrakCare. Al primo uso sul nuovo indirizzo il browser
   chiede una volta il permesso per gli appunti.
 - «Esci» chiude la sessione dell'app, non quella di Cloudflare.
+- Le prove automatiche si fanno passare anche sulla copia compressa, che è
+  la forma pubblicata su Cloudflare: `banco.js 8767 compressa` e
+  `__proveSw({ versione: 'compressa' })`.
 
 ### A9. Pagina di rinvio e accesso degli strumenti
 
@@ -245,6 +249,8 @@ icona installata vanno aggiornati con calma: il rinvio resta.
   cartella ha il remoto da correggere.
 - Il pannello del browser dell'app Claude non apre finestre nuove: lì il
   pulsante di Google dell'app non funziona.
+- Sul sito compresso gli errori annotati nel registro portano posizioni e
+  nomi della copia compressa, non del sorgente.
 - Le copie del sorgente fatte quando era pubblico non si richiamano.
 
 ## Strumenti
@@ -252,7 +258,7 @@ icona installata vanno aggiornati con calma: il rinvio resta.
 | Strumento | A cosa serve nel passaggio |
 |---|---|
 | `controlli-rilascio.js` | Controlli statici prima di ogni rilascio, compresi indirizzi degli ambienti e file pubblicati |
-| `banco.js`, `banco-sw.js` | Prove dentro l'app e prove del service worker |
+| `banco.js`, `banco-sw.js` | Prove dentro l'app e prove del service worker, anche sulla copia compressa |
 | `prepara-rinvio.js` | Genera i file della pagina di rinvio |
 | `scambio-repository.js stato\|prepara\|scambia\|annulla` | Lo scambio e il suo ritorno |
 | `pubblicazione.js [avvia]` | Segue la pubblicazione su Cloudflare e controlla l'avviso |

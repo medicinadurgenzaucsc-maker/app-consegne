@@ -1,0 +1,9 @@
+{
+  "name": "compressione-sito-consegne",
+  "private": true,
+  "description": "Strumento che comprime la copia del sito pubblicata su Cloudflare. Versione fissa; installare con: npm ci --ignore-scripts",
+  "dependencies": {
+    "acorn": "8.19.0",
+    "terser": "5.51.2"
+  }
+}

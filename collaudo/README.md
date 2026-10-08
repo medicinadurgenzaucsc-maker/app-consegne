@@ -77,12 +77,12 @@ repository non c'è alcun segreto.
 | `confronta-forme.js` | Confronta la forma dei contenuti (tag e classi, mai il testo) fra i due ambienti. |
 | `gettone-prova.js [ore] [cartella]` | Token di sessione per l'utente fittizio delle prove automatiche (vale solo nel collaudo). |
 | `banco-sw.js [porta]` | Banco del service worker: il sito servito come farebbero Cloudflare Pages o GitHub Pages, col service worker acceso e i guasti simulati (vedi «Service worker: banco e prove»). |
-| `prepara-sito.js [cartella]` | Elenca (o copia in una cartella) i soli file del sito, quelli che vengono pubblicati su Cloudflare. |
+| `prepara-sito.js [cartella] [compressa]` | Elenca (o copia in una cartella) i soli file del sito; con `compressa` ne produce la copia compressa, la forma pubblicata su Cloudflare, e la controlla. |
 | `prepara-rinvio.js <nuovo indirizzo> [cartella]` | Genera i file della pagina di rinvio (ciò che resta al vecchio indirizzo quando il sito si sposta), dai modelli in `rinvio/`. |
 | `scambio-repository.js stato\|prepara\|scambia\|annulla` | Prova generale dello scambio dei repository nel collaudo: sorgente in un repository privato, al vecchio nome solo la pagina di rinvio (vedi «Pubblicazione su Cloudflare»). |
 | `pubblicazione.js [avvia]` | Segue il flusso «Pubblica su Cloudflare» del repository di collaudo fino alla fine, ne mostra i passi e controlla che l'avviso ai PC sia arrivato in `app_version`; con `avvia` lo fa ripartire a mano sullo stesso commit. Non scrive nel database. |
 | `verifica-chiusura.js collaudo\|produzione [indirizzo] [--archivi]` | Prova **da estraneo**, senza credenziali, che il sorgente non si scarichi più da nessuna strada, che al vecchio indirizzo resti solo la pagina di rinvio e che il sito nuovo chieda l'accesso: 28 prove, più 4 sugli archivi pubblici di terzi. Dove lo scambio non è stato fatto deve fallire: è la sua controprova. |
-| `banco.js [porta]` | Banco di prova locale: serve l'app così com'è nella cartella di lavoro, collegata al collaudo e già «dentro» con l'utente fittizio. |
+| `banco.js [porta] [compressa]` | Banco di prova locale (con `compressa` serve la copia compressa del sito): serve l'app così com'è nella cartella di lavoro, collegata al collaudo e già «dentro» con l'utente fittizio. |
 | `inventario-markup.js [produzione\|collaudo]` | Elenco di tag, attributi, classi e proprietà di stile presenti nei campi delle schede (solo nomi e conteggi, mai il testo): serve a tarare e a ricontrollare il filtro dell'HTML (`docs/js/sanifica.js`). |
 | `pubblica-sito.js` | Pubblica il sito di servizio `gistech2026.github.io/collaudo/` (finto TrakCare e informativa). |
 | `controlli-rilascio.js [riferimento]` | Controlli statici prima di ogni pubblicazione: sintassi, segnalibri collassati e loro versione, tag script al completo, impronta della libreria del filtro, service worker, uscita solo locale (`signOut` con `scope: 'local'`), versione nel menu uguale a `CACHE_NAME`. Confronta con `origin/master` (la produzione) se non si indica altro. |
@@ -115,6 +115,10 @@ node collaudo/strumenti/banco.js 8765
 | `http://localhost:8765/trak-finto/` | il finto TrakCare |
 
 Nel banco il service worker è spento e nessun file viene copiato o modificato.
+Con `node collaudo/strumenti/banco.js 8767 compressa` il banco serve invece la
+**copia compressa** del sito, quella pubblicata su Cloudflare, preparata
+all'avvio in `_sito/banco`: dopo una modifica a `docs/` va riavviato. Le prove
+vanno fatte passare anche lì prima di ogni rilascio.
 Dentro la pagina dell'app si caricano, dalla console, gli script di
 `collaudo/pagina/` (serviti sotto `/pagina/`):
 
@@ -178,6 +182,10 @@ stesse prove sul service worker della v181, che davanti a un 404 mostra
 l'errore e lo salva in cache. Devono fallire (25 su 36): se passano, le prove
 non stanno misurando.
 
+`await window.__proveSw({ versione: 'compressa' })` esegue le 46 prove sulla
+copia compressa del sito: è la forma in cui il service worker arriva ai PC da
+Cloudflare.
+
 ## Pubblicazione su Cloudflare
 
 Il sito viene pubblicato anche su Cloudflare Pages, in vista dello spostamento
@@ -190,6 +198,35 @@ ripete in produzione.
   (`prepara-sito.js`), più `docs/_headers`. Un file nuovo va quindi registrato
   in git e, se le pagine lo caricano, aggiunto all'elenco di `sw.js`: lo
   verificano i controlli di rilascio.
+- **La copia compressa**: su Cloudflare non vanno i file di `docs/` così come
+  sono ma una copia compressa, prodotta dal flusso con
+  `.github/compressione/comprimi.js` (terser, versione fissa e impronte,
+  installato senza eseguirne gli script). È lo stesso programma, più scomodo
+  da leggere e da copiare: via i commenti e gli spazi, nomi **locali**
+  accorciati, negli script dei file e in quelli scritti in pagina; dei
+  commenti HTML e CSS resta il segno vuoto. Non cambiano mai i nomi globali
+  (pagine, gestori scritti negli attributi e file diversi si chiamano fra
+  loro per nome), la struttura delle pagine, i file delle librerie. `docs/`
+  resta com'è: è lì che si lavora, ed è ciò che serve GitHub Pages.
+
+  La copia si controlla da sé e, se un controllo fallisce, il flusso si ferma
+  senza pubblicare: ogni script compila, la struttura delle pagine e i nomi
+  globali sono identici, non compare nessun indirizzo di rete che non sia nel
+  sorgente, i due segnalibri di TrakCare restano funzioni intere senza
+  sequenze `%XX`, il service worker ha la stessa versione e lo stesso elenco.
+  Gli stessi controlli girano in locale con `controlli-rilascio.js`, dopo
+  aver installato lo strumento una volta (`npm ci --ignore-scripts` dentro
+  `.github/compressione`). Il flusso stampa l'impronta di ogni file
+  pubblicato.
+
+  **Si prova nella forma in cui si pubblica**: `banco.js 8767 compressa` con
+  le prove dentro l'app, e `__proveSw({ versione: 'compressa' })`. Dalla
+  v186 (08/10/2026): il sito passa da 1347 a 909 KB.
+
+  Da sapere: sul sito compresso i segnalibri nascono dal codice compresso;
+  nel service worker la riga della versione diventa
+  `CACHE_NAME="consegne-vNNN"`; gli errori annotati nel registro portano
+  posizioni e nomi della copia compressa, non del sorgente.
 - **Chi pubblica**: il flusso `.github/workflows/pubblica-cloudflare.yml`, a
   ogni push su `master` che tocca il sito. È lo stesso nei due repository: a
   quale progetto pubblicare lo dicono la variabile `CLOUDFLARE_PROGETTO` e i

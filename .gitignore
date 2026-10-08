@@ -17,3 +17,6 @@ collaudo/strumenti/struttura-*.json
 # Pubblicazione su Cloudflare: cartelle generate
 _sito/
 .github/pubblicazione/node_modules/
+
+# Copia compressa del sito: strumento installato in locale
+.github/compressione/node_modules/

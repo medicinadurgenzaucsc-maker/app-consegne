@@ -21,6 +21,10 @@
 //     completo, strumento con versione fissa e impronta di ogni pacchetto
 // 11. pagina di rinvio (ciò che resta al vecchio indirizzo): porta al nuovo con
 //     gli stessi parametri, e il suo service worker si toglie da solo
+// 12. copia compressa (ciò che viene pubblicato su Cloudflare): strumento con
+//     versione fissa e impronte; la copia si costruisce e supera i suoi
+//     controlli: script che compilano, struttura delle pagine e nomi globali
+//     identici, nessun indirizzo di rete nuovo, segnalibri interi
 //
 //   node collaudo/strumenti/controlli-rilascio.js [riferimento]
 //
@@ -261,6 +265,34 @@ mancanti.length ? ko('sw.js elenca file che non esistono (l\'installazione del s
     ['http://esempio.org/', 'https://esempio.org/?a=1', "https://x'y.org/", 'javascript:alert(1)'].forEach((u) => { try { fileRinvio(u); } catch (e) { rifiutati++; } });
     rifiutati === 4 ? ok('pagina di rinvio: gli indirizzi non validi sono rifiutati') : ko('pagina di rinvio: un indirizzo non valido è stato accettato');
   } catch (e) { ko('pagina di rinvio: ' + e.message); }
+}
+
+// ── 12. copia compressa ──────────────────────────────────────────────
+// Lo strumento che comprime trasforma il codice che arriva ai PC: versione
+// fissa, impronta di ogni pacchetto, e la copia prodotta deve superare i
+// controlli di comprimi.js. Va installato in locale una volta:
+//   npm ci --ignore-scripts   (dentro .github/compressione)
+{
+  compila('.github/compressione/comprimi.js');
+  try {
+    const pacchetto = JSON.parse(leggi('.github/compressione/package.json')), impronte = JSON.parse(leggi('.github/compressione/package-lock.json'));
+    const nomi = Object.keys(impronte.packages).filter(Boolean);
+    const senza = nomi.filter((k) => !impronte.packages[k].integrity);
+    const dichiarati = Object.keys(pacchetto.dependencies || {});
+    const liberi = dichiarati.filter((d) => !/^\d+[.]\d+[.]\d+$/.test(pacchetto.dependencies[d]) || (impronte.packages['node_modules/' + d] || {}).version !== pacchetto.dependencies[d]);
+    if (dichiarati.indexOf('terser') < 0) ko('strumento di compressione: terser non è fra le dipendenze');
+    else if (liberi.length) ko('strumento di compressione: versione non fissa o diversa da quella delle impronte: ' + liberi.join(', ') + ' (rigenerare package-lock.json)');
+    else if (senza.length) ko('strumento di compressione: pacchetti senza impronta: ' + senza.slice(0, 5).join(', '));
+    else ok('strumento di compressione: terser ' + pacchetto.dependencies.terser + ', ' + nomi.length + ' pacchetti, tutti con impronta');
+    const flusso = leggi('.github/workflows/pubblica-cloudflare.yml');
+    if ((flusso.match(/npm ci --ignore-scripts/g) || []).length < 2) ko('pubblica-cloudflare.yml: anche lo strumento di compressione va installato con «npm ci --ignore-scripts»');
+    if (!/[.]github\/compressione\/\*\*/.test(flusso)) ko('pubblica-cloudflare.yml: una modifica a .github/compressione deve far ripartire la pubblicazione');
+  } catch (e) { ko('strumento di compressione: ' + e.message); }
+  try {
+    const r = require('./prepara-sito.js').prepara(path.join(RADICE, '_sito', 'controlli'), { compressa: true });
+    const c = r.compressione;
+    ok('copia compressa: ' + r.elenco.length + ' file, da ' + Math.round(c.prima / 1024) + ' a ' + Math.round(c.dopo / 1024) + ' KB; script che compilano, struttura delle pagine e ' + c.nomiGlobali + ' nomi globali identici, nessun indirizzo nuovo, segnalibri interi');
+  } catch (e) { ko('copia compressa: ' + String((e && e.message) || e).split('\n').join(' | ').slice(0, 900)); }
 }
 
 console.log(errori ? ('\n' + errori + ' CONTROLLI FALLITI: non pubblicare') : '\ntutti i controlli superati');

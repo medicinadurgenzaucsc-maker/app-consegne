@@ -1,6 +1,8 @@
 name: Pubblica su Cloudflare
 
-# Pubblica il sito (i file di docs/) su Cloudflare Pages.
+# Pubblica il sito (i file di docs/) su Cloudflare Pages, in copia compressa:
+# lo stesso programma, senza commenti e con i nomi locali accorciati
+# (.github/compressione/comprimi.js, che controlla da sé la copia prodotta).
 #
 # Parte a ogni push sul ramo «master» che tocca il sito, e a mano. Il flusso è lo
 # stesso nei due repository (collaudo e produzione): a quale progetto di
@@ -17,8 +19,9 @@ name: Pubblica su Cloudflare
 # sito e lo strumento di pubblicazione siano a posto, e non pubblica nulla.
 #
 # Sicurezza della filiera: l'azione di GitHub è fissata al suo identificativo
-# completo; lo strumento di pubblicazione ha versione fissa e l'impronta di ogni
-# pacchetto (.github/pubblicazione/) ed è installato senza eseguirne gli script;
+# completo; gli strumenti di compressione e di pubblicazione hanno versione fissa
+# e l'impronta di ogni pacchetto (.github/compressione/ e .github/pubblicazione/)
+# e sono installati senza eseguirne gli script;
 # le chiavi di Cloudflare sono date solo ai passi che pubblicano.
 
 on:
@@ -28,6 +31,7 @@ on:
       - 'docs/**'
       - '.github/workflows/pubblica-cloudflare.yml'
       - '.github/pubblicazione/**'
+      - '.github/compressione/**'
       - 'collaudo/strumenti/prepara-sito.js'
   workflow_dispatch:
 
@@ -54,7 +58,12 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: File del sito
+      - name: Strumento di compressione
+        working-directory: .github/compressione
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: File del sito (copia compressa)
         run: |
           node .github/pubblicazione/passi.js sito
 

@@ -15,13 +15,15 @@
 //            ripubblicato); «giu»: la connessione cade; «accesso»: ogni richiesta
 //            è rinviata alla pagina di accesso di un cancello, su un altro sito.
 // versione   «lavoro»: i file della cartella di lavoro; «produzione»: quelli di
-//            origin/master, per provare il passaggio dalla versione in reparto.
+//            origin/master, per provare il passaggio dalla versione in reparto;
+//            «compressa»: la copia compressa della cartella di lavoro, cioè la
+//            forma pubblicata su Cloudflare (preparata al primo uso in _sito/banco-sw).
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { execFileSync } = require('child_process');
-const { elencoSito, RADICE } = require('./prepara-sito.js');
+const { elencoSito, prepara, RADICE } = require('./prepara-sito.js');
 
 const PORTA = Number(process.argv[2] || 8766);
 const RIF_PRODUZIONE = 'origin/master';
@@ -30,19 +32,24 @@ const MIME = {
   '.json': 'application/json; charset=utf-8', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon',
 };
 const stato = { stile: 'cloudflare', modo: 'ok', versione: 'lavoro' };
-const AMMESSI = { stile: ['cloudflare', 'github'], modo: ['ok', '404', '500', 'giu', 'accesso'], versione: ['lavoro', 'produzione'] };
+const AMMESSI = { stile: ['cloudflare', 'github'], modo: ['ok', '404', '500', 'giu', 'accesso'], versione: ['lavoro', 'produzione', 'compressa'] };
 let richieste = [];
 
 // I file delle due «pubblicazioni». Quelli di produzione si leggono da git una volta sola.
 const memoria = {};
+const COMPRESSA = path.join(RADICE, '_sito', 'banco-sw');
 function elenco(versione) {
-  if (versione === 'lavoro') return elencoSito();
+  if (versione === 'lavoro' || versione === 'compressa') return elencoSito();
   if (!memoria.elenco) memoria.elenco = elencoSito(RIF_PRODUZIONE);
   return memoria.elenco;
 }
 function leggi(versione, p) {
   if (elenco(versione).indexOf(p) < 0 || p.charAt(0) === '_') return null;
   if (versione === 'lavoro') return fs.readFileSync(path.join(RADICE, 'docs', p));
+  if (versione === 'compressa') {
+    if (!memoria.compressa) { prepara(COMPRESSA, { compressa: true }); memoria.compressa = true; }
+    return fs.readFileSync(path.join(COMPRESSA, p));
+  }
   const k = 'file:' + p;
   if (!memoria[k]) memoria[k] = execFileSync('git', ['-C', RADICE, 'show', RIF_PRODUZIONE + ':docs/' + p], { maxBuffer: 64 * 1024 * 1024 });
   return memoria[k];

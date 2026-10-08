@@ -4,6 +4,9 @@
 // viene copiato o modificato: l'avvio del banco è aggiunto al volo alle pagine.
 //
 //   node collaudo/strumenti/banco.js [porta]
+//   node collaudo/strumenti/banco.js [porta] compressa   serve la copia COMPRESSA del sito,
+//        quella che viene pubblicata su Cloudflare (preparata all'avvio in _sito/banco:
+//        dopo una modifica a docs/ il banco va riavviato)
 //
 //   http://localhost:8765/                  l'app (cartella docs/)
 //   http://localhost:8765/?sloggato         la stessa, senza sessione (prova di fumo)
@@ -18,10 +21,18 @@ const { genera } = require('./gettone-prova.js');
 
 const RADICE = path.resolve(__dirname, '../..');
 const PORTA = Number(process.argv[2] || 8765);
+const COMPRESSA = process.argv[3] === 'compressa';
+if (process.argv[3] && !COMPRESSA) { console.log('secondo argomento non riconosciuto: ' + process.argv[3]); process.exit(1); }
+// La copia compressa si prepara una volta, all'avvio: se non riesce il banco non parte.
+const SITO = COMPRESSA ? path.join(RADICE, '_sito', 'banco') : path.join(RADICE, 'docs');
+if (COMPRESSA) {
+  const r = require('./prepara-sito.js').prepara(SITO, { compressa: true });
+  console.log('copia compressa pronta: ' + r.elenco.length + ' file, ' + Math.round(r.byte / 1024) + ' KB (' + r.compressione.strumento + ')');
+}
 const MONTAGGI = [
   ['/trak-finto/', path.join(RADICE, 'collaudo', 'trak-finto')],
   ['/pagina/', path.join(RADICE, 'collaudo', 'pagina')],
-  ['/', path.join(RADICE, 'docs')],
+  ['/', SITO],
 ];
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
@@ -132,4 +143,4 @@ http.createServer(async (req, res) => {
   } catch (e) {
     rispondi(res, 500, 'text/plain; charset=utf-8', 'errore del banco: ' + e.message);
   }
-}).listen(PORTA, '127.0.0.1', () => console.log('banco di prova su http://localhost:' + PORTA + '/  (app: docs/ · finto TrakCare: /trak-finto/)'));
+}).listen(PORTA, '127.0.0.1', () => console.log('banco di prova su http://localhost:' + PORTA + '/  (app: ' + (COMPRESSA ? 'copia COMPRESSA di docs/' : 'docs/') + ' · finto TrakCare: /trak-finto/)'));

@@ -5,7 +5,8 @@
 // Questo strumento segue il flusso fino alla fine e controlla che l'avviso sia
 // arrivato nel database di collaudo. Non scrive nulla nel database.
 //
-//   node collaudo/strumenti/pubblicazione.js          segue l'ultima pubblicazione e ne mostra l'esito
+//   node collaudo/strumenti/pubblicazione.js          segue la pubblicazione del commit appena mandato
+//                                                     (se quel commit non tocca il sito, mostra l'ultima fatta)
 //   node collaudo/strumenti/pubblicazione.js avvia    la fa ripartire a mano (stesso commit) e la segue
 //
 // Il repository è quello a cui punta il remoto «collaudo» di questa cartella:
@@ -19,20 +20,20 @@ const RADICE = path.resolve(__dirname, '../..');
 const FLUSSO = 'pubblica-cloudflare.yml';
 const attendi = (ms) => new Promise((r) => setTimeout(r, ms));
 const pulito = (t) => String(t).replace(/gh[pousr]_[A-Za-z0-9_]+/g, 'gh*_***');
+const git = (...a) => execFileSync('git', ['-C', RADICE].concat(a), { encoding: 'utf8' }).trim();
 
 // Il nome del repository dal remoto, senza mai stampare la chiave che l'indirizzo può contenere.
 function repository() {
-  const u = execFileSync('git', ['-C', RADICE, 'remote', 'get-url', 'collaudo'], { encoding: 'utf8' }).trim();
-  const pezzi = u.replace(/[.]git$/, '').split('/');
-  const nome = pezzi.pop(), proprietario = pezzi.pop();
+  const pezzi = git('remote', 'get-url', 'collaudo').replace(/[.]git$/, '').split('/');
+  const nome = pezzi.pop(), proprietario = (pezzi.pop() || '').split('@').pop().split(':').pop();
   if (proprietario !== UTENTE || !/^[A-Za-z0-9._-]+$/.test(nome)) throw new Error('il remoto «collaudo» non punta a un repository di ' + UTENTE);
   return nome;
 }
 
-async function ultima(R) {
-  const r = await gh('GET', R + '/actions/workflows/' + FLUSSO + '/runs?per_page=1');
+async function esecuzioni(R) {
+  const r = await gh('GET', R + '/actions/workflows/' + FLUSSO + '/runs?per_page=5');
   if (r.stato >= 300) throw new Error('elenco delle esecuzioni: HTTP ' + r.stato);
-  return (r.dati && r.dati.workflow_runs && r.dati.workflow_runs[0]) || null;
+  return (r.dati && r.dati.workflow_runs) || [];
 }
 
 (async () => {
@@ -42,25 +43,36 @@ async function ultima(R) {
   const R = '/repos/' + UTENTE + '/' + nome;
   console.log('repository ' + UTENTE + '/' + nome);
 
-  let dopo = 0;
+  // Quale esecuzione aspettare: quella nuova dopo «avvia», altrimenti quella del commit in cima al remoto.
+  let dopo = 0, commit = null;
   if (azione === 'avvia') {
-    const prima = await ultima(R);
-    dopo = prima ? prima.run_number : 0;
+    dopo = ((await esecuzioni(R))[0] || {}).run_number || 0;
     const r = await gh('POST', R + '/actions/workflows/' + FLUSSO + '/dispatches', { ref: 'master' });
     if (r.stato !== 204) throw new Error('avvio a mano del flusso: HTTP ' + r.stato + ' ' + JSON.stringify(r.dati).slice(0, 200));
     console.log('pubblicazione avviata a mano');
+  } else {
+    const b = await gh('GET', R + '/branches/master');
+    commit = b.dati && b.dati.commit && b.dati.commit.sha;
+    if (!commit) throw new Error('ramo master del repository: HTTP ' + b.stato);
+    console.log('commit in cima al ramo: ' + commit.slice(0, 7));
   }
+  const voluta = (x) => (azione === 'avvia' ? x.run_number > dopo : x.head_sha === commit);
 
-  // Aspetta la fine dell'esecuzione (dopo «avvia»: di quella nuova).
-  let run = null;
-  for (let i = 0; i < 80; i++) {
-    run = await ultima(R);
-    if (run && run.run_number > dopo && run.status === 'completed') break;
-    if (i % 4 === 0) console.log('… ' + (run && run.run_number > dopo ? run.status + ' (n. ' + run.run_number + ', ' + String(run.head_sha).slice(0, 7) + ')' : 'in attesa che parta'));
+  let run = null, vista = false;
+  for (let i = 0; i < 96; i++) {
+    const tutte = await esecuzioni(R);
+    const mia = tutte.filter(voluta)[0];
+    if (mia) { vista = true; if (mia.status === 'completed') { run = mia; break; } }
+    // un commit che non tocca il sito non fa partire nulla: dopo 45 secondi si mostra l'ultima pubblicazione
+    if (!vista && azione === 'stato' && i >= 9) {
+      run = tutte.filter((x) => x.status === 'completed')[0] || null;
+      console.log('per il commit ' + commit.slice(0, 7) + ' non è partita nessuna pubblicazione (non tocca il sito): mostro l\'ultima fatta');
+      break;
+    }
+    if (i % 4 === 0) console.log('… ' + (mia ? mia.status + ' (n. ' + mia.run_number + ', ' + String(mia.head_sha).slice(0, 7) + ')' : 'in attesa che parta'));
     await attendi(5000);
-    run = null;
   }
-  if (!run) { console.log('ERRORE: il flusso non è finito in 7 minuti'); process.exit(1); }
+  if (!run) { console.log('ERRORE: il flusso non è finito in 8 minuti'); process.exit(1); }
 
   console.log('esecuzione n. ' + run.run_number + ' | ' + run.event + ' | commit ' + String(run.head_sha).slice(0, 7) + ' | esito: ' + run.conclusion);
   const j = await gh('GET', R + '/actions/runs/' + run.id + '/jobs');
