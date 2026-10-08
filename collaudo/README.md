@@ -6,8 +6,8 @@ solo il database a cui il sito si collega.
 
 |                    | Produzione                                              | Collaudo                                     |
 |--------------------|---------------------------------------------------------|----------------------------------------------|
-| Sito               | `medicinadurgenzaucsc-maker.github.io/app-consegne/`    | `gistech2026.github.io/app-consegne/`        |
-| Repository         | `medicinadurgenzaucsc-maker/app-consegne` (`origin`)    | `gistech2026/app-consegne` (`collaudo`)      |
+| Sito               | `medicinadurgenzaucsc-maker.github.io/app-consegne/`    | `consegne-collaudo.pages.dev`, dietro l'accesso con Google |
+| Repository         | `medicinadurgenzaucsc-maker/app-consegne` (`origin`)    | `gistech2026/app-consegne-sorgente`, privato (`collaudo`) |
 | Progetto Supabase  | `ifmmcvxzhwdkmzhsxcvb`                                  | `rqvohwpthhumydpbwktq`                       |
 | Mail dimissioni    | parte davvero (dal mittente scelto in «Impostazioni email») | parte davvero solo fra indirizzi di prova; simulata nelle prove automatiche |
 
@@ -20,12 +20,20 @@ aggiunto all'elenco giusto prima di essere usato. Una cornice arancione con «CO
 segnala l'ambiente, anche in stampa. Ogni database dichiara chi è nella riga
 `AMBIENTE` di `impostazioni`: se sito e database non concordano l'app si ferma.
 
+Dall'08/10/2026 il collaudo vive su Cloudflare: il vecchio indirizzo
+`gistech2026.github.io/app-consegne/` mostra solo la pagina che rimanda a quello
+nuovo, e il sorgente sta in un repository privato (vedi «Pubblicazione su
+Cloudflare»).
+
 ## Come si lavora
 
 1. Le modifiche si fanno sul ramo `collaudo`.
-2. `git push collaudo collaudo:master` pubblica il sito di collaudo; poi
-   `node collaudo/strumenti/pubblica-versione.js` aggiorna `app_version` nel
-   database di collaudo (in produzione lo fa il workflow `notify-deploy`).
+2. `git push collaudo collaudo:master` manda il commit al repository privato
+   di collaudo: se tocca il sito, il flusso «Pubblica su Cloudflare» lo
+   pubblica e avvisa le pagine aperte (aggiorna `app_version`).
+   `node collaudo/strumenti/pubblicazione.js` segue il flusso fino alla fine e
+   controlla che l'avviso sia arrivato. In produzione, finché il sito sta su
+   GitHub Pages, pubblica GitHub e avvisa il workflow `notify-deploy`.
 3. Si prova lì: a mano, con la batteria di prove dentro l'app (vedi «Banco di
    prova») e con le batterie in `collaudo/strumenti/`.
 4. Con l'ok di chi gestisce l'app: `git checkout master && git merge --ff-only
@@ -72,6 +80,7 @@ repository non c'è alcun segreto.
 | `prepara-sito.js [cartella]` | Elenca (o copia in una cartella) i soli file del sito, quelli che vengono pubblicati su Cloudflare. |
 | `prepara-rinvio.js <nuovo indirizzo> [cartella]` | Genera i file della pagina di rinvio (ciò che resta al vecchio indirizzo quando il sito si sposta), dai modelli in `rinvio/`. |
 | `scambio-repository.js stato\|prepara\|scambia\|annulla` | Prova generale dello scambio dei repository nel collaudo: sorgente in un repository privato, al vecchio nome solo la pagina di rinvio (vedi «Pubblicazione su Cloudflare»). |
+| `pubblicazione.js [avvia]` | Segue il flusso «Pubblica su Cloudflare» del repository di collaudo fino alla fine, ne mostra i passi e controlla che l'avviso ai PC sia arrivato in `app_version`; con `avvia` lo fa ripartire a mano sullo stesso commit. Non scrive nel database. |
 | `banco.js [porta]` | Banco di prova locale: serve l'app così com'è nella cartella di lavoro, collegata al collaudo e già «dentro» con l'utente fittizio. |
 | `inventario-markup.js [produzione\|collaudo]` | Elenco di tag, attributi, classi e proprietà di stile presenti nei campi delle schede (solo nomi e conteggi, mai il testo): serve a tarare e a ricontrollare il filtro dell'HTML (`docs/js/sanifica.js`). |
 | `pubblica-sito.js` | Pubblica il sito di servizio `gistech2026.github.io/collaudo/` (finto TrakCare e informativa). |
@@ -195,10 +204,15 @@ ripete in produzione.
 - **L'avviso ai PC**: con la variabile `CLOUDFLARE_AVVISA` a `si` è il flusso
   ad aggiornare `app_version` a pubblicazione fatta. Va accesa solo quando i PC
   usano il sito su Cloudflare; finché usano quello su GitHub l'avviso resta a
-  `pubblica-versione.js` (in produzione a `notify-deploy`).
-- **Dove**: dall'08/10/2026 il collaudo è pubblicato anche su
+  `notify-deploy`. Nel collaudo è accesa dall'08/10/2026, giorno dello scambio
+  dei repository: il flusso usa i segreti `SUPABASE_URL` e
+  `SUPABASE_SERVICE_ROLE_KEY` del repository privato, che sono quelli del
+  progetto di collaudo, messi via API senza mai mostrarli. `pubblicazione.js`
+  segue il flusso e controlla l'avviso.
+- **Dove**: dall'08/10/2026 il collaudo è pubblicato su
   `https://consegne-collaudo.pages.dev/` (progetto `consegne-collaudo`,
-  account Cloudflare di gistech), accanto al sito su GitHub Pages.
+  account Cloudflare di gistech). Dallo scambio dei repository, fatto lo
+  stesso giorno, è l'unico sito del collaudo.
 - **L'accesso** (Cloudflare Access, dall'08/10/2026): chi apre il sito su
   Cloudflare senza essersi fatto riconoscere non riceve né la pagina né i
   singoli file: viene mandato all'accesso. Com'è configurato:
@@ -256,6 +270,31 @@ ripete in produzione.
   com'era. **Dopo lo scambio ogni altra copia della cartella ha il remoto che
   punta al repository pubblico**: per questo è chiuso alle scritture, ma il
   remoto va corretto prima di usarla.
+
+  **Fatto nel collaudo l'08/10/2026.** Tempi: 2 secondi per la prima
+  rinomina, 5 per la seconda, 23 perché il vecchio indirizzo passasse alla
+  pagina di rinvio, senza risposte «404» nel mezzo: fino a quel momento ha
+  continuato a servire l'applicazione. Il sorgente è diventato privato dopo
+  29 secondi e GitHub ne ha spento da sé il sito (un account gratuito non
+  pubblica da un repository privato). Subito dopo il flusso di Cloudflare ha
+  pubblicato dal repository privato e ha avvisato le pagine aperte.
+  Controlli da rifare **da estraneo, senza credenziali**, dopo ogni scambio:
+  - `api.github.com/repos/<proprietario>/app-consegne-sorgente`, la pagina
+    su `github.com`, un file da `raw.githubusercontent.com`, lo zip del ramo
+    e `git ls-remote` devono rispondere 404 o chiedere le credenziali;
+  - dal vecchio nome, un file del sorgente chiesto per ramo o per impronta
+    del commit deve dare 404, e lo zip deve contenere solo i 7 file della
+    pagina di rinvio;
+  - `<proprietario>.github.io/app-consegne/js/api.js` deve dare 404 anche
+    senza parametri contro la cache, e così
+    `<proprietario>.github.io/app-consegne-sorgente/`;
+  - prima dello scambio: nessun fork, nessun collaboratore oltre al
+    proprietario, nessuna chiave di pubblicazione, nessun aggancio esterno.
+    Un fork pubblico resterebbe pubblico anche dopo.
+
+  Lo scambio non richiama le copie già fatte: chi ha scaricato il sorgente
+  quando era pubblico lo conserva. In un repository privato di un account
+  gratuito le regole («rulesets») non esistono: `stato` lo sa.
 - **Differenze di Cloudflare Pages**: `print.html` risponde con un rinvio a
   `/print` e `index.html` a `/`; senza `404.html` un indirizzo sconosciuto
   riceverebbe la pagina principale; le intestazioni si decidono in

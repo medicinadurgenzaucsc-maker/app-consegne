@@ -53,7 +53,8 @@ async function cheCosa(url) {
   } catch (e) { return 'errore di rete'; }
 }
 async function regola(nome) {
-  const r = await api('GET', base(nome) + '/rulesets', null, [404]);
+  // 403: in un repository privato di un account gratuito le regole non esistono
+  const r = await api('GET', base(nome) + '/rulesets', null, [404, 403]);
   return (Array.isArray(r.dati) ? r.dati : []).filter((x) => x.name === REGOLA)[0] || null;
 }
 async function sblocca(nome) {
