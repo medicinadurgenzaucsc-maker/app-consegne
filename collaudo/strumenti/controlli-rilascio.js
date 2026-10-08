@@ -19,6 +19,8 @@
 //     il service worker caricano
 // 10. flusso di pubblicazione: azione di GitHub fissata all'identificativo
 //     completo, strumento con versione fissa e impronta di ogni pacchetto
+// 11. pagina di rinvio (ciò che resta al vecchio indirizzo): porta al nuovo con
+//     gli stessi parametri, e il suo service worker si toglie da solo
 //
 //   node collaudo/strumenti/controlli-rilascio.js [riferimento]
 //
@@ -230,6 +232,35 @@ mancanti.length ? ko('sw.js elenca file che non esistono (l\'installazione del s
     else if (senza.length) ko('strumento di pubblicazione: pacchetti senza impronta: ' + senza.slice(0, 5).join(', '));
     else ok('strumento di pubblicazione: wrangler ' + voluta + ', ' + nomi.length + ' pacchetti, tutti con impronta');
   } catch (e) { ko('strumento di pubblicazione: ' + e.message); }
+}
+
+// ── 11. pagina di rinvio ─────────────────────────────────────────────────
+// È ciò che resta al vecchio indirizzo quando il sito si sposta: deve portare
+// al nuovo con gli stessi parametri, anche per la stampa e per le pagine che
+// non esistono, e il suo service worker deve solo togliersi di mezzo.
+{
+  compila('collaudo/strumenti/prepara-rinvio.js');
+  compila('collaudo/strumenti/scambio-repository.js');
+  try {
+    const { fileRinvio } = require('./prepara-rinvio.js');
+    const NUOVO = 'https://esempio-nuovo.pages.dev/';
+    const file = Object.fromEntries(fileRinvio(NUOVO).map((x) => [x[0], x[1].toString('utf8')]));
+    const vm = require('vm');
+    const arriva = (nome, search, hash) => {
+      let dove = null;
+      vm.runInNewContext((/<script>([\s\S]*?)<\/script>/.exec(file[nome]) || [])[1] || '', { location: { search: search, hash: hash, replace: (u) => { dove = u; } } });
+      return dove;
+    };
+    const casi = [['index.html', '', '', NUOVO], ['index.html', '?a=1', '#b', NUOVO + '?a=1#b'], ['print.html', '?layout=alt', '', NUOVO + 'print.html?layout=alt'], ['404.html', '?a=1', '', NUOVO + '?a=1']];
+    const sbagliati = casi.filter((c) => arriva(c[0], c[1], c[2]) !== c[3]).map((c) => c[0] + c[1] + c[2] + ' → ' + arriva(c[0], c[1], c[2]));
+    sbagliati.length ? ko('pagina di rinvio: ' + sbagliati.join('; ')) : ok('pagina di rinvio: ' + casi.length + ' casi portano al nuovo indirizzo con parametri e ancora');
+    if (!/<noscript><meta http-equiv="refresh"/.test(file['index.html'])) ko('pagina di rinvio: manca il rinvio per chi ha JavaScript spento');
+    if (/addEventListener\('fetch'/.test(file['sw.js']) || !/registration\.unregister\(\)/.test(file['sw.js'])) ko('rinvio/sw.js deve solo svuotare la cache e togliersi: niente gestore delle richieste');
+    else ok('rinvio/sw.js: si toglie da solo e non intercetta richieste');
+    let rifiutati = 0;
+    ['http://esempio.org/', 'https://esempio.org/?a=1', "https://x'y.org/", 'javascript:alert(1)'].forEach((u) => { try { fileRinvio(u); } catch (e) { rifiutati++; } });
+    rifiutati === 4 ? ok('pagina di rinvio: gli indirizzi non validi sono rifiutati') : ko('pagina di rinvio: un indirizzo non valido è stato accettato');
+  } catch (e) { ko('pagina di rinvio: ' + e.message); }
 }
 
 console.log(errori ? ('\n' + errori + ' CONTROLLI FALLITI: non pubblicare') : '\ntutti i controlli superati');

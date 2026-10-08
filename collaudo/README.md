@@ -70,6 +70,8 @@ repository non c'è alcun segreto.
 | `gettone-prova.js [ore] [cartella]` | Token di sessione per l'utente fittizio delle prove automatiche (vale solo nel collaudo). |
 | `banco-sw.js [porta]` | Banco del service worker: il sito servito come farebbero Cloudflare Pages o GitHub Pages, col service worker acceso e i guasti simulati (vedi «Service worker: banco e prove»). |
 | `prepara-sito.js [cartella]` | Elenca (o copia in una cartella) i soli file del sito, quelli che vengono pubblicati su Cloudflare. |
+| `prepara-rinvio.js <nuovo indirizzo> [cartella]` | Genera i file della pagina di rinvio (ciò che resta al vecchio indirizzo quando il sito si sposta), dai modelli in `rinvio/`. |
+| `scambio-repository.js stato\|prepara\|scambia\|annulla` | Prova generale dello scambio dei repository nel collaudo: sorgente in un repository privato, al vecchio nome solo la pagina di rinvio (vedi «Pubblicazione su Cloudflare»). |
 | `banco.js [porta]` | Banco di prova locale: serve l'app così com'è nella cartella di lavoro, collegata al collaudo e già «dentro» con l'utente fittizio. |
 | `inventario-markup.js [produzione\|collaudo]` | Elenco di tag, attributi, classi e proprietà di stile presenti nei campi delle schede (solo nomi e conteggi, mai il testo): serve a tarare e a ricontrollare il filtro dell'HTML (`docs/js/sanifica.js`). |
 | `pubblica-sito.js` | Pubblica il sito di servizio `gistech2026.github.io/collaudo/` (finto TrakCare e informativa). |
@@ -194,6 +196,21 @@ ripete in produzione.
   ad aggiornare `app_version` a pubblicazione fatta. Va accesa solo quando i PC
   usano il sito su Cloudflare; finché usano quello su GitHub l'avviso resta a
   `pubblica-versione.js` (in produzione a `notify-deploy`).
+- **Dove**: dall'08/10/2026 il collaudo è pubblicato anche su
+  `https://consegne-collaudo.pages.dev/` (progetto `consegne-collaudo`,
+  account Cloudflare di gistech), accanto al sito su GitHub Pages.
+- **Scambio dei repository** (`scambio-repository.js`): è il passo che toglie
+  il codice dal pubblico. Il repository attuale cambia nome in
+  `app-consegne-sorgente` e diventa privato (conserva storia, segreti e
+  flussi); il nome `app-consegne` passa a un repository pubblico che contiene
+  solo la pagina di rinvio, un commit senza storia, chiuso alle scritture.
+  `prepara` crea quel repository col nome provvisorio `app-consegne-rinvio` e
+  il sito già in linea; `scambia` fa i due cambi di nome, misura per quanti
+  secondi il vecchio indirizzo non risponde, rende privato il sorgente e
+  sposta il remoto `collaudo` di questa cartella; `annulla` rimette tutto
+  com'era. **Dopo lo scambio ogni altra copia della cartella ha il remoto che
+  punta al repository pubblico**: per questo è chiuso alle scritture, ma il
+  remoto va corretto prima di usarla.
 - **Differenze di Cloudflare Pages**: `print.html` risponde con un rinvio a
   `/print` e `index.html` a `/`; senza `404.html` un indirizzo sconosciuto
   riceverebbe la pagina principale; le intestazioni si decidono in

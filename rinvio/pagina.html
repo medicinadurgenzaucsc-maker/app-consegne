@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="referrer" content="no-referrer">
+  <title>Consegne Reparto</title>
+  <script>
+    // L'applicazione ha cambiato indirizzo: si passa subito a quello nuovo,
+    // portandosi dietro i parametri e l'ancora dell'indirizzo chiesto.
+    (function () {
+      var NUOVO = '{{DESTINAZIONE}}';
+      try { location.replace(NUOVO + location.search + location.hash); }
+      catch (e) { location.href = NUOVO; }
+    })();
+  </script>
+  <noscript><meta http-equiv="refresh" content="0;url={{DESTINAZIONE}}"></noscript>
+  <style>
+    body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; background: #eceff1; color: #263238; font: 16px/1.5 system-ui, Arial, sans-serif; }
+    main { max-width: 460px; padding: 24px; text-align: center; }
+    h1 { font-size: 22px; margin: 0 0 8px; }
+    p { margin: 0 0 16px; }
+    a { display: inline-block; padding: 10px 22px; border-radius: 8px; background: #37474f; color: #fff; text-decoration: none; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>L'applicazione ha cambiato indirizzo</h1>
+    <p>Se non vieni portato da solo alla nuova pagina, usa questo collegamento e salvalo tra i preferiti.</p>
+    <a href="{{DESTINAZIONE}}">Apri le Consegne</a>
+  </main>
+</body>
+</html>
