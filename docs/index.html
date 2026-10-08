@@ -6958,6 +6958,8 @@
     // risponderebbe con un rinvio. Niente «sandbox» sulla cornice.
     var RUBRICA_URL = 'rubrica/';
     var _rubricaChiestaTs = 0;        // quando la cornice ha ricevuto l'indirizzo (0 = mai, o svuotata)
+    var _rubricaInCarico = false;     // la cornice sta ancora caricando l'indirizzo ricevuto
+    iframe.addEventListener('load', function() { _rubricaInCarico = false; });
     var _rubricaUltimoCampo = null;   // ultimo campo col fuoco in una scheda in modifica
 
     // Si decide dallo stato VERO della cornice, non da un segnale messo al
@@ -6967,9 +6969,11 @@
     // all'uscita, oppure il caricamento di prima è finito altrove (rete
     // assente, pagina di accesso di un cancello davanti al sito) — la si
     // carica di nuovo: prima un caricamento non riuscito lasciava il riquadro
-    // rotto fino al ricaricamento dell'app. Nei primi secondi dopo una
-    // richiesta l'indirizzo non si riassegna: interromperebbe un caricamento
-    // ancora in corso.
+    // rotto fino al ricaricamento dell'app. Finché la cornice sta caricando,
+    // però, l'indirizzo non si riassegna: il caricamento ripartirebbe da capo,
+    // e a rete lenta ogni nuovo clic sul menu allontanerebbe l'arrivo della
+    // pagina (anche della copia in cache). Lo si rifà solo se dopo mezzo
+    // minuto la cornice non ha ancora finito.
     window.apriRubrica = function() {
       var dentro = false;
       if (_rubricaChiestaTs) {
@@ -6978,7 +6982,8 @@
           if (w && typeof w.rubricaAllApertura === 'function') { w.rubricaAllApertura(); dentro = true; }
         } catch(e) {}
       }
-      if (!dentro && Date.now() - _rubricaChiestaTs > 4000) {
+      if (!dentro && (!_rubricaInCarico || Date.now() - _rubricaChiestaTs > 30000)) {
+        _rubricaInCarico = true;
         _rubricaChiestaTs = Date.now();
         iframe.src = RUBRICA_URL;
       }
@@ -7027,6 +7032,7 @@
       try { panel.style.display = 'none'; } catch(e) {}
       try { iframe.src = 'about:blank'; } catch(e) {}
       _rubricaChiestaTs = 0;
+      _rubricaInCarico = false;
       _rubricaUltimoCampo = null;
     };
 

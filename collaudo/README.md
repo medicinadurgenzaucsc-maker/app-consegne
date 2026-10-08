@@ -182,10 +182,16 @@ nuovo le prove: devono fallire. La sezione dura qualche minuto: una prova
 aspetta apposta i 12 secondi del tempo massimo di una richiesta, un'altra i 6
 secondi di un rinnovo della sessione che non risponde.
 
-Due prove dicono qualcosa del **database**, non della pagina: «due modifiche a
-ridosso» fallisce se il numero di `rubrica_versione` non sale a ogni modifica
-(va guardato il trigger), e «chi usa l'app non può scrivere la versione»
-fallisce se quella tabella è scrivibile da chi è collegato.
+Due prove dicono qualcosa del **database**, non della pagina. La prova 14
+pretende che il numero di `rubrica_versione` **cresca a ogni modifica**, anche
+a più modifiche nello stesso secondo: fa cinque modifiche di fila a un
+contatto di prova e vuole una salita di almeno cinque. Nel collaudo è così
+dall'08/10/2026 (migrazione `rubrica_versione_sempre_crescente`: il trigger
+scrive `ts = greatest(ts + 1, secondi dell'orologio)`), e la stessa funzione
+va creata così anche in produzione; se la prova fallisce va guardato il
+trigger. «Chi usa l'app non può scrivere la versione» fallisce se quella
+tabella è scrivibile da chi è collegato, oppure se il rifiuto viene detto
+«account non autorizzato» invece che «il database non permette».
 
 `await window.__prove({ sezioni: ['rubrica'], fuoco: true })` aggiunge la prova
 del fuoco: scheda in modifica sul letto libero «5», «Numeri Telefono» aperto,

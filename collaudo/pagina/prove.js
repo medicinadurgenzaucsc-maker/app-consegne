@@ -1831,14 +1831,15 @@
     // posto dell'invio; «dopo», se c'è, può cambiare la risposta di una
     // scrittura partita davvero (per fingere una risposta persa). Di una
     // scrittura fermata si annotano solo metodo, tabella e forma del filtro.
+    // Con «senzaLetture» anche le letture falliscono, come quando la rete è giù.
     function salvagente(lecita) {
       var vera = w.fetch;
-      var s = { scritture: [], letture: [], fermate: [], alPosto: null, dopo: null, togli: function () { w.fetch = vera; } };
+      var s = { scritture: [], letture: [], fermate: [], alPosto: null, dopo: null, senzaLetture: false, togli: function () { w.fetch = vera; } };
       w.fetch = function (u, o) {
         o = o || {};
         var metodo = o.method || 'GET', dove = String(u).split('/rest/v1/')[1] || '';
         var r = { metodo: metodo, dove: dove, tabella: dove.split('?')[0], filtro: dove.split('?')[1] || '', corpo: null };
-        if (metodo === 'GET') { s.letture.push(r.tabella); return vera.call(w, u, o); }
+        if (metodo === 'GET') { s.letture.push(r.tabella); return s.senzaLetture ? Promise.reject(new w.TypeError('rete assente (finta)')) : vera.call(w, u, o); }
         try { r.corpo = o.body ? JSON.parse(o.body) : null; } catch (e) { r.corpo = undefined; }
         var ok = false;
         try { ok = lecita(r) === true; } catch (e) { ok = false; }
@@ -1861,6 +1862,18 @@
     }
     // forma di una scrittura, per confrontarla con quella attesa
     function forma(r) { return r.metodo + ' ' + r.dove; }
+    // Conta quante volte a una cornice viene dato un indirizzo, lasciandolo passare
+    // (la proprietà «src» sta nel prototipo dell'elemento: qui le si mette davanti
+    // una copia che conta, e «togli» la leva).
+    function spiaIndirizzo(el) {
+      var dove = el, d = null;
+      while (dove && !(d = Object.getOwnPropertyDescriptor(dove, 'src'))) dove = Object.getPrototypeOf(dove);
+      if (!d || !d.set || !d.get) return null;
+      var sua = dove === el, s = { volte: 0 };
+      Object.defineProperty(el, 'src', { configurable: true, enumerable: true, get: function () { return d.get.call(el); }, set: function (v) { s.volte++; d.set.call(el, v); } });
+      s.togli = function () { if (sua) Object.defineProperty(el, 'src', d); else delete el.src; };
+      return s;
+    }
 
     // ── 1. fuori dall'app ──
     await prova(S, 'aperta da sola (senza l\'app intorno) resta sul messaggio fisso e non chiede nulla al database', async function () {
@@ -1962,6 +1975,8 @@
           if (!Array.isArray(w.__erroriBanco)) return 'nella pagina della rubrica manca il raccoglitore degli errori del banco: l\'ultima prova non misurerebbe nulla';
           // via i filtri rimasti accesi (categoria, lettera, preferiti, ricerca): nasconderebbero i contatti di prova
           w.document.getElementById('btnAll').click();
+          // … e una scheda o la finestra delle categorie rimaste aperte da prima: i campi di una scheda non di prova non devono poter finire in un esito
+          await chiudiTutto();
           // si rilegge comunque, senza contare sul controllo della versione
           await w.loadData(true);
           var card = await finche(function () { return schedaContatto(w.document, A.id); }, 15000);
@@ -2036,7 +2051,7 @@
           try {
             if (!(await finche(moduloAperto, 8000))) return 'la finestra non si è aperta';
             await attendi(250);
-            if (doc.getElementById('fId').value !== String(A.id)) guai.push('identificativo nel modulo «' + doc.getElementById('fId').value + '»');
+            if (doc.getElementById('fId').value !== String(A.id)) return 'la scheda aperta non è quella del contatto di prova: i suoi campi non si riportano';
             if (doc.getElementById('fNome').value !== nomeA) guai.push('il nome nel campo non è quello salvato');
             var campiNum = [].map.call(doc.querySelectorAll('#numeriContainer .f-num'), function (i) { return i.value; });
             var campiNote = [].map.call(doc.querySelectorAll('#numeriContainer .f-nota'), function (i) { return i.value; });
@@ -2176,7 +2191,7 @@
         });
 
         // ── 14. riapertura del riquadro ──
-        await prova(S, 'riaprire il riquadro costa UNA lettura (la versione); ciò che è cambiato altrove compare, anche due modifiche a ridosso', async function () {
+        await prova(S, 'riaprire il riquadro costa UNA lettura (la versione); ciò che è cambiato altrove compare alla riapertura; la versione sale a OGNI modifica, anche a più modifiche di fila', async function () {
           var guai = [];
           await w.loadData(false);            // si parte da un elenco aggiornato
           var s = salvagente(function () { return false; });   // qui non deve partire nessuna scrittura
@@ -2193,6 +2208,18 @@
             var Y = await _q(_sb.from('rubrica_contatti').insert({ nome: SEGNO_RUBRICA + ' SUBITO DOPO', numeri: '3915' }).select().single());
             window.chiudiRubrica(); window.apriRubrica();
             if (!(await finche(function () { return schedaContatto(w.document, Y.id); }, 10000))) guai.push('una seconda modifica a ridosso della prima non compare: la versione non è salita (da guardare il trigger di rubrica_versione, non la pagina)');
+            // La versione deve salire a OGNI modifica, anche a più modifiche nello
+            // stesso secondo: cinque modifiche di fila al contatto di prova devono
+            // farla salire di almeno cinque. Un numero fatto dal solo orologio, in
+            // meno di quattro secondi, salirebbe al più di quattro: oltre quel
+            // tempo la misura non dice nulla, e lo si dichiara.
+            var leggiTs = async function () { return Number((await w.supaFetch('rubrica_versione?select=ts&id=eq.1'))[0].ts); };
+            await _q(_sb.from('rubrica_contatti').update({ note: '0' }).eq('id', X.id));
+            var quando = Date.now(), tA = await leggiTs();
+            for (var giro = 1; giro <= 5; giro++) await _q(_sb.from('rubrica_contatti').update({ note: String(giro) }).eq('id', X.id));
+            var tB = await leggiTs(), passati = (Date.now() - quando) / 1000;
+            if (!(tB - tA >= 5)) guai.push('la versione NON sale a ogni modifica: cinque modifiche di fila, salita di ' + (tB - tA) + ' (da guardare il trigger di rubrica_versione, non la pagina)');
+            else if (passati >= 4) guai.push('versione non provata: le cinque modifiche di fila hanno impiegato ' + passati.toFixed(1) + ' secondi, quanto basterebbe a un numero fatto dal solo orologio (rilanciare)');
           } finally { s.togli(); }
           return esitoCon(s, guai);
         });
@@ -2257,6 +2284,12 @@
             // senza elenco non ci sono categorie fra cui scegliere: il modulo non si apre
             doc.getElementById('btnNew').click();
             if (moduloAperto()) { guai.push('«Nuovo Contatto» si apre anche senza elenco caricato'); w.closeModal(); }
+            // con l'errore al posto dell'elenco, «Mostra Tutti» o una ricerca non devono scrivere «Nessun risultato» sopra il messaggio e sopra «Riprova»
+            doc.getElementById('btnAll').click();
+            await cerca('guardia');
+            await cerca('');
+            if (!doc.getElementById('btnRiprova')) guai.push('dopo «Mostra Tutti» e una ricerca il pulsante «Riprova» è sparito');
+            if (doc.getElementById('contactList').textContent.indexOf('Nessun risultato') >= 0) guai.push('al posto del messaggio d\'errore si legge «Nessun risultato»');
           } finally { w.fetch = veraFetch; _sb.auth.refreshSession = veroRinnovo; }
           var b = doc.getElementById('btnRiprova');
           if (b) b.click(); else w.loadData(true);
@@ -2268,7 +2301,8 @@
         await prova(S, 'chi usa l\'app non può scrivere la versione della rubrica (si manda il valore che c\'è già: se passasse non cambierebbe nulla)', async function () {
           var ts = (await w.supaFetch('rubrica_versione?select=ts&id=eq.1'))[0].ts, e = null, r = null;
           try { r = await w.supaFetch('rubrica_versione?id=eq.1', { method: 'PATCH', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ ts: ts }) }); } catch (x) { e = x; }
-          if (e) return (e.stato === 403 || e.motivo === 'non-autorizzato') || ('la scrittura è stata respinta in modo inatteso (HTTP ' + e.stato + ', codice ' + e.codice + ')');
+          // una scrittura respinta è un errore dell'operazione («il database non permette»), non «account non autorizzato»: chi usa la rubrica l'autorizzazione ce l'ha
+          if (e) return (e.stato === 403 && !e.motivo && w.messaggioErrore(e).indexOf('non permette') > 0) || ('la scrittura è stata respinta in modo inatteso, oppure viene detta «account non autorizzato» (HTTP ' + e.stato + ', codice ' + e.codice + ')');
           return (Array.isArray(r) && r.length === 0) || 'chi usa l\'app può scrivere la versione';
         });
 
@@ -2348,7 +2382,6 @@
             await w.loadData(true);
             if (!(await finche(function () { return schedaContatto(doc, P.id); }, 12000))) { guai.push('il contatto di prova non compare in elenco'); return esitoCon(s, guai); }
             // (a) un altro PC corregge il numero mentre qui il riquadro resta aperto: la scheda deve aprirsi sul numero nuovo
-            await attendi(1100);
             await _q(_sb.from('rubrica_contatti').update({ numeri: '5550202' }).eq('id', P.id));
             if (!(await apriScheda(P.id))) { guai.push('la scheda non si apre'); return esitoCon(s, guai); }
             var visto = doc.querySelector('#numeriContainer .f-num').value;
@@ -2357,6 +2390,9 @@
             await _q(_sb.from('rubrica_contatti').update({ numeri: '5550203' }).eq('id', P.id));
             doc.querySelector('#numeriContainer .f-nota').value = 'nota scritta a scheda aperta';
             doc.getElementById('btnSave').click();
+            // «Annulla» premuto mentre il salvataggio gira non deve chiudere la scheda: il confronto prima di scrivere vale per la scheda da cui la scrittura è partita
+            doc.getElementById('btnCancel').click();
+            if (!moduloAperto()) guai.push('«Annulla» ha chiuso la scheda mentre il salvataggio era in corso');
             if (!(await finche(function () { return !moduloAperto(); }, 12000))) guai.push('dopo il salvataggio rifiutato la scheda è rimasta aperta');
             if (avviso().indexOf('modificato da un altro PC') < 0) guai.push('nessun avviso dice che il contatto è stato modificato da un altro PC (avviso: «' + avviso().slice(0, 100) + '»)');
             await attendi(600);
@@ -2396,6 +2432,7 @@
               doc.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
               await attendi(300);
               if (conferma()) guai.push('Esc non ha tolto la domanda');
+              if (doc.getElementById('installToast').classList.contains('toast-confirm')) guai.push('tolta la domanda, l\'avviso resta al centro a prendersi i clic (classe «toast-confirm» rimasta)');
               if (!moduloAperto()) guai.push('Esc ha chiuso anche la scheda');
               si2.click();
               await attendi(900);
@@ -2407,11 +2444,25 @@
         });
 
         // ── 22. la rete cade durante un salvataggio ──
-        await prova(S, 'rete che cade durante un salvataggio: se la richiesta era arrivata non nasce un doppione, se non era arrivata si può riprovare senza perdere ciò che si è scritto', async function () {
-          var doc = w.document, guai = [], nome1 = SEGNO_RUBRICA + ' RISPOSTA PERSA', nome2 = SEGNO_RUBRICA + ' RETE ASSENTE', perdi = false, blocca = false;
-          var s = salvagente(function (r) { return r.metodo === 'POST' && r.dove === 'rubrica_contatti' && !!r.corpo && diProva(r.corpo.nome); });
-          // la richiesta parte e arriva, ma la risposta non torna
-          s.dopo = function (r, p) { if (!perdi) return p; perdi = false; return p.then(function () { throw new w.TypeError('risposta persa (finta)'); }); };
+        await prova(S, 'rete che cade durante un salvataggio: se la richiesta era arrivata non nasce un doppione (nemmeno se la rete resta giù e non si può rileggere), se non era arrivata si può riprovare senza perdere ciò che si è scritto; lo stesso per un\'eliminazione', async function () {
+          var doc = w.document, guai = [], nome1 = SEGNO_RUBRICA + ' RISPOSTA PERSA', nome2 = SEGNO_RUBRICA + ' RETE ASSENTE', nome3 = SEGNO_RUBRICA + ' RETE GIU', nome4 = SEGNO_RUBRICA + ' ERRORE 504', nome5 = SEGNO_RUBRICA + ' RITOCCO', perdi = false, blocca = false;
+          var idDaTogliere = null, inSospesoDurante = null;
+          var s = salvagente(function (r) {
+            if (r.metodo === 'POST') return r.dove === 'rubrica_contatti' && !!r.corpo && diProva(r.corpo.nome);
+            return r.metodo === 'DELETE' && idDaTogliere !== null && r.dove === 'rubrica_contatti?id=eq.' + idDaTogliere;
+          });
+          // La richiesta parte e arriva, ma la risposta non torna: con «perdi» vero la rete cade, con '504' al posto
+          // della risposta arriva l'errore di un cancello davanti al servizio. Si annota anche se in quel momento la
+          // rubrica si dichiara «in sospeso».
+          s.dopo = function (r, p) {
+            if (!perdi) return p;
+            var come = perdi;
+            perdi = false; inSospesoDurante = w.rubricaInSospeso();
+            return p.then(function () {
+              if (come === '504') return new w.Response('<html><body>504 Gateway Time-out</body></html>', { status: 504, headers: { 'Content-Type': 'text/html' } });
+              throw new w.TypeError('risposta persa (finta)');
+            });
+          };
           // la richiesta non parte nemmeno
           s.alPosto = function () { if (!blocca) return null; blocca = false; return Promise.reject(new w.TypeError('rete assente (finta)')); };
           function compila(nome, numero) {
@@ -2436,6 +2487,18 @@
             var quanti = (await contattiColNome(nome1)).length;
             if (quanti !== 1) guai.push('risposta persa: nel database i contatti con quel nome sono ' + quanti + ' (atteso 1: DOPPIONE)');
             await chiudiTutto();
+            // (a2) arrivata, ma al posto della risposta l'errore 504 di un cancello: è lo stesso esito incerto
+            if (!compila(nome4, '5550404')) { guai.push('il modulo non si riapre (errore 504)'); return esitoCon(s, guai); }
+            perdi = '504';
+            doc.getElementById('btnSave').click();
+            if (!(await finche(function () { return !moduloAperto(); }, 20000))) {
+              guai.push('errore 504 a scrittura arrivata: la scheda è rimasta aperta (avviso: «' + avviso().slice(0, 100) + '»)');
+              doc.getElementById('btnSave').click();    // ciò che farebbe chi legge «operazione non riuscita»
+              await attendi(3000);
+            }
+            quanti = (await contattiColNome(nome4)).length;
+            if (quanti !== 1) guai.push('errore 504: nel database i contatti con quel nome sono ' + quanti + ' (atteso 1: DOPPIONE)');
+            await chiudiTutto();
             // (b) mai arrivata
             if (!compila(nome2, '5550402')) { guai.push('il modulo non si riapre'); return esitoCon(s, guai); }
             blocca = true;
@@ -2449,6 +2512,64 @@
               doc.getElementById('btnSave').click();
               if (!(await finche(async function () { return (await contattiColNome(nome2)).length === 1; }, 12000))) guai.push('rete tornata: il secondo «Salva» non ha salvato il contatto');
               await finche(function () { return !moduloAperto(); }, 8000);
+            }
+            // (c) la rete cade e RESTA giù: la richiesta era arrivata, la risposta si perde e nemmeno la rilettura riesce.
+            //     La scheda deve restare aperta, e al «Salva» seguente si deve controllare PRIMA di inviare di nuovo
+            await chiudiTutto();
+            if (!compila(nome3, '5550403')) { guai.push('il modulo non si riapre (rete giù)'); return esitoCon(s, guai); }
+            perdi = true; s.senzaLetture = true;
+            doc.getElementById('btnSave').click();
+            await finche(function () { return avviso().indexOf('non è certo') >= 0; }, 25000);
+            if (avviso().indexOf('non è certo') < 0) guai.push('rete giù: l\'avviso non dice che l\'esito è incerto (avviso: «' + avviso().slice(0, 100) + '»)');
+            if (!moduloAperto()) guai.push('rete giù: la scheda si è chiusa senza sapere se il contatto è stato salvato');
+            s.senzaLetture = false;
+            if (moduloAperto()) { doc.getElementById('btnSave').click(); await finche(function () { return !moduloAperto(); }, 20000); }
+            if (moduloAperto()) guai.push('rete tornata: la scheda è rimasta aperta (avviso: «' + avviso().slice(0, 100) + '»)');
+            var quanti3 = (await contattiColNome(nome3)).length;
+            if (quanti3 !== 1) guai.push('rete giù: nel database i contatti con quel nome sono ' + quanti3 + ' (atteso 1: DOPPIONE)');
+            var invii3 = s.scritture.filter(function (r) { return r.metodo === 'POST' && r.corpo && r.corpo.nome === nome3; }).length;
+            if (invii3 !== 1) guai.push('rete giù: il contatto è stato inviato ' + invii3 + ' volte (attesa 1)');
+            // (c2) come (c), ma prima di ripremere «Salva» la scheda viene ritoccata: nel database resta il primo invio,
+            //      non nasce un secondo contatto, e l'avviso dice che cosa è rimasto da fare
+            await chiudiTutto();
+            if (!compila(nome5, '5550405')) { guai.push('il modulo non si riapre (ritocco)'); return esitoCon(s, guai); }
+            perdi = true; s.senzaLetture = true;
+            doc.getElementById('btnSave').click();
+            await finche(function () { return avviso().indexOf('non è certo') >= 0; }, 25000);
+            s.senzaLetture = false;
+            if (!moduloAperto()) guai.push('ritocco: la scheda si è chiusa senza sapere se il contatto è stato salvato');
+            else {
+              doc.getElementById('fNome').value = nome5 + ' RITOCCATO';
+              doc.getElementById('btnSave').click();
+              if (!(await finche(function () { return !moduloAperto(); }, 20000))) guai.push('ritocco: la scheda è rimasta aperta, e un altro «Salva» creerebbe un doppione (avviso: «' + avviso().slice(0, 100) + '»)');
+              else if (avviso().indexOf('primo invio') < 0) guai.push('ritocco: l\'avviso non dice che nel database è rimasto il primo invio (avviso: «' + avviso().slice(0, 100) + '»)');
+            }
+            var primi = (await contattiColNome(nome5)).length, ritoccati = (await contattiColNome(nome5 + ' RITOCCATO')).length;
+            if (primi !== 1 || ritoccati !== 0) guai.push('ritocco: nel database ' + primi + ' contatti col primo nome e ' + ritoccati + ' col nome ritoccato (attesi 1 e 0)');
+            // (d) eliminazione: la richiesta arriva, la risposta si perde. Riletto l'elenco il contatto non c'è più:
+            //     l'eliminazione era riuscita, e la scheda si chiude
+            await chiudiTutto();
+            var daTogliere = (await contattiColNome(nome3))[0];
+            if (!daTogliere) guai.push('eliminazione non provata: manca il contatto di prova da eliminare');
+            else {
+              idDaTogliere = daTogliere.id;
+              if (!(await apriScheda(idDaTogliere))) guai.push('eliminazione: la scheda del contatto di prova non si apre');
+              else {
+                doc.getElementById('btnDelete').click();
+                var si = await finche(conferma, 5000);
+                if (!si) guai.push('eliminazione: la domanda non compare');
+                else {
+                  perdi = true; inSospesoDurante = null;
+                  si.click();
+                  if (!(await finche(function () { return !moduloAperto(); }, 20000))) guai.push('eliminazione con risposta persa: la scheda è rimasta aperta (avviso: «' + avviso().slice(0, 100) + '»)');
+                  else if (avviso().indexOf('eliminato') < 0) guai.push('eliminazione con risposta persa: l\'avviso non dice che il contatto è stato eliminato (avviso: «' + avviso().slice(0, 100) + '»)');
+                  if (await rigaDi('rubrica_contatti', idDaTogliere)) guai.push('eliminazione: il contatto di prova è ancora nel database');
+                  var tolte = s.scritture.filter(function (r) { return r.metodo === 'DELETE'; }).length;
+                  if (tolte !== 1) guai.push('eliminazione: richieste partite ' + tolte + ' (attesa 1)');
+                  // a modulo non toccato, di «in sospeso» c'è solo la scrittura in corso: un «Esci» in quel momento la interromperebbe
+                  if (inSospesoDurante !== true) guai.push('durante l\'eliminazione la rubrica non si dichiara «in sospeso»');
+                }
+              }
             }
           } finally { s.togli(); await chiudiTutto(); }
           return esitoCon(s, guai);
@@ -2597,7 +2718,7 @@
         });
 
         // ── 25. uscita con un lavoro a metà nella rubrica ──
-        await prova(S, 'un contatto scritto e non salvato nella rubrica ferma «Esci»: l\'uscita non parte e l\'avviso nomina la rubrica', async function () {
+        await prova(S, 'un contatto scritto e non salvato nella rubrica, o una categoria aggiunta e non salvata, fermano «Esci»: l\'uscita non parte e l\'avviso nomina la rubrica', async function () {
           var doc = w.document, guai = [], viste = [], veraFire = Swal.fire;
           if (w.rubricaInSospeso()) guai.push('la rubrica si dice «in sospeso» senza nulla di aperto');
           // nessuna finestra vera: si guarda che cosa l'app chiederebbe di mostrare. Una risposta «non confermato» non fa mai partire l'uscita.
@@ -2615,8 +2736,23 @@
             if (!titoli.some(function (x) { return x.indexOf('Rubrica') >= 0; })) guai.push('nessun avviso nomina la rubrica (finestre chieste: ' + titoli.map(function (x) { return x.slice(0, 40); }).join(' , ') + ')');
             w.closeModal();
             if (w.rubricaInSospeso()) guai.push('chiuso il modulo, la rubrica si dice ancora «in sospeso»');
+            // le categorie modificate e non salvate: lo stesso arresto («Salva modifiche» non si preme mai: non parte nessuna scrittura)
+            w.openCatModal();
+            if (!(await finche(function () { return doc.querySelector('#catList .cat-name-input'); }, 12000))) guai.push('la finestra delle categorie non si apre');
+            else {
+              if (w.rubricaInSospeso()) guai.push('la finestra delle categorie appena aperta conta già come lavoro in sospeso');
+              doc.getElementById('fNewCat').value = 'prova-automatica mai salvata';
+              doc.getElementById('btnAddCat').click();
+              if (!w.rubricaInSospeso()) guai.push('la rubrica non dichiara le categorie modificate e non salvate');
+              viste.length = 0;
+              window._esciSessione();
+              await attendi(300);
+              var titoli2 = viste.map(function (v) { return String(v.title || ''); });
+              if (titoli2.some(function (x) { return /Uscire/.test(x); }) || !titoli2.some(function (x) { return x.indexOf('Rubrica') >= 0; })) guai.push('le categorie non salvate non fermano «Esci»');
+            }
           } finally { Swal.fire = veraFire; await chiudiTutto(); }
           if ((await contattiColNome(SEGNO_RUBRICA + ' MAI SALVATO')).length) guai.push('il contatto mai salvato è finito nel database');
+          if ((await _q(_sb.from('rubrica_categorie').select('id').eq('nome', SEGNO_RUBRICA + ' MAI SALVATA'))).length) guai.push('la categoria mai salvata è finita nel database');
           return !guai.length || guai.join(' ‖ ');
         });
 
@@ -2717,18 +2853,27 @@
         });
 
         // ── 29. un caricamento del riquadro finito altrove ──
-        await prova(S, 'se nella cornice non c\'è la rubrica (un caricamento finito altrove) la riapertura del riquadro la carica di nuovo, senza dover ricaricare l\'app', async function () {
+        await prova(S, 'se nella cornice non c\'è la rubrica (un caricamento finito altrove) la riapertura del riquadro la carica di nuovo, senza dover ricaricare l\'app; mentre la sta caricando, altri clic sul menu non fanno ripartire il caricamento', async function () {
           if (w) raccogliErrori(w);
           w = null;
-          // ciò che resta dopo un caricamento non riuscito: una pagina che non è la rubrica
-          cornicePannello.src = 'about:blank';
-          await attendi(4600);     // entro pochi secondi dall'ultima richiesta l'indirizzo non si riassegna
-          window.chiudiRubrica(); window.apriRubrica();
-          w = await finche(function () {
-            var x = cornicePannello.contentWindow;
-            return (x && typeof x.loadData === 'function' && x.document.querySelector('.contact-card')) ? x : false;
-          }, 20000);
-          return !!w || 'il riquadro è rimasto senza la rubrica';
+          var guai = [], spia = spiaIndirizzo(cornicePannello);
+          try {
+            // ciò che resta dopo un caricamento non riuscito: una pagina che non è la rubrica
+            cornicePannello.src = 'about:blank';
+            await attendi(900);     // il tempo di finire di caricarla
+            if (spia) spia.volte = 0;
+            window.chiudiRubrica(); window.apriRubrica();
+            // chi ha fretta clicca ancora mentre la pagina arriva: l'indirizzo non va dato di nuovo
+            window.apriRubrica(); window.chiudiRubrica(); window.apriRubrica();
+            if (!spia) guai.push('non riesco a contare quante volte la cornice riceve l\'indirizzo');
+            else if (spia.volte !== 1) guai.push('alla cornice l\'indirizzo è stato dato ' + spia.volte + ' volte (attesa 1: a ogni altra il caricamento riparte da capo)');
+            w = await finche(function () {
+              var x = cornicePannello.contentWindow;
+              return (x && typeof x.loadData === 'function' && x.document.querySelector('.contact-card')) ? x : false;
+            }, 20000);
+            if (!w) guai.push('il riquadro è rimasto senza la rubrica');
+          } finally { if (spia) spia.togli(); }
+          return !guai.length || guai.join(' ‖ ');
         });
 
         // ── a richiesta: scheda in modifica e riquadro (serve la finestra in primo piano) ──

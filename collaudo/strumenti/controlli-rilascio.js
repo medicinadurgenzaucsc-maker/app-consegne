@@ -401,12 +401,17 @@ mancanti.length ? ko('sw.js elenca file che non esistono (l\'installazione del s
   const indirizzi = riquadro.match(/\bRUBRICA_URL\s*=[^=][^;]*;/g) || [];
   if (indirizzi.length !== 1 || !/^RUBRICA_URL\s*=\s*'rubrica\/';$/.test(indirizzi[0]) || /rubrica-gemelli/.test(ora)) guai.push('docs/index.html: il riquadro deve aprire la pagina dell\'app («rubrica/»), non un sito esterno');
   const alCornice = (riquadro.match(/\biframe\.src\s*=[^=][^;]*;/g) || []).filter((a) => !/^iframe\.src\s*=\s*(RUBRICA_URL|'about:blank');$/.test(a));
-  if (alCornice.length) guai.push('docs/index.html: alla cornice della rubrica si dà un indirizzo che non è RUBRICA_URL');
+  if (alCornice.length || /setAttribute\(\s*['"]src/.test(riquadro)) guai.push('docs/index.html: alla cornice della rubrica si dà un indirizzo che non è RUBRICA_URL');
   if (/id="rubricaIframe"[^>]*\bsandbox\b/.test(ora.replace(/\s+/g, ' '))) guai.push('docs/index.html: la cornice della rubrica non deve avere «sandbox» (la rubrica chiede la sessione alla pagina)');
   const u0 = ora.indexOf('function _eseguiUscita() {'), u1 = ora.indexOf('window._esciSessione = function()', u0);
   const uscita = (u0 >= 0 && u1 > u0) ? senzaCommenti(ora.slice(u0, u1), 'la funzione _eseguiUscita di docs/index.html') : '';
   if (!/window\._rubricaSvuotaCopie\(\)/.test(uscita)) guai.push('docs/index.html: l\'uscita (_eseguiUscita) non svuota più la rubrica');
-  if (!/\.rubricaInSospeso\(\)/.test(ora) || !/function rubricaInSospeso\(/.test(codice)) guai.push('l\'uscita non chiede più alla rubrica se ha un lavoro in sospeso (rubricaInSospeso)');
+  // Prima di uscire l'app chiede alla rubrica se ha un lavoro a metà: la
+  // chiamata deve stare nel codice vivo, e _lavoroInSospeso deve usarla
+  // davvero (le due funzioni stanno subito prima di _eseguiUscita).
+  const s0 = ora.indexOf('function _rubricaInSospeso() {');
+  const sospeso = (s0 >= 0 && u0 > s0) ? senzaCommenti(ora.slice(s0, u0), 'le funzioni del lavoro in sospeso di docs/index.html') : '';
+  if (!/\.rubricaInSospeso\(\)/.test(sospeso) || !/_schedeInSospeso\(\)\s*\|\|\s*_rubricaInSospeso\(\)/.test(sospeso) || !/function rubricaInSospeso\(/.test(codice)) guai.push('l\'uscita non chiede più alla rubrica se ha un lavoro in sospeso (rubricaInSospeso)');
   guai.length ? guai.forEach((g) => ko('rubrica: ' + g)) : ok('rubrica: nessun service worker, indirizzo o chiave nel codice vivo; regola CSP stretta e niente in linea; richieste e memoria da un punto solo, solo le tre preferenze; il riquadro apre «rubrica/» e l\'uscita la svuota');
 }
 

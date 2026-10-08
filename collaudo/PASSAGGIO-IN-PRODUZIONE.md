@@ -224,7 +224,8 @@ il vecchio indirizzo rimanda al nuovo a ogni ricaricamento, compreso quello
 che ogni PC fa da solo fra le 04:00 e le 05:00, e compreso «Update»: un PC che
 non è mai entrato sul sito nuovo si ritrova fermo sulla schermata di accesso,
 di notte, finché qualcuno non clicca. Inoltre da una pagina rimasta aperta
-sul vecchio indirizzo la stampa non funziona più.
+sul vecchio indirizzo la stampa non funziona più e «Numeri Telefono», se non
+era già aperto, può non aprirsi.
 
 **Chi usa l'app non sono solo i PC del reparto.** Misura del 07/10/2026:
 118 sessioni vive, 35 usate negli ultimi 7 giorni, 16 delle quali su
@@ -331,7 +332,8 @@ dell'ospedale.
 
 Cosa succede a un PC rimasto sul vecchio indirizzo: la pagina aperta continua
 a lavorare e a salvare, perché parla solo col database, ma la stampa non
-funziona; al primo ricaricamento passa al sito nuovo e deve fare l'accesso.
+funziona e «Numeri Telefono», se non era già aperto, può non aprirsi; al
+primo ricaricamento passa al sito nuovo e deve fare l'accesso.
 Per questo la pagina di rinvio è solo una rete di sicurezza per chi è
 sfuggito alla fase A10, non il modo di spostare i PC.
 
@@ -384,9 +386,13 @@ legge non danno fastidio.
      account»;
    - da estraneo, con la sola chiave pubblica: non si legge e non si scrive
      nulla;
-   - il numero di `rubrica_versione` deve salire a **ogni** modifica, anche
-     due nello stesso secondo: la revisione del codice non l'ha potuto
-     verificare, e nel collaudo lo dice la prova «due modifiche a ridosso».
+   - il numero di `rubrica_versione` deve crescere a **ogni** modifica, anche
+     a più modifiche nello stesso secondo: nel collaudo è così
+     dall'08/10/2026 (migrazione `rubrica_versione_sempre_crescente`: il
+     trigger scrive `ts = greatest(ts + 1, secondi dell'orologio)`), e **la
+     stessa funzione del trigger va creata così anche in produzione**. Lo
+     controlla la prova 14 della sezione `rubrica`: cinque modifiche di fila,
+     salita di almeno cinque.
 3. **I contatti in produzione**: copia dal vecchio database della rubrica,
    con gli stessi identificativi. `copia-rubrica.js` oggi accetta solo
    `collaudo`: va esteso a `produzione`, con `--confermo-produzione`, la

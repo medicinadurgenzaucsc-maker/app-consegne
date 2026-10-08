@@ -226,6 +226,11 @@ async function supaRisposta(path, options = {}) {
       const e = new Error(String((err && (err.message || err.hint)) || ('HTTP ' + stato)));
       e.stato  = stato;
       e.codice = codice;
+      // Un 502/503/504 senza codice del database arriva da ciò che sta davanti
+      // al servizio: la scrittura può essere stata eseguita lo stesso, quindi
+      // l'esito è incerto, come per una risposta persa. Un errore del database
+      // porta il suo codice, ed è certo.
+      if (!lettura && stato >= 500 && !codice) e.incerto = true;
       // ciò che era stato inviato: serve a spiegare un rifiuto (messaggioErrore)
       try { e.dati = options.body ? JSON.parse(options.body) : null; } catch (_) { e.dati = null; }
       throw e;
@@ -574,7 +579,7 @@ function closeAlphaModal() {
 }
 function closeActiveModal() {
   if (!activeModal) return;
-  if (activeModal === D.modalOverlay) closeModal();
+  if (activeModal === D.modalOverlay) chiudiSchedaDaUtente();
   else if (activeModal === D.catModalOverlay) closeCatModal();
   else if (activeModal === D.alphaModalOverlay) closeAlphaModal();
   else if (activeModal === D.numMenuOverlay)   closeNumMenu();
@@ -695,7 +700,7 @@ function setupDragHandles() {
         box.style.transform = `translateY(${box.offsetHeight}px)`;
         setTimeout(() => {
           box.style.transform = '';
-          if (overlay === D.modalOverlay)         closeModal();
+          if (overlay === D.modalOverlay)         chiudiSchedaDaUtente();
           else if (overlay === D.catModalOverlay) closeCatModal();
           else                                     overlay.hidden = true;
         }, 220);
@@ -951,6 +956,10 @@ function smartSearch(contacts, rawQuery) {
 // Tutto ciò che viene dai contatti entra in pagina codificato (esc, highlight).
 // Gli attributi sono sempre fra virgolette doppie.
 function renderContacts(contacts) {
+  // Senza elenco caricato (primo carico in corso, oppure un errore al posto
+  // dell'elenco) non si disegna nulla: cercare o premere «Mostra Tutti»
+  // scriverebbe «Nessun risultato» sopra il messaggio e sopra «Riprova».
+  if (!datiPronti) return;
   updateCount(contacts.length);
   if (!contacts.length) {
     D.contactList.innerHTML = '<div class="state-msg"><div class="ico">∅</div><div>Nessun risultato</div></div>';
@@ -1063,9 +1072,9 @@ function setupEvents() {
   // Nuovo
   D.btnNew.addEventListener('click', nuovoContatto);
   D.btnAddNum.addEventListener('click', () => { const f = addNumRow(); f.focus(); });
-  D.btnCancel.addEventListener('click', closeModal);
+  D.btnCancel.addEventListener('click', chiudiSchedaDaUtente);
   D.modalOverlay.addEventListener('click', e => {
-    if (e.target === D.modalOverlay) closeModal();
+    if (e.target === D.modalOverlay) chiudiSchedaDaUtente();
   });
 
   // Categorie
@@ -1468,6 +1477,17 @@ async function openEdit(id) {
   if (!c) { showToast('Il contatto non esiste più: forse è stato eliminato da un altro PC', 4000, 'warning'); return; }
   openModal(c);
 }
+// La scheda la chiude chi usa la rubrica («Annulla», Esc, clic sul velo,
+// trascinamento), ma non mentre una scrittura è in corso: ciò che arriva dopo
+// (la riga riletta, la risposta, l'esito incerto) vale per la scheda da cui la
+// scrittura è partita. Chiusa quella, o aperta un'altra, il confronto prima di
+// scrivere salterebbe e la risposta agirebbe sulla scheda sbagliata. Le
+// chiusure fatte dal codice a scrittura finita passano da closeModal.
+const AVVISO_SCRITTURA_IN_CORSO = 'Salvataggio in corso: attendi che finisca';
+function chiudiSchedaDaUtente() {
+  if (scrittureInCorso) { showToast(AVVISO_SCRITTURA_IN_CORSO, 2500, 'warning'); return; }
+  closeModal();
+}
 function closeModal() {
   // una domanda rimasta a schermo («Eliminare questo contatto?») non sopravvive alla scheda
   annullaConferma();
@@ -1554,13 +1574,26 @@ async function saveContact() {
     if (invioSenzaRisposta) {
       // l'invio di prima è rimasto senza risposta e non si era potuto
       // controllare: lo si controlla adesso, prima di inviare di nuovo
-      const prima = await verificaInvio(invioSenzaRisposta);
+      const vecchio = invioSenzaRisposta;
+      const prima = await verificaInvio(vecchio);
       if (prima === 'ignoto') { showToast(AVVISO_ESITO_IGNOTO, 7000, 'error'); return; }
       invioSenzaRisposta = null;
       if (prima === 'salvato') {
-        closeModal();
-        showToast('Il contatto risulta già salvato: controllalo nell\'elenco', 4500, 'success');
-        return;
+        if (stessiDati(payload, vecchio.payload)) {
+          closeModal();
+          showToast('Il contatto risulta già salvato: controllalo nell\'elenco', 4500, 'success');
+          return;
+        }
+        // Nel frattempo la scheda è stata ritoccata: nel database c'è il primo
+        // invio, non ciò che è scritto adesso.
+        if (vecchio.nuovo) {
+          // un altro invio creerebbe un doppione: la scheda si chiude, e si dice che cosa è rimasto da fare
+          closeModal();
+          showToast('Il contatto risulta salvato com\'era al primo invio: riaprilo dall\'elenco e ripeti le ultime modifiche', 8000, 'warning');
+          return;
+        }
+        // una modifica: la riga adesso è quella del primo invio, ed è su quella che si scrive il ritocco
+        contattoAperto = { id, ...vecchio.payload };
       }
       invio.notiPrima = new Set(allContacts.map(c => c.id));
     }
@@ -1715,6 +1748,8 @@ function chiudiCategorie() {
   D.catModalOverlay.hidden = true;
 }
 async function closeCatModal() {
+  // come la scheda del contatto: non a salvataggio in corso (vedi chiudiSchedaDaUtente)
+  if (scrittureInCorso) { showToast(AVVISO_SCRITTURA_IN_CORSO, 2500, 'warning'); return; }
   if (hasCatChanges() && !(await showConfirm('Ci sono modifiche non salvate.\nChiudere ugualmente?', 'warning'))) return;
   chiudiCategorie();
 }
@@ -2033,7 +2068,9 @@ function showConfirm(msg, type = 'warning') {
       if (confermaInSospeso !== done) return;
       confermaInSospeso = null;
       sotto.forEach(el => { el.inert = false; });
-      t.classList.remove('show');
+      // via anche «toast-confirm»: altrimenti l'avviso, tornato trasparente,
+      // resterebbe al centro a prendersi i clic fino all'avviso successivo
+      t.classList.remove('show', 'toast-confirm');
       if (document.hasFocus() && colFuoco && colFuoco.isConnected && colFuoco.focus) colFuoco.focus();
       resolve(ok);
     };
