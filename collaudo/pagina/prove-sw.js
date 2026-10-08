@@ -148,6 +148,17 @@
     c.f.remove();
     return esito;
   }
+  // La pagina della rubrica («Numeri Telefono») caricata in una cornice, come la
+  // carica il riquadro dell'app: deve arrivare lei. Qui intorno non c'è l'app,
+  // quindi resta sul suo messaggio fisso e non chiede nulla.
+  async function rubricaSana(url, senzaPretese) {
+    var c = await cornice(url + (url.indexOf('?') < 0 ? '?' : '&') + '_r=' + unico(), senzaPretese);
+    var esito = true;
+    if (!c.doc) esito = url + ': al posto della rubrica un errore del browser, oppure un altro sito';
+    else if (!c.doc.getElementById('avvisoFuori') || !c.doc.getElementById('contactList')) esito = url + ': titolo «' + c.doc.title + '», testo «' + c.doc.body.innerText.slice(0, 80) + '»';
+    c.f.remove();
+    return esito;
+  }
   function immagine(c, percorso) {
     return new Promise(function (ok) {
       var img = new c.win.Image();
@@ -180,6 +191,10 @@
         var a = await paginaSana(BASE); if (a !== true) return a;
         return paginaSana(BASE + 'index.html');
       });
+      await prova(G + 'la rubrica (la cornice di «Numeri Telefono») si apre dalla cache', async function () {
+        var a = await rubricaSana(BASE + 'rubrica/'); if (a !== true) return a;
+        return rubricaSana(BASE + 'rubrica/index.html');
+      });
       await prova(G + 'in cache non finisce nulla di sbagliato', function () { return cacheSana(atteso); });
     }
     await prova('dopo i guasti il service worker è ancora registrato', async function () {
@@ -200,6 +215,13 @@
       var e = await richieste();
       x.f.remove();
       return e.some(function (r) { return r.percorso === '/accesso/login'; }) || ('la pagina di accesso non è stata chiesta: ' + JSON.stringify(e.slice(0, 4)));
+    });
+    // Il rinvio al cancello, dentro la cornice della rubrica, non porterebbe da
+    // nessuna parte (la pagina di accesso non si lascia incorniciare): il
+    // service worker dà la copia buona in cache. Se la cornice avesse seguito il
+    // rinvio sarebbe finita su un altro sito, e qui non si potrebbe leggere.
+    await prova(A + 'la cornice della rubrica riceve la copia in cache, non la pagina di accesso', function () {
+      return rubricaSana(BASE + 'rubrica/', true);
     });
     await prova(A + 'la pagina di accesso non finisce in cache', function () { return cacheSana(atteso); });
 

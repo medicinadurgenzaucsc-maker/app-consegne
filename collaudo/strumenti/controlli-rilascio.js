@@ -29,6 +29,7 @@
 //     service worker né manifesto, nessun indirizzo o chiave nel codice, regola
 //     CSP stretta e niente scritto in linea, richieste e scritture in memoria
 //     da un punto solo, e il riquadro dell'app apre proprio quella pagina
+//     (tutto guardato nel codice vivo: ciò che sta in un commento non conta)
 //
 //   node collaudo/strumenti/controlli-rilascio.js [riferimento]
 //
@@ -327,32 +328,63 @@ mancanti.length ? ko('sw.js elenca file che non esistono (l\'installazione del s
     ? ok('rubrica: in docs/rubrica/ solo i tre file attesi, tutti registrati in git')
     : ko('rubrica: in docs/rubrica/ devono esserci solo ' + ATTESI.join(', ') + ' (niente sw.js, manifesto o icone), tutti registrati in git. Su disco: ' + suDisco.join(', ') + '; in git: ' + (inGit.join(', ') || 'nessuno'));
 
-  const codice = leggi('docs/rubrica/app.js'), pagina = leggi('docs/rubrica/index.html'), stile = leggi('docs/rubrica/app.css');
   const guai = [];
+  // I controlli guardano il codice VIVO: una regola o una chiamata rimasta solo
+  // dentro un commento non c'è (spenta «per una prova» e dimenticata, passava
+  // da «ok»). I commenti del codice li trova l'analizzatore usato per la copia
+  // compressa, non una ricerca nel testo: «//» sta anche dentro le stringhe.
+  function senzaCommenti(js, nome) {
+    let acorn = null;
+    try { acorn = require(path.join(RADICE, '.github/compressione/node_modules/acorn')); }
+    catch (e) { guai.push('per leggere ' + nome + ' senza i commenti serve lo strumento della copia compressa: «npm ci --ignore-scripts» dentro .github/compressione'); return js; }
+    const tratti = [];
+    try { acorn.parse(js, { ecmaVersion: 'latest', sourceType: 'script', onComment: (blocco, testo, da, a) => { tratti.push([da, a]); } }); }
+    catch (e) { guai.push(nome + ' non si analizza: ' + e.message); return js; }
+    let vivo = '', i = 0;
+    tratti.forEach((t) => { vivo += js.slice(i, t[0]) + ' '; i = t[1]; });
+    return vivo + js.slice(i);
+  }
+  const stile = leggi('docs/rubrica/app.css');
+  const pagina = leggi('docs/rubrica/index.html').replace(/<!--[\s\S]*?-->/g, '');
+  const codice = senzaCommenti(leggi('docs/rubrica/app.js'), 'docs/rubrica/app.js');
   [
     [/serviceWorker/, 'un service worker'],
     [/https?:\/\/[A-Za-z0-9]/, 'un indirizzo di rete (indirizzo e chiave si chiedono alla pagina madre)'],
     [/eyJ[A-Za-z0-9_-]{10,}/, 'una chiave'],
     [/createClient|\.signOut\b/, 'un client del database proprio o un\'uscita dalla sessione'],
     [/sessionStorage|indexedDB|\bcaches\b/, 'un\'altra memoria del browser'],
+    [/XMLHttpRequest|sendBeacon|WebSocket|EventSource|importScripts|\bimport\s*\(/, 'una strada di rete diversa da quella di supaRisposta'],
     [/\bstyle\s*=|\son[a-z]+\s*=/, 'uno stile o un gestore scritto in linea nell\'HTML che costruisce (la regola CSP lo spegnerebbe)'],
     [/\beval\s*\(|new Function|document\.write|insertAdjacentHTML|outerHTML/, 'una costruzione che esegue o inserisce testo senza controllo'],
   ].forEach((v) => { if (v[0].test(codice)) guai.push('app.js contiene ' + v[1]); });
   const quanti = (re) => (codice.match(re) || []).length;
-  if (quanti(/\.setItem\s*\(/g) !== 1 || !/function lsScrivi\(/.test(codice)) guai.push('app.js: le scritture nella memoria del browser devono passare tutte da lsScrivi (trovati ' + quanti(/\.setItem\s*\(/g) + ' setItem)');
-  if (quanti(/\bfetch\s*\(/g) !== 1 || !/function supaRisposta\(/.test(codice)) guai.push('app.js: le richieste devono partire tutte da supaRisposta (trovati ' + quanti(/\bfetch\s*\(/g) + ' fetch)');
+  // Richieste: la parola «fetch» compare una volta sola, nella chiamata di
+  // supaRisposta (darle un secondo nome sarebbe una seconda occorrenza).
+  if (quanti(/\bfetch\b/g) !== 1 || !/\bawait fetch\s*\(/.test(codice) || !/function supaRisposta\(/.test(codice)) guai.push('app.js: le richieste devono partire tutte da supaRisposta (la parola «fetch» compare ' + quanti(/\bfetch\b/g) + ' volte, attesa 1)');
+  // Memoria del browser: ci si arriva solo dalle tre funzioni lsLeggi, lsScrivi
+  // e lsTogli, una chiamata ciascuna…
+  const dalleTre = ['getItem', 'setItem', 'removeItem'].every((m) => quanti(new RegExp('window\\.localStorage\\.' + m + '\\s*\\(', 'g')) === 1);
+  if (quanti(/\blocalStorage\b/g) !== 3 || quanti(/\.setItem\s*\(/g) !== 1 || !dalleTre || !/function lsScrivi\(/.test(codice)) guai.push('app.js: alla memoria del browser si arriva solo da lsLeggi, lsScrivi e lsTogli (localStorage compare ' + quanti(/\blocalStorage\b/g) + ' volte, attese 3; setItem ' + quanti(/\.setItem\s*\(/g) + ', atteso 1)');
+  // … e ci si scrivono solo le tre preferenze senza dati (tema, preferiti,
+  // chiamati di recente), sotto chiavi «rubrica-…» scritte per esteso: sono
+  // quelle che «Esci» conosce.
+  const CHIAVI = ['LS_TEMA', 'LS_PREFERITI', 'LS_CHIAMATI'];
+  const scritte = (codice.match(/\blsScrivi\s*\(\s*[^,)]*/g) || []).map((c) => c.replace(/^lsScrivi\s*\(\s*/, '').trim()).filter((a) => a !== 'chiave');
+  const altre = scritte.filter((a) => CHIAVI.indexOf(a) < 0);
+  if (!scritte.length || altre.length) guai.push('app.js: lsScrivi deve ricevere solo ' + CHIAVI.join(', ') + ' (trovato: ' + (altre.join(', ') || 'nessuna scrittura') + ')');
+  CHIAVI.forEach((k) => { if (!new RegExp('const ' + k + '\\s*=\\s*\'rubrica-[a-z-]+\';').test(codice)) guai.push('app.js: ' + k + ' deve essere una chiave «rubrica-…» scritta per esteso'); });
   if (!/window\.parent/.test(codice)) guai.push('app.js non chiede più nulla alla pagina madre');
 
   const csp = (pagina.match(/<meta\s+http-equiv="Content-Security-Policy"\s+content="([^"]*)"/i) || [])[1];
-  if (!csp) guai.push('index.html: manca la regola CSP');
+  if (!csp) guai.push('index.html: manca la regola CSP (una regola messa fra segni di commento non vale)');
   else {
     const regole = {};
     csp.split(';').map((r) => r.trim()).filter(Boolean).forEach((r) => { const p = r.split(/\s+/); regole[p[0]] = p.slice(1).join(' '); });
     const attese = { 'default-src': "'none'", 'script-src': "'self'", 'style-src': "'self'", 'base-uri': "'none'", 'form-action': "'none'" };
     Object.keys(attese).forEach((k) => { if (regole[k] !== attese[k]) guai.push('index.html, regola CSP: «' + k + '» vale «' + (regole[k] || 'assente') + '», atteso ' + attese[k]); });
     if (regole['connect-src'] !== 'https://*.supabase.co') guai.push('index.html, regola CSP: «connect-src» deve ammettere solo il database (https://*.supabase.co), trovato «' + (regole['connect-src'] || 'assente') + '»');
-    const altre = Object.keys(regole).filter((k) => k !== 'connect-src').map((k) => regole[k]).join(' ');
-    if (/unsafe|[*]|data:|blob:|https?:/.test(altre)) guai.push('index.html, regola CSP: una voce larga (unsafe, *, data:, blob: o un sito esterno)');
+    const larghe = Object.keys(regole).filter((k) => k !== 'connect-src').map((k) => regole[k]).join(' ');
+    if (/unsafe|[*]|data:|blob:|https?:/.test(larghe)) guai.push('index.html, regola CSP: una voce larga (unsafe, *, data:, blob: o un sito esterno)');
     if (pagina.indexOf('http-equiv="Content-Security-Policy"') > pagina.search(/<(?:script|link)\b/i)) guai.push('index.html: la regola CSP deve venire prima di ogni script e di ogni foglio di stile');
   }
   if (/<script(?![^>]*\bsrc=)/i.test(pagina)) guai.push('index.html: uno script scritto in pagina');
@@ -363,11 +395,19 @@ mancanti.length ? ko('sw.js elenca file che non esistono (l\'installazione del s
   if (script.join() !== 'app.js') guai.push('index.html: atteso un solo script, app.js (trovati: ' + (script.join(', ') || 'nessuno') + ')');
   if (/url\s*\(|@import|https?:/i.test(stile)) guai.push('app.css: un indirizzo o un\'importazione');
 
-  // lato app: il riquadro apre la pagina dell'app, senza «sandbox», e l'uscita la svuota
-  if (!/var RUBRICA_URL = 'rubrica\/';/.test(ora) || /rubrica-gemelli/.test(ora)) guai.push('docs/index.html: il riquadro deve aprire la pagina dell\'app («rubrica/»), non un sito esterno');
+  // lato app: il riquadro apre la pagina dell'app, senza «sandbox», e l'uscita la svuota (anche qui conta il codice vivo)
+  const p0 = ora.indexOf("var panel = document.getElementById('rubricaPanel');");
+  const riquadro = p0 < 0 ? '' : senzaCommenti(ora.slice(ora.lastIndexOf('<script>', p0) + '<script>'.length, ora.indexOf('</script>', p0)), 'lo script del riquadro della rubrica in docs/index.html');
+  const indirizzi = riquadro.match(/\bRUBRICA_URL\s*=[^=][^;]*;/g) || [];
+  if (indirizzi.length !== 1 || !/^RUBRICA_URL\s*=\s*'rubrica\/';$/.test(indirizzi[0]) || /rubrica-gemelli/.test(ora)) guai.push('docs/index.html: il riquadro deve aprire la pagina dell\'app («rubrica/»), non un sito esterno');
+  const alCornice = (riquadro.match(/\biframe\.src\s*=[^=][^;]*;/g) || []).filter((a) => !/^iframe\.src\s*=\s*(RUBRICA_URL|'about:blank');$/.test(a));
+  if (alCornice.length) guai.push('docs/index.html: alla cornice della rubrica si dà un indirizzo che non è RUBRICA_URL');
   if (/id="rubricaIframe"[^>]*\bsandbox\b/.test(ora.replace(/\s+/g, ' '))) guai.push('docs/index.html: la cornice della rubrica non deve avere «sandbox» (la rubrica chiede la sessione alla pagina)');
-  if (!/function _eseguiUscita\(\)[\s\S]{0,1600}?_rubricaSvuotaCopie\(\)/.test(ora)) guai.push('docs/index.html: l\'uscita (_eseguiUscita) non svuota più la rubrica');
-  guai.length ? guai.forEach((g) => ko('rubrica: ' + g)) : ok('rubrica: nessun service worker, indirizzo o chiave nel codice; regola CSP stretta e niente in linea; richieste e memoria da un punto solo; il riquadro apre «rubrica/»');
+  const u0 = ora.indexOf('function _eseguiUscita() {'), u1 = ora.indexOf('window._esciSessione = function()', u0);
+  const uscita = (u0 >= 0 && u1 > u0) ? senzaCommenti(ora.slice(u0, u1), 'la funzione _eseguiUscita di docs/index.html') : '';
+  if (!/window\._rubricaSvuotaCopie\(\)/.test(uscita)) guai.push('docs/index.html: l\'uscita (_eseguiUscita) non svuota più la rubrica');
+  if (!/\.rubricaInSospeso\(\)/.test(ora) || !/function rubricaInSospeso\(/.test(codice)) guai.push('l\'uscita non chiede più alla rubrica se ha un lavoro in sospeso (rubricaInSospeso)');
+  guai.length ? guai.forEach((g) => ko('rubrica: ' + g)) : ok('rubrica: nessun service worker, indirizzo o chiave nel codice vivo; regola CSP stretta e niente in linea; richieste e memoria da un punto solo, solo le tre preferenze; il riquadro apre «rubrica/» e l\'uscita la svuota');
 }
 
 console.log(errori ? ('\n' + errori + ' CONTROLLI FALLITI: non pubblicare') : '\ntutti i controlli superati');
