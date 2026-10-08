@@ -199,6 +199,51 @@ ripete in produzione.
 - **Dove**: dall'08/10/2026 il collaudo è pubblicato anche su
   `https://consegne-collaudo.pages.dev/` (progetto `consegne-collaudo`,
   account Cloudflare di gistech), accanto al sito su GitHub Pages.
+- **L'accesso** (Cloudflare Access, dall'08/10/2026): chi apre il sito su
+  Cloudflare senza essersi fatto riconoscere non riceve né la pagina né i
+  singoli file: viene mandato all'accesso. Com'è configurato:
+  - squadra Zero Trust `consegne-collaudo` (piano gratuito): l'accesso
+    passa da `consegne-collaudo.cloudflareaccess.com`;
+  - **due applicazioni**, perché quella creata dall'interruttore del
+    progetto Pages («Accesso in anteprima») copre solo gli indirizzi di
+    anteprima `*.consegne-collaudo.pages.dev` e il suo nome host non si
+    può cambiare: il sito vero è protetto da una seconda applicazione
+    «Self-hosted» sul dominio `consegne-collaudo.pages.dev`, senza
+    sottodominio. **Senza la seconda il sito resta aperto a tutti**;
+  - chi entra: un criterio con l'elenco degli indirizzi ammessi
+    (`autorizzati-collaudo`: chi gestisce il collaudo, la casella del
+    reparto, Stefano). Le anteprime tengono il criterio messo da
+    Cloudflare, col solo proprietario dell'account e il codice via mail;
+  - come si entra: **solo con Google**, con «Applica autenticazione
+    immediata»: nessuna pagina di Cloudflare in mezzo, si va dritti a
+    Google. Il client Google dell'accesso («Accesso Cloudflare collaudo»)
+    è un client a parte nello stesso progetto Google del client dell'app;
+    l'indirizzo di ritorno registrato su Google è
+    `https://consegne-collaudo.cloudflareaccess.com/cdn-cgi/access/callback`.
+    Il segreto di quel client lo incolla in Cloudflare chi possiede
+    l'account: non passa dalla chat né dal PC di sviluppo. Provato
+    l'08/10/2026 con la casella del reparto, già collegata a Google nel
+    browser e già usata per entrare nell'app: l'ingresso è avvenuto senza
+    nemmeno un clic (non provato con un account che non ha mai usato
+    l'app, né con più account Google collegati: lì Google fa scegliere);
+  - ogni quanto: sessione di un mese; cookie non leggibile dagli script
+    («Solo HTTP») e con il cookie aggiuntivo di protezione («Abilita
+    Binding Cookie»);
+  - se Google non dovesse più funzionare si riaccende il codice via mail:
+    «Controlli Access» → «Applicazioni» → l'applicazione del sito →
+    «Metodi di login» → aggiungere «One-time PIN» (con due metodi
+    l'autenticazione immediata si spegne da sé). La console di Cloudflare
+    ha un accesso suo, che non dipende da queste impostazioni.
+
+  «Esci» nell'app chiude la sessione dell'app, non quella di Cloudflare:
+  da quel browser le pagine restano raggiungibili, i dati no. Dopo ogni
+  modifica alle impostazioni di Access si ricontrolla da estraneo, con
+  `curl`: il sito, un file (`/js/api.js`) e un indirizzo di anteprima
+  devono rimandare tutti a `…cloudflareaccess.com`. Provato l'08/10/2026
+  da dentro: sincronizzazione e blocco fra due client, stampa, finestra
+  della mail, avviso di aggiornamento, uscita. Resta da provare a mano
+  l'importazione dal finto TrakCare (sul nuovo indirizzo il browser chiede
+  una volta il permesso per gli appunti).
 - **Scambio dei repository** (`scambio-repository.js`): è il passo che toglie
   il codice dal pubblico. Il repository attuale cambia nome in
   `app-consegne-sorgente` e diventa privato (conserva storia, segreti e
