@@ -14,7 +14,10 @@
 // pazienti veri. Una voce che comincia col punto vale per i sottodomini.
 var _AMBIENTI = {
   produzione: {
-    host:            ['medicinadurgenzaucsc-maker.github.io'],
+    // consegne-reparto.pages.dev è il sito del reparto su Cloudflare. Le anteprime
+    // che Cloudflare crea a ogni pubblicazione qui NON sono riconosciute, apposta:
+    // sui pazienti veri si lavora solo dall'indirizzo del sito.
+    host:            ['medicinadurgenzaucsc-maker.github.io', 'consegne-reparto.pages.dev'],
     supabaseUrl:     'https://ifmmcvxzhwdkmzhsxcvb.supabase.co',
     supabaseAnonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlmbW1jdnh6aHdka216aHN4Y3ZiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc2Nzk1ODAsImV4cCI6MjA5MzI1NTU4MH0.LH8h4Fivtl3-TuiA050oF8iS4b80xrd2Dn6z8JjCoeA',
     googleClientId:  '170256871056-gchf386c3oic77ek2j5m3b1e5pbv6cre.apps.googleusercontent.com'

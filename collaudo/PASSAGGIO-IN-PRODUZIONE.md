@@ -75,9 +75,10 @@ usare il sito di sempre.
 ### A3. Codice e database, a cura di Claude
 
 1. Nel collaudo: aggiungere a `_AMBIENTI.produzione.host`, in
-   `docs/js/api.js`, i due indirizzi `'<nome>.pages.dev'` e
-   `'.<nome>.pages.dev'`. Senza, il flusso si rifiuta di pubblicare e l'app sul
-   sito nuovo si ferma con «Indirizzo non riconosciuto». Versione nuova,
+   `docs/js/api.js`, l'indirizzo `'<nome>.pages.dev'`. Senza, il flusso si
+   rifiuta di pubblicare e l'app sul sito nuovo si ferma con «Indirizzo non
+   riconosciuto». In produzione **niente voce col punto**: le anteprime di
+   Cloudflare non devono poter lavorare sui pazienti veri. Versione nuova,
    controlli di rilascio, prove nel banco.
 2. Con l'ok: riga `AMBIENTE = produzione` nella tabella `impostazioni` del
    database di produzione. Oggi manca: l'app funziona lo stesso, ma è quella

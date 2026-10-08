@@ -185,6 +185,12 @@ mancanti.length ? ko('sw.js elenca file che non esistono (l\'installazione del s
     [[P, 'produzione'], [C, 'collaudo']].forEach((x) => x[0].filter((h) => h.charAt(0) === '.').forEach((h) => {
       attesi.push(['anteprima' + h, x[1]], ['falso' + h.slice(1), null], [h.slice(1) + '.example.org', null]);
     }));
+    // ogni indirizzo esatto è del suo ambiente; un sottodominio davanti vale solo se c'è anche la voce col punto
+    [[P, 'produzione'], [C, 'collaudo']].forEach((x) => x[0].filter((h) => h.charAt(0) !== '.').forEach((h) => {
+      attesi.push([h, x[1]], ['anteprima.' + h, x[0].indexOf('.' + h) >= 0 ? x[1] : null], [h + '.example.org', null]);
+    }));
+    // in produzione le anteprime di Cloudflare non devono essere riconosciute: sui pazienti veri si lavora solo dal sito
+    if (P.some((h) => h.charAt(0) === '.')) ko('fra gli indirizzi di PRODUZIONE c\'è una voce col punto: le anteprime lavorerebbero sui pazienti veri');
     const sbagliati = attesi.filter((x) => f.da(x[0]) !== x[1]).map((x) => '«' + x[0] + '» → ' + f.da(x[0]) + ' (atteso ' + x[1] + ')');
     sbagliati.length ? ko('riconoscimento degli indirizzi: ' + sbagliati.join('; ')) : ok('riconoscimento degli indirizzi: ' + attesi.length + ' casi giusti, sconosciuti compresi');
   }

@@ -1,47 +1,62 @@
-// Dopo lo scambio dei repository il sito di COLLAUDO lo pubblica il flusso
-// «Pubblica su Cloudflare» del repository privato, a ogni push su master che
-// tocca il sito; con la variabile CLOUDFLARE_AVVISA = si è lo stesso flusso ad
-// aggiornare app_version, cioè a far comparire «Update» sulle pagine aperte.
-// Questo strumento segue il flusso fino alla fine e controlla che l'avviso sia
-// arrivato nel database di collaudo. Non scrive nulla nel database.
+// Dove il sito sta su Cloudflare lo pubblica il flusso «Pubblica su Cloudflare»
+// del repository, a ogni push su master che tocca il sito; con la variabile
+// CLOUDFLARE_AVVISA = si è lo stesso flusso ad aggiornare app_version, cioè a far
+// comparire «Update» sulle pagine aperte. Questo strumento segue il flusso fino
+// alla fine e controlla che l'avviso sia arrivato nel database. Non scrive nulla
+// nel database.
 //
-//   node collaudo/strumenti/pubblicazione.js          segue la pubblicazione del commit appena mandato
-//                                                     (se quel commit non tocca il sito, mostra l'ultima fatta)
-//   node collaudo/strumenti/pubblicazione.js avvia    la fa ripartire a mano (stesso commit) e la segue
+//   node collaudo/strumenti/pubblicazione.js [ambiente]          segue la pubblicazione del commit appena mandato
+//                                                                (se quel commit non tocca il sito, mostra l'ultima fatta)
+//   node collaudo/strumenti/pubblicazione.js [ambiente] avvia    la fa ripartire a mano (stesso commit) e la segue
 //
-// Il repository è quello a cui punta il remoto «collaudo» di questa cartella:
-// così lo strumento continua a funzionare se il repository cambia nome.
+// «ambiente» è collaudo (predefinito) oppure produzione; in produzione «avvia»
+// vuole anche «--confermo-produzione». Il repository è quello a cui punta il
+// remoto dell'ambiente in questa cartella («collaudo» oppure «origin»): così lo
+// strumento continua a funzionare se il repository cambia nome.
 const { execFileSync } = require('child_process');
 const path = require('path');
-const { gh, UTENTE } = require('./gh-api.js');
-const { collaudo } = require('./sb.js');
+const ghApi = require('./gh-api.js');
+const sb = require('./sb.js');
 
+const ARG = ghApi.argomenti(process.argv.slice(2));
+const AMB = ghApi.per(ARG.ambiente);
+const gh = AMB.gh, UTENTE = AMB.UTENTE;
 const RADICE = path.resolve(__dirname, '../..');
 const FLUSSO = 'pubblica-cloudflare.yml';
 const attendi = (ms) => new Promise((r) => setTimeout(r, ms));
-const pulito = (t) => String(t).replace(/gh[pousr]_[A-Za-z0-9_]+/g, 'gh*_***');
 const git = (...a) => execFileSync('git', ['-C', RADICE].concat(a), { encoding: 'utf8' }).trim();
 
 // Il nome del repository dal remoto, senza mai stampare la chiave che l'indirizzo può contenere.
 function repository() {
-  const pezzi = git('remote', 'get-url', 'collaudo').replace(/[.]git$/, '').split('/');
+  const pezzi = git('remote', 'get-url', AMB.remoto).replace(/[.]git$/, '').split('/');
   const nome = pezzi.pop(), proprietario = (pezzi.pop() || '').split('@').pop().split(':').pop();
-  if (proprietario !== UTENTE || !/^[A-Za-z0-9._-]+$/.test(nome)) throw new Error('il remoto «collaudo» non punta a un repository di ' + UTENTE);
+  if (proprietario.toLowerCase() !== UTENTE.toLowerCase() || !/^[A-Za-z0-9._-]+$/.test(nome)) throw new Error('il remoto «' + AMB.remoto + '» non punta a un repository di ' + UTENTE);
   return nome;
+}
+// La riga che annuncia la versione ai PC: in produzione si legge soltanto.
+async function versioneAnnunciata() {
+  const sql = 'select sha, message from public.app_version where id = 1';
+  const r = AMB.produzione ? await sb.produzione().leggi(sql) : await sb.collaudo().query(sql);
+  return r[0] || {};
 }
 
 async function esecuzioni(R) {
   const r = await gh('GET', R + '/actions/workflows/' + FLUSSO + '/runs?per_page=5');
+  if (r.stato === 404) throw new Error('nel repository non c\'è ancora il flusso ' + FLUSSO + ' (arriva col primo rilascio che lo contiene)');
   if (r.stato >= 300) throw new Error('elenco delle esecuzioni: HTTP ' + r.stato);
   return (r.dati && r.dati.workflow_runs) || [];
 }
 
 (async () => {
-  const azione = process.argv[2] || 'stato';
-  if (azione !== 'stato' && azione !== 'avvia') { console.log('uso: pubblicazione.js [avvia]'); process.exit(1); }
+  const azione = ARG.resto[0] || 'stato';
+  if (azione !== 'stato' && azione !== 'avvia') { console.log('uso: pubblicazione.js [collaudo|produzione] [avvia]'); process.exit(1); }
+  if (AMB.produzione && azione === 'avvia' && !ARG.confermato) {
+    console.log('In PRODUZIONE «avvia» ripubblica il sito del reparto: va lanciato con ' + ghApi.CONFERMA + ', e solo con l\'ok di chi gestisce l\'app.');
+    process.exit(1);
+  }
   const nome = repository();
   const R = '/repos/' + UTENTE + '/' + nome;
-  console.log('repository ' + UTENTE + '/' + nome);
+  console.log('ambiente: ' + ARG.ambiente + ' | repository ' + UTENTE + '/' + nome);
 
   // Quale esecuzione aspettare: quella nuova dopo «avvia», altrimenti quella del commit in cima al remoto.
   let dopo = 0, commit = null;
@@ -72,27 +87,29 @@ async function esecuzioni(R) {
     if (i % 4 === 0) console.log('… ' + (mia ? mia.status + ' (n. ' + mia.run_number + ', ' + String(mia.head_sha).slice(0, 7) + ')' : 'in attesa che parta'));
     await attendi(5000);
   }
-  if (!run) { console.log('ERRORE: il flusso non è finito in 8 minuti'); process.exit(1); }
+  if (!run) { console.log('ERRORE: nessuna pubblicazione conclusa da mostrare'); process.exit(1); }
 
   console.log('esecuzione n. ' + run.run_number + ' | ' + run.event + ' | commit ' + String(run.head_sha).slice(0, 7) + ' | esito: ' + run.conclusion);
   const j = await gh('GET', R + '/actions/runs/' + run.id + '/jobs');
   const lavori = (j.dati && j.dati.jobs) || [];
-  let avvisoFatto = false;
+  let avvisoFatto = false, pubblicato = false;
   for (const lavoro of lavori) {
     for (const p of (lavoro.steps || [])) {
       console.log('    ' + String(p.conclusion).padEnd(8) + ' ' + p.name);
       if (/Avvisa/.test(p.name) && p.conclusion === 'success') avvisoFatto = true;
+      if (p.name === 'Pubblica' && p.conclusion === 'success') pubblicato = true;
     }
     const a = await gh('GET', R + '/check-runs/' + lavoro.id + '/annotations');
     (Array.isArray(a.dati) ? a.dati : []).forEach((x) => console.log('  [' + x.annotation_level + '] ' + (x.title ? x.title + ': ' : '') + String(x.message).slice(0, 400)));
   }
 
   // L'avviso: app_version deve portare il commit appena pubblicato.
-  const v = (await collaudo().query('select sha, message from public.app_version where id = 1'))[0] || {};
+  const v = await versioneAnnunciata();
   const allineata = String(v.sha) === String(run.head_sha);
-  console.log('app_version nel collaudo: ' + String(v.sha).slice(0, 7) + ' («' + v.message + '»)');
-  if (run.conclusion !== 'success') { console.log('ERRORE: la pubblicazione non è riuscita'); process.exit(1); }
-  if (avvisoFatto && allineata) console.log('FATTO: pubblicato e avviso inviato ai PC aperti');
-  else if (!avvisoFatto) console.log('pubblicato; avviso ai PC NON inviato (la variabile CLOUDFLARE_AVVISA non vale «si»)');
+  console.log('versione annunciata ai PC nel database di ' + ARG.ambiente + ': ' + String(v.sha).slice(0, 7) + ' («' + v.message + '»)');
+  if (run.conclusion !== 'success') { console.log('ERRORE: il flusso non è riuscito'); process.exit(1); }
+  if (!pubblicato) console.log('il flusso ha solo controllato i file: Cloudflare non è configurato in questo repository, nessuna pubblicazione');
+  else if (avvisoFatto && allineata) console.log('FATTO: pubblicato e avviso inviato ai PC aperti');
+  else if (!avvisoFatto) console.log('pubblicato su Cloudflare; avviso ai PC NON inviato dal flusso (la variabile CLOUDFLARE_AVVISA non vale «si»)');
   else { console.log('ERRORE: il flusso dice di aver avvisato ma app_version non porta il commit pubblicato'); process.exit(1); }
-})().catch((e) => { console.log('ERRORE: ' + pulito(e && e.message || e).slice(0, 400)); process.exit(1); });
+})().catch((e) => { console.log('ERRORE: ' + ghApi.maschera(e && e.message || e).slice(0, 400)); process.exit(1); });

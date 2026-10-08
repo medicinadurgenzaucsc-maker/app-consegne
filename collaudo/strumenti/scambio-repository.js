@@ -1,5 +1,5 @@
-// Prova generale dello «scambio dei repository», per ora SOLO nel collaudo
-// (account gistech2026: gh-api.js non lascia toccare altri proprietari).
+// Lo «scambio dei repository», provato nel collaudo (account gistech2026) e
+// pronto per la produzione (account medicinadurgenzaucsc-maker).
 //
 // Prima dello scambio:  app-consegne            pubblico, sorgente + sito su GitHub Pages
 // Dopo lo scambio:      app-consegne-sorgente   PRIVATO, il sorgente (storia, segreti, flussi)
@@ -8,22 +8,31 @@
 // (app-consegne-rinvio) e il sito già pubblicato: allo scambio bastano due
 // cambi di nome, e si misura per quanti secondi il vecchio indirizzo non risponde.
 //
-//   node collaudo/strumenti/scambio-repository.js stato
-//   node collaudo/strumenti/scambio-repository.js prepara <nuovo indirizzo>   es. https://consegne-collaudo.pages.dev/
-//   node collaudo/strumenti/scambio-repository.js scambia
-//   node collaudo/strumenti/scambio-repository.js annulla                     rimette tutto com'era (per riprovare)
+//   node collaudo/strumenti/scambio-repository.js [ambiente] stato
+//   node collaudo/strumenti/scambio-repository.js [ambiente] prepara <nuovo indirizzo>   es. https://consegne-collaudo.pages.dev/
+//   node collaudo/strumenti/scambio-repository.js [ambiente] scambia
+//   node collaudo/strumenti/scambio-repository.js [ambiente] annulla             rimette tutto com'era
+//
+// «ambiente» è collaudo (predefinito) oppure produzione. In produzione «stato»
+// legge soltanto; i comandi che cambiano qualcosa vogliono anche
+// «--confermo-produzione», e si lanciano solo con l'ok di chi gestisce l'app.
+// Il remoto di questa cartella è «collaudo» per il collaudo e «origin» per la
+// produzione.
 //
 // Dopo lo scambio il remoto «collaudo» di questa cartella punta al repository
 // privato. ATTENZIONE alle altre copie della cartella: il loro remoto punterebbe
 // ancora al vecchio nome, che ora è il repository pubblico del rinvio. Per questo
 // quel repository viene chiuso alle scritture (regola «sola-lettura»).
 const { execFileSync } = require('child_process');
-const { gh, UTENTE } = require('./gh-api.js');
+const ghApi = require('./gh-api.js');
+const ARG = ghApi.argomenti(process.argv.slice(2));
+const AMB = ghApi.per(ARG.ambiente);
+const gh = AMB.gh, UTENTE = AMB.UTENTE;
 const { fileRinvio, destinazione, RADICE } = require('./prepara-rinvio.js');
 
 const NOMI = { app: 'app-consegne', sorgente: 'app-consegne-sorgente', rinvio: 'app-consegne-rinvio' };
-const SITO = 'https://' + UTENTE + '.github.io/';
-const REMOTO = 'collaudo';
+const SITO = 'https://' + UTENTE.toLowerCase() + '.github.io/';
+const REMOTO = AMB.remoto;
 const REGOLA = 'sola-lettura';
 const attendi = (ms) => new Promise((r) => setTimeout(r, ms));
 const secondi = (t0) => ((Date.now() - t0) / 1000).toFixed(1) + ' s';
@@ -198,6 +207,12 @@ async function annulla() {
 }
 
 const AZIONI = { stato: stato, prepara: prepara, scambia: scambia, annulla: annulla };
-const azione = AZIONI[process.argv[2] || 'stato'];
-if (!azione) { console.log('uso: stato | prepara <nuovo indirizzo> | scambia | annulla'); process.exit(1); }
-Promise.resolve(process.argv[3]).then(azione).catch((e) => { console.log('ERRORE: ' + String(e.message).replace(/gh[pousr]_[A-Za-z0-9_]+/g, 'gh*_***')); process.exit(1); });
+const comando = ARG.resto[0] || 'stato';
+const azione = AZIONI[comando];
+if (!azione) { console.log('uso: [collaudo|produzione] stato | prepara <nuovo indirizzo> | scambia | annulla'); process.exit(1); }
+console.log('ambiente: ' + ARG.ambiente + ' | proprietario su GitHub: ' + UTENTE + ' | remoto di questa cartella: ' + REMOTO);
+if (AMB.produzione && comando !== 'stato' && !ARG.confermato) {
+  console.log('In PRODUZIONE «' + comando + '» cambia i repository del reparto: va lanciato con ' + ghApi.CONFERMA + ', e solo con l\'ok di chi gestisce l\'app.');
+  process.exit(1);
+}
+Promise.resolve(ARG.resto[1]).then(azione).catch((e) => { console.log('ERRORE: ' + String(e.message).replace(/gh[pousr]_[A-Za-z0-9_]+/g, 'gh*_***')); process.exit(1); });
