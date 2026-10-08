@@ -8,7 +8,7 @@
 // v83: fix privacy — la cache non deve MAI contenere risposte Supabase/Google
 // (dati pazienti a riposo su disco). Il bump cancella anche le cache
 // precedenti che li contenevano (handler 'activate').
-var CACHE_NAME = 'consegne-v188';
+var CACHE_NAME = 'consegne-v189';
 
 // Asset statici da pre-cachare all'installazione.
 // La rubrica («Numeri Telefono») è una pagina dell'app: il riquadro la chiede
@@ -136,8 +136,17 @@ self.addEventListener('fetch', function(e) {
   if (sameOrigin && e.request.method === 'GET') {
     e.respondWith(
       fetch(e.request).then(function(res) {
-        // rinvio di una navigazione: lo segue il browser, non si salva
-        if (res.type === 'opaqueredirect') return res;
+        // rinvio di una navigazione: lo segue il browser, non si salva.
+        // Tranne che nella cornice della rubrica («Numeri Telefono»): lì un
+        // rinvio verso la pagina di accesso di un cancello non porterebbe da
+        // nessuna parte (quella pagina non si lascia incorniciare) e il
+        // riquadro resterebbe vuoto. Se c'è, si usa la copia buona in cache.
+        if (res.type === 'opaqueredirect') {
+          if (e.request.destination === 'iframe' && /\/rubrica\/(index\.html)?$/.test(senzaParametri(url))) {
+            return dallaCache(e.request).then(function(buona) { return buona || res; });
+          }
+          return res;
+        }
         if (res.ok) {
           var clone = res.clone();
           e.waitUntil(

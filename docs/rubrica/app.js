@@ -18,7 +18,13 @@
 //     costruito qui: la regola CSP della pagina li spegne (un aspetto nuovo va
 //     in app.css, come classe);
 //   - nessun service worker proprio, nessun client del database proprio, e la
-//     sessione non si chiude mai da qui: è quella dell'app.
+//     sessione non si chiude mai da qui: è quella dell'app;
+//   - una modifica si scrive solo se la riga è ancora quella su cui la scheda
+//     è stata aperta, e dopo una scrittura rimasta senza risposta non si
+//     invita a riprovare alla cieca: si rilegge e si guarda se c'è già;
+//   - il fuoco si prende e si rende solo se questa pagina lo ha ancora: chi
+//     nel frattempo è tornato a scrivere in una scheda dell'app non va
+//     interrotto.
 // ═══════════════════════════════════════════════════════════════════════════
 
 // ── Costanti ─────────────────────────────────────────────────────────────────
@@ -31,6 +37,12 @@ const LS_CHIAMATI   = 'rubrica-chiamati';
 // Chiavi della rubrica di prima che tenevano nomi, numeri o richieste in
 // sospeso: all'avvio si tolgono dal dispositivo.
 const LS_RESIDUI    = ['rubrica-data', 'rubrica-cats', 'rubrica-ts', 'rubrica-pending-writes', 'rubrica-recent-searches'];
+// Preferenze lasciate sul dispositivo dalla rubrica di prima, quando stava
+// sullo stesso sito: alla prima apertura preferiti e chiamati di recente si
+// riprendono (riprendiPreferenzeDiPrima), poi le tre chiavi si tolgono.
+const LS_PREFERITI_DI_PRIMA = 'rubrica-favs';
+const LS_CHIAMATI_DI_PRIMA  = 'rubrica-recent-calls';
+const LS_TEMA_DI_PRIMA      = 'rubrica-theme';
 const MAX_RECENT    = 5;
 const MAX_CALLS     = 8;
 const MAX_PREFERITI = 500;
@@ -102,85 +114,134 @@ function erroreChiaro(testo) {
   return e;
 }
 
+// Un errore «di rete»: la risposta non è arrivata (rete assente, tempo massimo
+// scaduto, corpo interrotto), oppure non si sa se la sessione c'è ancora. Per
+// una SCRITTURA vuol dire esito incerto: la richiesta può essere arrivata.
+function erroreRete() {
+  const e = new Error('rete');
+  e.rete = true;
+  return e;
+}
+
 // Il token della sessione si chiede alla pagina madre A OGNI richiesta e non si
 // conserva mai qui: dura circa un'ora, e la pagina resta aperta tutto il giorno
 // (lo rinnova la libreria dell'app). Con «forza» si chiede un rinnovo subito.
 // Mai la chiave pubblica al posto del token: otterrebbe solo un rifiuto.
+//
+// Risponde { tok, certo }. «Sessione assente» si dice solo quando lo dice la
+// libreria: nessuna sessione e nessun errore, oppure un «no» del servizio di
+// accesso. Se invece la libreria non risponde in tempo, o risponde con un
+// errore che non è un rifiuto (un rinnovo fallito per la rete), NON SI SA:
+// vale l'ultimo token noto alla pagina madre, con «certo» falso, e chi chiama
+// non può concluderne che la sessione sia scaduta.
 const ATTESA_SESSIONE_MS = 6000;
+function rifiutoDelServizio(errore) {
+  const stato = Number(errore && errore.status);
+  return stato >= 400 && stato < 500 && stato !== 408 && stato !== 429;
+}
 async function gettone(m, forza) {
   const chiesta = Promise.resolve()
     .then(() => (forza ? m._sb.auth.refreshSession() : m._sb.auth.getSession()))
-    .then(r => ({ sessione: (r && r.data && r.data.session) || null }), () => null);
+    .then(r => ({ sessione: (r && r.data && r.data.session) || null, errore: (r && r.error) || null }), () => null);
   const esito = await Promise.race([chiesta, new Promise(r => setTimeout(() => r(null), ATTESA_SESSIONE_MS))]);
-  // null = la libreria non ha risposto: vale l'ultimo token noto alla pagina madre
-  const tok = esito ? (esito.sessione && esito.sessione.access_token) : m._supaAccessToken;
-  if (typeof tok !== 'string' || !tok || tok === m.SUPABASE_ANON_KEY) throw new ErroreSessione('assente');
-  return tok;
+  const buono = t => typeof t === 'string' && !!t && t !== m.SUPABASE_ANON_KEY;
+  if (esito && esito.sessione) {
+    if (!buono(esito.sessione.access_token)) throw new ErroreSessione('assente');
+    return { tok: esito.sessione.access_token, certo: true };
+  }
+  if (esito && (!esito.errore || rifiutoDelServizio(esito.errore))) throw new ErroreSessione('assente');
+  // non si sa: resta l'ultimo token noto alla pagina madre
+  if (!buono(m._supaAccessToken)) throw erroreRete();
+  return { tok: m._supaAccessToken, certo: false };
 }
 
 // ── Accesso al database ──────────────────────────────────────────────────────
 // UNICO punto da cui partono le richieste. Si possono chiedere solo le tabelle
 // e le funzioni della rubrica; chiave e token vengono dopo le intestazioni di
-// chi chiama, che quindi non le può sostituire.
-//  - 401: un solo rinnovo forzato della sessione, poi si rinuncia;
+// chi chiama, che quindi non le può sostituire. Risponde { stato, testo }.
+//  - 401: un solo rinnovo forzato della sessione (chiesto solo per la
+//    richiesta subito dopo, non per i tentativi seguenti), poi si rinuncia;
+//    «sessione scaduta» si dice solo se il rinnovo ha risposto, altrimenti
+//    è un errore di rete: basta riprovare;
 //  - nuovi tentativi automatici solo sulle LETTURE (una scrittura ripetuta dopo
-//    una risposta persa creerebbe un doppione).
+//    una risposta persa creerebbe un doppione);
+//  - ogni richiesta ha un tempo massimo, lettura del corpo compresa: oltre,
+//    viene interrotta e vale come rete assente. Senza, una risposta che non
+//    arriva terrebbe ferma la fila dei caricamenti e i pulsanti di salvataggio;
+//  - 403: «account non autorizzato» si dice solo per una LETTURA respinta. Lo
+//    stesso rifiuto su una scrittura (un permesso che manca su una tabella,
+//    una sequenza o una funzione) è un errore di quell'operazione.
 const PERCORSO_AMMESSO = /^(?:rpc\/)?rubrica_[a-z_]+(?:\?[A-Za-z0-9_.,=&-]*)?$/;
 const MAX_TENTATIVI = 2;
-async function supaRisposta(path, options = {}, tentativo = 0, rinnovato = false) {
+const ATTESA_RICHIESTA_MS = 12000;
+async function supaRisposta(path, options = {}) {
   const m = madre();
   if (!m) throw new ErroreSessione('fuori-app');
   if (typeof path !== 'string' || !PERCORSO_AMMESSO.test(path) || path.includes('..')) throw erroreChiaro('Richiesta non ammessa');
-  const tok = await gettone(m, rinnovato);
   const metodo  = options.method || 'GET';
   const lettura = metodo === 'GET';
-  let res;
-  try {
-    res = await fetch(`${m.SUPABASE_URL}/rest/v1/${path}`, {
-      method: metodo,
-      body: options.body,
-      cache: 'no-store',          // le risposte non restano nemmeno nella memoria del browser
-      headers: {
-        'Content-Type': 'application/json',
-        ...(options.headers || {}),
-        'apikey': m.SUPABASE_ANON_KEY,
-        'Authorization': `Bearer ${tok}`,
-      },
-    });
-  } catch (_) {
-    if (lettura && tentativo < MAX_TENTATIVI) {
-      await sleep(200 * Math.pow(2, tentativo));
-      return supaRisposta(path, options, tentativo + 1, rinnovato);
+  let rinnovato = false;   // l'unico rinnovo forzato della sessione è già stato chiesto
+  let forza     = false;   // vale per UNA richiesta: quella subito dopo un 401
+  let tentativo = 0;       // nuovi tentativi già fatti (solo letture)
+  for (;;) {
+    const g = await gettone(m, forza);
+    forza = false;
+    const interruttore = typeof AbortController === 'function' ? new AbortController() : null;
+    const sveglia = interruttore ? setTimeout(() => interruttore.abort(), ATTESA_RICHIESTA_MS) : null;
+    let stato = 0, testo = '';
+    try {
+      const res = await fetch(`${m.SUPABASE_URL}/rest/v1/${path}`, {
+        method: metodo,
+        body: options.body,
+        cache: 'no-store',          // le risposte non restano nemmeno nella memoria del browser
+        signal: interruttore ? interruttore.signal : undefined,
+        headers: {
+          'Content-Type': 'application/json',
+          ...(options.headers || {}),
+          'apikey': m.SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${g.tok}`,
+        },
+      });
+      testo = await res.text();
+      stato = res.status;
+    } catch (_) {
+      stato = 0;                    // rete assente, tempo scaduto o corpo interrotto
     }
-    const e = new Error('rete');
-    e.rete = true;
-    throw e;
+    if (sveglia) clearTimeout(sveglia);
+    if (stato === 0) {
+      if (lettura && tentativo < MAX_TENTATIVI) { await sleep(200 * Math.pow(2, tentativo++)); continue; }
+      throw erroreRete();
+    }
+    if (stato === 401) {
+      if (!rinnovato) { rinnovato = true; forza = true; continue; }
+      if (!g.certo) throw erroreRete();   // il rinnovo non ha risposto: non si sa se la sessione c'è
+      throw new ErroreSessione('scaduta');
+    }
+    if (stato >= 500 && lettura && tentativo < MAX_TENTATIVI) { await sleep(200 * Math.pow(2, tentativo++)); continue; }
+    if (stato < 200 || stato >= 300) {
+      let err = null;
+      try { err = JSON.parse(testo); } catch (_) { err = null; }
+      const codice = String((err && err.code) || '');
+      if (stato === 403 && lettura && (!codice || codice === '42501')) throw new ErroreSessione('non-autorizzato');
+      const e = new Error(String((err && (err.message || err.hint)) || ('HTTP ' + stato)));
+      e.stato  = stato;
+      e.codice = codice;
+      // ciò che era stato inviato: serve a spiegare un rifiuto (messaggioErrore)
+      try { e.dati = options.body ? JSON.parse(options.body) : null; } catch (_) { e.dati = null; }
+      throw e;
+    }
+    return { stato, testo };
   }
-  if (res.status === 401) {
-    if (!rinnovato) return supaRisposta(path, options, tentativo, true);
-    throw new ErroreSessione('scaduta');
-  }
-  if (res.status === 403) throw new ErroreSessione('non-autorizzato');
-  if (res.status >= 500 && lettura && tentativo < MAX_TENTATIVI) {
-    await sleep(200 * Math.pow(2, tentativo));
-    return supaRisposta(path, options, tentativo + 1, rinnovato);
-  }
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    const e = new Error(String((err && (err.message || err.hint)) || ('HTTP ' + res.status)));
-    e.stato  = res.status;
-    e.codice = String((err && err.code) || '');
-    // ciò che era stato inviato: serve a spiegare un rifiuto (messaggioErrore)
-    try { e.dati = options.body ? JSON.parse(options.body) : null; } catch (_) { e.dati = null; }
-    throw e;
-  }
-  return res;
 }
 async function supaFetch(path, options = {}) {
-  const res  = await supaRisposta(path, options);
-  const text = await res.text();
-  if (!text) return [];
-  try { return JSON.parse(text); } catch (_) { throw erroreChiaro('Risposta del database non leggibile'); }
+  const { testo } = await supaRisposta(path, options);
+  if (!testo) return [];
+  try { return JSON.parse(testo); } catch (_) {
+    // la risposta è «riuscita» ma non si legge: per una scrittura l'esito è incerto
+    const e = erroreChiaro('Risposta del database non leggibile');
+    e.incerto = true;
+    throw e;
+  }
 }
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
@@ -208,12 +269,21 @@ const MESSAGGI_SESSIONE = {
   'assente':         'Sessione non attiva: rientra nell\'applicazione',
   'scaduta':         'Sessione non attiva: rientra nell\'applicazione',
   'non-autorizzato': 'Account non autorizzato a usare la rubrica',
+  'non-visibile':    'Il database non mostra la rubrica a questo account',
 };
 // Le funzioni della rubrica nel database rispondono con frasi già in italiano
 // («Esiste già una categoria…»): quelle si mostrano. Le frasi del database
 // vero e proprio cominciano così, e non si mostrano mai:
 const GREZZO_DEL_DATABASE = /^(new row|duplicate key|null value|value too long|update or delete|insert or update|permission denied|invalid input|could not|relation |column |function |syntax error|JWT|operator )/i;
 const CODICI_DELLE_FUNZIONI = ['P0001', 'P0002', '22023', '23503', '23505'];
+// Tabelle o funzioni della rubrica che il database non conosce: il codice è
+// arrivato su un sito il cui database non è ancora stato preparato. Non è un
+// guasto di rete, e controllare la connessione non serve.
+const CODICI_RUBRICA_ASSENTE = ['PGRST205', 'PGRST202', '42P01', '42883'];
+function rubricaAssente(e) {
+  if (!e || e instanceof ErroreSessione || e.stato == null) return false;
+  return e.stato === 404 || CODICI_RUBRICA_ASSENTE.includes(String(e.codice || ''));
+}
 
 // Perché il database rifiuterebbe questi dati (gli stessi vincoli delle
 // tabelle): frase da mostrare, oppure '' se sono in regola.
@@ -231,6 +301,8 @@ function messaggioErrore(e) {
   if (e && e.chiaro) return String(e.message);
   if (e && e.rete) return 'Connessione assente o instabile: riprova';
   if (!e || e.stato == null) return 'Operazione non riuscita';
+  if (rubricaAssente(e)) return 'La rubrica non è ancora disponibile su questo sito';
+  if (e.stato === 403) return 'Il database non permette questa operazione: avvisa chi gestisce l\'applicazione';
   const cod    = String(e.codice || '');
   const grezzo = String(e.message || '');
   // 23514 = un vincolo delle tabelle ha rifiutato i dati
@@ -245,6 +317,18 @@ function messaggioErrore(e) {
   if (cod === '23505') return 'Esiste già una voce con lo stesso nome';
   if (cod === '23503') return 'La voce è ancora in uso: non può essere eliminata';
   return 'Operazione non riuscita (errore ' + (cod || e.stato) + ')';
+}
+// Che cosa fare, sotto il messaggio che prende il posto dell'elenco: di
+// connessione si parla solo quando l'errore è di rete.
+function consiglioErrore(e) {
+  if (e instanceof ErroreSessione) {
+    if (e.motivo === 'non-autorizzato') return 'Rivolgiti a chi gestisce l\'applicazione';
+    if (e.motivo === 'non-visibile') return 'Può non essere ancora pronta, oppure l\'account non è fra quelli autorizzati: avvisa chi gestisce l\'applicazione';
+    return 'Ricarica l\'applicazione ed entra di nuovo';
+  }
+  if (e && e.rete) return 'Controlla la connessione e riprova';
+  if (rubricaAssente(e)) return 'Il database di questo sito non è ancora stato preparato: avvisa chi gestisce l\'applicazione';
+  return 'Riprova; se continua, avvisa chi gestisce l\'applicazione';
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -302,6 +386,23 @@ function lsIdentificativi(chiave, massimo) {
 }
 function pulisciResidui() {
   LS_RESIDUI.forEach(lsTogli);
+}
+// Preferiti e chiamati di recente lasciati dalla rubrica di prima: si
+// riprendono UNA volta, solo se qui non ce ne sono ancora, e solo come
+// identificativi interi (lsIdentificativi scarta tutto il resto: ciò che sta
+// in quelle chiavi non è creduto buono). Poi le chiavi di prima si tolgono.
+// Il tema NON si riprende: quella rubrica lo salvava anche senza una scelta
+// (scuro), e qui il tema predefinito è chiaro.
+function riprendiPreferenzeDiPrima() {
+  if (lsLeggi(LS_PREFERITI_DI_PRIMA) !== null && lsLeggi(LS_PREFERITI) === null) {
+    const preferiti = lsIdentificativi(LS_PREFERITI_DI_PRIMA, MAX_PREFERITI);
+    if (preferiti.length) lsScrivi(LS_PREFERITI, JSON.stringify(preferiti));
+  }
+  if (lsLeggi(LS_CHIAMATI_DI_PRIMA) !== null && lsLeggi(LS_CHIAMATI) === null) {
+    const chiamati = lsIdentificativi(LS_CHIAMATI_DI_PRIMA, MAX_CALLS);
+    if (chiamati.length) lsScrivi(LS_CHIAMATI, JSON.stringify(chiamati));
+  }
+  [LS_PREFERITI_DI_PRIMA, LS_CHIAMATI_DI_PRIMA, LS_TEMA_DI_PRIMA].forEach(lsTogli);
 }
 
 // ── Avatar: tinta stabile dalla categoria ────────────────────────────────────
@@ -441,7 +542,8 @@ function trapFocus(modalEl) {
   const handler = e => {
     if (e.key === 'Escape') {
       e.preventDefault();
-      closeActiveModal();
+      // con una domanda a schermo Esc vale «Annulla» per la domanda, e la finestra sotto resta
+      if (confermaInSospeso) annullaConferma(); else closeActiveModal();
       return;
     }
     if (e.key !== 'Tab') return;
@@ -460,7 +562,10 @@ function releaseFocus(modalEl) {
     modalEl._trapHandler = null;
   }
   activeModal = null;
-  if (lastFocused?.focus) lastFocused.focus();
+  // Il fuoco si rende solo se questa pagina lo ha ancora: una finestra che si
+  // chiude DOPO un'attesa di rete non deve riprenderselo a chi nel frattempo
+  // è tornato a scrivere in una scheda dell'app.
+  if (document.hasFocus() && lastFocused?.focus) lastFocused.focus();
   lastFocused = null;
 }
 function closeAlphaModal() {
@@ -476,30 +581,49 @@ function closeActiveModal() {
 }
 
 // ── Esportazione CSV / vCard ─────────────────────────────────────────────────
+// Risponde vero se il file è stato consegnato al browser (che poi lo salvi
+// davvero, da qui non si può sapere).
 function downloadFile(filename, content, mime) {
-  const blob = new Blob([content], { type: mime });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = filename;
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  try {
+    const blob = new Blob([content], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    return true;
+  } catch (_) {
+    return false;
+  }
 }
 // Un foglio di calcolo tratta da FORMULA una cella che comincia con = + - @
 // (o con una tabulazione o un ritorno a capo): l'apice davanti la rende testo.
+// L'apice va davanti a OGNI possibile inizio di cella, non solo al primo
+// carattere del campo: un programma che divide il file su un separatore
+// diverso da quello usato qui vedrebbe come cella a sé anche ciò che segue un
+// «;», una «,», una tabulazione o un ritorno a capo dentro il testo.
 function csvEscape(s) {
   s = String(s == null ? '' : s);
-  if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
-  if (/[",\n\r;]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+  s = s.replace(/(^|[;,\t\r\n])([=+\-@])/g, "$1'$2");
+  if (/^[\t\r\n]/.test(s)) s = "'" + s;
+  if (/[",;\t\n\r]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
   return s;
 }
-function exportCSV() {
-  const rows = ['nome,categoria,numeri,note'];
-  for (const c of allContacts) {
-    rows.push([c.nome, c.categoria, c.numeri, c.note].map(csvEscape).join(','));
+// Il file: separatore «;» e segno BOM in testa, la forma che Excel in italiano
+// apre già in colonne (e in cui rispetta le virgolette dei campi).
+const CSV_SEPARATORE = ';';
+function buildCSV(contatti) {
+  const rows = [['nome', 'categoria', 'numeri', 'note'].join(CSV_SEPARATORE)];
+  for (const c of contatti) {
+    rows.push([c.nome, c.categoria, c.numeri, c.note].map(csvEscape).join(CSV_SEPARATORE));
   }
+  return '\uFEFF' + rows.join('\r\n') + '\r\n';
+}
+function exportCSV() {
+  if (!datiPronti || !allContacts.length) { showToast('Nessun contatto da esportare', 3000, 'warning'); return; }
   const today = new Date().toISOString().slice(0, 10);
-  downloadFile(`rubrica-${today}.csv`, rows.join('\n'), 'text/csv;charset=utf-8');
-  showToast('CSV esportato', 2000, 'success');
+  if (downloadFile(`rubrica-${today}.csv`, buildCSV(allContacts), 'text/csv;charset=utf-8')) showToast('CSV esportato', 2000, 'success');
+  else showToast('Esportazione non riuscita', 3500, 'error');
 }
 // Testo dentro una scheda vCard: un ritorno a capo aggiungerebbe righe (altri
 // numeri, altri indirizzi) alla scheda che finisce nel telefono.
@@ -534,7 +658,7 @@ function exportSingleVCF(contact) {
   if (!contact) return;
   const slug = String(contact.nome).toLowerCase()
     .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'contatto';
-  downloadFile(`${slug}.vcf`, buildVCard(contact), 'text/vcard;charset=utf-8');
+  if (!downloadFile(`${slug}.vcf`, buildVCard(contact), 'text/vcard;charset=utf-8')) showToast('Esportazione non riuscita', 3500, 'error');
   haptic(12);
 }
 
@@ -656,6 +780,7 @@ async function avvia() {
 function init() {
   cacheDOM();
   pulisciResidui();
+  riprendiPreferenzeDiPrima();
   favs = getFavs();
   applyTheme(temaSalvato(), false);
   setupEvents();
@@ -667,6 +792,16 @@ function init() {
 function rubricaAllApertura() {
   if (!avviata) { avvia(); return; }
   loadData(false);
+}
+// La pagina madre lo chiede prima di chiudere la sessione («Esci»): un
+// salvataggio in corso, un contatto scritto e non salvato, o modifiche alle
+// categorie non salvate, andrebbero persi senza avviso.
+function rubricaInSospeso() {
+  if (!avviata) return false;
+  if (scrittureInCorso > 0) return true;
+  if (!D.modalOverlay.hidden && fotoModulo() !== moduloAllApertura) return true;
+  if (!D.catModalOverlay.hidden && hasCatChanges()) return true;
+  return false;
 }
 // Torna al messaggio fisso (la pagina madre non c'è più).
 function mostraFuori() {
@@ -690,8 +825,10 @@ async function caricaDati(forza) {
     if (!datiPronti) { showLoading(); setLoadingStatus('Verifica ultimo aggiornamento...'); }
     const righe = await supaFetch('rubrica_versione?select=ts&id=eq.1');
     // Un account collegato ma non autorizzato non riceve un errore: riceve un
-    // elenco vuoto (lo decidono le regole del database).
-    if (!Array.isArray(righe) || !righe.length) throw new ErroreSessione('non-autorizzato');
+    // elenco vuoto (lo decidono le regole del database). Lo stesso elenco
+    // vuoto arriva se la riga della versione non è stata ancora creata: da qui
+    // i due casi non si distinguono, e il messaggio li nomina tutti e due.
+    if (!Array.isArray(righe) || !righe.length) throw new ErroreSessione('non-visibile');
     const ts = Number(righe[0] && righe[0].ts);
     if (!Number.isFinite(ts)) throw erroreChiaro('Risposta del database non leggibile');
     if (!forza && datiPronti && ts === versioneNota) return;
@@ -732,10 +869,7 @@ function mostraErrore(e) {
   versioneNota = null;
   datiPronti   = false;
   if (e instanceof ErroreSessione && e.motivo === 'fuori-app') { mostraFuori(); return; }
-  const diSessione = e instanceof ErroreSessione;
-  const sotto = !diSessione ? 'Controlla la connessione e riprova'
-    : (e.motivo === 'non-autorizzato' ? 'Rivolgiti a chi gestisce l\'applicazione'
-                                      : 'Ricarica l\'applicazione ed entra di nuovo');
+  const sotto = consiglioErrore(e);
   D.chips.innerHTML = '';
   D.contactList.innerHTML =
     `<div class="state-msg"><div class="ico">×</div><div>${esc(messaggioErrore(e))}</div><div class="sub">${esc(sotto)}</div><button type="button" class="btn-riprova" id="btnRiprova">Riprova</button></div>`;
@@ -927,7 +1061,7 @@ function setupEvents() {
   });
 
   // Nuovo
-  D.btnNew.addEventListener('click', () => openModal(null));
+  D.btnNew.addEventListener('click', nuovoContatto);
   D.btnAddNum.addEventListener('click', () => { const f = addNumRow(); f.focus(); });
   D.btnCancel.addEventListener('click', closeModal);
   D.modalOverlay.addEventListener('click', e => {
@@ -952,7 +1086,13 @@ function setupEvents() {
     await saveContact();
   });
   D.btnDelete.addEventListener('click', async () => {
-    if (await showConfirm('Eliminare questo contatto?', 'error')) await deleteContact();
+    // L'identificativo si prende ADESSO: la domanda vale per questo contatto,
+    // non per quello che sarà aperto quando arriva la risposta.
+    const id = idIntero(D.fId.value);
+    if (id === null) { showToast('Contatto non riconosciuto: chiudi la scheda e riaprila', 4000, 'error'); return; }
+    if (!(await showConfirm('Eliminare questo contatto?', 'error'))) return;
+    if (D.modalOverlay.hidden || idIntero(D.fId.value) !== id) return;
+    await deleteContact(id);
   });
 
   // ── Event delegation: lista contatti ──────────────────────────────────────
@@ -1137,6 +1277,7 @@ function closeNumMenu() {
   releaseFocus(D.numMenuOverlay);
   D.numMenuOverlay.hidden = true;
 }
+const COPIA_NON_RIUSCITA = 'Copia non riuscita: il browser non l\'ha permessa';
 async function handleNumMenuAction(action) {
   const num  = D.numMenuTitle.textContent;
   const nome = D.numMenuSub.textContent;
@@ -1149,40 +1290,44 @@ async function handleNumMenuAction(action) {
       else showToast('Questo numero non si può chiamare da qui', 3000, 'warning');
       break;
     case 'copy':
-      await copyText(num);
-      showToast('Numero copiato', 2000, 'success');
+      if (await copyText(num)) showToast('Numero copiato', 2000, 'success');
+      else showToast(COPIA_NON_RIUSCITA, 3500, 'warning');
       break;
     case 'copy-full':
-      await copyText(`${nome}: ${num}`);
-      showToast('Copiato negli appunti', 2000, 'success');
+      if (await copyText(`${nome}: ${num}`)) showToast('Copiato negli appunti', 2000, 'success');
+      else showToast(COPIA_NON_RIUSCITA, 3500, 'warning');
       break;
     case 'share':
       if (navigator.share) {
         try {
           await navigator.share({ title: nome, text: `${nome}: ${num}` });
         } catch (_) {}
-      } else {
-        await copyText(`${nome}: ${num}`);
+      } else if (await copyText(`${nome}: ${num}`)) {
         showToast('Condivisione non supportata — copiato', 3000);
+      } else {
+        showToast('Condivisione non supportata', 3000, 'warning');
       }
       break;
     case 'close':
       break;
   }
 }
+// Risponde vero solo se il testo è davvero finito negli appunti.
 async function copyText(text) {
   if (navigator.clipboard) {
-    try { await navigator.clipboard.writeText(text); return; } catch (_) {}
+    try { await navigator.clipboard.writeText(text); return true; } catch (_) {}
   }
-  // Fallback
+  // Ripiego
   const ta = document.createElement('textarea');
   ta.value = text;
   ta.style.position = 'fixed';
   ta.style.opacity = '0';
   document.body.appendChild(ta);
   ta.select();
-  try { document.execCommand('copy'); } catch (_) {}
+  let riuscita = false;
+  try { riuscita = document.execCommand('copy') === true; } catch (_) {}
   ta.remove();
+  return riuscita;
 }
 
 // ── Modal contatto ───────────────────────────────────────────────────────────
@@ -1238,11 +1383,30 @@ function collectPairs() {
   return { numeri: numeri.join('|'), note: note.join('|') };
 }
 
+// La copia del contatto su cui la scheda è stata aperta (null = contatto
+// nuovo): al salvataggio la riga viene riletta e confrontata con questa.
+let contattoAperto    = null;
+// I valori del modulo appena aperto: dicono se c'è qualcosa di scritto e non
+// salvato (rubricaInSospeso).
+let moduloAllApertura = '';
+function fotoModulo() {
+  const righe = [...D.numeriContainer.querySelectorAll('.num-row')]
+    .map(r => [r.querySelector('.f-num').value, r.querySelector('.f-nota').value]);
+  return JSON.stringify([D.fNome.value, D.fCategoria.value, righe]);
+}
+function stessiDati(a, b) {
+  return a.nome === b.nome && a.categoria === b.categoria && a.numeri === b.numeri && a.note === b.note;
+}
+
 function openModal(contact) {
   // Salva scroll position per ripristinarla alla chiusura
   savedScrollY = window.scrollY;
 
   const isNew = !contact;
+  contattoAperto = contact
+    ? { id: contact.id, nome: contact.nome, categoria: contact.categoria, numeri: contact.numeri, note: contact.note }
+    : null;
+  invioSenzaRisposta = null;
   D.modalTitle.textContent = isNew ? 'Nuovo Contatto' : 'Modifica Contatto';
   D.fId.value   = contact ? String(contact.id) : '';
   D.fNome.value = contact ? contact.nome : '';
@@ -1253,9 +1417,14 @@ function openModal(contact) {
   // scelte, così salvando non cambia da sola.
   const nomiCat = categories.map(c => c.nome);
   if (contact && contact.categoria && !nomiCat.includes(contact.categoria)) nomiCat.push(contact.categoria);
-  D.fCategoria.innerHTML = nomiCat.map(n =>
-    `<option value="${esc(n)}"${contact && n === contact.categoria ? ' selected' : ''}>${esc(n)}</option>`
-  ).join('');
+  // Un contatto SENZA categoria: la scelta vuota è la sua, così salvando non
+  // gliene viene assegnata una di nascosto (saveContact chiede di sceglierla).
+  const senzaCategoria = !!contact && !contact.categoria;
+  D.fCategoria.innerHTML =
+    (senzaCategoria ? '<option value="" selected>— scegli una categoria —</option>' : '') +
+    nomiCat.map(n =>
+      `<option value="${esc(n)}"${contact && n === contact.categoria ? ' selected' : ''}>${esc(n)}</option>`
+    ).join('');
 
   D.numeriContainer.innerHTML = '';
   const nums  = String(contact?.numeri || '').split('|').map(s => s.trim()).filter(Boolean);
@@ -1266,17 +1435,44 @@ function openModal(contact) {
     addNumRow();
   }
 
+  moduloAllApertura = fotoModulo();
   D.modalOverlay.hidden = false;
   trapFocus(D.modalOverlay);
-  setTimeout(() => D.fNome.focus(), 50);
+  setTimeout(() => { if (document.hasFocus()) D.fNome.focus(); }, 50);
 }
-function openEdit(id) {
+// «Nuovo Contatto» vuole l'elenco caricato: senza, non ci sono le categorie
+// fra cui scegliere e il contatto nascerebbe senza categoria.
+function nuovoContatto() {
+  if (!datiPronti) { showToast('La rubrica non è ancora caricata: attendi, oppure premi «Riprova»', 3500, 'warning'); return; }
+  openModal(null);
+}
+// Prima di aprire la scheda si ricontrolla, con la lettura minima della
+// versione, se un altro PC ha modificato la rubrica: così la scheda si apre
+// sui dati di adesso e non su una copia rimasta in memoria da ore. Se il
+// controllo tarda (rete lenta) la scheda si apre lo stesso: al salvataggio la
+// riga viene comunque riletta e confrontata (saveContact).
+const ATTESA_APERTURA_MS = 2500;
+let aperturaInCorso = false;
+async function openEdit(id) {
   id = idIntero(id);
-  if (id === null) return;
+  if (id === null || aperturaInCorso || !D.modalOverlay.hidden) return;
+  aperturaInCorso = true;
+  try {
+    await Promise.race([loadData(false), sleep(ATTESA_APERTURA_MS)]);
+  } finally {
+    aperturaInCorso = false;
+  }
+  if (!datiPronti) return;            // l'errore è già al posto dell'elenco
+  if (activeModal) return;            // durante l'attesa si è aperta un'altra finestra: non la si copre
   const c = allContacts.find(x => x.id === id);
-  if (c) openModal(c);
+  if (!c) { showToast('Il contatto non esiste più: forse è stato eliminato da un altro PC', 4000, 'warning'); return; }
+  openModal(c);
 }
 function closeModal() {
+  // una domanda rimasta a schermo («Eliminare questo contatto?») non sopravvive alla scheda
+  annullaConferma();
+  invioSenzaRisposta = null;
+  contattoAperto = null;
   releaseFocus(D.modalOverlay);
   D.modalOverlay.hidden = true;
   // Ripristina scroll position
@@ -1290,7 +1486,41 @@ function closeModal() {
 // rubrica dal database (così si vedono anche le modifiche fatte da altri PC).
 // Modifica ed eliminazione chiedono indietro la riga toccata: se non ne torna
 // nessuna il contatto non c'è più, e lo si dice invece di fingere un successo.
+//
+// Due regole in più:
+//  - AGGIORNAMENTO PERSO. Una modifica riscrive tutti i campi del contatto:
+//    prima di inviarla si rilegge la riga, e si scrive solo se è ancora quella
+//    su cui la scheda è stata aperta. Se un altro PC l'ha cambiata nel
+//    frattempo non si scrive nulla e lo si dice.
+//  - ESITO INCERTO. Se la risposta di una scrittura non arriva (rete caduta,
+//    tempo massimo) la richiesta può essere arrivata lo stesso: non si invita
+//    a riprovare alla cieca. Si rilegge la rubrica e si guarda se la scrittura
+//    c'è già; se nemmeno la rilettura riesce lo si ricorda
+//    (invioSenzaRisposta) e il controllo si rifà al prossimo «Salva», PRIMA di
+//    inviare di nuovo.
+let scrittureInCorso   = 0;      // salvataggi partiti e non ancora conclusi (anche delle categorie)
+let invioSenzaRisposta = null;   // { nuovo, id, payload, notiPrima } dell'invio rimasto senza risposta
+const AVVISO_ESITO_IGNOTO = 'Connessione assente: non è certo che il contatto sia stato salvato. Quando la rete torna premi di nuovo «Salva»: prima di inviare si controlla se c\'è già';
+
+// Risponde 'salvato', 'non-salvato' oppure 'ignoto' (nemmeno la rilettura è
+// riuscita). Un contatto nuovo si riconosce dagli stessi dati su un
+// identificativo che prima dell'invio non c'era.
+async function verificaInvio(v) {
+  await loadData(true);
+  if (!datiPronti) return 'ignoto';
+  const trovato = v.nuovo
+    ? allContacts.some(c => !v.notiPrima.has(c.id) && stessiDati(c, v.payload))
+    : allContacts.some(c => c.id === v.id && stessiDati(c, v.payload));
+  return trovato ? 'salvato' : 'non-salvato';
+}
+function contattoSparito() {
+  const e = erroreChiaro('Il contatto non esiste più: forse è stato eliminato da un altro PC');
+  e.sparito = true;
+  return e;
+}
+
 async function saveContact() {
+  if (scrittureInCorso) return;        // un salvataggio è già partito
   const nuovo = D.fId.value === '';
   const id    = nuovo ? null : idIntero(D.fId.value);
   if (!nuovo && id === null) { showToast('Contatto non riconosciuto: chiudi la scheda e riaprila', 4000, 'error'); return; }
@@ -1307,37 +1537,92 @@ async function saveContact() {
     numeri:    pairs.numeri,
     note:      pairs.note,
   };
+  // la categoria è obbligatoria, finché ne esiste almeno una fra cui scegliere
+  if (!payload.categoria && categories.length) { showToast('Scegli una categoria', 3000, 'warning'); return; }
   // gli stessi vincoli del database, detti prima di inviare
   const rifiuto = motivoRifiuto(payload);
   if (rifiuto) { showToast(rifiuto, 4000, 'warning'); return; }
 
   const btn = D.btnSave;
   btn.innerHTML = '<span class="btn-spinner"></span>'; btn.disabled = true;
+  scrittureInCorso++;
+  // gli identificativi noti prima dell'invio: dopo una risposta persa dicono
+  // qual è il contatto appena creato
+  const invio = { nuovo, id, payload, notiPrima: new Set(allContacts.map(c => c.id)) };
+  const riuscito = nuovo ? 'Contatto aggiunto con successo' : 'Contatto aggiornato con successo';
   try {
+    if (invioSenzaRisposta) {
+      // l'invio di prima è rimasto senza risposta e non si era potuto
+      // controllare: lo si controlla adesso, prima di inviare di nuovo
+      const prima = await verificaInvio(invioSenzaRisposta);
+      if (prima === 'ignoto') { showToast(AVVISO_ESITO_IGNOTO, 7000, 'error'); return; }
+      invioSenzaRisposta = null;
+      if (prima === 'salvato') {
+        closeModal();
+        showToast('Il contatto risulta già salvato: controllalo nell\'elenco', 4500, 'success');
+        return;
+      }
+      invio.notiPrima = new Set(allContacts.map(c => c.id));
+    }
+    if (!nuovo) {
+      const adesso = prepareContacts(await supaFetch(`rubrica_contatti?select=id,nome,categoria,numeri,note&id=eq.${id}`))[0];
+      if (!adesso) throw contattoSparito();
+      if (contattoAperto && !stessiDati(adesso, contattoAperto) && !stessiDati(adesso, payload)) {
+        closeModal();
+        showToast('Questo contatto è stato modificato da un altro PC mentre la scheda era aperta: riaprilo e ripeti la modifica', 6500, 'warning');
+        loadData(true);
+        return;
+      }
+    }
     const rows = await supaFetch(nuovo ? 'rubrica_contatti' : `rubrica_contatti?id=eq.${id}`, {
       method: nuovo ? 'POST' : 'PATCH',
       headers: { 'Prefer': 'return=representation' },
       body: JSON.stringify(payload),
     });
     if (!Array.isArray(rows) || !rows.length) {
-      throw erroreChiaro(nuovo ? 'Il contatto non risulta salvato: riprova' : 'Il contatto non esiste più: forse è stato eliminato da un altro PC');
+      if (!nuovo) throw contattoSparito();
+      const e = erroreChiaro('Il contatto non risulta salvato: riprova');
+      e.incerto = true;
+      throw e;
     }
     closeModal();
-    showToast(nuovo ? 'Contatto aggiunto con successo' : 'Contatto aggiornato con successo', 3000, 'success');
+    showToast(riuscito, 3000, 'success');
     loadData(true);
   } catch (e) {
-    showToast(messaggioErrore(e), 4500, 'error');
-    if (e instanceof ErroreSessione) loadData(true);
+    if (e && e.sparito) {
+      // il contatto non c'è più: la scheda si chiude e l'elenco si rilegge
+      closeModal();
+      showToast(messaggioErrore(e), 4500, 'warning');
+      loadData(true);
+    } else if (e && (e.rete || e.incerto)) {
+      const esito = await verificaInvio(invio);
+      if (esito === 'salvato') {
+        closeModal();
+        showToast(riuscito, 3000, 'success');
+      } else if (esito === 'ignoto') {
+        invioSenzaRisposta = invio;
+        showToast(AVVISO_ESITO_IGNOTO, 7000, 'error');
+      } else {
+        showToast('Il contatto non risulta salvato: riprova', 4500, 'error');
+      }
+    } else {
+      showToast(messaggioErrore(e), 4500, 'error');
+      if (e instanceof ErroreSessione) loadData(true);
+    }
   } finally {
+    scrittureInCorso--;
     btn.textContent = 'Salva'; btn.disabled = false;
   }
 }
 
-async function deleteContact() {
-  const id = idIntero(D.fId.value);
+// «id» è quello preso al clic su «Elimina» (vedi il gestore del pulsante).
+async function deleteContact(id) {
+  id = idIntero(id);
   if (id === null) { showToast('Contatto non riconosciuto: chiudi la scheda e riaprila', 4000, 'error'); return; }
+  if (scrittureInCorso) return;
   const btn = D.btnDelete;
   btn.innerHTML = '<span class="btn-spinner"></span>'; btn.disabled = true;
+  scrittureInCorso++;
   try {
     const rows = await supaFetch(`rubrica_contatti?id=eq.${id}`, {
       method: 'DELETE',
@@ -1347,9 +1632,21 @@ async function deleteContact() {
     showToast(Array.isArray(rows) && rows.length ? 'Contatto eliminato con successo' : 'Il contatto era già stato eliminato', 3000, 'success');
     loadData(true);
   } catch (e) {
-    showToast(messaggioErrore(e), 4500, 'error');
-    if (e instanceof ErroreSessione) loadData(true);
+    if (e && (e.rete || e.incerto)) {
+      // risposta persa: si rilegge, e se il contatto non c'è più l'eliminazione era arrivata
+      await loadData(true);
+      if (datiPronti && !allContacts.some(c => c.id === id)) {
+        closeModal();
+        showToast('Contatto eliminato con successo', 3000, 'success');
+      } else {
+        showToast(datiPronti ? 'Il contatto non risulta eliminato: riprova' : messaggioErrore(e), 4500, 'error');
+      }
+    } else {
+      showToast(messaggioErrore(e), 4500, 'error');
+      if (e instanceof ErroreSessione) loadData(true);
+    }
   } finally {
+    scrittureInCorso--;
     btn.textContent = 'Elimina'; btn.disabled = false;
   }
 }
@@ -1387,30 +1684,39 @@ let catPendingNew = [];
 
 // Prima di mostrare le categorie si ricontrolla se un altro PC ha modificato
 // la rubrica (una lettura minima); i conteggi si fanno sui contatti in memoria.
+// «pos» è il posto della categoria nella finestra (0, 1, 2…) e «pos0» quello
+// che aveva all'apertura: il trascinamento scambia i POSTI, non i valori di
+// «ordine», così anche due categorie rimaste con lo stesso «ordine» si
+// possono separare (vedi nuoviOrdini).
 async function openCatModal() {
+  if (!D.catModalOverlay.hidden) return;
   D.catModalOverlay.hidden = false;
   trapFocus(D.catModalOverlay);
   D.catList.innerHTML = '<div class="cat-loading"><div class="spinner"></div></div>';
   catOriginal = []; catPending = []; catPendingNew = [];
   await loadData(false);
+  if (D.catModalOverlay.hidden) return;      // chiusa durante l'attesa
   if (!datiPronti) {
-    releaseFocus(D.catModalOverlay);
-    D.catModalOverlay.hidden = true;
+    chiudiCategorie();
     return;
   }
   catOriginal = categories.map(c => ({
     ...c,
     count: allContacts.filter(x => x.categoria === c.nome).length,
   }));
-  catPending    = catOriginal.map(c => ({ ...c, editNome: c.nome, deleted: false }));
+  catPending    = catOriginal.map((c, i) => ({ ...c, editNome: c.nome, deleted: false, pos: i, pos0: i }));
   catPendingNew = [];
   renderCatList();
 }
 
-async function closeCatModal() {
-  if (hasCatChanges() && !(await showConfirm('Ci sono modifiche non salvate.\nChiudere ugualmente?', 'warning'))) return;
+function chiudiCategorie() {
+  annullaConferma();     // una domanda rimasta a schermo non sopravvive alla finestra
   releaseFocus(D.catModalOverlay);
   D.catModalOverlay.hidden = true;
+}
+async function closeCatModal() {
+  if (hasCatChanges() && !(await showConfirm('Ci sono modifiche non salvate.\nChiudere ugualmente?', 'warning'))) return;
+  chiudiCategorie();
 }
 
 function hasCatChanges() {
@@ -1418,12 +1724,36 @@ function hasCatChanges() {
   if (catPending.some(c => c.deleted || c.editNome !== c.nome)) return true;
   // Aggiunte
   if (catPendingNew.length > 0) return true;
-  // Cambio ordine
-  for (const c of catPending) {
-    const orig = catOriginal.find(o => o.id === c.id);
-    if (orig && orig.ordine !== c.ordine) return true;
+  // Cambio di posto
+  return catPending.some(c => c.pos !== c.pos0);
+}
+// Scambia il posto di due categorie nella finestra e ridisegna l'elenco.
+function scambiaPosti(pidxA, pidxB) {
+  const a = catPending[pidxA];
+  const b = catPending[pidxB];
+  if (!a || !b || a === b || a.deleted || b.deleted) return false;
+  const tmp = a.pos;
+  a.pos = b.pos;
+  b.pos = tmp;
+  renderCatList();
+  return true;
+}
+// I valori di «ordine» da scrivere dopo un riordino: { id, ordine } delle sole
+// categorie il cui valore cambia. Si riusano i valori di prima, messi in fila
+// e resi strettamente crescenti: così due categorie scambiate sono due
+// scritture (le altre non si toccano), e due valori uguali rimasti da un
+// salvataggio interrotto a metà vengono separati.
+function nuoviOrdini() {
+  const inFila = catPending.filter(c => !c.deleted).sort((a, b) => a.pos - b.pos);
+  if (!inFila.some(c => c.pos !== c.pos0)) return [];     // nessuno spostamento: non si scrive nulla
+  const valori = inFila.map(c => Number(c.ordine) || 0).sort((a, b) => a - b);
+  for (let i = 1; i < valori.length; i++) {
+    if (valori[i] <= valori[i - 1]) valori[i] = valori[i - 1] + 1;
   }
-  return false;
+  return inFila
+    .map((c, i) => ({ id: c.id, ordine: valori[i], prima: Number(c.ordine) || 0 }))
+    .filter(x => x.ordine !== x.prima)
+    .map(x => ({ id: x.id, ordine: x.ordine }));
 }
 
 // ── Drag & drop riordino categorie ──────────────────────────────────────────
@@ -1451,15 +1781,9 @@ function setupCatDrag() {
       const target = document.elementFromPoint(e.clientX, e.clientY)?.closest('.cat-item');
       if (!target || target === dragRow || !target.dataset.pidx) return;
       const targetPidx = Number(target.dataset.pidx);
-      // Scambia ordine in catPending
-      const a = catPending[dragPidx];
-      const b = catPending[targetPidx];
-      if (!a || !b) return;
-      const tmp = a.ordine;
-      a.ordine = b.ordine;
-      b.ordine = tmp;
-      // Re-render (mantenendo la classe dragging sulla nuova posizione)
-      renderCatList();
+      // Scambia il posto delle due categorie e ridisegna (la classe «dragging»
+      // va poi rimessa sulla riga nuova)
+      if (!scambiaPosti(dragPidx, targetPidx)) return;
       // Ritrova la row e marcala dragging
       const newRow = D.catList.querySelector(`.cat-item[data-pidx="${dragPidx}"]`);
       if (newRow) {
@@ -1482,10 +1806,10 @@ function setupCatDrag() {
 }
 
 function renderCatList() {
-  // Ordina catPending in base a `ordine` per il render visuale
+  // Le categorie nell'ordine dei posti (vedi openCatModal)
   const visiblePending = catPending
     .filter(c => !c.deleted)
-    .sort((a, b) => (a.ordine || 0) - (b.ordine || 0));
+    .sort((a, b) => a.pos - b.pos);
 
   const existingHTML = visiblePending.map(c => {
     const pidx = catPending.indexOf(c);
@@ -1571,80 +1895,101 @@ function addNewCategory() {
   D.fNewCat.focus();
 }
 
-async function saveCatChanges() {
+// Che cosa c'è da salvare, calcolato dalla finestra com'è IN QUESTO MOMENTO:
+// { errore } oppure { adds, renames, deletes, ordini, conContatti }.
+function cambiCategorie() {
   const finalNames = [
     ...catPending.filter(c => !c.deleted).map(c => formatCatName(c.editNome)),
     ...catPendingNew.map(c => formatCatName(c.nome))
   ];
-  if (finalNames.some(n => !n)) {
-    showToast('Il nome di una categoria è vuoto o non valido', 3000, 'warning'); return;
-  }
+  if (finalNames.some(n => !n)) return { errore: 'Il nome di una categoria è vuoto o non valido' };
   const lower = finalNames.map(n => n.toLowerCase());
-  if (lower.some((n, i) => lower.indexOf(n) !== i)) {
-    showToast('Ci sono categorie con lo stesso nome', 3000, 'warning'); return;
-  }
+  if (lower.some((n, i) => lower.indexOf(n) !== i)) return { errore: 'Ci sono categorie con lo stesso nome' };
 
   // una categoria non toccata non si rinomina, nemmeno se il suo nome non ha la forma di formatCatName
-  const renames = catPending.filter(c => !c.deleted && c.editNome !== c.nome && formatCatName(c.editNome) !== c.nome);
-  const renamesWithCont = renames.filter(c => c.count > 0);
-  if (renamesWithCont.length) {
-    const msg = renamesWithCont.map(c =>
-      `• "${c.nome}" → "${formatCatName(c.editNome)}" (${c.count} contatti verranno aggiornati)`
-    ).join('\n');
-    if (!(await showConfirm(`Attenzione — verranno aggiornati i contatti:\n\n${msg}\n\nProcedere?`, 'warning'))) return;
+  const rinominate = catPending.filter(c => !c.deleted && c.editNome !== c.nome && formatCatName(c.editNome) !== c.nome);
+  return {
+    adds:    catPendingNew.map(nc => formatCatName(nc.nome)),
+    renames: rinominate.map(c => ({ old: c.nome, new: formatCatName(c.editNome) })),
+    deletes: catPending.filter(c => c.deleted).map(c => c.nome),
+    ordini:  nuoviOrdini(),
+    conContatti: rinominate.filter(c => c.count > 0).map(c =>
+      `• "${c.nome}" → "${formatCatName(c.editNome)}" (${c.count} contatti verranno aggiornati)`),
+  };
+}
+
+async function saveCatChanges() {
+  if (scrittureInCorso) return;        // un salvataggio è già partito
+  let cambi = cambiCategorie();
+  if (cambi.errore) { showToast(cambi.errore, 3000, 'warning'); return; }
+
+  if (cambi.conContatti.length) {
+    const mostrato = JSON.stringify(cambi);
+    if (!(await showConfirm(`Attenzione — verranno aggiornati i contatti:\n\n${cambi.conContatti.join('\n')}\n\nProcedere?`, 'warning'))) return;
+    // La risposta vale per ciò che la domanda mostrava: se nel frattempo la
+    // finestra è cambiata, o è stata chiusa, non si salva nulla.
+    if (D.catModalOverlay.hidden) return;
+    cambi = cambiCategorie();
+    if (cambi.errore || JSON.stringify(cambi) !== mostrato) {
+      showToast('Le categorie sono cambiate mentre la domanda era a schermo: controlla e salva di nuovo', 5000, 'warning');
+      return;
+    }
+  }
+  if (!cambi.adds.length && !cambi.renames.length && !cambi.deletes.length && !cambi.ordini.length) {
+    chiudiCategorie();
+    showToast('Nessuna modifica da salvare', 2500);
+    return;
   }
 
   const btn = D.btnCatSave;
   btn.innerHTML = '<span class="btn-spinner"></span>'; btn.disabled = true;
-  let fatto = false;   // la funzione del database ha già salvato aggiunte, nomi ed eliminazioni
+  scrittureInCorso++;
+  let fatto = false;   // una parte delle modifiche è già nel database
   try {
-    const adds    = catPendingNew.map(nc => formatCatName(nc.nome));
-    const renamesPayload = renames.map(c => ({ old: c.nome, new: formatCatName(c.editNome) }));
-    const deletes = catPending.filter(c => c.deleted).map(c => c.nome);
-
     // UNA chiamata, una sola transazione nel database. Se risponde con un
     // errore (nome già esistente, categoria che ha ancora contatti, sessione…)
     // nulla è stato cambiato: lo si dice e basta. Mai rifare lo stesso lavoro
     // «a pezzi» con chiamate separate.
-    if (adds.length || renamesPayload.length || deletes.length) {
+    if (cambi.adds.length || cambi.renames.length || cambi.deletes.length) {
       await supaFetch('rpc/rubrica_categorie_batch', {
         method: 'POST',
-        body: JSON.stringify({ adds, renames: renamesPayload, deletes }),
+        body: JSON.stringify({ adds: cambi.adds, renames: cambi.renames, deletes: cambi.deletes }),
       });
       fatto = true;
     }
 
-    // ── Riordino: le categorie con `ordine` cambiato ──────────────────────────
-    const reorders = catPending.filter(c => {
-      const orig = catOriginal.find(o => o.id === c.id);
-      return orig && !c.deleted && orig.ordine !== c.ordine;
-    });
-    for (const c of reorders) {
-      const id = idIntero(c.id);
+    // ── Riordino: le sole categorie il cui «ordine» cambia (nuoviOrdini) ──────
+    // Una scrittura per categoria: la funzione del database non ha un
+    // parametro per l'ordine. Se si fermano a metà possono restare due valori
+    // uguali: lo si dice, e il riordino successivo li separa.
+    for (const o of cambi.ordini) {
+      const id = idIntero(o.id);
       if (id === null) continue;
       await supaFetch(`rubrica_categorie?id=eq.${id}`, {
         method: 'PATCH',
-        body: JSON.stringify({ ordine: Number(c.ordine) || 0 }),
+        body: JSON.stringify({ ordine: o.ordine }),
       });
       fatto = true;
     }
 
-    releaseFocus(D.catModalOverlay);
-    D.catModalOverlay.hidden = true;
+    chiudiCategorie();
     showToast('Categorie aggiornate con successo', 3000, 'success');
     loadData(true);
   } catch (e) {
-    if (fatto) {
-      // una parte è già nel database: la finestra non è più lo specchio di ciò che c'è
-      releaseFocus(D.catModalOverlay);
-      D.catModalOverlay.hidden = true;
-      showToast('Categorie salvate solo in parte: riapri la finestra e controlla. ' + messaggioErrore(e), 6000, 'error');
+    const incerto = !!(e && (e.rete || e.incerto));
+    if (fatto || incerto) {
+      // Una parte è già nel database, oppure non si sa (risposta persa): la
+      // finestra non è più lo specchio di ciò che c'è. Si chiude e si rilegge:
+      // riaprendola si vede che cosa è stato salvato davvero.
+      chiudiCategorie();
+      showToast((fatto ? 'Categorie salvate solo in parte' : 'Non è certo che le categorie siano state salvate') + ': riapri la finestra e controlla. ' + messaggioErrore(e), 7000, 'error');
       loadData(true);
     } else {
       showToast(messaggioErrore(e), 5000, 'error');
       if (e instanceof ErroreSessione) loadData(true);
     }
   } finally {
+    scrittureInCorso--;
     btn.textContent = 'Salva modifiche'; btn.disabled = false;
   }
 }
@@ -1652,6 +1997,7 @@ async function saveCatChanges() {
 // ── Toast / Confirm ──────────────────────────────────────────────────────────
 // (il contenitore si chiama ancora installToast: è quello di tutti gli avvisi)
 function showToast(msg, duration = 3500, type = '') {
+  annullaConferma();     // un avviso prende il posto della domanda a schermo: vale «no»
   const t = D.installToast;
   t.textContent = msg;
   t.className = 'show' + (type ? ' toast-' + type : '');
@@ -1659,7 +2005,17 @@ function showToast(msg, duration = 3500, type = '') {
   t._hideTimer = setTimeout(() => { t.classList.remove('show'); }, duration);
 }
 
+// Una domanda alla volta. Finché è a schermo ciò che sta sotto non si tocca:
+// una scheda chiusa e riaperta su un altro contatto, o una categoria rinominata
+// nel frattempo, farebbero rispondere «sì» a una domanda diversa da quella
+// letta. Chi chiude la finestra sotto (closeModal, chiudiCategorie) o mostra
+// un avviso fa valere «no» per la domanda rimasta.
+let confermaInSospeso = null;
+function annullaConferma() {
+  if (confermaInSospeso) confermaInSospeso(false);
+}
 function showConfirm(msg, type = 'warning') {
+  annullaConferma();
   return new Promise(resolve => {
     const t = D.installToast;
     clearTimeout(t._hideTimer);
@@ -1670,9 +2026,21 @@ function showConfirm(msg, type = 'warning') {
         <button type="button" class="tc-yes">Conferma</button>
       </div>`;
     t.className = 'show toast-confirm' + (type ? ' toast-' + type : '');
-    const done = ok => { t.classList.remove('show'); resolve(ok); };
+    const sotto = [...document.body.children].filter(el => el !== t && el.tagName !== 'SCRIPT');
+    sotto.forEach(el => { el.inert = true; });
+    const colFuoco = document.activeElement;
+    const done = ok => {
+      if (confermaInSospeso !== done) return;
+      confermaInSospeso = null;
+      sotto.forEach(el => { el.inert = false; });
+      t.classList.remove('show');
+      if (document.hasFocus() && colFuoco && colFuoco.isConnected && colFuoco.focus) colFuoco.focus();
+      resolve(ok);
+    };
+    confermaInSospeso = done;
     t.querySelector('.tc-yes').addEventListener('click', () => done(true),  { once: true });
     t.querySelector('.tc-no') .addEventListener('click', () => done(false), { once: true });
+    if (document.hasFocus()) t.querySelector('.tc-no').focus();
   });
 }
 

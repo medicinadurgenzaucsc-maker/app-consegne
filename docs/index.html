@@ -5165,7 +5165,7 @@
             <li>
               <span class="dropdown-item-text d-block px-3" style="font-family:monospace;font-size:0.75rem;color:#546e7a;line-height:1.3;">
                 <i class="bi bi-tag me-1"></i>Versione applicazione:<br>
-                <strong id="navVersioneApp" class="ms-1" style="color:#263238;">188</strong>
+                <strong id="navVersioneApp" class="ms-1" style="color:#263238;">189</strong>
               </span>
             </li>
             <!-- Uscita: chiude la sessione solo su questo dispositivo (_esciSessione) -->
@@ -6271,7 +6271,7 @@
       var el = document.getElementById('navAccountEmail');
       if (el) el.textContent = _emailSessione;
     }
-    function _lavoroInSospeso() {
+    function _schedeInSospeso() {
       try {
         if (document.querySelector('.patient-card.focus-mode')) return true;
         if (window._lettoLockAttSafe) return true;
@@ -6281,6 +6281,20 @@
         }
       } catch(e) {}
       return false;
+    }
+    // Anche la rubrica («Numeri Telefono») può avere un lavoro a metà: un
+    // contatto scritto e non salvato, modifiche alle categorie non salvate, un
+    // salvataggio in corso. Lo dice lei (rubricaInSospeso, docs/rubrica/app.js);
+    // se nella cornice non c'è la rubrica, o non risponde, non c'è nulla in sospeso.
+    function _rubricaInSospeso() {
+      try {
+        var c = document.getElementById('rubricaIframe');
+        var w = c && c.contentWindow;
+        return !!(w && typeof w.rubricaInSospeso === 'function' && w.rubricaInSospeso());
+      } catch(e) { return false; }
+    }
+    function _lavoroInSospeso() {
+      return _schedeInSospeso() || _rubricaInSospeso();
     }
     function _eseguiUscita() {
       if (_uscitaInCorso) return;
@@ -6316,9 +6330,12 @@
     window._esciSessione = function() {
       if (_uscitaInCorso) return;
       if (_lavoroInSospeso()) {
+        var soloRubrica = !_schedeInSospeso();
         Swal.fire({
-          icon: 'warning', title: 'Salvataggio in corso',
-          text: 'C\'è una scheda aperta in modifica o un salvataggio non ancora concluso. Chiudi la scheda, attendi qualche secondo e riprova.',
+          icon: 'warning', title: soloRubrica ? 'Rubrica: lavoro non salvato' : 'Salvataggio in corso',
+          text: soloRubrica
+            ? 'In «Numeri Telefono» c\'è un contatto o una modifica alle categorie non ancora salvati, oppure un salvataggio in corso. Salva o chiudi la finestra della rubrica, attendi qualche secondo e riprova.'
+            : 'C\'è una scheda aperta in modifica o un salvataggio non ancora concluso. Chiudi la scheda, attendi qualche secondo e riprova.',
           confirmButtonText: 'Ho capito', confirmButtonColor: '#37474f', returnFocus: false
         });
         return;
@@ -6940,20 +6957,30 @@
     // relativo e con la barra finale: su Cloudflare «rubrica/index.html»
     // risponderebbe con un rinvio. Niente «sandbox» sulla cornice.
     var RUBRICA_URL = 'rubrica/';
-    var _rubricaCaricata = false;
+    var _rubricaChiestaTs = 0;        // quando la cornice ha ricevuto l'indirizzo (0 = mai, o svuotata)
     var _rubricaUltimoCampo = null;   // ultimo campo col fuoco in una scheda in modifica
 
+    // Si decide dallo stato VERO della cornice, non da un segnale messo al
+    // primo tentativo. Se dentro c'è la rubrica, a ogni riapertura le si fa
+    // ricontrollare, con una lettura minima, se un altro PC l'ha modificata (i
+    // contatti li tiene solo in memoria). Se non c'è — mai caricata, svuotata
+    // all'uscita, oppure il caricamento di prima è finito altrove (rete
+    // assente, pagina di accesso di un cancello davanti al sito) — la si
+    // carica di nuovo: prima un caricamento non riuscito lasciava il riquadro
+    // rotto fino al ricaricamento dell'app. Nei primi secondi dopo una
+    // richiesta l'indirizzo non si riassegna: interromperebbe un caricamento
+    // ancora in corso.
     window.apriRubrica = function() {
-      if (!_rubricaCaricata) {
-        iframe.src = RUBRICA_URL;
-        _rubricaCaricata = true;
-      } else {
-        // A ogni riapertura la rubrica ricontrolla, con una lettura minima, se un
-        // altro PC l'ha modificata (i contatti li tiene solo in memoria).
+      var dentro = false;
+      if (_rubricaChiestaTs) {
         try {
           var w = iframe.contentWindow;
-          if (w && typeof w.rubricaAllApertura === 'function') w.rubricaAllApertura();
+          if (w && typeof w.rubricaAllApertura === 'function') { w.rubricaAllApertura(); dentro = true; }
         } catch(e) {}
+      }
+      if (!dentro && Date.now() - _rubricaChiestaTs > 4000) {
+        _rubricaChiestaTs = Date.now();
+        iframe.src = RUBRICA_URL;
       }
       panel.style.display = 'flex';
     };
@@ -6999,7 +7026,7 @@
       } catch(e) {}
       try { panel.style.display = 'none'; } catch(e) {}
       try { iframe.src = 'about:blank'; } catch(e) {}
-      _rubricaCaricata = false;
+      _rubricaChiestaTs = 0;
       _rubricaUltimoCampo = null;
     };
 

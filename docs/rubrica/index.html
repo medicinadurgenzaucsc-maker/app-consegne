@@ -139,11 +139,11 @@
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
       Salva nei contatti del telefono
     </button>
-    <form id="contactForm" novalidate>
+    <form id="contactForm" novalidate autocomplete="off">
       <input type="hidden" id="fId">
       <div class="form-group">
         <label for="fNome">Nome *</label>
-        <input type="text" id="fNome" required maxlength="200" placeholder="es. Cardiologia guardia">
+        <input type="text" id="fNome" required maxlength="200" placeholder="es. Cardiologia guardia" autocomplete="off">
       </div>
       <div class="form-group">
         <label for="fCategoria">Categoria *</label>
