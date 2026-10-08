@@ -71,7 +71,8 @@ function senzaLetterali(sql) {
       if (!chiusa) throw new Error('query con una stringa non chiusa');
       // PostgreSQL unisce due stringhe separate solo da spazi con un a capo, e la seconda
       // resta dello stesso tipo della prima: nessuna lettura degli strumenti lo usa, si rifiuta.
-      if (/^(?:[ \t\f]|--[^\n\r]*)*[\n\r](?:[ \t\n\r\f\v]+|--[^\n\r]*[\n\r])*'/.test(sql.slice(j + 1))) throw new Error('query con una stringa continuata a capo');
+      // (Espressione senza ripetizioni annidate: su un rientro lungo il tempo deve restare lineare.)
+      if (/^[ \t\f]*(?:--[^\n\r]*)?[\n\r](?:[ \t\n\r\f\v]|--[^\n\r]*[\n\r])*'/.test(sql.slice(j + 1))) throw new Error('query con una stringa continuata a capo');
       fuori += "''"; i = j + 1; continue;
     }
     if (c === '"') {
