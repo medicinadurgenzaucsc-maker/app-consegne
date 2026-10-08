@@ -2,9 +2,11 @@
 
 Come si porta il reparto dal sito pubblico su GitHub al sito su Cloudflare con
 l'accesso, e il sorgente in un repository privato. È la sequenza provata nel
-collaudo l'08/10/2026, riscritta per rifarla in produzione: **prima si prepara
-tutto, senza che i PC del reparto se ne accorgano; poi il passaggio vero dura
-pochi minuti.**
+collaudo l'08/10/2026, riscritta per rifarla in produzione, in tre tempi:
+**prima si prepara tutto, senza che i PC del reparto se ne accorgano; poi
+ogni dispositivo che usa l'app viene portato sul nuovo indirizzo, uno alla
+volta, mentre i due siti convivono; solo alla fine lo scambio dei
+repository, che dura pochi minuti.**
 
 Stato: nel collaudo è tutto fatto e provato, compreso il ritorno indietro. In
 produzione l'08/10/2026 è stata fatta la preparazione che non tocca il sito in
@@ -53,8 +55,9 @@ Stefano (fase A1).
 
 ## Fase A. Preparazione: nulla cambia per i PC
 
-Si fa nei giorni prima. Finché non si arriva alla fase B il reparto continua a
-usare il sito di sempre.
+Si fa nei giorni prima. Fino alla fase A10 il reparto continua a usare il
+sito di sempre; è in A10, prima della fase B, che i dispositivi cambiano
+indirizzo.
 
 ### A1. Decisioni di Stefano
 
@@ -85,13 +88,16 @@ usare il sito di sempre.
 2. Con l'ok: riga `AMBIENTE = produzione` nella tabella `impostazioni` del
    database di produzione. Oggi manca: l'app funziona lo stesso, ma è quella
    riga a fermarla se un sito parla col database sbagliato.
-3. Con l'ok: rilascio in produzione sul sito di oggi. Deve arrivare ai PC
-   **almeno una notte prima** del passaggio: porta il service worker che regge
-   gli errori, quello che rende invisibile il cambio. I PC lo ricevono con
-   «Update» o col ricaricamento delle 04:00.
+3. Con l'ok: rilascio in produzione sul sito di oggi. Porta il service
+   worker che regge gli errori e l'app che riconosce il nuovo indirizzo. I PC
+   lo ricevono con «Update» o col ricaricamento delle 04:00. Lo stesso push
+   fa partire la prima pubblicazione su Cloudflare.
    Attenzione: questo rilascio porta nel repository ancora pubblico anche
-   strumenti e documentazione del passaggio. Per ridurre la finestra, rilascio
-   e scambio si fanno a un giorno di distanza, non di più.
+   strumenti e documentazione del passaggio, e lì restano fino allo scambio.
+   Lo scambio si fa quando la fase A10 è conclusa, quanti giorni servano:
+   la permanenza di quei file nel repository pubblico per quei giorni è
+   una scelta da riportare a Stefano. Non contengono chiavi.
+4. Prima del push si prepara il ramo di ritorno, vedi «Ritorno indietro».
 
 ### A4. Chiave di pubblicazione, a cura di Stefano
 
@@ -198,35 +204,135 @@ I due siti convivono sullo stesso database: si può provare con calma.
 1. Accesso degli strumenti all'account GitHub della produzione, col metodo «a
    codice»: Stefano digita un codice sul sito di GitHub, la chiave finisce
    nell'archivio credenziali di Windows e non viene mai mostrata.
-2. `scambio-repository.js prepara https://<nome>.pages.dev/`: crea il
-   repository pubblico provvisorio `app-consegne-rinvio`, 7 file, un commit
-   senza storia, sito già in linea, chiuso alle scritture.
+2. `scambio-repository.js <ambiente> prepara https://<nome>.pages.dev/`,
+   in produzione con `--confermo-produzione`: crea il repository pubblico
+   provvisorio `app-consegne-rinvio`, 7 file, un commit senza storia, sito
+   già in linea, chiuso alle scritture. Lo strumento accetta solo
+   l'indirizzo del sito nuovo di quell'ambiente: una pagina di rinvio della
+   produzione non può portare al collaudo.
 
-Gli strumenti oggi lavorano solo sull'account di collaudo: vanno estesi alla
-produzione prima del giorno, vedi «Da preparare negli strumenti».
+**I comandi che cambiano qualcosa vogliono l'ambiente scritto**: `collaudo`
+oppure `produzione`, come primo argomento. Senza, lo strumento si ferma. Un
+comando copiato da un documento non può più lavorare sul collaudo al posto
+della produzione, o il contrario.
 
-## Fase B. Il passaggio: pochi minuti
+## Fase A10. Portare i PC sul nuovo indirizzo: PRIMA dello scambio
+
+**Lo scambio non è invisibile da solo.** La sessione dell'app è legata
+all'indirizzo: sul sito nuovo ogni PC deve fare un accesso. Dopo lo scambio
+il vecchio indirizzo rimanda al nuovo a ogni ricaricamento, compreso quello
+che ogni PC fa da solo fra le 04:00 e le 05:00, e compreso «Update»: un PC che
+non è mai entrato sul sito nuovo si ritrova fermo sulla schermata di accesso,
+di notte, finché qualcuno non clicca. Inoltre da una pagina rimasta aperta
+sul vecchio indirizzo la stampa non funziona più.
+
+**Chi usa l'app non sono solo i PC del reparto.** Misura del 07/10/2026:
+118 sessioni vive, 35 usate negli ultimi 7 giorni, 16 delle quali su
+telefoni, tablet o Mac, da 19 reti diverse. Dopo lo scambio ogni browser
+non preparato trova prima il cancello di Cloudflare, dove entrano solo gli
+indirizzi del criterio, e poi la schermata di accesso dell'app. Quindi
+prima di cominciare si fa l'inventario dal registro, in sola lettura:
+identificativo, nome e ultima data dei dispositivi che hanno scritto righe
+`supa-auth`. Per ognuno Stefano decide: lo si passa, lo si lascia fuori, o
+si aggiunge un indirizzo al criterio di accesso. Sessione e identificativo
+stanno nella memoria del browser, quindi **ogni browser e ogni profilo
+Windows di ogni PC è un caso a sé**.
+
+Mentre i due siti convivono, su **ogni** dispositivo che deve continuare a
+usare l'app:
+
+1. aprire il nuovo indirizzo; passa da Google, senza clic o con un clic per
+   scegliere l'account. Se nel browser l'account Google del reparto non è
+   collegato servono password e secondo passaggio: va scoperto adesso, non
+   alle 04:00;
+2. premere «Accedi con Google» nell'app;
+3. fare una stampa e un'importazione da TrakCare: alla prima il browser
+   chiede il permesso per gli appunti;
+4. mettere il preferito e l'icona del nuovo indirizzo e chiudere la scheda
+   del vecchio. Il preferito vecchio **non si elimina fino allo scambio**:
+   lo si rinomina, perché è la strada del ritorno se la versione nuova desse
+   problemi.
+
+Se al cancello si sceglie per sbaglio un account Google che non è nel
+criterio, Cloudflare rifiuta e ricorda la scelta: si apre
+`https://<nome>.pages.dev/cdn-cgi/access/logout` e si rientra con la casella
+del reparto. Da provare una volta nel collaudo.
+
+«Numeri Telefono» sul sito nuovo riparte senza preferiti né recenti: la
+rubrica li tiene nella memoria del browser, separata per sito. L'08/10/2026
+Stefano ha deciso che la rubrica entrerà nell'app: fino ad allora la
+perdita è accettata.
+
+Il primo PC del reparto vale anche come prova dalla **rete dell'ospedale**:
+se quella rete non lasciasse passare `pages.dev` o `cloudflareaccess.com`, lo
+scambio lascerebbe il reparto senza applicazione. Finché non è provato da
+lì, lo scambio non si fa.
+
+**Quando si può dire che tutti sono passati.** Ogni avvio scrive nel
+registro una riga `supa-auth` con l'identificativo del dispositivo, che
+nasce nella memoria del browser e quindi è diverso per indirizzo: sul sito
+nuovo ogni browser ne riceve uno nuovo, mentre un browser rimasto sul
+vecchio indirizzo continua a scrivere con quello di prima, anche al
+ricaricamento delle 04:00. Criterio: lo scambio si fa quando nessun
+identificativo già presente prima del rilascio, fra quelli dei dispositivi
+che contano, ha scritto righe `supa-auth` nelle ultime 48 ore. È una
+lettura con `sb.js`, solo identificativi e date. Il registro tiene 20
+giorni: l'elenco degli identificativi «di prima» si salva la sera del
+rilascio.
+
+**Rilasci nei giorni di convivenza.** `CLOUDFLARE_AVVISA` resta spenta
+fino allo scambio, quindi «Update» lo dà `notify-deploy` quando ha finito
+GitHub Pages, mentre Cloudflare finisce per conto suo: un PC del sito nuovo
+che ricarica prima che Cloudflare abbia finito resta sulla versione
+vecchia senza altri avvisi fino alle 04:00. Regola: fra il primo
+dispositivo passato e lo scambio non si rilascia nulla, salvo urgenze. In
+caso di urgenza si aspetta che `pubblicazione.js produzione` dica
+«pubblicato» e che il vecchio sito serva la versione nuova, poi i
+dispositivi si fanno ricaricare a mano, controllando il numero di versione
+nel menu della rotellina.
+
+Da decidere con Stefano prima dello scambio: la sessione di Cloudflare dura
+un mese. Alla scadenza il ricaricamento delle 04:00 ripassa da Google: se la
+sessione Google di quel browser nel frattempo è caduta, il PC resta sulla
+pagina di Google finché non arriva chi ha la password. Le strade sono tre:
+tenere il mese, allungare la durata, oppure esentare dall'accesso la rete
+dell'ospedale.
+
+## Fase B. Lo scambio: pochi minuti, a PC già passati
 
 1. **Controlli di partenza**: cartella di lavoro pulita e allineata al remoto;
-   sul repository nessun fork, nessun collaboratore oltre al proprietario,
-   nessuna chiave di pubblicazione, nessun aggancio esterno;
-   `scambio-repository.js stato`; il sito nuovo risponde.
+   `scambio-repository.js produzione stato` deve dire: scambio non fatto,
+   pagina di rinvio che porta al sito nuovo e repository chiuso alle
+   scritture, accessi al sorgente a posto, sito su Cloudflare allineato al
+   ramo. Sono gli stessi controlli che «scambia» rifà da sé prima di
+   partire; un elenco che GitHub non lascia leggere vale come controllo
+   fallito.
    Non si interrogano i file «raw» né lo zip nei minuti prima dello scambio.
-2. **`scambio-repository.js scambia`**: due cambi di nome, il vecchio indirizzo
-   passa alla pagina di rinvio, il sorgente diventa privato, il remoto della
-   cartella viene spostato. Mezzo minuto.
+2. **`scambio-repository.js produzione scambia --confermo-produzione`**:
+   primo cambio di nome, remoto della cartella spostato, secondo cambio di
+   nome, sorgente subito privato, poi si aspetta che il vecchio indirizzo
+   serva la pagina di rinvio. Mezzo minuto. Se si interrompe a metà si
+   rilancia lo stesso comando: riprende dal passo che manca. Se l'ultima
+   riga comincia con «ATTENZIONE» qualcosa non è andato fino in fondo, e lo
+   strumento esce con errore.
 3. **Avviso ai PC**: variabile `CLOUDFLARE_AVVISA = si`, poi
-   `pubblicazione.js avvia` e controllo che `app_version` porti il commit
-   pubblicato. In produzione i due segreti di Supabase ci sono già.
-4. **Prove da estraneo**: `verifica-chiusura.js <ambiente>` due minuti dopo lo
-   scambio, e di nuovo dopo dieci con `--archivi`. Devono passare tutte.
+   `pubblicazione.js produzione avvia --confermo-produzione` e controllo
+   che `app_version` porti il commit pubblicato. In produzione i due
+   segreti di Supabase ci sono già.
+4. **Prove da estraneo**: `verifica-chiusura.js produzione` due minuti dopo
+   lo scambio: devono passare tutte e 29. Dopo dieci minuti di nuovo con
+   `--archivi`: le 4 prove in più dicono se un archivio pubblico di terzi
+   tiene una copia del sorgente di quando era pubblico. Quelle copie non si
+   richiamano: è un accertamento da riferire a Stefano, non una condizione
+   dello scambio, e non giustifica un ritorno indietro.
 5. **Azioni ammesse nei flussi** del repository privato: solo quelle scritte
    da GitHub.
 
-Cosa vedono i PC: chi ha l'app aperta continua a lavorare; al primo
-ricaricamento il vecchio indirizzo lo porta su quello nuovo, dove rifà **un
-accesso con Google** perché la sessione è legata all'indirizzo. Segnalibri e
-icona installata vanno aggiornati con calma: il rinvio resta.
+Cosa succede a un PC rimasto sul vecchio indirizzo: la pagina aperta continua
+a lavorare e a salvare, perché parla solo col database, ma la stampa non
+funziona; al primo ricaricamento passa al sito nuovo e deve fare l'accesso.
+Per questo la pagina di rinvio è solo una rete di sicurezza per chi è
+sfuggito alla fase A10, non il modo di spostare i PC.
 
 ## Fase C. Dopo
 
@@ -246,9 +352,12 @@ icona installata vanno aggiornati con calma: il rinvio resta.
 
 | Se va storto | Rimedio |
 |---|---|
+| La versione nuova dà problemi sul sito di oggi, prima dello scambio | Ramo `ritorno-v181`, preparato prima del rilascio: sopra il commit rilasciato, le pagine della 181 col numero 188. `git checkout master`, `git merge --ff-only refs/heads/ritorno-v181`, `git push origin master`. GitHub Pages torna alla 181 e `notify-deploy` avvisa i PC. **Vale solo per chi lavora dal vecchio indirizzo**: il flusso di Cloudflare si ferma al passo «File del sito» (a quelle pagine manca `404.html`: provato) e il sito nuovo resta alla 187. I dispositivi già passati vanno riportati sul vecchio indirizzo, dove la sessione c'è ancora, finché una versione corretta non è pubblicata su entrambi i siti |
+| Dopo un ritorno | Il ramo `collaudo` non discende più da `master`: va riallineato prima del rilascio successivo, che porterà il numero 189. `scambio-repository.js produzione stato` dirà «NON PRONTO» finché non c'è una nuova pubblicazione su Cloudflare |
 | Il sito nuovo non funziona, prima dello scambio | Niente da fare: i PC usano ancora quello vecchio |
 | Google non fa più entrare | Nell'applicazione del sito, «Metodi di login», aggiungere «One-time PIN»: torna il codice via mail |
-| Lo scambio lascia il vecchio indirizzo in errore | `scambio-repository.js annulla`: in 39 secondi torna tutto com'era, sorgente di nuovo pubblico |
+| Lo scambio si interrompe a metà | Rilanciare `scambio-repository.js produzione scambia --confermo-produzione`, che riprende dal passo mancante, oppure lo stesso comando con `annulla`. `scambio-repository.js produzione stato` dice a che punto si è |
+| Lo scambio lascia il vecchio indirizzo in errore | `scambio-repository.js produzione annulla --confermo-produzione`: in 39 secondi torna tutto com'era, sorgente di nuovo pubblico. Si può rilanciare: se i nomi sono già tornati ma il sito no, lo riaccende |
 | Una versione nuova dà problemi dopo lo scambio | Si ripubblica il commit precedente: `git revert`, push, il flusso pubblica e avvisa |
 
 ## Trappole viste nel collaudo
@@ -273,6 +382,35 @@ icona installata vanno aggiornati con calma: il rinvio resta.
   pulsante di Google dell'app non funziona.
 - Sul sito compresso gli errori annotati nel registro portano posizioni e
   nomi della copia compressa, non del sorgente.
+- GitHub Pages pubblica al massimo una decina di volte l'ora per sito. Dopo
+  cinque scambi e annullamenti di fila, l'08/10/2026 nel collaudo, le
+  pubblicazioni sono andate in errore e il vecchio indirizzo è rimasto a 404
+  finché l'ora non è passata. In produzione lo scambio è uno solo: ma
+  non si fanno prove ripetute sul repository del reparto.
+- Un comando scritto senza ambiente vale collaudo solo se legge. `scambia`,
+  `annulla`, `prepara` e `avvia` senza ambiente si fermano.
+- Il repository della pagina di rinvio è chiuso da **due** regole, una per i
+  rami e una per le etichette: con la sola regola dei rami un `git push
+  --tags` vi porterebbe tutta la storia del sorgente. `stato` dice «chiuso
+  solo in parte» se ne manca una; `scambia` e `prepara` mettono quella che
+  manca. Provato nel collaudo: né un ramo né un'etichetta si lasciano creare.
+- Subito dopo una rinomina il vecchio indirizzo serve ancora per mezzo minuto
+  la copia di prima: per questo `annulla` conta buona l'applicazione solo a
+  pubblicazione conclusa, e `scambia` solo la pagina di rinvio che porta al
+  sito nuovo.
+- `scambia` rilanciato a scambio già fatto controlla comunque il vecchio
+  indirizzo e, se serve, richiede di nuovo la pubblicazione a GitHub Pages.
+- `pubblicazione.js <ambiente> avvia` ripubblica lo stesso commit: sui PC non compare
+  «Update», perché l'avviso scatta solo quando il commit annunciato cambia.
+- Il nome `collaudo` è sia un ramo sia un remoto: nei comandi di unione si
+  scrive `refs/heads/collaudo`.
+- La riga `AMBIENTE` deve valere esattamente `produzione`, in minuscolo: un
+  altro valore fa comparire su ogni PC l'avviso di configurazione incoerente.
+- Un indirizzo aggiunto a `utenti_autorizzati` va scritto in minuscolo, e dà
+  accesso pieno ai dati dei pazienti.
+- La pagina di rinvio non toglie dal browser, sul vecchio indirizzo, la
+  sessione e le copie di recupero delle schede: restano lì finché qualcuno
+  non svuota i dati del sito. Da valutare prima dello scambio in produzione.
 - Le copie del sorgente fatte quando era pubblico non si richiamano.
 
 ## Strumenti
@@ -282,9 +420,9 @@ icona installata vanno aggiornati con calma: il rinvio resta.
 | `controlli-rilascio.js` | Controlli statici prima di ogni rilascio, compresi indirizzi degli ambienti e file pubblicati |
 | `banco.js`, `banco-sw.js` | Prove dentro l'app e prove del service worker, anche sulla copia compressa |
 | `prepara-rinvio.js` | Genera i file della pagina di rinvio |
-| `scambio-repository.js stato\|prepara\|scambia\|annulla` | Lo scambio e il suo ritorno |
-| `pubblicazione.js [avvia]` | Segue la pubblicazione su Cloudflare e controlla l'avviso |
-| `verifica-chiusura.js <ambiente> [--archivi]` | Le prove da estraneo: 28, più 4 sugli archivi |
+| `scambio-repository.js <ambiente> stato\|prepara\|scambia\|annulla` | Lo scambio e il suo ritorno |
+| `pubblicazione.js <ambiente> [avvia]` | Segue la pubblicazione su Cloudflare e aspetta l'avviso ai PC, che venga dal flusso o da `notify-deploy` |
+| `verifica-chiusura.js <ambiente> [--archivi]` | Le prove da estraneo: 29, più 4 sugli archivi |
 
 ## A che punto è la produzione
 
@@ -305,7 +443,8 @@ Fatto l'08/10/2026, senza toccare il sito in uso al reparto:
   `CLOUDFLARE_ACCOUNT_ID` e `CLOUDFLARE_API_TOKEN` (il token l'ha messo
   Stefano: se è giusto lo dirà la prima pubblicazione);
 - repository `app-consegne-rinvio` con la pagina di rinvio, chiuso alle
-  scritture;
+  scritture nei rami; la regola delle etichette, aggiunta allo strumento la
+  sera dell'08/10, la mette `scambia` al momento dello scambio;
 - versione 187 provata nel collaudo: riconosce il nuovo indirizzo.
 
 Da fare, nell'ordine:
@@ -314,18 +453,36 @@ Da fare, nell'ordine:
    «Identity providers». È l'unico modo di sapere prima che il segreto del
    client incollato in Cloudflare è quello giusto.
 2. La sera, con l'ok a ogni passo:
+   - già pronto: il ramo `ritorno-v181`. Verifiche prima del push:
+     `git merge-base --is-ancestor <commit da rilasciare> ritorno-v181`
+     deve riuscire, e `git diff 1468f36 ritorno-v181 -- docs` deve mostrare
+     solo le due righe col numero di versione;
+   - prima del rilascio, perché non ne dipendono e così si verificano con
+     calma: nel database la riga `AMBIENTE = produzione` in `impostazioni`
+     e gistech, in minuscolo, in `utenti_autorizzati`; nel client Google
+     dell'app «ConsegneReparto» l'origine
+     `https://consegne-reparto.pages.dev`. Le due scritture sono state
+     provate nel collaudo e non raggiungono i PC: le due tabelle non sono
+     fra quelle in tempo reale e non hanno trigger;
+   - si salva l'elenco degli identificativi dei dispositivi che hanno
+     scritto nel registro prima del rilascio: serve per la fase A10;
    - rilascio: `git checkout master`, poi
      `git merge --ff-only refs/heads/collaudo` (il nome `collaudo` da solo è
      ambiguo: è anche il nome di un remoto), poi `git push origin master`.
      GitHub Pages serve la 187 e `notify-deploy` avvisa i PC; lo stesso push
-     fa partire la pubblicazione su Cloudflare, che si segue con
-     `pubblicazione.js produzione`;
-   - nel database: riga `AMBIENTE = produzione` in `impostazioni` e gistech
-     in `utenti_autorizzati`;
-   - nel client Google dell'app «ConsegneReparto»: origine
-     `https://consegne-reparto.pages.dev`;
-   - prove dal browser di Stefano sul sito nuovo.
-3. Quando i PC hanno ricevuto la 187: lo scambio, fase B.
+     fa partire la pubblicazione su Cloudflare. `pubblicazione.js produzione`
+     segue il flusso e poi aspetta che l'avviso di `notify-deploy` arrivi
+     nel database. Se il flusso di Cloudflare fallisce, per esempio perché
+     la chiave non è giusta, lo strumento lo dice e aspetta comunque
+     l'avviso: il sito che il reparto usa non passa da quel flusso;
+   - prove dal browser di Stefano: sul **vecchio** indirizzo, che è quello
+     che il reparto usa, versione 187 nel menu della rotellina e nessun
+     avviso a tutto schermo; poi sul sito nuovo, le prove della fase A8.
+3. Nei giorni dopo: inventario dei dispositivi e passaggio di ognuno al
+   nuovo indirizzo, fase A10, cominciando da un PC del reparto per provare
+   la rete dell'ospedale. In quei giorni nessun rilascio, salvo urgenze.
+4. Solo quando tutti i dispositivi che contano sono entrati sul sito nuovo:
+   lo scambio, fase B.
 
 ## Da preparare negli strumenti prima del giorno
 
@@ -334,8 +491,12 @@ accettano l'ambiente come primo argomento.
 
 - `scambio-repository.js produzione stato` e `pubblicazione.js produzione`
   leggono soltanto;
-- ogni comando che in produzione cambia qualcosa è rifiutato senza
-  `--confermo-produzione`;
+- i comandi che cambiano qualcosa vogliono l'ambiente scritto e, in
+  produzione, anche `--confermo-produzione`;
+- `scambia` e `annulla` si possono rilanciare da ogni stato a metà, e
+  `annulla` riaccende il sito se i nomi sono tornati ma il sito no; i
+  controlli di partenza sono stati provati su un caso positivo nel
+  collaudo, con un aggancio esterno finto;
 - proprietario, remoto della cartella e database si ricavano dall'ambiente:
   `medicinadurgenzaucsc-maker`, `origin`, sola lettura sul database;
 - la chiave di GitHub della produzione è quella già scritta nel remoto

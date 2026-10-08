@@ -18,7 +18,7 @@ const { spawnSync } = require('child_process');
 
 const AMBIENTI = {
   collaudo: { proprietario: 'gistech2026', nuovo: 'https://consegne-collaudo.pages.dev/' },
-  produzione: { proprietario: 'medicinadurgenzaucsc-maker', nuovo: null },
+  produzione: { proprietario: 'medicinadurgenzaucsc-maker', nuovo: 'https://consegne-reparto.pages.dev/' },
 };
 const APP = 'app-consegne', SORGENTE = 'app-consegne-sorgente';
 const FILE_RINVIO = ['.nojekyll', '404.html', 'README.md', 'index.html', 'print.html', 'robots.txt', 'sw.js'];
@@ -30,7 +30,8 @@ const nomeAmbiente = argomenti[0];
 const amb = AMBIENTI[nomeAmbiente];
 if (!amb) { console.log('uso: verifica-chiusura.js collaudo|produzione [indirizzo del sito nuovo] [--archivi]'); process.exit(2); }
 const O = amb.proprietario;
-const NUOVO = argomenti.filter((a) => /^https:\/\//.test(a))[0] || amb.nuovo;
+// l'indirizzo del sito nuovo, sempre con la barra finale
+const NUOVO = ((x) => (x && x.charAt(x.length - 1) !== '/' ? x + '/' : x))(argomenti.filter((a) => /^https:\/\//.test(a))[0] || amb.nuovo);
 const ARCHIVI = argomenti.includes('--archivi');
 
 const esiti = [];
@@ -65,6 +66,8 @@ function nomiDelloZip(b) {
 }
 const soloRinvio = (nomi) => nomi.length > 0 && nomi.every((x) => FILE_RINVIO.includes(x));
 const codiceApp = (t) => /navVersioneApp|_AMBIENTI|supabaseAnonKey/.test(t);
+// una richiesta che non ha avuto risposta: rete assente, nome non risolto, limite di richieste
+const senzaRisposta = (r) => !!(r.limite || r.stato === 0);
 
 (async () => {
   console.log('Ambiente: ' + nomeAmbiente + ' | proprietario su GitHub: ' + O + ' | sito nuovo: ' + (NUOVO || 'non indicato'));
@@ -80,7 +83,11 @@ const codiceApp = (t) => /navVersioneApp|_AMBIENTI|supabaseAnonKey/.test(t);
   {
     const g = spawnSync('git', ['-c', 'credential.helper=', '-c', 'core.askPass=', 'ls-remote', 'https://github.com/' + O + '/' + SORGENTE + '.git'],
       { encoding: 'utf8', env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never', GIT_ASKPASS: '', SSH_ASKPASS: '' }, timeout: 30000 });
-    nota(g.status !== 0, 'git senza credenziali', g.status === 0 ? 'ha elencato i rami' : 'rifiutato');
+    // «rifiutato» vale solo se GitHub ha risposto chiedendo le credenziali o dicendo che non esiste:
+    // una scadenza o la rete assente non provano nulla
+    const detto = String(g.stderr || '');
+    const rifiuto = g.status !== 0 && g.status !== null && /could not read Username|Authentication failed|Repository not found|terminal prompts disabled|not found/i.test(detto);
+    nota(g.status === 0 ? false : rifiuto ? true : null, 'git senza credenziali', g.status === 0 ? 'ha elencato i rami' : rifiuto ? 'rifiutato' : 'git non ha raggiunto GitHub: prova non eseguita');
   }
 
   console.log('\n— Al vecchio nome (' + O + '/' + APP + ') deve restare solo la pagina di rinvio');
@@ -107,25 +114,39 @@ const codiceApp = (t) => /navVersioneApp|_AMBIENTI|supabaseAnonKey/.test(t);
   {
     const r = await chiedi(sito + APP + '/?cb=' + Date.now());
     const t = r.risposta ? await r.risposta.text() : '';
-    nota(r.stato === 200 && /ha cambiato indirizzo/.test(t) && !codiceApp(t), 'il vecchio indirizzo mostra la pagina di rinvio', 'HTTP ' + r.stato + (codiceApp(t) ? ', serve l\'applicazione' : ''));
-    if (NUOVO) nota(t.indexOf(NUOVO) >= 0, 'la pagina di rinvio porta al sito nuovo', t.indexOf(NUOVO) >= 0 ? NUOVO : 'indirizzo non trovato nella pagina');
+    // senza risposta non si può dire né «chiuso» né «aperto»
+    const muto = senzaRisposta(r);
+    nota(muto ? null : r.stato === 200 && /ha cambiato indirizzo/.test(t) && !codiceApp(t), 'il vecchio indirizzo mostra la pagina di rinvio', muto ? 'limite di richieste o rete' : 'HTTP ' + r.stato + (codiceApp(t) ? ', serve l\'applicazione' : ''));
+    if (NUOVO) nota(muto ? null : t.indexOf(NUOVO) >= 0, 'la pagina di rinvio porta al sito nuovo', muto ? 'limite di richieste o rete' : t.indexOf(NUOVO) >= 0 ? NUOVO : 'indirizzo non trovato nella pagina');
   }
   for (const f of ['js/api.js', 'js/app.js', 'css/styles.css']) {
     for (const coda of ['?cb=' + Date.now(), '']) {
       const r = await chiedi(sito + APP + '/' + f + coda);
       const t = r.risposta ? await r.risposta.text() : '';
+      if (senzaRisposta(r)) { nota(null, 'vecchio sito, ' + f + (coda ? '' : ' dalla cache'), 'limite di richieste o rete'); continue; }
       nota(r.stato === 404 && !codiceApp(t), 'vecchio sito, ' + f + (coda ? '' : ' dalla cache'), 'HTTP ' + r.stato + ', ' + t.length + ' byte');
     }
   }
   await deveMancare('sito del repository del sorgente', sito + SORGENTE + '/');
   await deveMancare('sito del sorgente, un file', sito + SORGENTE + '/js/api.js');
 
+  if (!NUOVO) {
+    console.log('\n— Il sito nuovo');
+    nota(null, 'sito nuovo dietro l\'accesso', 'indirizzo del sito nuovo non indicato: prove non eseguite');
+  }
   if (NUOVO) {
     console.log('\n— Il sito nuovo deve chiedere l\'accesso prima di dare qualunque file');
+    {
+      // anche gli indirizzi di anteprima che Cloudflare crea a ogni pubblicazione
+      const u = new URL(NUOVO);
+      const r = await chiedi(u.protocol + '//verifica-anteprima.' + u.host + '/js/api.js');
+      const cancello = r.stato === 302 && /cloudflareaccess\.com\/cdn-cgi\/access\/login/.test(r.verso);
+      nota(senzaRisposta(r) ? null : cancello, 'un indirizzo di anteprima del sito nuovo', senzaRisposta(r) ? 'limite di richieste o rete' : 'HTTP ' + r.stato + (cancello ? ' verso l\'accesso' : ''));
+    }
     for (const f of ['', 'js/api.js', 'sw.js', 'print', 'manifest.json']) {
       const r = await chiedi(NUOVO + f);
       const cancello = r.stato === 302 && /cloudflareaccess\.com\/cdn-cgi\/access\/login/.test(r.verso);
-      nota(cancello, 'sito nuovo, /' + f, 'HTTP ' + r.stato + (cancello ? ' verso l\'accesso' : ''));
+      nota(senzaRisposta(r) ? null : cancello, 'sito nuovo, /' + f, senzaRisposta(r) ? 'limite di richieste o rete' : 'HTTP ' + r.stato + (cancello ? ' verso l\'accesso' : ''));
     }
   }
 

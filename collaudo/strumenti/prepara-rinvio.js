@@ -52,7 +52,15 @@ if (require.main === module) {
     const dove = process.argv[3];
     if (dove) {
       const dest = path.resolve(dove);
-      if (!dest.startsWith(RADICE + path.sep) || dest === path.join(RADICE, 'rinvio') || dest === path.join(RADICE, 'docs')) throw new Error('la cartella deve stare dentro il repository e non essere rinvio/ né docs/');
+      if (!dest.startsWith(RADICE + path.sep)) throw new Error('la cartella deve stare dentro il repository');
+      // La cartella viene svuotata: si accetta solo una cartella che non esiste, vuota,
+      // o che contiene soltanto i file di un rinvio preparato prima.
+      if (fs.existsSync(dest)) {
+        if (!fs.statSync(dest).isDirectory()) throw new Error('la destinazione esiste e non è una cartella: indicarne una nuova o vuota');
+        const noti = file.map((f) => f[0]);
+        const altri = fs.readdirSync(dest).filter((x) => noti.indexOf(x) < 0);
+        if (altri.length) throw new Error('la cartella esiste e contiene altro (' + altri.slice(0, 3).join(', ') + '): non la svuoto. Indicarne una nuova o vuota');
+      }
       fs.rmSync(dest, { recursive: true, force: true });
       fs.mkdirSync(dest, { recursive: true });
       file.forEach((f) => fs.writeFileSync(path.join(dest, f[0]), f[1]));

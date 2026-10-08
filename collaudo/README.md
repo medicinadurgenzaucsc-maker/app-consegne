@@ -79,9 +79,10 @@ repository non c'è alcun segreto.
 | `banco-sw.js [porta]` | Banco del service worker: il sito servito come farebbero Cloudflare Pages o GitHub Pages, col service worker acceso e i guasti simulati (vedi «Service worker: banco e prove»). |
 | `prepara-sito.js [cartella] [compressa]` | Elenca (o copia in una cartella) i soli file del sito; con `compressa` ne produce la copia compressa, la forma pubblicata su Cloudflare, e la controlla. |
 | `prepara-rinvio.js <nuovo indirizzo> [cartella]` | Genera i file della pagina di rinvio (ciò che resta al vecchio indirizzo quando il sito si sposta), dai modelli in `rinvio/`. |
-| `scambio-repository.js stato\|prepara\|scambia\|annulla` | Prova generale dello scambio dei repository nel collaudo: sorgente in un repository privato, al vecchio nome solo la pagina di rinvio (vedi «Pubblicazione su Cloudflare»). |
-| `pubblicazione.js [avvia]` | Segue il flusso «Pubblica su Cloudflare» del repository di collaudo fino alla fine, ne mostra i passi e controlla che l'avviso ai PC sia arrivato in `app_version`; con `avvia` lo fa ripartire a mano sullo stesso commit. Non scrive nel database. |
+| `scambio-repository.js <ambiente> stato\|prepara\|scambia\|annulla` | Prova generale dello scambio dei repository nel collaudo: sorgente in un repository privato, al vecchio nome solo la pagina di rinvio (vedi «Pubblicazione su Cloudflare»). |
+| `pubblicazione.js [ambiente] [avvia]` | Segue il flusso «Pubblica su Cloudflare» del repository di collaudo fino alla fine, ne mostra i passi e controlla che l'avviso ai PC sia arrivato in `app_version`; con `avvia` lo fa ripartire a mano sullo stesso commit. Non scrive nel database. |
 | `verifica-chiusura.js collaudo\|produzione [indirizzo] [--archivi]` | Prova **da estraneo**, senza credenziali, che il sorgente non si scarichi più da nessuna strada, che al vecchio indirizzo resti solo la pagina di rinvio e che il sito nuovo chieda l'accesso: 28 prove, più 4 sugli archivi pubblici di terzi. Dove lo scambio non è stato fatto deve fallire: è la sua controprova. |
+| `copia-rubrica.js collaudo [confronta]` | Copia l'elenco della rubrica telefonica dal suo vecchio database nelle tabelle `rubrica_` del collaudo, in una sola transazione e con gli stessi identificativi; `confronta` dice solo se le due copie coincidono. Non stampa nomi né numeri: solo conteggi e impronte. La sorgente si legge soltanto. |
 | `banco.js [porta] [compressa]` | Banco di prova locale (con `compressa` serve la copia compressa del sito): serve l'app così com'è nella cartella di lavoro, collegata al collaudo e già «dentro» con l'utente fittizio. |
 | `inventario-markup.js [produzione\|collaudo]` | Elenco di tag, attributi, classi e proprietà di stile presenti nei campi delle schede (solo nomi e conteggi, mai il testo): serve a tarare e a ricontrollare il filtro dell'HTML (`docs/js/sanifica.js`). |
 | `pubblica-sito.js` | Pubblica il sito di servizio `gistech2026.github.io/collaudo/` (finto TrakCare e informativa). |
@@ -296,7 +297,9 @@ ripete in produzione.
   della mail, avviso di aggiornamento, uscita. Resta da provare a mano
   l'importazione dal finto TrakCare (sul nuovo indirizzo il browser chiede
   una volta il permesso per gli appunti).
-- **Scambio dei repository** (`scambio-repository.js`): è il passo che toglie
+- **Scambio dei repository** (`scambio-repository.js`; i comandi che cambiano
+  qualcosa vogliono l'ambiente scritto, per esempio
+  `scambio-repository.js collaudo scambia`): è il passo che toglie
   il codice dal pubblico. Il repository attuale cambia nome in
   `app-consegne-sorgente` e diventa privato (conserva storia, segreti e
   flussi); il nome `app-consegne` passa a un repository pubblico che contiene
