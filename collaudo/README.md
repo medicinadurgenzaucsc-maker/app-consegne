@@ -81,6 +81,7 @@ repository non c'è alcun segreto.
 | `prepara-rinvio.js <nuovo indirizzo> [cartella]` | Genera i file della pagina di rinvio (ciò che resta al vecchio indirizzo quando il sito si sposta), dai modelli in `rinvio/`. |
 | `scambio-repository.js stato\|prepara\|scambia\|annulla` | Prova generale dello scambio dei repository nel collaudo: sorgente in un repository privato, al vecchio nome solo la pagina di rinvio (vedi «Pubblicazione su Cloudflare»). |
 | `pubblicazione.js [avvia]` | Segue il flusso «Pubblica su Cloudflare» del repository di collaudo fino alla fine, ne mostra i passi e controlla che l'avviso ai PC sia arrivato in `app_version`; con `avvia` lo fa ripartire a mano sullo stesso commit. Non scrive nel database. |
+| `verifica-chiusura.js collaudo\|produzione [indirizzo] [--archivi]` | Prova **da estraneo**, senza credenziali, che il sorgente non si scarichi più da nessuna strada, che al vecchio indirizzo resti solo la pagina di rinvio e che il sito nuovo chieda l'accesso: 28 prove, più 4 sugli archivi pubblici di terzi. Dove lo scambio non è stato fatto deve fallire: è la sua controprova. |
 | `banco.js [porta]` | Banco di prova locale: serve l'app così com'è nella cartella di lavoro, collegata al collaudo e già «dentro» con l'utente fittizio. |
 | `inventario-markup.js [produzione\|collaudo]` | Elenco di tag, attributi, classi e proprietà di stile presenti nei campi delle schede (solo nomi e conteggi, mai il testo): serve a tarare e a ricontrollare il filtro dell'HTML (`docs/js/sanifica.js`). |
 | `pubblica-sito.js` | Pubblica il sito di servizio `gistech2026.github.io/collaudo/` (finto TrakCare e informativa). |
@@ -278,7 +279,12 @@ ripete in produzione.
   29 secondi e GitHub ne ha spento da sé il sito (un account gratuito non
   pubblica da un repository privato). Subito dopo il flusso di Cloudflare ha
   pubblicato dal repository privato e ha avvisato le pagine aperte.
-  Controlli da rifare **da estraneo, senza credenziali**, dopo ogni scambio:
+  Lo stesso giorno è stato provato anche il ritorno: `annulla` ha rimesso
+  tutto com'era in 39 secondi, di cui circa 30 col vecchio indirizzo in
+  «404», e un secondo `scambia` ha richiuso tutto in 28.
+  Controlli da rifare **da estraneo, senza credenziali**, dopo ogni scambio
+  (li fa tutti `verifica-chiusura.js`, che su un repository ancora pubblico
+  deve fallire):
   - `api.github.com/repos/<proprietario>/app-consegne-sorgente`, la pagina
     su `github.com`, un file da `raw.githubusercontent.com`, lo zip del ramo
     e `git ls-remote` devono rispondere 404 o chiedere le credenziali;
@@ -294,7 +300,16 @@ ripete in produzione.
 
   Lo scambio non richiama le copie già fatte: chi ha scaricato il sorgente
   quando era pubblico lo conserva. In un repository privato di un account
-  gratuito le regole («rulesets») non esistono: `stato` lo sa.
+  gratuito le regole («rulesets») non esistono: `stato` lo sa. Per qualche
+  minuto dopo lo scambio i file «raw» e lo zip possono rispondere ancora:
+  GitHub impiega qualche secondo a propagare il cambio e una risposta presa
+  in quel momento resta cinque minuti nella cache del distributore. La
+  verifica si lancia quindi due minuti dopo e si ripete dopo dieci.
+  Nel repository privato le azioni ammesse nei flussi sono solo quelle
+  scritte da GitHub (impostazione del repository, non del codice).
+- **Lo schema per la produzione** è in `collaudo/PASSAGGIO-IN-PRODUZIONE.md`:
+  che cosa si prepara prima, il passaggio vero, le prove, il ritorno
+  indietro e le trappole incontrate.
 - **Differenze di Cloudflare Pages**: `print.html` risponde con un rinvio a
   `/print` e `index.html` a `/`; senza `404.html` un indirizzo sconosciuto
   riceverebbe la pagina principale; le intestazioni si decidono in

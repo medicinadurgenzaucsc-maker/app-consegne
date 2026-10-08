@@ -13,8 +13,8 @@ on:
 jobs:
   notify:
     runs-on: ubuntu-latest
-    # Solo nel repository di produzione: nel repository di collaudo non ci sono
-    # i segreti e app_version viene aggiornata a mano dopo la pubblicazione.
+    # Solo nel repository di produzione: nel collaudo il sito sta su Cloudflare
+    # e app_version la aggiorna il flusso «Pubblica su Cloudflare».
     # Skippa se il build di Pages è fallito
     if: github.repository_owner == 'medicinadurgenzaucsc-maker' && (github.event_name == 'workflow_dispatch' || github.event.build.error.message == null)
     steps:
