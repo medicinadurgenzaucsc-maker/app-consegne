@@ -7,7 +7,9 @@ tutto, senza che i PC del reparto se ne accorgano; poi il passaggio vero dura
 pochi minuti.**
 
 Stato: nel collaudo è tutto fatto e provato, compreso il ritorno indietro. In
-produzione non è stato toccato nulla.
+produzione l'08/10/2026 è stata fatta la preparazione che non tocca il sito in
+uso, vedi «A che punto è la produzione» in fondo. Il reparto lavora ancora sul
+sito di sempre.
 
 ## Regole che valgono per tutto il passaggio
 
@@ -102,12 +104,22 @@ usare il sito di sempre.
    `CLOUDFLARE_ACCOUNT_ID`. Nelle variabili: `CLOUDFLARE_PROGETTO` con il nome
    scelto. `CLOUDFLARE_AVVISA` resta spenta fino alla fase B.
 
-### A5. Prima pubblicazione su Cloudflare, a cura di Claude
+### A5. Il progetto su Cloudflare, a cura di Claude
 
-1. Avvio a mano del flusso «Pubblica su Cloudflare». Il progetto nasce da
-   solo, col ramo `master` come ramo di produzione.
-2. Subito dopo si passa ad A6: finché l'accesso non è configurato il sito
-   nuovo è aperto a chi ne conosce l'indirizzo.
+La strada migliore, usata in produzione: creare il progetto **vuoto** dalla
+console e configurare l'accesso prima della prima pubblicazione, così il sito
+non resta mai aperto.
+
+1. «Workers & Pages», «Create application»: la procedura proposta crea un
+   Worker, non un progetto Pages. Serve il collegamento in basso «Continue to
+   Pages», poi «Drag and drop your files», il nome del progetto, «Create
+   project». Non occorre caricare nulla: il progetto esiste già e il suo
+   indirizzo risponde 522 finché non arriva la prima pubblicazione.
+2. Un progetto creato dalla console ha come ramo di produzione `main`: va
+   cambiato in `master` da «Settings», «General», «Production branch»,
+   «Rename». Senza, il flusso si rifiuta di pubblicare.
+3. In alternativa il progetto nasce da solo al primo avvio del flusso, già col
+   ramo giusto: ma fino alla configurazione dell'accesso il sito è aperto.
 
 ### A6. L'accesso, nel browser di Stefano
 
@@ -116,8 +128,11 @@ Percorsi della console, dove `<id>` è l'identificativo dell'account:
 `…/settings`, `…/one/integrations/identity-providers`,
 `…/one/reusable-components/custom-pages`.
 
-1. Attivare Zero Trust: nome della squadra, piano gratuito. Da qui nasce
-   l'indirizzo `https://<squadra>.cloudflareaccess.com`.
+1. Attivare Zero Trust, piano gratuito: chiede una carta e l'accettazione
+   delle condizioni, quindi lo fa Stefano. Il nome della squadra viene
+   assegnato a caso: va cambiato subito da «Settings», «Team domain», «Edit»,
+   prima di creare il client Google, perché l'indirizzo
+   `https://<squadra>.cloudflareaccess.com` finisce dentro quel client.
 2. Nel progetto Pages, «Impostazioni», «Generale», «Accesso in anteprima»,
    «Limita le anteprime». Crea l'applicazione `<nome> - Cloudflare Pages`, che
    copre **solo** gli indirizzi di anteprima `*.<nome>.pages.dev`: il suo nome
@@ -271,14 +286,45 @@ icona installata vanno aggiornati con calma: il rinvio resta.
 | `pubblicazione.js [avvia]` | Segue la pubblicazione su Cloudflare e controlla l'avviso |
 | `verifica-chiusura.js <ambiente> [--archivi]` | Le prove da estraneo: 28, più 4 sugli archivi |
 
+## A che punto è la produzione
+
+Fatto l'08/10/2026, senza toccare il sito in uso al reparto:
+
+- account Cloudflare del reparto, progetto Pages `consegne-reparto` vuoto,
+  ramo di produzione `master`: l'indirizzo sarà
+  `https://consegne-reparto.pages.dev/`;
+- Zero Trust attivo, squadra `consegne-reparto`; applicazione
+  `consegne-reparto - sito` col criterio `autorizzati-produzione` (casella del
+  reparto, gistech, Stefano), sessione di un mese, cookie protetti; anteprime
+  chiuse. Da estraneo sito, file e anteprime rimandano già all'accesso;
+- nel repository del reparto la variabile `CLOUDFLARE_PROGETTO` e il segreto
+  `CLOUDFLARE_ACCOUNT_ID`;
+- repository `app-consegne-rinvio` con la pagina di rinvio, chiuso alle
+  scritture;
+- versione 187 provata nel collaudo: riconosce il nuovo indirizzo.
+
+Da fare, nell'ordine:
+
+1. Stefano: il token di Cloudflare nel segreto `CLOUDFLARE_API_TOKEN`; il
+   client Google «Accesso Cloudflare produzione» e il provider Google in
+   Cloudflare.
+2. Claude: solo Google con autenticazione immediata nell'applicazione del sito.
+3. La sera, con l'ok: rilascio della 187 sul sito di oggi; riga `AMBIENTE`;
+   gistech fra gli autorizzati dell'app; nuova origine nel client Google
+   dell'app; prove dal browser di Stefano sul sito nuovo.
+4. Quando i PC hanno ricevuto la 187: lo scambio, fase B.
+
 ## Da preparare negli strumenti prima del giorno
 
-Oggi `gh-api.js`, `scambio-repository.js` e `pubblicazione.js` lavorano solo
-sull'account di collaudo, per costruzione. Per la produzione vanno estesi, e
-provati di nuovo nel collaudo, così:
+Fatto l'08/10/2026: `gh-api.js`, `scambio-repository.js` e `pubblicazione.js`
+accettano l'ambiente come primo argomento.
 
-- l'ambiente si sceglie con un argomento esplicito, e la produzione chiede
-  una conferma scritta per ogni comando che cambia qualcosa;
+- `scambio-repository.js produzione stato` e `pubblicazione.js produzione`
+  leggono soltanto;
+- ogni comando che in produzione cambia qualcosa è rifiutato senza
+  `--confermo-produzione`;
 - proprietario, remoto della cartella e database si ricavano dall'ambiente:
   `medicinadurgenzaucsc-maker`, `origin`, sola lettura sul database;
-- l'accesso «a codice» a GitHub vale anche per l'account del reparto.
+- la chiave di GitHub della produzione è quella già scritta nel remoto
+  `origin`, che ha i permessi necessari. L'accesso «a codice» anche per
+  l'account del reparto resta da fare, insieme al cambio di quella chiave.
