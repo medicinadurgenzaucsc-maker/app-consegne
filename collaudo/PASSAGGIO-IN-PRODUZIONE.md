@@ -357,7 +357,8 @@ sfuggito alla fase A10, non il modo di spostare i PC.
 dell'app (`docs/rubrica/`), coi dati nel database delle consegne, visibile
 solo a chi è collegato. È un rilascio a sé, che non dipende dal passaggio del
 sito, ma ha un **ordine obbligato**, e in produzione ogni passo vuole l'ok di
-Stefano. Stato all'08/10/2026: fatto solo nel collaudo, da provare lì.
+Stefano. Stato al 09/10/2026: passi 1–4 fatti (in produzione la notte del
+09/10, fra le 01:09 e le 01:11); resta il passo 5.
 
 **Perché l'ordine conta.** Il codice nuovo legge le tabelle `rubrica_` del
 database delle consegne. Se arrivasse in produzione prima di loro, l'app
@@ -394,9 +395,10 @@ legge non danno fastidio.
      controlla la prova 14 della sezione `rubrica`: cinque modifiche di fila,
      salita di almeno cinque.
 3. **I contatti in produzione**: copia dal vecchio database della rubrica,
-   con gli stessi identificativi. `copia-rubrica.js` oggi accetta solo
-   `collaudo`: va esteso a `produzione`, con `--confermo-produzione`, la
-   stessa istruzione unica e lo stesso confronto delle impronte. È una
+   con gli stessi identificativi. `copia-rubrica.js produzione prima-copia --confermo-produzione`
+   (dal 09/10/2026): la stessa istruzione unica e lo stesso confronto delle
+   impronte, ma in produzione non svuota mai e si rifiuta se la destinazione
+   ha già righe. È una
    scrittura nel database del reparto: si decide e si prova prima con
    Stefano. Da quel momento ciò che viene scritto nella rubrica di prima
    **non arriva** in quella nuova: la copia si fa a ridosso del rilascio, e
@@ -583,3 +585,21 @@ accettano l'ambiente come primo argomento.
 - la chiave di GitHub della produzione è quella già scritta nel remoto
   `origin`, che ha i permessi necessari. L'accesso «a codice» anche per
   l'account del reparto resta da fare, insieme al cambio di quella chiave.
+
+## Stato al 09/10/2026
+
+- **Rilascio della 187**: 08/10/2026 alle 20:23, dal vecchio sito.
+- **Scambio dei repository**: 09/10/2026 alle 00:35, 27 secondi, nessun
+  errore nel mezzo; `verifica-chiusura.js produzione`: 29 prove superate.
+  Da allora `origin` è `medicinadurgenzaucsc-maker/app-consegne-sorgente`
+  (privato), il sito del reparto è `https://consegne-reparto.pages.dev/`,
+  il vecchio indirizzo mostra la pagina di rinvio e l'avviso ai PC lo dà il
+  flusso di Cloudflare (`CLOUDFLARE_AVVISA = si`). Lo scambio è stato fatto
+  prima che i PC del reparto fossero entrati sul sito nuovo, per decisione
+  di Stefano: ogni PC rifà l'accesso al primo ricaricamento.
+- **Rubrica dentro l'app**: tabelle e contatti in produzione, versione 189
+  pubblicata dal repository privato (prima pubblicazione fatta tutta dal
+  flusso di Cloudflare, avviso compreso).
+- **Restano**: lo spegnimento della rubrica di prima (repository, sito,
+  database); il passaggio dei dispositivi al nuovo indirizzo; le voci della
+  fase C; rifare dopo qualche giorno `verifica-chiusura.js produzione --archivi`.
