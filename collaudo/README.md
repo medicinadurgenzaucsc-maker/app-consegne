@@ -58,11 +58,15 @@ sul progetto di collaudo, poi identiche in produzione.
   generati facendo girare le funzioni vere dell'app (`generatore-pazienti.js`).
   Nessuna riga di pazienti veri è mai stata copiata.
 - **Rubrica** («Numeri Telefono»): le tabelle `rubrica_categorie`,
-  `rubrica_contatti` e `rubrica_versione`, con le loro due funzioni. Nel
-  collaudo ci vanno solo contatti **inventati**: la rubrica vera contiene nomi
-  e numeri del personale e non si copia. Finché le stesse tabelle non esistono
-  in produzione, `clona-struttura.js confronta` le mostra come differenza:
-  è attesa, e non vanno messe fra quelle «solo collaudo».
+  `rubrica_contatti` e `rubrica_versione`, con le loro due funzioni. Dentro
+  c'è **l'elenco vero**, copiato con `copia-rubrica.js` per decisione di
+  Stefano dell'08/10/2026: sono numeri di telefono dell'ospedale, non dati di
+  pazienti, e servono a provare la rubrica com'è davvero. Il collaudo
+  contiene quindi nomi e numeri veri: non va «rimesso a posto» con contatti
+  inventati, e non va trattato né mostrato ad altri come se fosse privo di
+  dati personali (vedi le Regole in fondo). Finché le stesse tabelle non
+  esistono in produzione, `clona-struttura.js confronta` le mostra come
+  differenza: è attesa, e non vanno messe fra quelle «solo collaudo».
 - **In più rispetto alla produzione**, per scelta: la funzione di RLS
   automatica (`rls_auto_enable`), la tabella `posta_simulata`, la funzione
   `google-finto` che sta fra `google-token` e Google, le variabili `GOOGLE_*`
@@ -142,7 +146,7 @@ Dentro la pagina dell'app si caricano, dalla console, gli script di
 | `trak` | i due segnalibri veri, eseguiti sul finto TrakCare, leggono ciò che il catalogo descrive; reimportare non cambia nulla; giorni simulati |
 | `xss` | ciò che arriva da fuori (indirizzo, righe del database, backup, memoria del browser) non diventa mai codice né markup attivo; i contenuti leciti restano identici; senza filtro l'app si ferma |
 | `mail` | «Impostazioni email» (mittente precompilato, convalida, registro); senza i permessi del mittente la procedura di invio non compare e vengono chiesti; il consenso di un altro account è rifiutato; il mittente è mostrato e non modificabile; annullare la conferma riporta alla procedura com'era; se il mittente cambia a finestra aperta la mail non parte; risposte anomale del server; il client secret si inserisce e si cambia da «Impostazioni email» a campo sempre vuoto, uno sbagliato viene respinto e richiesto, primo avvio in due passi |
-| `rubrica` | la rubrica «Numeri Telefono» (`docs/rubrica/`): aperta da sola non chiede nulla al database; con la sola chiave pubblica non si legge e non si scrive nulla; contatti e categorie ostili (ma ammessi dai vincoli) compaiono tali e quali in elenco, ricerca, finestre e conferme, senza che nulla venga eseguito; solo un numero fatto di cifre è un collegamento; un numero con le virgolette è respinto dal database con un messaggio comprensibile; memoria del browser ostile; all'uscita la rubrica viene svuotata |
+| `rubrica` | la rubrica «Numeri Telefono» (`docs/rubrica/`): aperta da sola, o dentro l'app senza accesso, non chiede nulla al database; con la sola chiave pubblica non si legge e non si scrive nulla; contatti e categorie ostili (ma ammessi dai vincoli) compaiono tali e quali in elenco, ricerca, finestre e conferme, senza che nulla venga eseguito; solo un numero fatto di cifre è un collegamento; esportazioni senza formule; errori del database tradotti, e tabelle assenti dette con chiarezza; riapertura del riquadro con una sola lettura; 401 e rinnovo della sessione; richiesta senza risposta interrotta; **scritture fatte dall'interfaccia** (nuovo, modifica, elimina, categorie: aggiunta, rinomina, riordino, eliminazione) sempre e solo sulle righe di prova; due PC sullo stesso contatto; rete che cade durante un salvataggio; uscita con un lavoro a metà; memoria del browser ostile; all'uscita la rubrica viene svuotata |
 
 La sezione `xss` scrive sul letto libero «5», crea e cancella righe di prova
 (un letto, una tipologia, due backup, due link) e alla fine rimette tutto
@@ -150,19 +154,53 @@ com'era. Per essere sicuri che le prove misurino davvero, le si rilancia dopo
 aver neutralizzato a mano una protezione (`window._testoHtml = String` oppure
 `window._pulisciHtml = String`): devono fallire.
 
-La sezione `rubrica` scrive in `rubrica_contatti` e `rubrica_categorie` righe
-il cui nome comincia con `PROVA-AUTOMATICA`, apre il riquadro vero e alla fine
-toglie le sue righe e rimette le preferenze del browser com'erano. La pagina
-della rubrica dal banco riceve solo la raccolta degli errori
+La sezione `rubrica` lavora su una rubrica che è **quella vera** (vedi sopra),
+quindi ha tre regole, che valgono anche per chi le aggiunge una prova:
+
+1. tocca **solo righe create da lei**, in `rubrica_contatti` e
+   `rubrica_categorie`, col nome che comincia con `PROVA-AUTOMATICA`, e alla
+   fine le toglie; una riga che c'era già non viene mai modificata né
+   cancellata, e i filtri sono sempre stretti (il nome di prova, oppure
+   l'identificativo di una riga di prova);
+2. in un esito **non finisce mai il testo dell'elenco**: solo le righe di
+   prova, conteggi, nomi di attributi, metodo e tabella di una richiesta;
+3. le prove che usano l'interfaccia (Salva, Modifica, Elimina, categorie)
+   girano sotto il **salvagente**: ogni scrittura che parte dalla rubrica
+   viene guardata prima di partire (metodo, tabella, filtro, dati), e se non
+   riguarda soltanto righe di prova viene fermata e fa fallire la prova. Così
+   un filtro sbagliato in una modifica o in un'eliminazione si vede senza che
+   un contatto vero venga toccato.
+
+Apre il riquadro vero e alla fine rimette le preferenze del browser com'erano.
+La pagina della rubrica dal banco riceve solo la raccolta degli errori
 (`/banco-errori.js`, un file a parte perché la sua regola CSP non ammette script
 scritti in pagina), mai la sessione: quella la chiede alla pagina dell'app.
 Fra gli errori raccolti c'è anche ciò che la regola CSP ha bloccato. La
 controprova, a riquadro aperto:
 `document.getElementById('rubricaIframe').contentWindow.esc = String`, poi di
-nuovo le prove: devono fallire. Resta da provare **a mano** (nel pannello
-automatico il fuoco non è affidabile): scheda in modifica, «Numeri Telefono»
-aperto, un clic nella ricerca della rubrica non deve chiudere la modifica, e
-chiudendo il riquadro il fuoco torna nella scheda.
+nuovo le prove: devono fallire. La sezione dura qualche minuto: una prova
+aspetta apposta i 12 secondi del tempo massimo di una richiesta, un'altra i 6
+secondi di un rinnovo della sessione che non risponde.
+
+Due prove dicono qualcosa del **database**, non della pagina: «due modifiche a
+ridosso» fallisce se il numero di `rubrica_versione` non sale a ogni modifica
+(va guardato il trigger), e «chi usa l'app non può scrivere la versione»
+fallisce se quella tabella è scrivibile da chi è collegato.
+
+`await window.__prove({ sezioni: ['rubrica'], fuoco: true })` aggiunge la prova
+del fuoco: scheda in modifica sul letto libero «5», «Numeri Telefono» aperto,
+il fuoco nella rubrica non deve chiudere la modifica, e chiudendo il riquadro
+deve tornare nella scheda. Vuole la finestra del browser **in primo piano**
+(nel pannello automatico il fuoco non è affidabile, e la prova lo dice invece
+di passare a vuoto); altrimenti la stessa prova si fa a mano.
+
+Restano da provare **a mano**, nel riquadro, su Chrome o Edge e sull'iPad,
+guardando la console: «Esporta tutto in CSV» e «Salva nei contatti del
+telefono» (il file deve arrivare davvero, e il CSV aprirsi in colonne),
+«Copia numero» incollando altrove, la chiamata da un numero, il
+**trascinamento** delle categorie col dito o col mouse (la prova automatica
+dice nel suo nome se ha dovuto chiamare la funzione al posto del gesto), e un
+giro completo crea / modifica / elimina su un contatto di prova.
 
 La sezione `mail` gira con le credenziali finte: il banco (`/banco/cassaforte`)
 mette da parte il consenso vero e lo rimette alla fine, e al posto della
@@ -200,16 +238,22 @@ rinvia ogni richiesta a un altro sito. Sa anche servire la versione oggi in
 produzione (`origin/master`), per provare il passaggio da quella alla versione
 di lavoro.
 
-Dalla pagina `http://localhost:8766/prove/`: `await window.__proveSw()`, 46
+Dalla pagina `http://localhost:8766/prove/`: `await window.__proveSw()`, 54
 prove nei due stili (`window.__avanzamentoSw()` dice a che punto è). Vanno
 rilanciate a ogni modifica di `docs/sw.js` o dell'elenco dei file del sito.
+Otto riguardano la cornice della rubrica: davanti a un guasto del sito la
+pagina di «Numeri Telefono» deve arrivare dalla cache, e davanti a un cancello
+di accesso la cornice deve ricevere la copia in cache invece del rinvio (che
+in una cornice non porterebbe da nessuna parte).
 
 **Controprova**: `await window.__proveSw({ versione: 'produzione' })` esegue le
 stesse prove sul service worker della v181, che davanti a un 404 mostra
-l'errore e lo salva in cache. Devono fallire (25 su 36): se passano, le prove
-non stanno misurando.
+l'errore e lo salva in cache. Devono fallire (25 su 36, misurate allora: la
+controprova conta su una produzione più vecchia del service worker di lavoro, e
+le prove sulla cornice della rubrica falliscono finché la produzione non ha la
+rubrica): se passano, le prove non stanno misurando.
 
-`await window.__proveSw({ versione: 'compressa' })` esegue le 46 prove sulla
+`await window.__proveSw({ versione: 'compressa' })` esegue le 54 prove sulla
 copia compressa del sito: è la forma in cui il service worker arriva ai PC da
 Cloudflare.
 
@@ -428,8 +472,12 @@ pubblica, con l'informativa sull'accesso, su `gistech2026.github.io/collaudo/`.
 
 - Mai copiare nel collaudo righe di pazienti veri, nemmeno anonimizzate: il
   testo libero identifica comunque.
-- Mai copiare nel collaudo la rubrica vera (nomi e numeri del personale): solo
-  contatti inventati.
+- La rubrica del collaudo è **quella vera**, per decisione di Stefano
+  dell'08/10/2026 (numeri di telefono dell'ospedale, non dati di pazienti): non
+  si sostituisce con contatti inventati. In cambio: le prove toccano solo le
+  righe che creano loro (`PROVA-AUTOMATICA…`), non modificano mai una riga
+  esistente, e non riportano mai nomi o numeri dell'elenco in un esito, in un
+  messaggio o in una conversazione: solo conteggi, impronte e righe di prova.
 - Dagli strumenti la produzione si legge soltanto.
 - Il repository di collaudo non ha segreti: i due workflow sono attivi solo nel
   repository di produzione.

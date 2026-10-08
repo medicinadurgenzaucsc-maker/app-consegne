@@ -261,7 +261,8 @@ del reparto. Da provare una volta nel collaudo.
 «Numeri Telefono» sul sito nuovo riparte senza preferiti né recenti: la
 rubrica li tiene nella memoria del browser, separata per sito. L'08/10/2026
 Stefano ha deciso che la rubrica entrerà nell'app: fino ad allora la
-perdita è accettata.
+perdita è accettata. Come ci entra, e in che ordine, è scritto più sotto
+in «La rubrica dentro l'app».
 
 Il primo PC del reparto vale anche come prova dalla **rete dell'ospedale**:
 se quella rete non lasciasse passare `pages.dev` o `cloudflareaccess.com`, lo
@@ -347,6 +348,80 @@ sfuggito alla fase A10, non il modo di spostare i PC.
   con un accesso «a codice», e revocare quella vecchia.
 - Aggiornare `CLAUDE.md` e questo documento con nomi e date veri.
 - Ricontrollare dopo qualche giorno `verifica-chiusura.js … --archivi`.
+
+## La rubrica dentro l'app (versione 189)
+
+«Numeri Telefono» smette di essere un sito a parte: diventa una pagina
+dell'app (`docs/rubrica/`), coi dati nel database delle consegne, visibile
+solo a chi è collegato. È un rilascio a sé, che non dipende dal passaggio del
+sito, ma ha un **ordine obbligato**, e in produzione ogni passo vuole l'ok di
+Stefano. Stato all'08/10/2026: fatto solo nel collaudo, da provare lì.
+
+**Perché l'ordine conta.** Il codice nuovo legge le tabelle `rubrica_` del
+database delle consegne. Se arrivasse in produzione prima di loro, l'app
+delle consegne funzionerebbe lo stesso, ma su tutti i PC il riquadro direbbe
+«La rubrica non è ancora disponibile su questo sito», e dal menu la rubrica
+di prima non si aprirebbe più: il reparto resterebbe senza numeri. L'ordine
+giusto, tabelle prima e codice poi, è innocuo: tabelle che nessun codice
+legge non danno fastidio.
+
+1. **Nel collaudo, prima di tutto**: la sezione `rubrica` delle prove
+   automatiche, sul sorgente e sulla copia compressa; le prove del service
+   worker; le prove a mano elencate in `README.md`.
+2. **Le tabelle in produzione**: `rubrica_categorie`, `rubrica_contatti`,
+   `rubrica_versione` con la sua riga `id = 1`, le due funzioni, i trigger,
+   RLS accesa e policy scritte in modo esplicito, GRANT espliciti, nulla ad
+   `anon`. Il testo della migrazione **non è nel repository**: va ripreso
+   dalla storia delle migrazioni del collaudo, così com'è stato applicato lì.
+   Prima di proseguire:
+   - `clona-struttura.js confronta` non segnala più le tabelle `rubrica_`
+     come differenza;
+   - da utente del reparto, col blocco `DO` descritto in `CLAUDE.md`
+     («Verifiche»): la riga di `rubrica_versione` si legge, contatti e
+     categorie si leggono e si scrivono, le due funzioni si possono chiamare.
+     Una riga di versione che manca, o un permesso dimenticato, farebbero
+     leggere a tutti i PC «Il database non mostra la rubrica a questo
+     account»;
+   - da estraneo, con la sola chiave pubblica: non si legge e non si scrive
+     nulla;
+   - il numero di `rubrica_versione` deve salire a **ogni** modifica, anche
+     due nello stesso secondo: la revisione del codice non l'ha potuto
+     verificare, e nel collaudo lo dice la prova «due modifiche a ridosso».
+3. **I contatti in produzione**: copia dal vecchio database della rubrica,
+   con gli stessi identificativi. `copia-rubrica.js` oggi accetta solo
+   `collaudo`: va esteso a `produzione`, con `--confermo-produzione`, la
+   stessa istruzione unica e lo stesso confronto delle impronte. È una
+   scrittura nel database del reparto: si decide e si prova prima con
+   Stefano. Da quel momento ciò che viene scritto nella rubrica di prima
+   **non arriva** in quella nuova: la copia si fa a ridosso del rilascio, e
+   `confronta` dice se le due copie coincidono ancora. Chi usa la rubrica di
+   prima dal telefono va avvisato che da quel giorno non si aggiorna più lì.
+4. **Il codice**: rilascio della versione 189 col percorso di sempre
+   (collaudo, controlli, ok, `master`). Subito dopo, dal browser di Stefano:
+   «Numeri Telefono» mostra i contatti, la console resta pulita, e un giro
+   crea / modifica / elimina su un contatto di prova, poi tolto.
+5. **Solo alla fine, a rubrica nuova provata**: spegnere il vecchio sito
+   della rubrica e chiudere alle scritture anonime il suo database. È
+   l'ultimo passo dello stesso rilascio, non una pulizia facoltativa. Più
+   avanti, quando non servono nemmeno per un ritorno, si tolgono il suo
+   repository e il suo database. Dalla sera dell'08/10/2026 quel database ha
+   già tre vincoli che rifiutano `<`, `>` e, nei numeri, le virgolette.
+
+**Ritorno.** Finché il vecchio sito è acceso, tornare indietro è ripubblicare
+la versione di prima: il menu riapre la rubrica di prima. Dopo il passo 5 non
+c'è più dove tornare, ed è per questo che viene per ultimo.
+
+**Preferiti.** Dove la rubrica di prima e l'app stavano sullo stesso sito, la
+rubrica nuova riprende una volta sola i preferiti e i chiamati di recente (gli
+identificativi dei contatti sono gli stessi); il tema riparte chiaro. Su un
+indirizzo nuovo ripartono da zero, come scritto nella fase A10.
+
+**Che cosa cambia per chi la usa**, oltre al fatto che serve essere collegati
+all'app: un numero ha al massimo 20 cifre e una nota 120 caratteri (una nota
+più lunga già salvata resta com'è finché non la si tocca); l'esportazione CSV
+usa il «;» come separatore, così Excel la apre già in colonne; la categoria
+va scelta, e un contatto che non ne ha non ne riceve una di nascosto; il tema
+predefinito è chiaro.
 
 ## Ritorno indietro
 
