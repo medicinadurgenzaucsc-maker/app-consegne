@@ -1697,7 +1697,436 @@
     }
   }
 
-  var SEZIONI = { ambiente: sezioneAmbiente, trak: sezioneTrak, xss: sezioneXss, mail: sezioneMail };
+  // ══════════════════════════════════════════════════════════════════════
+  // RUBRICA («Numeri Telefono»): la pagina docs/rubrica/ vive dentro l'app,
+  // nella stessa origine, e prende i dati dal database delle consegne con la
+  // sessione dell'app. Aperta da sola non deve chiedere nulla al database;
+  // dentro l'app, ciò che sta scritto nei contatti e nella memoria del browser
+  // non deve mai diventare codice o markup, e deve comparire tale e quale.
+  // Con la sola chiave pubblica non si legge e non si scrive nulla.
+  //
+  // La sezione scrive in rubrica_contatti e rubrica_categorie righe il cui nome
+  // comincia con «PROVA-AUTOMATICA» e alla fine le toglie. I contenuti ostili
+  // sono quelli che i vincoli del database AMMETTONO (niente < e >; nei numeri
+  // nemmeno le virgolette): non possono portare un elemento-esca, quindi oltre
+  // a «nulla è stato eseguito» si controlla che in pagina non sia nato nessun
+  // attributo diverso da quelli che scrive il codice. La regola CSP della
+  // pagina spegnerebbe comunque un gestore in linea: ciò che blocca finisce fra
+  // gli errori raccolti dal banco, e fa fallire l'ultima prova.
+  //
+  // Per essere sicuri che le prove misurino davvero: rilanciarle dopo
+  //   document.getElementById('rubricaIframe').contentWindow.esc = String
+  // (a riquadro già aperto): devono fallire.
+  // ══════════════════════════════════════════════════════════════════════
+  var SEGNO_RUBRICA = 'PROVA-AUTOMATICA';
+  async function sezioneRubrica() {
+    var S = 'rubrica';
+    window.__xss = [];
+    var erroriPrima = (window.__erroriBanco || []).length;
+    var erroriCornici = [];
+    var pannello = document.getElementById('rubricaPanel'), cornicePannello = document.getElementById('rubricaIframe');
+    var eraAperto = !!pannello && pannello.style.display !== 'none';
+    var PREFERENZE = ['rubrica-tema', 'rubrica-preferiti', 'rubrica-chiamati'];
+    var RESIDUI = ['rubrica-data', 'rubrica-cats', 'rubrica-ts', 'rubrica-pending-writes', 'rubrica-recent-searches'];
+    var memoriaPrima = {};
+    PREFERENZE.forEach(function (k) { memoriaPrima[k] = localStorage.getItem(k); });
+    var cornici = [];
+    var w = null;                       // la finestra della rubrica dentro il riquadro
+    var CAT = null, A = null, B = null; // le righe di prova
+
+    // la traccia di un'esecuzione, senza il carattere «|» (che nei numeri e nelle note separa le voci)
+    function tr(id) { return "parent.__xss.push('" + id + "')"; }
+    var NUM_BUONO = '5550199';
+    var numeriA = [NUM_BUONO, 'javascript:' + tr('r-num-js'), "1' onmouseover='" + tr('r-num-apice') + "' x='", '+39 06 12-34/56'];
+    var noteA = ['guardia " onfocus="' + tr('r-nota') + '" x="', "D'URGENZA & C. &amp; &#39;", '', 'ultima'];
+    var nomeA = SEGNO_RUBRICA + ' " onmouseover="' + tr('r-nome') + '" x=" D\'URGENZA & javascript:void(0) &amp;lt;b&amp;gt;';
+    var nomeB = SEGNO_RUBRICA + " B D'ANNUNZIO & FIGLI &amp; C.";
+    var nomeCat = SEGNO_RUBRICA + " ' ONMOUSEOVER='" + tr('r-cat') + "' X='";
+
+    function raccogliErrori(win) { try { erroriCornici.push.apply(erroriCornici, (win && win.__erroriBanco) || []); if (win && win.__erroriBanco) win.__erroriBanco.length = 0; } catch (e) {} }
+    function pulisciDatabase() {
+      return Promise.all([
+        _q(_sb.from('rubrica_contatti').delete().like('nome', SEGNO_RUBRICA + '%')),
+        _q(_sb.from('rubrica_categorie').delete().like('nome', SEGNO_RUBRICA + '%'))
+      ]);
+    }
+    // Nomi di attributo che il codice della rubrica scrive nelle parti che disegna:
+    // qualunque altro (onmouseover, onfocus, x, style…) è nato da un contenuto.
+    var ATTRIBUTI_DEL_CODICE = /^(class|id|type|href|hidden|title|value|maxlength|placeholder|autocomplete|spellcheck|inputmode|selected|required|novalidate|for|aria-[a-z]+|data-(id|num|nome|cat|special|q|x|key|pidx|nidx|type|drag|modal)|width|height|viewBox|fill|stroke|stroke-width|stroke-linecap|stroke-linejoin|points|d|x1|x2|y1|y2|cx|cy|r)$/;
+    function attributiNati(radice) {
+      var fuori = [];
+      if (!radice) return ['contenitore assente'];
+      [].forEach.call(radice.querySelectorAll('*'), function (n) {
+        [].forEach.call(n.attributes, function (a) { if (!ATTRIBUTI_DEL_CODICE.test(a.name)) fuori.push(n.tagName.toLowerCase() + ' ' + a.name); });
+      });
+      return fuori;
+    }
+    function schedaContatto(doc, id) { return doc.querySelector('.contact-card[data-id="' + id + '"]'); }
+    function testi(nodi) { return [].map.call(nodi, function (n) { return n.textContent; }); }
+    async function cerca(testo) {
+      var barra = w.document.getElementById('searchBar');
+      barra.value = testo;
+      barra.dispatchEvent(new w.Event('input', { bubbles: true }));
+      await attendi(900);   // la ricerca parte 400 ms dopo l'ultimo tasto
+    }
+
+    // ── 1. fuori dall'app ──
+    await prova(S, 'aperta da sola (senza l\'app intorno) resta sul messaggio fisso e non chiede nulla al database', async function () {
+      // una cornice vuota fa da pagina qualunque: dentro, la rubrica non trova l'app
+      var esterna = await cornice('about:blank');
+      cornici.push(esterna);
+      var d = esterna.contentDocument;
+      var interna = d.createElement('iframe');
+      interna.style.cssText = 'width:480px;height:785px;border:0';
+      await new Promise(function (ok, ko) {
+        interna.onload = ok;
+        interna.onerror = function () { ko(new Error('pagina della rubrica non caricata')); };
+        interna.src = new URL('rubrica/?cb=' + Date.now(), location.href).href;
+        d.body.appendChild(interna);
+      });
+      await attendi(2500);
+      var x = interna.contentWindow, doc = x.document;
+      var avviso = doc.getElementById('avvisoFuori'), testata = doc.getElementById('testata'), corpo = doc.getElementById('corpo');
+      if (!avviso || !testata || !corpo) return 'la pagina caricata non è quella della rubrica: «' + doc.title + '»';
+      if (avviso.hidden || avviso.textContent.indexOf('La rubrica si apre dal menu') < 0) return 'il messaggio fisso non è visibile';
+      if (!testata.hidden || !corpo.hidden) return 'la rubrica si è aperta senza la pagina dell\'app';
+      if (doc.querySelector('.contact-card')) return 'sono stati disegnati dei contatti';
+      var richieste = x.performance.getEntriesByType('resource').map(function (e) { return e.name; }).filter(function (u) { return /supabase|\/rest\/v1\/|\/auth\/v1\//.test(u); });
+      if (richieste.length) return 'richieste partite: ' + richieste.slice(0, 3).join(' , ');
+      raccogliErrori(x);
+      return true;
+    });
+
+    // ── 2. da estraneo ──
+    await prova(S, 'con la sola chiave pubblica non si legge e non si scrive nulla della rubrica (tabelle e funzioni)', async function () {
+      var h = { apikey: SUPABASE_ANON_KEY, Authorization: 'Bearer ' + SUPABASE_ANON_KEY, 'Content-Type': 'application/json' };
+      var inesistente = encodeURIComponent(SEGNO_RUBRICA + ' INESISTENTE');
+      var casi = [
+        ['GET', 'rubrica_contatti?select=id&limit=1'],
+        ['GET', 'rubrica_categorie?select=id&limit=1'],
+        ['GET', 'rubrica_versione?select=ts'],
+        ['POST', 'rubrica_contatti', { nome: SEGNO_RUBRICA + ' da estraneo', numeri: '1' }],
+        ['PATCH', 'rubrica_contatti?nome=eq.' + inesistente, { note: 'x' }],
+        ['DELETE', 'rubrica_contatti?nome=eq.' + inesistente],
+        ['POST', 'rubrica_categorie', { nome: SEGNO_RUBRICA + ' DA ESTRANEO' }],
+        ['PATCH', 'rubrica_versione?id=eq.1', { ts: 1 }],
+        ['POST', 'rpc/rubrica_categorie_batch', { adds: [], renames: [], deletes: [] }],
+        ['POST', 'rpc/rubrica_rinomina_categoria', { old_nome: SEGNO_RUBRICA + ' INESISTENTE', new_nome: SEGNO_RUBRICA + ' INESISTENTE 2' }]
+      ];
+      var guai = [];
+      for (var i = 0; i < casi.length; i++) {
+        var r = await fetch(SUPABASE_URL + '/rest/v1/' + casi[i][1], { method: casi[i][0], headers: h, body: casi[i][2] ? JSON.stringify(casi[i][2]) : undefined });
+        if (r.status !== 401 && r.status !== 403) guai.push(casi[i][0] + ' ' + casi[i][1].split('?')[0] + ' → HTTP ' + r.status);
+      }
+      return !guai.length || ('NON respinte: ' + guai.join(' ; '));
+    });
+
+    var pronto = false;
+    try {
+      // ── 3. righe di prova ──
+      await prova(S, 'i contatti di prova (ostili, ma ammessi dai vincoli) si scrivono nel database', async function () {
+        await pulisciDatabase();   // resti di un giro interrotto
+        CAT = await _q(_sb.from('rubrica_categorie').insert({ nome: nomeCat, ordine: 9999 }).select().single());
+        A = await _q(_sb.from('rubrica_contatti').insert({ nome: nomeA, categoria: nomeCat, numeri: numeriA.join('|'), note: noteA.join('|') }).select().single());
+        B = await _q(_sb.from('rubrica_contatti').insert({ nome: nomeB, categoria: nomeCat, numeri: '3912', note: '' }).select().single());
+        pronto = !!(CAT && A && B && A.id && B.id);
+        if (!pronto) return 'righe non create';
+        return (A.nome === nomeA && A.numeri === numeriA.join('|') && A.note === noteA.join('|') && CAT.nome === nomeCat) || 'il database ha cambiato i valori salvati';
+      });
+
+      if (pronto) {
+        // ── 4. il riquadro vero ──
+        await prova(S, 'il riquadro «Numeri Telefono» apre la pagina dell\'app e disegna i contatti', async function () {
+          window.__xss = [];
+          window.apriRubrica();
+          w = await finche(function () {
+            var x = cornicePannello.contentWindow, c = x && x.document.getElementById('corpo');
+            return (x && typeof x.loadData === 'function' && c && !c.hidden) ? x : false;
+          }, 20000);
+          if (!w) return 'la rubrica non si è aperta nel riquadro';
+          if (pannello.style.display === 'none') return 'il riquadro non è visibile';
+          if (!/\/rubrica\/$/.test(new URL(cornicePannello.src, location.href).pathname)) return 'la cornice non punta alla pagina dell\'app: ' + cornicePannello.src;
+          if (new URL(cornicePannello.src, location.href).origin !== location.origin) return 'la rubrica è caricata da un altro sito';
+          // si rilegge comunque: il valore della versione ha la precisione del secondo
+          await w.loadData(true);
+          var card = await finche(function () { return schedaContatto(w.document, A.id); }, 15000);
+          return !!card || ('il contatto di prova non è stato disegnato: «' + w.document.getElementById('contactList').textContent.trim().slice(0, 140) + '»');
+        });
+      }
+
+      if (pronto && w) {
+        // ── 5. elenco ──
+        await prova(S, 'elenco: nomi, numeri, note e categorie compaiono tali e quali, nulla viene eseguito, solo il numero fatto di cifre è un collegamento', async function () {
+          await attendi(600);
+          var doc = w.document, lista = doc.getElementById('contactList'), card = schedaContatto(doc, A.id);
+          if (!card) return 'contatto di prova assente dall\'elenco';
+          var guai = [];
+          if (eseguiti().length) guai.push('codice ESEGUITO: ' + eseguiti().join(', '));
+          if (esche(lista) || esche(doc.getElementById('chips'))) guai.push('elementi iniettati');
+          var nati = attributiNati(lista).concat(attributiNati(doc.getElementById('chips')));
+          if (nati.length) guai.push('attributi nati dai contenuti: ' + nati.slice(0, 4).join(', '));
+          if (card.querySelector('.contact-name-text').textContent !== nomeA) guai.push('il nome mostrato non è quello salvato');
+          var pillole = card.querySelectorAll('.num-pill');
+          if (!uguali(testi(pillole), numeriA)) guai.push('i numeri mostrati non sono quelli salvati: ' + JSON.stringify(testi(pillole)).slice(0, 160));
+          if (!uguali([].map.call(pillole, function (p) { return p.getAttribute('data-num'); }), numeriA)) guai.push('data-num non è il numero salvato');
+          if ([].some.call(pillole, function (p) { return p.getAttribute('data-nome') !== nomeA; })) guai.push('data-nome non è il nome salvato');
+          var collegamenti = [].map.call(card.querySelectorAll('[href]'), function (a) { return a.getAttribute('href'); });
+          if (!uguali(collegamenti, ['tel:' + NUM_BUONO])) guai.push('collegamenti: ' + JSON.stringify(collegamenti).slice(0, 160));
+          if (lista.querySelector('[href^="javascript" i]')) guai.push('un collegamento javascript:');
+          var noteAttese = noteA.filter(function (x) { return x.trim(); });
+          if (!uguali(testi(card.querySelectorAll('.num-nota-inline')), noteAttese)) guai.push('le note mostrate non sono quelle salvate');
+          if (card.querySelector('.contact-cat').textContent !== nomeCat) guai.push('la categoria nella scheda non è quella salvata');
+          var chip = [].filter.call(doc.querySelectorAll('#chips .chip'), function (c) { return c.getAttribute('data-cat') === nomeCat; })[0];
+          if (!chip || chip.textContent !== nomeCat) guai.push('la categoria di prova non è fra le etichette, o non è testo');
+          return !guai.length || guai.join(' ‖ ');
+        });
+
+        // ── 6. ricerca ──
+        await prova(S, 'ricerca con evidenziazione: il testo resta quello salvato (le entità non si spezzano) e niente diventa markup', async function () {
+          var doc = w.document, lista = doc.getElementById('contactList'), guai = [];
+          try {
+            await cerca('amp');
+            var cb = schedaContatto(doc, B.id), nb = cb && cb.querySelector('.contact-name-text');
+            if (!nb) guai.push('«amp»: il secondo contatto di prova non è fra i risultati');
+            else {
+              if (nb.textContent !== nomeB) guai.push('«amp»: nome mostrato «' + nb.textContent + '»');
+              var segni = testi(nb.querySelectorAll('mark'));
+              if (!segni.length || segni.some(function (s) { return s.toLowerCase() !== 'amp'; })) guai.push('«amp»: evidenziazione ' + JSON.stringify(segni));
+            }
+            await cerca('39');
+            cb = schedaContatto(doc, B.id); nb = cb && cb.querySelector('.contact-name-text');
+            if (!nb) guai.push('«39»: il secondo contatto di prova non è fra i risultati');
+            else if (nb.textContent !== nomeB || nb.querySelector('mark')) guai.push('«39»: nome mostrato «' + nb.textContent + '»');
+            await cerca('onmouseover');
+            var ca = schedaContatto(doc, A.id), na = ca && ca.querySelector('.contact-name-text');
+            if (!na) guai.push('«onmouseover»: il primo contatto di prova non è fra i risultati');
+            else if (na.textContent !== nomeA || !na.querySelector('mark')) guai.push('«onmouseover»: il nome non è quello salvato, o non è evidenziato');
+            if (ca && !uguali(testi(ca.querySelectorAll('.num-pill')), numeriA)) guai.push('«onmouseover»: i numeri non sono quelli salvati');
+            if (esche(lista) || attributiNati(lista).length) guai.push('markup nato dalla ricerca: ' + attributiNati(lista).slice(0, 3).join(', '));
+            if (lista.querySelector('mark *')) guai.push('dentro un\'evidenziazione c\'è un elemento');
+            if (eseguiti().length) guai.push('codice ESEGUITO: ' + eseguiti().join(', '));
+          } finally { await cerca(''); }
+          return !guai.length || guai.join(' ‖ ');
+        });
+
+        // ── 7. finestra di modifica ──
+        await prova(S, 'finestra di modifica: i campi mostrano i valori salvati, la categoria ostile è una scelta di solo testo', async function () {
+          var doc = w.document, guai = [];
+          w.openEdit(A.id);
+          try {
+            if (!(await finche(function () { return !doc.getElementById('modalOverlay').hidden; }, 4000))) return 'la finestra non si è aperta';
+            await attendi(250);
+            if (doc.getElementById('fId').value !== String(A.id)) guai.push('identificativo nel modulo «' + doc.getElementById('fId').value + '»');
+            if (doc.getElementById('fNome').value !== nomeA) guai.push('il nome nel campo non è quello salvato');
+            var campiNum = [].map.call(doc.querySelectorAll('#numeriContainer .f-num'), function (i) { return i.value; });
+            var campiNote = [].map.call(doc.querySelectorAll('#numeriContainer .f-nota'), function (i) { return i.value; });
+            if (!uguali(campiNum, numeriA)) guai.push('numeri nei campi: ' + JSON.stringify(campiNum).slice(0, 160));
+            if (!uguali(campiNote, noteA)) guai.push('note nei campi: ' + JSON.stringify(campiNote).slice(0, 160));
+            var scelta = [].filter.call(doc.getElementById('fCategoria').options, function (o) { return o.value === nomeCat; })[0];
+            if (!scelta || scelta.textContent !== nomeCat || !scelta.selected) guai.push('la categoria di prova non è fra le scelte, o non è quella selezionata');
+            var box = doc.getElementById('modalBox');
+            if (esche(box) || attributiNati(box).length) guai.push('markup nato dai contenuti: ' + attributiNati(box).slice(0, 3).join(', '));
+            if (eseguiti().length) guai.push('codice ESEGUITO: ' + eseguiti().join(', '));
+          } finally { w.closeModal(); }
+          return !guai.length || guai.join(' ‖ ');
+        });
+
+        // ── 8. categorie ──
+        await prova(S, 'gestione categorie: il nome ostile è il valore di un campo, col conteggio dei suoi contatti', async function () {
+          var doc = w.document, guai = [];
+          w.openCatModal();
+          try {
+            var campo = await finche(function () {
+              return [].filter.call(doc.querySelectorAll('#catList .cat-name-input'), function (i) { return i.value === nomeCat; })[0];
+            }, 12000);
+            if (!campo) return 'la categoria di prova non compare nella finestra';
+            var conteggio = campo.closest('.cat-item').querySelector('.cat-count').textContent.trim();
+            if (conteggio !== '2 cont.') guai.push('conteggio «' + conteggio + '» (atteso «2 cont.»)');
+            var lista = doc.getElementById('catList');
+            if (esche(lista) || attributiNati(lista).length) guai.push('markup nato dai contenuti: ' + attributiNati(lista).slice(0, 3).join(', '));
+            if (eseguiti().length) guai.push('codice ESEGUITO: ' + eseguiti().join(', '));
+          } finally {
+            await w.closeCatModal();
+            if (!doc.getElementById('catModalOverlay').hidden) guai.push('la finestra delle categorie non si è chiusa (modifiche in sospeso?)');
+          }
+          return !guai.length || guai.join(' ‖ ');
+        });
+
+        // ── 9. conferme e avvisi ──
+        await prova(S, 'conferme e avvisi: un testo ostile resta testo', async function () {
+          var doc = w.document, box = doc.getElementById('installToast'), guai = [];
+          var attesa = w.showConfirm(nomeA + '\n' + numeriA.join(' '), 'warning');
+          await attendi(200);
+          var msg = box.querySelector('.tc-msg');
+          if (!msg || msg.textContent !== nomeA + numeriA.join(' ')) guai.push('la conferma non mostra il testo tale e quale');
+          if (esche(box) || attributiNati(box).length) guai.push('conferma: markup nato dal testo');
+          var no = box.querySelector('.tc-no');
+          if (no) no.click();
+          var esito = await Promise.race([attesa, attendi(3000).then(function () { return 'nessuna risposta'; })]);
+          if (esito !== false) guai.push('«Annulla» ha risposto ' + esito);
+          w.showToast(nomeA + ' ' + nomeCat, 400);
+          if (box.textContent !== nomeA + ' ' + nomeCat || box.children.length) guai.push('l\'avviso non mostra il testo tale e quale');
+          if (eseguiti().length) guai.push('codice ESEGUITO: ' + eseguiti().join(', '));
+          await attendi(600);
+          return !guai.length || guai.join(' ‖ ');
+        });
+
+        // ── 10. esportazioni ──
+        await prova(S, 'esportazioni: nel CSV nessuna formula, nella scheda del telefono nessuna riga in più', function () {
+          var guai = [];
+          [['=HYPERLINK("http://example.invalid/?"&A2,"apri")', '"\'=HYPERLINK(""http://example.invalid/?""&A2,""apri"")"'], ['+39 06', '\'+39 06'], ['-1+1', '\'-1+1'], ['@SUM(1)', '\'@SUM(1)'], ['1234|5678', '1234|5678'], ['a,b', '"a,b"']].forEach(function (c) {
+            if (w.csvEscape(c[0]) !== c[1]) guai.push('CSV: «' + c[0] + '» diventa «' + w.csvEscape(c[0]) + '»');
+          });
+          var vc = w.buildVCard({ nome: 'Cardiologia\r\nTEL;TYPE=CELL:+39899000000\r\nEND:VCARD\r\nBEGIN:VCARD', categoria: 'REPARTI;A,B', numeri: NUM_BUONO + '|javascript:x|12 34', note: 'notte\r\nTEL:999|x|y' });
+          var righe = vc.split('\r\n');
+          if (righe.filter(function (r) { return /^TEL/.test(r); }).length !== 1) guai.push('scheda: righe TEL ' + righe.filter(function (r) { return /^TEL/.test(r); }).length + ' (attesa 1)');
+          if (righe.filter(function (r) { return r === 'BEGIN:VCARD'; }).length !== 1 || righe.filter(function (r) { return r === 'END:VCARD'; }).length !== 1) guai.push('scheda: più di una scheda nel file');
+          if (righe.length !== 7) guai.push('scheda: ' + righe.length + ' righe (attese 7)');
+          if (righe.indexOf('TEL;TYPE=WORK,notte TEL 999:' + NUM_BUONO) < 0) guai.push('scheda: riga del numero «' + righe.filter(function (r) { return /^TEL/.test(r); }).join(' / ') + '»');
+          return !guai.length || guai.join(' ‖ ');
+        });
+
+        // ── 11. il database dice di no ──
+        await prova(S, 'un numero con le virgolette è respinto dal database, e il messaggio è comprensibile (anche per < > e per un testo troppo lungo)', async function () {
+          var guai = [];
+          var casi = [
+            [{ nome: SEGNO_RUBRICA + ' respinto 1', categoria: '', numeri: '12"34', note: '' }, 'Il numero contiene caratteri non ammessi'],
+            [{ nome: SEGNO_RUBRICA + ' respinto 2 <b>', categoria: '', numeri: '1234', note: '' }, 'Il testo contiene caratteri non ammessi (< e >)'],
+            [{ nome: SEGNO_RUBRICA + ' respinto 3', categoria: '', numeri: new Array(302).join('1'), note: '' }, 'Testo troppo lungo']
+          ];
+          for (var i = 0; i < casi.length; i++) {
+            var errore = null;
+            try { await w.supaFetch('rubrica_contatti', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify(casi[i][0]) }); }
+            catch (e) { errore = e; }
+            if (!errore) { guai.push('caso ' + (i + 1) + ': il database ha ACCETTATO la riga'); continue; }
+            if (errore.stato !== 400 || errore.codice !== '23514') guai.push('caso ' + (i + 1) + ': risposta inattesa (HTTP ' + errore.stato + ', codice ' + errore.codice + ')');
+            var msg = w.messaggioErrore(errore);
+            if (msg !== casi[i][1]) guai.push('caso ' + (i + 1) + ': messaggio «' + msg + '»');
+            if (/constraint|violates|relation|rubrica_/i.test(msg)) guai.push('caso ' + (i + 1) + ': il messaggio riporta il testo del database');
+          }
+          // lo stesso rifiuto senza sapere che cosa era stato inviato: mai il testo grezzo
+          var cieco = new w.Error('new row for relation "rubrica_contatti" violates check constraint "qualunque"');
+          cieco.stato = 400; cieco.codice = '23514';
+          if (/constraint|violates|relation/i.test(w.messaggioErrore(cieco))) guai.push('senza i dati inviati il messaggio è il testo del database');
+          return !guai.length || guai.join(' ‖ ');
+        });
+
+        // ── 12. solo la rubrica ──
+        await prova(S, 'dalla rubrica non partono richieste verso altre tabelle o funzioni', async function () {
+          var quante = w.performance.getEntriesByType('resource').length, guai = [];
+          var percorsi = ['consegne?select=letto&limit=1', '../../functions/v1/google-token', 'rubrica_contatti/../consegne?select=letto', 'rpc/ping', 'rubrica_contatti?select=id#x', 'https://example.invalid/'];
+          for (var i = 0; i < percorsi.length; i++) {
+            var passata = false;
+            try { await w.supaFetch(percorsi[i]); passata = true; } catch (e) {}
+            if (passata) guai.push('«' + percorsi[i] + '» è stata accettata');
+          }
+          await attendi(400);
+          var partite = w.performance.getEntriesByType('resource').slice(quante).map(function (e) { return e.name; });
+          if (partite.length) guai.push('richieste partite: ' + partite.slice(0, 3).join(' , '));
+          return !guai.length || guai.join(' ‖ ');
+        });
+
+        // ── 13. memoria del browser ──
+        await prova(S, 'memoria del browser ostile: preferiti, tema e resti della rubrica di prima non diventano markup né richieste; nomi e numeri non restano sul disco', async function () {
+          window.__xss = [];
+          var ostile = '1"><img src=x onerror="' + tracciaDaCornice('r-ls') + '">';
+          localStorage.setItem('rubrica-preferiti', JSON.stringify([ostile, { a: 1 }, -5, 'abc', A.id, A.id]));
+          localStorage.setItem('rubrica-chiamati', 'non-json{' + ostile);
+          localStorage.setItem('rubrica-tema', ostile);
+          localStorage.setItem('rubrica-data', JSON.stringify([{ id: ostile, nome: ostile, categoria: ostile, numeri: ostile, note: ostile }]));
+          localStorage.setItem('rubrica-cats', JSON.stringify([{ id: ostile, nome: ostile, ordine: 1 }]));
+          localStorage.setItem('rubrica-ts', '1');
+          localStorage.setItem('rubrica-pending-writes', JSON.stringify([{ path: 'consegne?letto=eq.NESSUN-LETTO-DI-PROVA', options: { method: 'DELETE' }, ts: 1, attempts: 0 }]));
+          localStorage.setItem('rubrica-recent-searches', JSON.stringify([ostile]));
+          var fr = await cornice('rubrica/?cb=' + Date.now());
+          cornici.push(fr);
+          var x = fr.contentWindow, doc = x.document;
+          var card = await finche(function () { return schedaContatto(doc, A.id); }, 20000);
+          if (!card) return 'la rubrica nella cornice non ha disegnato i contatti';
+          await attendi(900);
+          var guai = [];
+          if (eseguiti().length) guai.push('codice ESEGUITO: ' + eseguiti().join(', '));
+          ['contactList', 'chips', 'searchSuggestions', 'installToast'].forEach(function (id) {
+            var el = doc.getElementById(id);
+            if (esche(el) || attributiNati(el).length) guai.push('#' + id + ': markup nato dalla memoria del browser');
+          });
+          if (['light', 'dark'].indexOf(doc.documentElement.getAttribute('data-theme')) < 0) guai.push('tema: «' + String(doc.documentElement.getAttribute('data-theme')).slice(0, 30) + '»');
+          var stelle = doc.querySelectorAll('.contact-fav-star').length;
+          if (!card.querySelector('.contact-fav-star') || stelle !== 1) guai.push('preferiti disegnati: ' + stelle + ' (atteso solo il contatto di prova)');
+          RESIDUI.forEach(function (k) { if (localStorage.getItem(k) !== null) guai.push('la chiave ' + k + ' è rimasta sul dispositivo'); });
+          var fuori = x.performance.getEntriesByType('resource').map(function (e) { return e.name; }).filter(function (u) { return /\/rest\/v1\//.test(u) && !/\/rest\/v1\/rubrica_/.test(u); });
+          if (fuori.length) guai.push('richieste fuori dalla rubrica: ' + fuori.slice(0, 3).join(' , '));
+          for (var i = 0; i < localStorage.length; i++) {
+            var k = localStorage.key(i);
+            if (k.indexOf('rubrica-') === 0 && /PROVA-AUTOMATICA|5550199/.test(localStorage.getItem(k) || '')) guai.push('la chiave ' + k + ' contiene nomi o numeri');
+          }
+          raccogliErrori(x);
+          return !guai.length || guai.join(' ‖ ');
+        });
+
+        // ── 14. uscita ──
+        await prova(S, 'all\'uscita dall\'app la rubrica viene svuotata: via le sue chiavi locali (restano tema e preferiti) e il contenuto del riquadro, che poi si riapre da capo', async function () {
+          var guai = [];
+          localStorage.setItem('rubrica-data', 'x'); localStorage.setItem('rubrica-chiamati', '[1]'); localStorage.setItem('rubrica-chiave-futura', 'x');
+          localStorage.setItem('rubrica-preferiti', '[2]'); localStorage.setItem('rubrica-tema', 'dark');
+          var chiaveSessione = 'sb-' + new URL(SUPABASE_URL).hostname.split('.')[0] + '-auth-token';
+          var sessionePrima = localStorage.getItem(chiaveSessione);
+          raccogliErrori(w);
+          window._rubricaSvuotaCopie();
+          w = null;
+          await attendi(800);
+          ['rubrica-data', 'rubrica-chiamati', 'rubrica-chiave-futura'].forEach(function (k) { if (localStorage.getItem(k) !== null) guai.push(k + ' è rimasta'); });
+          if (localStorage.getItem('rubrica-preferiti') !== '[2]' || localStorage.getItem('rubrica-tema') !== 'dark') guai.push('tema o preferiti sono stati toccati');
+          if (localStorage.getItem(chiaveSessione) !== sessionePrima) guai.push('è stata toccata la sessione dell\'app');
+          if (pannello.style.display !== 'none') guai.push('il riquadro è rimasto aperto');
+          var dentro = true;
+          try { dentro = !!cornicePannello.contentWindow.document.querySelector('.contact-card, #contactList'); } catch (e) {}
+          if (dentro) guai.push('nel riquadro c\'è ancora la rubrica');
+          window.apriRubrica();
+          w = await finche(function () {
+            var x = cornicePannello.contentWindow;
+            return (x && typeof x.loadData === 'function' && x.document.querySelector('.contact-card')) ? x : false;
+          }, 20000);
+          if (!w) guai.push('dopo lo svuotamento il riquadro non si riapre');
+          return !guai.length || guai.join(' ‖ ');
+        });
+      }
+    } finally {
+      cornici.forEach(function (c) { try { c.remove(); } catch (e) {} });
+      RESIDUI.concat(['rubrica-chiave-futura']).forEach(function (k) { try { localStorage.removeItem(k); } catch (e) {} });
+      PREFERENZE.forEach(function (k) { try { if (memoriaPrima[k] === null) localStorage.removeItem(k); else localStorage.setItem(k, memoriaPrima[k]); } catch (e) {} });
+      try { await pulisciDatabase(); } catch (e) {}
+      // il riquadro riparte da capo: senza i contatti di prova e con le preferenze di prima
+      try {
+        var ultima = cornicePannello.contentWindow;
+        if (ultima && typeof ultima.loadData === 'function') {
+          raccogliErrori(ultima);
+          ultima.__daRicaricare = true;
+          ultima.location.reload();
+          var nuova = await finche(function () {
+            var y = cornicePannello.contentWindow;
+            return (y && !y.__daRicaricare && typeof y.loadData === 'function' && y.document.querySelector('#contactList .contact-card, #contactList .ico')) ? y : false;
+          }, 20000);
+          await attendi(500);
+          raccogliErrori(nuova);
+        }
+      } catch (e) {}
+      try { if (!eraAperto) window.chiudiRubrica(); } catch (e) {}
+    }
+    await prova(S, 'tutto rimesso a posto: nessun contatto e nessuna categoria di prova, memoria del browser com\'era', async function () {
+      var c = await _q(_sb.from('rubrica_contatti').select('id').like('nome', SEGNO_RUBRICA + '%'));
+      var k = await _q(_sb.from('rubrica_categorie').select('id').like('nome', SEGNO_RUBRICA + '%'));
+      if (c.length || k.length) return 'righe di prova rimaste: ' + c.length + ' contatti, ' + k.length + ' categorie';
+      var diverse = PREFERENZE.filter(function (x) { return localStorage.getItem(x) !== memoriaPrima[x]; }).concat(RESIDUI.filter(function (x) { return localStorage.getItem(x) !== null; }));
+      return !diverse.length || ('chiavi non rimesse a posto: ' + diverse.join(', '));
+    });
+    await prova(S, 'nessun errore JavaScript e nessun blocco della regola CSP durante le prove della rubrica', function () {
+      var nuovi = (window.__erroriBanco || []).slice(erroriPrima).concat(erroriCornici);
+      return !nuovi.length || nuovi.slice(0, 5).join(' | ');
+    });
+  }
+
+  var SEZIONI = { ambiente: sezioneAmbiente, trak: sezioneTrak, xss: sezioneXss, mail: sezioneMail, rubrica: sezioneRubrica };
 
   window.__prove = async function (opz) {
     opz = opz || {};

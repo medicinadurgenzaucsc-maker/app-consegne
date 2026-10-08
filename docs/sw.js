@@ -8,9 +8,12 @@
 // v83: fix privacy — la cache non deve MAI contenere risposte Supabase/Google
 // (dati pazienti a riposo su disco). Il bump cancella anche le cache
 // precedenti che li contenevano (handler 'activate').
-var CACHE_NAME = 'consegne-v187';
+var CACHE_NAME = 'consegne-v188';
 
-// Asset statici da pre-cachare all'installazione
+// Asset statici da pre-cachare all'installazione.
+// La rubrica («Numeri Telefono») è una pagina dell'app: il riquadro la chiede
+// come cartella («rubrica/»), quindi in cache servono sia la cartella sia il
+// file. La rubrica non ha, e non deve avere, un service worker suo.
 var PRECACHE_ASSETS = [
   './',
   './index.html',
@@ -28,7 +31,11 @@ var PRECACHE_ASSETS = [
   './js/sanifica.js',
   './js/api.js',
   './js/app.js',
-  './js/app2.js'
+  './js/app2.js',
+  './rubrica/',
+  './rubrica/index.html',
+  './rubrica/app.css',
+  './rubrica/app.js'
 ];
 
 // Una risposta arrivata dopo un rinvio (su Cloudflare «print.html» viene

@@ -11,6 +11,7 @@
 //   http://localhost:8765/                  l'app (cartella docs/)
 //   http://localhost:8765/?sloggato         la stessa, senza sessione (prova di fumo)
 //   http://localhost:8765/?senzaFiltro      la stessa, senza la libreria del filtro HTML
+//   http://localhost:8765/rubrica/          la rubrica aperta DA SOLA: deve restare sul messaggio fisso
 //   http://localhost:8765/trak-finto/       il finto TrakCare
 //   http://localhost:8765/pagina/…          generatore e prove che girano dentro l'app
 //   /banco/cassaforte, /banco/posta         servono alle prove della mail (vedi sotto)
@@ -40,6 +41,8 @@ const MIME = {
   '.md': 'text/plain; charset=utf-8',
 };
 const SDK = /<script src="https:\/\/cdn\.jsdelivr\.net\/npm\/@supabase\/supabase-js@2\/dist\/umd\/supabase\.min\.js"><\/script>/;
+// Nella pagina della rubrica il raccoglitore degli errori va in testa, prima del foglio di stile.
+const TESTA_RUBRICA = /<link rel="stylesheet" href="app\.css">/;
 
 // Sessione di prova: firmata al bisogno e rinnovata quando sta per scadere.
 let sessione = null;
@@ -59,6 +62,20 @@ function avvio(chiave, valore) {
     + '  window.__erroriBanco = [];\n'
     + '  window.addEventListener("error", function (e) { window.__erroriBanco.push("UNCAUGHT: " + e.message); });\n'
     + '  window.addEventListener("unhandledrejection", function (e) { window.__erroriBanco.push("PROMISE: " + String((e.reason && e.reason.message) || e.reason)); });\n'
+    + '})();\n';
+}
+
+// La pagina della rubrica (docs/rubrica/) non ha una sessione sua: la chiede alla
+// pagina che la contiene. Dal banco riceve SOLO la raccolta degli errori, mai la
+// sessione (aperta da sola deve restare senza), e come file a parte: la sua
+// regola CSP non ammette script scritti in pagina. Fra gli errori finisce anche
+// ciò che quella regola ha bloccato (uno stile o un gestore in linea).
+function raccoglitore() {
+  return '// BANCO LOCALE: generato al volo, non esiste su disco. Solo raccolta degli errori.\n(function () {\n'
+    + '  window.__erroriBanco = [];\n'
+    + '  window.addEventListener("error", function (e) { window.__erroriBanco.push("UNCAUGHT: " + e.message); });\n'
+    + '  window.addEventListener("unhandledrejection", function (e) { window.__erroriBanco.push("PROMISE: " + String((e.reason && e.reason.message) || e.reason)); });\n'
+    + '  document.addEventListener("securitypolicyviolation", function (e) { window.__erroriBanco.push("CSP: " + e.violatedDirective + " " + (e.blockedURI || "") + " " + String(e.sample || "").slice(0, 60)); });\n'
     + '})();\n';
 }
 
@@ -86,6 +103,8 @@ http.createServer(async (req, res) => {
         return rispondi(res, 200, MIME['.js'], avvio(chiave, null) + 'console.error("banco: sessione di prova non disponibile");\n');
       }
     }
+
+    if (percorso === '/banco-errori.js') return rispondi(res, 200, MIME['.js'], raccoglitore());
 
     // Prove della mail: la cassaforte del collaudo passa alle credenziali finte
     // (e torna com'era alla fine), e il finto Google dice che cosa ha «spedito».
@@ -124,6 +143,11 @@ http.createServer(async (req, res) => {
     const montaggio = MONTAGGI.find((m) => percorso.startsWith(m[0]));
     if (percorso.endsWith('/')) percorso += 'index.html';
     const file = path.normalize(path.join(montaggio[1], percorso.slice(montaggio[0].length)));
+    // Una cartella chiesta senza la barra finale («/rubrica»): rinvio alla cartella, come fanno GitHub e Cloudflare.
+    if (file.startsWith(montaggio[1] + path.sep) && fs.existsSync(file) && fs.statSync(file).isDirectory() && fs.existsSync(path.join(file, 'index.html'))) {
+      res.writeHead(301, { Location: url.pathname + '/' + url.search, 'Cache-Control': 'no-store' });
+      return res.end();
+    }
     if (!file.startsWith(montaggio[1] + path.sep) || !fs.existsSync(file) || !fs.statSync(file).isFile()) {
       return rispondi(res, 404, 'text/plain; charset=utf-8', 'non trovato');
     }
@@ -131,7 +155,12 @@ http.createServer(async (req, res) => {
     // Solo le pagine dell'app ricevono l'avvio del banco, subito prima dell'SDK.
     if (est === '.html' && montaggio[0] === '/') {
       const html = fs.readFileSync(file, 'utf8');
-      if (!SDK.test(html)) console.log('ATTENZIONE: in ' + path.basename(file) + ' non trovo il tag dell\'SDK Supabase: pagina servita senza sessione di prova');
+      const relativo = path.relative(montaggio[1], file).split(path.sep).join('/');
+      if (relativo.indexOf('rubrica/') === 0) {
+        if (!TESTA_RUBRICA.test(html)) console.log('ATTENZIONE: in ' + relativo + ' non trovo il foglio di stile app.css: pagina servita senza raccolta degli errori');
+        return rispondi(res, 200, MIME[est], html.replace(TESTA_RUBRICA, (tag) => '<script src="/banco-errori.js"></script>\n  ' + tag));
+      }
+      if (!SDK.test(html)) console.log('ATTENZIONE: in ' + relativo + ' non trovo il tag dell\'SDK Supabase: pagina servita senza sessione di prova');
       const sloggato = url.searchParams.has('sloggato') ? '?sloggato' : '';
       let pagina = html.replace(SDK, (tag) => '<script src="/banco-avvio.js' + sloggato + '"></script>\n  ' + tag);
       // ?senzaFiltro: la pagina arriva senza la libreria del filtro dell'HTML,

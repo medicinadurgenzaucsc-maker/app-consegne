@@ -4676,6 +4676,16 @@
         // 500ms per il rientro del fuoco nella card).
         if (document.getElementById('labModalOverlay')) return;
         if (Date.now() - (window._labModalChiusoTs || 0) < 500) return;
+        // ⚠ CRITICO #5: riquadro RUBRICA («Numeri Telefono»). Sta sopra il focus
+        // mode e resta usabile con una scheda in modifica. Un clic dentro la sua
+        // cornice porta il fuoco sull'iframe, fuori dalla card, e il mousedown
+        // NON arriva a questo documento: _lastMousedownInCard conserverebbe il
+        // valore del clic precedente e l'esito sarebbe casuale. Finché il fuoco
+        // sta nella cornice della rubrica il focus mode resta aperto; quando il
+        // riquadro si chiude (chiudiRubrica) il fuoco torna nella card, con la
+        // stessa grace di 500ms del laboratorio. Resta il timer di inattività.
+        if (document.activeElement && document.activeElement.id === 'rubricaIframe') return;
+        if (Date.now() - (window._rubricaChiusaTs || 0) < 500) return;
         if (_lastMousedownInCard) return;
         var active = document.activeElement;
         if (_focusCard && !_focusCard.contains(active)) {
@@ -5155,7 +5165,7 @@
             <li>
               <span class="dropdown-item-text d-block px-3" style="font-family:monospace;font-size:0.75rem;color:#546e7a;line-height:1.3;">
                 <i class="bi bi-tag me-1"></i>Versione applicazione:<br>
-                <strong id="navVersioneApp" class="ms-1" style="color:#263238;">187</strong>
+                <strong id="navVersioneApp" class="ms-1" style="color:#263238;">188</strong>
               </span>
             </li>
             <!-- Uscita: chiude la sessione solo su questo dispositivo (_esciSessione) -->
@@ -6291,6 +6301,8 @@
         try { localStorage.removeItem('sb-' + new URL(SUPABASE_URL).hostname.split('.')[0] + '-auth-token'); } catch(e) {}
         try { localStorage.removeItem('appSession'); } catch(e) {}
         try { if (typeof window._snapshotSvuota === 'function') window._snapshotSvuota(); } catch(e) {}
+        // La rubrica: via le sue chiavi locali e il contenuto del riquadro (nomi e numeri in memoria)
+        try { if (typeof window._rubricaSvuotaCopie === 'function') window._rubricaSvuotaCopie(); } catch(e) {}
         try { google.accounts.id.disableAutoSelect(); } catch(e) {}
         location.reload();
       }
@@ -6908,7 +6920,7 @@
           cursor:pointer;line-height:1;padding:0 2px;opacity:0.85;
       " title="Chiudi">&times;</button>
     </div>
-    <!-- Iframe rubrica -->
+    <!-- Cornice della rubrica: la pagina docs/rubrica/, caricata alla prima apertura -->
     <iframe
       id="rubricaIframe"
       src=""
@@ -6923,19 +6935,73 @@
     var panel = document.getElementById('rubricaPanel');
     var header = document.getElementById('rubricaPanelHeader');
     var iframe = document.getElementById('rubricaIframe');
-    var RUBRICA_URL = 'https://medicinadurgenzaucsc-maker.github.io/rubrica-gemelli/';
+    // La rubrica è una pagina dell'app (docs/rubrica/): stessa origine, e i dati
+    // li prende dal database delle consegne con la sessione di questa pagina
+    // (glieli chiede lei: SUPABASE_URL, SUPABASE_ANON_KEY, _sb). Indirizzo
+    // relativo e con la barra finale: su Cloudflare «rubrica/index.html»
+    // risponderebbe con un rinvio. Niente «sandbox» sulla cornice.
+    var RUBRICA_URL = 'rubrica/';
     var _rubricaCaricata = false;
+    var _rubricaUltimoCampo = null;   // ultimo campo col fuoco in una scheda in modifica
 
     window.apriRubrica = function() {
       if (!_rubricaCaricata) {
         iframe.src = RUBRICA_URL;
         _rubricaCaricata = true;
+      } else {
+        // A ogni riapertura la rubrica ricontrolla, con una lettura minima, se un
+        // altro PC l'ha modificata (i contatti li tiene solo in memoria).
+        try {
+          var w = iframe.contentWindow;
+          if (w && typeof w.rubricaAllApertura === 'function') w.rubricaAllApertura();
+        } catch(e) {}
       }
       panel.style.display = 'flex';
     };
 
+    // Regola del fuoco: nascondere una cornice che ha il fuoco lo lascia su
+    // <body>, e con una scheda in modifica il listener focusout chiuderebbe il
+    // focus mode. Il fuoco torna sul campo della scheda da cui era partito.
+    document.addEventListener('focusin', function(e) {
+      var t = e.target;
+      if (t && t.closest && t.closest('.patient-card.focus-mode')) _rubricaUltimoCampo = t;
+    });
     window.chiudiRubrica = function() {
+      var avevaFuoco = (document.activeElement === iframe);
+      window._rubricaChiusaTs = Date.now();   // grace per il listener focusout
       panel.style.display = 'none';
+      if (!avevaFuoco) return;
+      var card = document.querySelector('.patient-card.focus-mode');
+      if (!card) return;
+      var campo = (_rubricaUltimoCampo && card.contains(_rubricaUltimoCampo)) ? _rubricaUltimoCampo : card.querySelector('[contenteditable="true"]');
+      if (campo) { try { campo.focus({ preventScroll: true }); } catch(e) { try { campo.focus(); } catch(e2) {} } }
+    };
+
+    // ── Uscita dall'applicazione (la chiama _esciSessione) ────────────
+    // Nomi e numeri la rubrica li tiene solo in memoria, dentro la cornice: qui
+    // la cornice viene svuotata, e dal dispositivo si tolgono le chiavi locali
+    // «rubrica-…», comprese quelle lasciate dalla rubrica di prima, che teneva
+    // una copia dei contatti (anche in una cache sua). Restano le sole
+    // preferenze senza dati: il tema e gli identificativi dei preferiti.
+    var RUBRICA_CHIAVI_CHE_RESTANO = ['rubrica-tema', 'rubrica-preferiti'];
+    window._rubricaSvuotaCopie = function() {
+      try {
+        var daTogliere = [];
+        for (var i = 0; i < localStorage.length; i++) {
+          var k = localStorage.key(i);
+          if (k && k.indexOf('rubrica-') === 0 && RUBRICA_CHIAVI_CHE_RESTANO.indexOf(k) < 0) daTogliere.push(k);
+        }
+        daTogliere.forEach(function(k) { try { localStorage.removeItem(k); } catch(e) {} });
+      } catch(e) {}
+      try {
+        if (window.caches) caches.keys().then(function(nomi) {
+          nomi.forEach(function(n) { if (n.indexOf('rubrica-') === 0) caches.delete(n); });
+        }).catch(function() {});
+      } catch(e) {}
+      try { panel.style.display = 'none'; } catch(e) {}
+      try { iframe.src = 'about:blank'; } catch(e) {}
+      _rubricaCaricata = false;
+      _rubricaUltimoCampo = null;
     };
 
     // ── Drag ──────────────────────────────────────────────────────

@@ -57,6 +57,12 @@ sul progetto di collaudo, poi identiche in produzione.
 - **Pazienti**: 28 letti come il reparto, 24 occupati da pazienti inventati,
   generati facendo girare le funzioni vere dell'app (`generatore-pazienti.js`).
   Nessuna riga di pazienti veri è mai stata copiata.
+- **Rubrica** («Numeri Telefono»): le tabelle `rubrica_categorie`,
+  `rubrica_contatti` e `rubrica_versione`, con le loro due funzioni. Nel
+  collaudo ci vanno solo contatti **inventati**: la rubrica vera contiene nomi
+  e numeri del personale e non si copia. Finché le stesse tabelle non esistono
+  in produzione, `clona-struttura.js confronta` le mostra come differenza:
+  è attesa, e non vanno messe fra quelle «solo collaudo».
 - **In più rispetto alla produzione**, per scelta: la funzione di RLS
   automatica (`rls_auto_enable`), la tabella `posta_simulata`, la funzione
   `google-finto` che sta fra `google-token` e Google, le variabili `GOOGLE_*`
@@ -113,6 +119,7 @@ node collaudo/strumenti/banco.js 8765
 | `http://localhost:8765/` | l'app (cartella `docs/`), collegata al collaudo con l'utente fittizio |
 | `http://localhost:8765/?sloggato` | la stessa, senza sessione: è la **prova di fumo** |
 | `http://localhost:8765/?senzaFiltro` | la stessa, come se la libreria del filtro dell'HTML non si fosse caricata: deve comparire l'avviso a tutto schermo e nessuna scheda |
+| `http://localhost:8765/rubrica/` | la rubrica aperta **da sola**: deve restare sul messaggio fisso («La rubrica si apre dal menu…») senza chiedere nulla al database |
 | `http://localhost:8765/trak-finto/` | il finto TrakCare |
 
 Nel banco il service worker è spento e nessun file viene copiato o modificato.
@@ -135,12 +142,27 @@ Dentro la pagina dell'app si caricano, dalla console, gli script di
 | `trak` | i due segnalibri veri, eseguiti sul finto TrakCare, leggono ciò che il catalogo descrive; reimportare non cambia nulla; giorni simulati |
 | `xss` | ciò che arriva da fuori (indirizzo, righe del database, backup, memoria del browser) non diventa mai codice né markup attivo; i contenuti leciti restano identici; senza filtro l'app si ferma |
 | `mail` | «Impostazioni email» (mittente precompilato, convalida, registro); senza i permessi del mittente la procedura di invio non compare e vengono chiesti; il consenso di un altro account è rifiutato; il mittente è mostrato e non modificabile; annullare la conferma riporta alla procedura com'era; se il mittente cambia a finestra aperta la mail non parte; risposte anomale del server; il client secret si inserisce e si cambia da «Impostazioni email» a campo sempre vuoto, uno sbagliato viene respinto e richiesto, primo avvio in due passi |
+| `rubrica` | la rubrica «Numeri Telefono» (`docs/rubrica/`): aperta da sola non chiede nulla al database; con la sola chiave pubblica non si legge e non si scrive nulla; contatti e categorie ostili (ma ammessi dai vincoli) compaiono tali e quali in elenco, ricerca, finestre e conferme, senza che nulla venga eseguito; solo un numero fatto di cifre è un collegamento; un numero con le virgolette è respinto dal database con un messaggio comprensibile; memoria del browser ostile; all'uscita la rubrica viene svuotata |
 
 La sezione `xss` scrive sul letto libero «5», crea e cancella righe di prova
 (un letto, una tipologia, due backup, due link) e alla fine rimette tutto
 com'era. Per essere sicuri che le prove misurino davvero, le si rilancia dopo
 aver neutralizzato a mano una protezione (`window._testoHtml = String` oppure
 `window._pulisciHtml = String`): devono fallire.
+
+La sezione `rubrica` scrive in `rubrica_contatti` e `rubrica_categorie` righe
+il cui nome comincia con `PROVA-AUTOMATICA`, apre il riquadro vero e alla fine
+toglie le sue righe e rimette le preferenze del browser com'erano. La pagina
+della rubrica dal banco riceve solo la raccolta degli errori
+(`/banco-errori.js`, un file a parte perché la sua regola CSP non ammette script
+scritti in pagina), mai la sessione: quella la chiede alla pagina dell'app.
+Fra gli errori raccolti c'è anche ciò che la regola CSP ha bloccato. La
+controprova, a riquadro aperto:
+`document.getElementById('rubricaIframe').contentWindow.esc = String`, poi di
+nuovo le prove: devono fallire. Resta da provare **a mano** (nel pannello
+automatico il fuoco non è affidabile): scheda in modifica, «Numeri Telefono»
+aperto, un clic nella ricerca della rubrica non deve chiudere la modifica, e
+chiudendo il riquadro il fuoco torna nella scheda.
 
 La sezione `mail` gira con le credenziali finte: il banco (`/banco/cassaforte`)
 mette da parte il consenso vero e lo rimette alla fine, e al posto della
@@ -157,6 +179,10 @@ collaudo pubblicato, dove il service worker è attivo):
 2. `…/?toast=info&msg=%3Cimg%20src%3Dx%20onerror%3D%22alert(document.domain)%22%3E`:
    non deve aprirsi alcuna finestra; a utente collegato il messaggio compare
    nel toast come testo, tale e quale.
+3. `…/rubrica/` aperta da sola in una scheda: solo il messaggio «La rubrica si
+   apre dal menu “Numeri Telefono” dell'app», console pulita, nessuna richiesta
+   verso Supabase. Poi dall'app, a utente collegato: «Numeri Telefono» mostra i
+   contatti e la console resta pulita (nessun avviso della regola CSP).
 
 ## Service worker: banco e prove
 
@@ -402,6 +428,8 @@ pubblica, con l'informativa sull'accesso, su `gistech2026.github.io/collaudo/`.
 
 - Mai copiare nel collaudo righe di pazienti veri, nemmeno anonimizzate: il
   testo libero identifica comunque.
+- Mai copiare nel collaudo la rubrica vera (nomi e numeri del personale): solo
+  contatti inventati.
 - Dagli strumenti la produzione si legge soltanto.
 - Il repository di collaudo non ha segreti: i due workflow sono attivi solo nel
   repository di produzione.
