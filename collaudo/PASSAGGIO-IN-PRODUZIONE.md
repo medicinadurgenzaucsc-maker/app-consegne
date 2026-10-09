@@ -600,6 +600,17 @@ accettano l'ambiente come primo argomento.
 - **Rubrica dentro l'app**: tabelle e contatti in produzione, versione 189
   pubblicata dal repository privato (prima pubblicazione fatta tutta dal
   flusso di Cloudflare, avviso compreso).
-- **Restano**: lo spegnimento della rubrica di prima (repository, sito,
-  database); il passaggio dei dispositivi al nuovo indirizzo; le voci della
-  fase C; rifare dopo qualche giorno `verifica-chiusura.js produzione --archivi`.
+- **Rubrica di prima**: spenta il 09/10/2026 alle 08:50, su ordine di
+  Stefano: repository `rubrica-gemelli` privato (sito spento), flusso
+  Keepalive spento, database in pausa. Da estraneo sei prove su sei chiuse.
+  Nulla è stato cancellato: la cancellazione definitiva la fa Stefano.
+- **Notte del passaggio**: quattro PC del reparto hanno ricaricato da soli
+  fra le 04:03 e le 04:08 e sono arrivati al sito nuovo dalla rete
+  dell'ospedale, passando da soli il cancello di Cloudflare; si sono fermati
+  sul pulsante «Accedi con Google» dell'app finché qualcuno non l'ha premuto.
+- **Il repository `app-consegne-sorgente` non si cancella**: è privato, e lì
+  girano la pubblicazione su Cloudflare, l'avviso ai PC e il Keepalive del
+  database del reparto. Anche la pagina di rinvio vive su GitHub.
+- **Restano**: il passaggio degli ultimi dispositivi al nuovo indirizzo; le
+  voci della fase C; rifare dopo qualche giorno
+  `verifica-chiusura.js produzione --archivi`.
