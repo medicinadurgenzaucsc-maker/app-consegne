@@ -74,7 +74,7 @@ const REGOLE = [
 ];
 const FLUSSO = 'pubblica-cloudflare.yml';
 // Se cambia uno di questi, il sito pubblicato su Cloudflare non è più quello del ramo.
-const DEL_SITO = /^(docs\/|[.]github\/compressione\/|[.]github\/pubblicazione\/|[.]github\/workflows\/pubblica-cloudflare[.]yml$|collaudo\/strumenti\/prepara-sito[.]js$)/;
+const DEL_SITO = /^(docs\/|reparti\/|[.]github\/compressione\/|[.]github\/pubblicazione\/|[.]github\/workflows\/pubblica-cloudflare[.]yml$|collaudo\/strumenti\/(prepara-sito|reparti)[.]js$)/;
 const attendi = (ms) => new Promise((r) => setTimeout(r, ms));
 const secondi = (t0) => ((Date.now() - t0) / 1000).toFixed(1) + ' s';
 
@@ -482,6 +482,15 @@ if (comando !== 'stato') {
   catch (e) { console.log('ERRORE: ' + pulito(e.message)); process.exit(1); }
 }
 console.log('ambiente: ' + ARG.ambiente + ' | proprietario su GitHub: ' + UTENTE + ' | remoto di questa cartella: ' + REMOTO);
+// Dalla v190 docs/ è il sito di UN reparto (quello che pubblica da lì, oggi la 11N): il suo js/ambiente.js
+// non ammette altri indirizzi. Dove GitHub Pages servisse docs/ da un altro account, le pagine arrivano ma
+// l'app si ferma su «Indirizzo non riconosciuto». Solo un avviso: non cambia ciò che lo strumento fa.
+try {
+  const rep = require('./reparti.js');
+  if (!rep.hostAmmesso(rep.delSitoInDocs(), UTENTE.toLowerCase() + '.github.io')) {
+    console.log('NOTA: docs/ è il sito del reparto «' + rep.delSitoInDocs().codice + '». Da ' + UTENTE.toLowerCase() + '.github.io le sue pagine arrivano, ma l\'app si ferma su «Indirizzo non riconosciuto»: qui sotto «app» vuol dire soltanto che GitHub Pages serve le pagine.');
+  }
+} catch (e) {}
 if (AMB.produzione && comando !== 'stato' && !ARG.confermato) {
   console.log('In PRODUZIONE «' + comando + '» cambia i repository del reparto: va lanciato con ' + ghApi.CONFERMA + ', e solo con l\'ok di chi gestisce l\'app.');
   process.exit(1);

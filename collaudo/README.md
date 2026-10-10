@@ -11,12 +11,19 @@ solo il database a cui il sito si collega.
 | Progetto Supabase  | `ifmmcvxzhwdkmzhsxcvb`                                  | `rqvohwpthhumydpbwktq`                       |
 | Mail dimissioni    | parte davvero (dal mittente scelto in «Impostazioni email») | parte davvero solo fra indirizzi di prova; simulata nelle prove automatiche |
 
-Il sito sceglie il database dal nome host (`_AMBIENTI` in `docs/js/api.js`):
-ogni ambiente elenca i propri indirizzi. Sono di collaudo `gistech2026.github.io`,
-`localhost` e il sito su Cloudflare `consegne-collaudo.pages.dev` con le sue
-anteprime. Un indirizzo che non sta in nessun elenco non è un ambiente: lì l'app
-non parte e mostra «Indirizzo non riconosciuto», quindi un sito nuovo va
-aggiunto all'elenco giusto prima di essere usato. Una cornice arancione con «COLLAUDO — DATI FITTIZI»
+Chi è un sito lo dice `js/ambiente.js`, generato dal file del suo reparto
+(`reparti/<codice>.json`, vedi `reparti/README.md`): i suoi indirizzi, il suo
+database. Sono di collaudo `gistech2026.github.io`, `localhost` e il sito su
+Cloudflare `consegne-collaudo.pages.dev` con le sue anteprime. Un indirizzo che
+non sta fra quelli del sito non è un ambiente: lì l'app non parte e mostra
+«Indirizzo non riconosciuto», quindi **un indirizzo nuovo si aggiunge al campo
+`host` del file del reparto** prima di essere usato (per la 11N poi
+`node collaudo/strumenti/reparti.js scrivi`). La tabella `_AMBIENTI` rimasta in
+`docs/js/api.js` è solo la riserva della versione 190: non si tocca.
+`docs/` è il sito della 11N: servita così com'è da un altro indirizzo (un
+server locale, o GitHub Pages dell'account di collaudo dopo un «annulla» dello
+scambio) le pagine arrivano ma l'app si ferma su «Indirizzo non riconosciuto».
+Una cornice arancione con «COLLAUDO — DATI FITTIZI»
 segnala l'ambiente, anche in stampa. Ogni database dichiara chi è nella riga
 `AMBIENTE` di `impostazioni`: se sito e database non concordano l'app si ferma.
 
@@ -81,13 +88,14 @@ repository non c'è alcun segreto.
 
 | Script | A cosa serve |
 |---|---|
-| `sb.js` | Accesso ai due database: `collaudo()` legge e scrive solo sul progetto di collaudo, `produzione()` è in **sola lettura**. |
+| `sb.js` | Accesso ai due database: `collaudo()` legge e scrive solo sul progetto di collaudo, `produzione()` è in **sola lettura**; `per(nome)` dà quello giusto dal codice di un reparto. |
+| `reparti.js [mostra <codice>\|controlla\|scrivi]` | I reparti (`reparti/<codice>.json`): li elenca e li convalida, stampa il file `js/ambiente.js` di un reparto, controlla o riscrive `docs/js/ambiente.js` (che è sempre quello della 11N). Il codice di un reparto vale da nome d'ambiente in tutti gli strumenti: `gemelli-11n` è `produzione`. Schema in `reparti/README.md`. |
 | `clona-struttura.js ddl\|applica\|confronta` | Ricostruisce la struttura della produzione nel collaudo e ne verifica l'identità. |
 | `copia-config.js` | Ricopia la configurazione non personale. |
 | `confronta-forme.js` | Confronta la forma dei contenuti (tag e classi, mai il testo) fra i due ambienti. |
 | `gettone-prova.js [ore] [cartella]` | Token di sessione per l'utente fittizio delle prove automatiche (vale solo nel collaudo). |
 | `banco-sw.js [porta]` | Banco del service worker: il sito servito come farebbero Cloudflare Pages o GitHub Pages, col service worker acceso e i guasti simulati (vedi «Service worker: banco e prove»). |
-| `prepara-sito.js [cartella] [compressa]` | Elenca (o copia in una cartella) i soli file del sito; con `compressa` ne produce la copia compressa, la forma pubblicata su Cloudflare, e la controlla. |
+| `prepara-sito.js [cartella] [compressa] [--reparto <codice>]` | Elenca (o copia in una cartella) i soli file del sito, **per un reparto**: genera il suo `js/ambiente.js` e controlla che nel sito non ci siano dati di un altro reparto. Senza `--reparto` è il sito di `docs/` così com'è (la 11N). Con `compressa` ne produce la copia compressa, la forma pubblicata su Cloudflare, e la controlla. La cartella viene svuotata: può essere solo `_sito` o una sua sottocartella. |
 | `prepara-rinvio.js <nuovo indirizzo> [cartella]` | Genera i file della pagina di rinvio (ciò che resta al vecchio indirizzo quando il sito si sposta), dai modelli in `rinvio/`. |
 | `scambio-repository.js <ambiente> stato\|prepara\|scambia\|annulla` | Prova generale dello scambio dei repository nel collaudo: sorgente in un repository privato, al vecchio nome solo la pagina di rinvio (vedi «Pubblicazione su Cloudflare»). |
 | `pubblicazione.js [ambiente] [avvia]` | Segue il flusso «Pubblica su Cloudflare» del repository di collaudo fino alla fine, ne mostra i passi e controlla che l'avviso ai PC sia arrivato in `app_version`; con `avvia` lo fa ripartire a mano sullo stesso commit. Non scrive nel database. |
@@ -127,6 +135,14 @@ node collaudo/strumenti/banco.js 8765
 | `http://localhost:8765/trak-finto/` | il finto TrakCare |
 
 Nel banco il service worker è spento e nessun file viene copiato o modificato.
+Un file solo non è quello di `docs/`: `js/ambiente.js`. Quello nel repository è
+della 11N e non ammette `localhost`; il banco serve al suo posto quello del
+reparto di collaudo, generato in memoria da `reparti/collaudo.json`. Per le
+prove sa servire anche file d'ambiente **finti** (mai quello di un reparto
+vero): `?ambiente=senza` toglie il tag dalla pagina, come una pagina della
+versione di prima; `assente`, `sintassi` e `nullo` fingono un file che non
+arriva; `rotto`, `altro-sito` e `discorde` un file sbagliato, davanti al quale
+l'app deve fermarsi.
 Con `node collaudo/strumenti/banco.js 8767 compressa` il banco serve invece la
 **copia compressa** del sito, quella pubblicata su Cloudflare, preparata
 all'avvio in `_sito/banco`: dopo una modifica a `docs/` va riavviato. Le prove
@@ -244,7 +260,7 @@ rinvia ogni richiesta a un altro sito. Sa anche servire la versione oggi in
 produzione (`origin/master`), per provare il passaggio da quella alla versione
 di lavoro.
 
-Dalla pagina `http://localhost:8766/prove/`: `await window.__proveSw()`, 54
+Dalla pagina `http://localhost:8766/prove/`: `await window.__proveSw()`, 56
 prove nei due stili (`window.__avanzamentoSw()` dice a che punto è). Vanno
 rilanciate a ogni modifica di `docs/sw.js` o dell'elenco dei file del sito.
 Otto riguardano la cornice della rubrica: davanti a un guasto del sito la
@@ -253,13 +269,18 @@ di accesso la cornice deve ricevere la copia in cache invece del rinvio (che
 in una cornice non porterebbe da nessuna parte).
 
 **Controprova**: `await window.__proveSw({ versione: 'produzione' })` esegue le
-stesse prove sul service worker della v181, che davanti a un 404 mostra
-l'errore e lo salva in cache. Devono fallire (25 su 36, misurate allora: la
-controprova conta su una produzione più vecchia del service worker di lavoro, e
-le prove sulla cornice della rubrica falliscono finché la produzione non ha la
-rubrica): se passano, le prove non stanno misurando.
+stesse prove sul service worker di `origin/master`. Finché la produzione era la
+v181, che davanti a un 404 mostrava l'errore e lo salvava in cache, dovevano
+fallire (25 su 36, misurate allora). **Dalla v187 in produzione c'è il service
+worker nuovo e la controprova passa anche lei**: non dice più se le prove
+misurano. Chi ne ha bisogno la rifà contro un commit vecchio.
 
-`await window.__proveSw({ versione: 'compressa' })` esegue le 54 prove sulla
+Il sito del banco è quello del reparto di collaudo: `js/ambiente.js` è generato
+in memoria (anche per la versione in produzione, quando ha il file), e ogni
+pagina arrivata deve anche riconoscere il proprio indirizzo. Senza, le prove
+passerebbero su un'app ferma su «Indirizzo non riconosciuto».
+
+`await window.__proveSw({ versione: 'compressa' })` esegue le 56 prove sulla
 copia compressa del sito: è la forma in cui il service worker arriva ai PC da
 Cloudflare.
 

@@ -84,7 +84,12 @@ function stampa(nome, inv) {
 }
 
 (async () => {
-  const quale = (process.argv[2] || 'entrambi').toLowerCase();
+  // «entrambi» (o nessun nome), oppure un ambiente o un reparto («gemelli-11n» è la produzione)
+  const scritto = (process.argv[2] && process.argv[2].indexOf('--') !== 0) ? process.argv[2].toLowerCase() : 'entrambi';
+  const quale = scritto === 'entrambi' ? scritto : require('./reparti.js').nomeStorico(scritto);
+  if (!quale) { console.log('ambiente sconosciuto: ' + scritto + ' (entrambi, collaudo, produzione o il codice di un reparto)'); process.exitCode = 2; return; }
+  const fuoriPosto = process.argv.slice(2).filter((x, i, tutti) => i > 0 && x.indexOf('--') !== 0 && tutti[i - 1] !== '--json');
+  if (fuoriPosto.length) { console.log('argomento fuori posto: «' + fuoriPosto[0] + '» (il nome dell\'ambiente va scritto per primo, subito dopo il nome dello strumento)'); process.exitCode = 2; return; }
   const fileJson = process.argv.indexOf('--json') >= 0 ? process.argv[process.argv.indexOf('--json') + 1] : null;
   const esito = {};
   if (quale !== 'collaudo') { esito.produzione = await inventario(produzione().leggi); stampa('produzione', esito.produzione); }

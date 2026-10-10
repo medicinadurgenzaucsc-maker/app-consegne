@@ -163,7 +163,14 @@ async function autoprova(R) {
 
 (async () => {
   if (process.argv.indexOf('--autoprova') >= 0) { process.exitCode = (await autoprova(regoleDelFiltro())) ? 1 : 0; return; }
-  const quale = (process.argv[2] || 'collaudo').toLowerCase();
+  // Senza nome vale il collaudo; un nome scritto deve essere quello di un ambiente o di un reparto
+  // («gemelli-11n» è la produzione): prima un nome sconosciuto finiva sul collaudo senza dirlo.
+  const scritto = (process.argv[2] && process.argv[2].indexOf('--') !== 0) ? process.argv[2] : 'collaudo';
+  const quale = require('./reparti.js').nomeStorico(scritto);
+  if (!quale) { console.log('ambiente sconosciuto: ' + scritto + ' (collaudo, produzione o il codice di un reparto)'); process.exitCode = 2; return; }
+  // «--backup 60 produzione»: il nome scritto dopo l'opzione veniva ignorato e si leggeva il collaudo
+  const fuoriPosto = process.argv.slice(2).filter((x, i, tutti) => i > 0 && x.indexOf('--') !== 0 && tutti[i - 1] !== '--backup');
+  if (fuoriPosto.length) { console.log('argomento fuori posto: «' + fuoriPosto[0] + '» (il nome dell\'ambiente va scritto per primo, subito dopo il nome dello strumento)'); process.exitCode = 2; return; }
   const iB = process.argv.indexOf('--backup');
   const nBackup = iB >= 0 ? Number(process.argv[iB + 1]) : 30;
   const leggi = quale === 'produzione' ? produzione().leggi : collaudo().query;

@@ -26,8 +26,9 @@ const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
 const attendi = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const argomenti = process.argv.slice(2);
-const nomeAmbiente = argomenti[0];
-const amb = AMBIENTI[nomeAmbiente];
+// anche il codice di un reparto: «gemelli-11n» è la produzione
+const nomeAmbiente = require('./reparti.js').nomeStorico(argomenti[0]);
+const amb = nomeAmbiente ? AMBIENTI[nomeAmbiente] : null;
 if (!amb) { console.log('uso: verifica-chiusura.js collaudo|produzione [indirizzo del sito nuovo] [--archivi]'); process.exit(2); }
 const O = amb.proprietario;
 // l'indirizzo del sito nuovo, sempre con la barra finale
@@ -65,7 +66,7 @@ function nomiDelloZip(b) {
   return nomi.filter((x) => !x.endsWith('/')).map((x) => x.split('/').slice(1).join('/'));
 }
 const soloRinvio = (nomi) => nomi.length > 0 && nomi.every((x) => FILE_RINVIO.includes(x));
-const codiceApp = (t) => /navVersioneApp|_AMBIENTI|supabaseAnonKey/.test(t);
+const codiceApp = (t) => /navVersioneApp|_AMBIENT[EI]|supabaseAnonKey/.test(t);
 // una richiesta che non ha avuto risposta: rete assente, nome non risolto, limite di richieste
 const senzaRisposta = (r) => !!(r.limite || r.stato === 0);
 

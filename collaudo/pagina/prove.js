@@ -132,6 +132,103 @@
       if (!r || r.valore !== 'collaudo') return 'riga AMBIENTE = ' + JSON.stringify(r);
       return !document.getElementById('bloccoAmbiente') || 'è comparso il blocco d\'ambiente';
     });
+    // ── chi è questo sito lo dice js/ambiente.js (dalla v190) ──
+    // Senza queste prove tutto il resto passerebbe anche se il file non
+    // arrivasse mai: l'app partirebbe dalla tabella di riserva senza dirlo.
+    var FILE = window._AMBIENTE;
+    var detto = function (file, host) { var e = _ambienteEsame(file, host); return e.esito ? e.esito.ambiente + '/' + e.esito.origine : 'fermo:' + e.motivo; };
+    await prova(S, 'l\'ambiente viene da js/ambiente.js, ed è quello del reparto di collaudo', function () {
+      if (typeof _AMB === 'undefined' || !_AMB) return 'manca _AMB';
+      if (_AMB.origine !== 'file') return 'origine «' + _AMB.origine + '»: la pagina è partita dalla tabella di riserva, js/ambiente.js non è stato caricato';
+      if (!FILE || FILE.codice !== 'collaudo' || FILE.ambiente !== 'collaudo') return 'file di un altro reparto: ' + (FILE && FILE.codice);
+      return (SUPABASE_URL === FILE.supabaseUrl && SUPABASE_ANON_KEY === FILE.supabaseAnonKey && GOOGLE_CLIENT_ID === FILE.googleClientId) || 'indirizzo, chiave o client non sono quelli del file';
+    });
+    await prova(S, 'il file dell\'ambiente porta solo i campi attesi e niente della produzione', function () {
+      var campi = Object.keys(FILE || {}).sort().join(',');
+      if (campi !== 'ambiente,codice,googleClientId,host,lingua,nome,supabaseAnonKey,supabaseUrl,versioneLocale') return 'campi: ' + campi;
+      var testo = JSON.stringify(FILE);
+      return !(testo.indexOf(REF_PRODUZIONE) >= 0 || /medicinadurgenzaucsc|consegne-reparto/.test(testo)) || 'nel file del collaudo c\'è un dato della produzione';
+    });
+    await prova(S, 'col file del collaudo il sito parte dai suoi indirizzi e da nessun altro', function () {
+      var attesi = [['localhost', 'collaudo/file'], ['LOCALHOST', 'collaudo/file'], ['127.0.0.1', 'collaudo/file'], ['gistech2026.github.io', 'collaudo/file'],
+        ['consegne-collaudo.pages.dev', 'collaudo/file'], ['abc123.consegne-collaudo.pages.dev', 'collaudo/file'],
+        ['medicinadurgenzaucsc-maker.github.io', 'fermo:indirizzo'], ['consegne-reparto.pages.dev', 'fermo:indirizzo'], ['falsoconsegne-collaudo.pages.dev', 'fermo:indirizzo'],
+        ['consegne-collaudo.pages.dev.example.org', 'fermo:indirizzo'], ['anteprima.gistech2026.github.io', 'fermo:indirizzo'], ['pages.dev', 'fermo:indirizzo'], ['example.org', 'fermo:indirizzo'], ['', 'fermo:indirizzo']];
+      var male = attesi.filter(function (x) { return detto(FILE, x[0]) !== x[1]; }).map(function (x) { return '«' + x[0] + '» → ' + detto(FILE, x[0]); });
+      return !male.length || male.join(' ; ');
+    });
+    await prova(S, 'un file dell\'ambiente scritto male ferma l\'app, anche dal suo indirizzo', function () {
+      var mio = function (cambi) { return Object.assign({}, FILE, cambi); };
+      var rotti = [['vuoto', {}], ['stringa', 'x'], ['zero', 0], ['falso', false], ['elenco', []], ['senza host', mio({ host: undefined })], ['host non in elenco', mio({ host: 'localhost' })],
+        ['ambiente sconosciuto', mio({ ambiente: 'prova' })], ['database non https', mio({ supabaseUrl: FILE.supabaseUrl.replace('https://', 'http://') })],
+        ['senza chiave', mio({ supabaseAnonKey: '' })], ['senza client', mio({ googleClientId: null })]];
+      var male = rotti.filter(function (x) { return detto(x[1], 'localhost') !== 'fermo:file'; }).map(function (x) { return x[0] + ' → ' + detto(x[1], 'localhost'); });
+      return !male.length || male.join(' ; ');
+    });
+    await prova(S, 'il file di un altro sito sullo stesso indirizzo ferma l\'app (non concorda con la tabella di riserva)', function () {
+      var a = detto(Object.assign({}, FILE, { supabaseUrl: 'https://database-finto.invalid' }), 'localhost');
+      var b = detto(Object.assign({}, FILE, { ambiente: 'produzione' }), 'localhost');
+      return (a === 'fermo:discorde' && b === 'fermo:discorde') || ('database diverso → ' + a + ' ; ambiente diverso → ' + b);
+    });
+    await prova(S, 'senza il file vale la tabella di riserva, con gli stessi dati del file', function () {
+      var t = _ambienteEsame(undefined, 'localhost').esito, n = _ambienteEsame(null, 'localhost').esito;
+      if (!t || !n || t.origine !== 'tabella' || n.origine !== 'tabella') return 'senza file da localhost: ' + detto(undefined, 'localhost');
+      if (t.ambiente !== 'collaudo' || t.supabaseUrl !== FILE.supabaseUrl || t.supabaseAnonKey !== FILE.supabaseAnonKey || t.googleClientId !== FILE.googleClientId) return 'la tabella dà dati diversi dal file';
+      return (detto(undefined, 'example.org') === 'fermo:indirizzo' && _ambienteDi(undefined, 'example.org') === null && _ambienteDi({}, 'localhost') === null) || 'un indirizzo sconosciuto senza file non resta fermo';
+    });
+
+    // Pagine vere, servite dal banco con un file d'ambiente FINTO al posto di
+    // quello del collaudo (banco.js, VARIANTI). Mai il file di un reparto vero:
+    // se la regola che ferma l'app fosse rotta, la pagina si collegherebbe al
+    // suo database. Il database dei file finti non esiste.
+    var inizioCornici = Date.now();
+    async function paginaCon(variante) {
+      var f = await cornice('/print.html?senzaStampa=1&layout=main&ambiente=' + variante + '&cb=' + Date.now());
+      var win = f.contentWindow, blocco = win.document.getElementById('bloccoIndirizzo');
+      var verso = win.performance.getEntriesByType('resource').map(function (e) { return e.name; }).filter(function (u) { return u.indexOf('database-finto') >= 0 || u.indexOf(REF_PRODUZIONE) >= 0; });
+      var esito = { variante: variante, blocco: blocco ? blocco.getAttribute('data-motivo') : null, origine: (win._AMB && win._AMB.origine) || null, ambiente: win.AMBIENTE === undefined ? 'non definito' : win.AMBIENTE,
+        client: typeof win._sb !== 'undefined', url: win.SUPABASE_URL || null, verso: verso, testo: blocco ? blocco.textContent.slice(0, 90) : '' };
+      f.remove();
+      return esito;
+    }
+    var daTabella = function (e) { return e.blocco === null && e.origine === 'tabella' && e.ambiente === 'collaudo' && e.client && e.url === SUPABASE_URL && !e.verso.length; };
+    var ferma = function (e, motivo) { return e.blocco === motivo && e.ambiente === null && !e.client && !e.url && !e.verso.length; };
+    await prova(S, 'la stampa parte da js/ambiente.js come l\'app', async function () {
+      var f = await cornice('/print.html?senzaStampa=1&layout=main&cb=' + Date.now());
+      var w = f.contentWindow, o = w._AMB && w._AMB.origine, c = w._AMBIENTE && w._AMBIENTE.codice;
+      f.remove();
+      return (o === 'file' && c === 'collaudo') || ('origine ' + o + ', reparto ' + c);
+    });
+    await prova(S, 'pagina senza il tag di js/ambiente.js (versione di prima accanto al codice nuovo): parte dalla tabella di riserva', async function () {
+      var e = await paginaCon('senza');
+      return daTabella(e) || JSON.stringify(e);
+    });
+    await prova(S, 'file dell\'ambiente che non arriva (404, una pagina al suo posto, vuoto): si parte dalla tabella di riserva', async function () {
+      var male = [], varianti = ['assente', 'sintassi', 'nullo'];
+      for (var i = 0; i < varianti.length; i++) { var e = await paginaCon(varianti[i]); if (!daTabella(e)) male.push(JSON.stringify(e)); }
+      return !male.length || male.join(' ‖ ');
+    });
+    await prova(S, 'file dell\'ambiente scritto male: la pagina si ferma, lo dice, e non crea nessun collegamento', async function () {
+      var e = await paginaCon('rotto');
+      return (ferma(e, 'file') && /Configurazione del sito non valida/.test(e.testo)) || JSON.stringify(e);
+    });
+    await prova(S, 'file dell\'ambiente di un altro sito: la pagina si ferma (indirizzo non suo, oppure database non suo)', async function () {
+      var a = await paginaCon('altro-sito'), b = await paginaCon('discorde');
+      return (ferma(a, 'indirizzo') && /Indirizzo non riconosciuto/.test(a.testo) && ferma(b, 'discorde') && /Configurazione del sito non valida/.test(b.testo)) || (JSON.stringify(a) + ' ‖ ' + JSON.stringify(b));
+    });
+    await prova(S, 'l\'app intera parte anche dalla tabella di riserva (pagina senza il tag), e lo annota nel registro', async function () {
+      var inizioApp = Date.now(), mio = _getDeviceId();
+      var f = await cornice('/?ambiente=senza&cb=' + Date.now());
+      var win = f.contentWindow;
+      var piene = await finche(function () { return win.document.querySelectorAll('.patient-card').length === 28; }, 30000, 300);
+      var origine = win._AMB && win._AMB.origine, schede = win.document.querySelectorAll('.patient-card').length;
+      var righe = await finche(async function () { var r = await _q(_sb.from('logs').select('id').eq('tipo', 'ambiente-da-tabella').eq('device_id', mio).gte('ts', inizioApp)); return r && r.length ? r : false; }, 10000, 500);
+      f.remove();
+      // via le righe di questa batteria (anche quelle delle cornici di stampa), solo di questo dispositivo
+      try { await _q(_sb.from('logs').delete().eq('tipo', 'ambiente-da-tabella').eq('device_id', mio).gte('ts', inizioCornici)); } catch (e) {}
+      if (!piene || origine !== 'tabella') return 'schede ' + schede + ', origine ' + origine;
+      return !!righe || 'nel registro non è comparsa la riga «ambiente-da-tabella»';
+    });
     await prova(S, 'nessuna richiesta di rete verso il progetto di produzione', function () {
       var verso = performance.getEntriesByType('resource').map(function (e) { return e.name; }).filter(function (u) { return u.indexOf(REF_PRODUZIONE) >= 0; });
       return !verso.length || ('richieste verso la produzione: ' + verso.slice(0, 3).join(' , '));

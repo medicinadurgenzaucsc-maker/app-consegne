@@ -209,6 +209,25 @@ function verifica(cartella, originali, elenco) {
     });
   }
 
+  // js/ambiente.js dice all'app chi è (indirizzi ammessi, database): nella
+  // copia compressa deve dire ESATTAMENTE le stesse cose. Il nome
+  // window._AMBIENTE non è una dichiarazione, quindi il confronto dei nomi
+  // globali non lo vede: qui i due file si eseguono in un ambiente vuoto e si
+  // confronta ciò che lasciano in window._AMBIENTE.
+  if (elenco.indexOf('js/ambiente.js') >= 0) {
+    const lascia = (codice) => {
+      const finestra = {};
+      vm.runInNewContext(codice, { window: finestra }, { timeout: 2000 });
+      return finestra._AMBIENTE === undefined ? undefined : JSON.stringify(finestra._AMBIENTE);
+    };
+    let a, b;
+    try {
+      a = lascia(originali['js/ambiente.js']); b = lascia(leggi('js/ambiente.js'));
+      if (a === undefined || a === 'null') errori.push('js/ambiente.js: non definisce window._AMBIENTE');
+      else if (a !== b) errori.push('js/ambiente.js: nella copia compressa il contenuto di window._AMBIENTE è cambiato');
+    } catch (e) { errori.push('js/ambiente.js: non si esegue da solo (deve solo definire window._AMBIENTE): ' + e.message); }
+  }
+
   // Service worker: stessa versione e stessi file tenuti in cache.
   if (originali['sw.js'] != null) {
     const prima = originali['sw.js'], dopo = leggi('sw.js');

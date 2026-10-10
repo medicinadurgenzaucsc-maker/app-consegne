@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <meta name="referrer" content="no-referrer">
+  <title>Prova della rete</title>
+  <style>
+    body { margin: 0; background: #eceff1; color: #263238; font: 16px/1.5 system-ui, Arial, sans-serif; }
+    main { max-width: 760px; margin: 0 auto; padding: 24px 16px 40px; }
+    h1 { font-size: 24px; margin: 0 0 6px; }
+    p { margin: 0 0 14px; }
+    table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 8px; overflow: hidden; margin: 0 0 16px; }
+    th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid #eceff1; vertical-align: top; }
+    th { width: 46%; font-weight: 600; }
+    tr:last-child th, tr:last-child td { border-bottom: 0; }
+    .si { color: #1b5e20; font-weight: 700; }
+    .no { color: #b71c1c; font-weight: 700; }
+    .attesa { color: #546e7a; }
+    #riepilogo { padding: 12px 14px; border-radius: 8px; background: #fff; font-weight: 600; }
+    #riepilogo.si { background: #e8f5e9; }
+    #riepilogo.no { background: #ffebee; }
+    button { padding: 10px 20px; margin: 0 8px 12px 0; border: 0; border-radius: 8px; background: #37474f; color: #fff; font: 600 15px system-ui, Arial, sans-serif; cursor: pointer; }
+    textarea { width: 100%; box-sizing: border-box; height: 190px; padding: 10px; border: 1px solid #b0bec5; border-radius: 8px; font: 13px/1.4 Consolas, monospace; background: #fff; color: #263238; }
+    .nota { font-size: 14px; color: #455a64; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Prova della rete</h1>
+    <p>Questa pagina controlla se da questo computer si raggiungono i servizi di cui l'applicazione delle consegne ha bisogno. Non apre l'applicazione, non chiede l'accesso, non legge e non scrive dati.</p>
+    <table id="dati"></table>
+    <table id="esiti"></table>
+    <p id="riepilogo" class="attesa">Prova in corso…</p>
+    <p>
+      <button type="button" id="ripeti">Ripeti la prova</button>
+      <button type="button" id="copia">Copia l'esito</button>
+    </p>
+    <textarea id="testo" readonly aria-label="Esito della prova, da copiare"></textarea>
+    <p class="nota">Va aperta da ognuno degli indirizzi da cui il reparto potrebbe usare l'applicazione, su un computer del reparto. Se da un indirizzo questa pagina non si apre affatto, quell'indirizzo è bloccato dalla rete. Se il sito è dietro un cancello di accesso e questa pagina si vede, anche il cancello è stato raggiunto.</p>
+  </main>
+  <script src="js/ambiente.js"></script>
+  <script>
+    (function () {
+      var A = (window._AMBIENTE && typeof window._AMBIENTE === 'object') ? window._AMBIENTE : null;
+      var TEMPO = 12000;
+      var righe = [];
+
+      function riga(tabella, nome, valore, classe) {
+        var tr = document.createElement('tr'), th = document.createElement('th'), td = document.createElement('td');
+        th.textContent = nome;
+        td.textContent = valore;
+        if (classe) td.className = classe;
+        tr.appendChild(th); tr.appendChild(td);
+        document.getElementById(tabella).appendChild(tr);
+        return td;
+      }
+      function entro(promessa) {
+        return Promise.race([promessa, new Promise(function (fatto) {
+          setTimeout(function () { fatto({ ok: false, testo: 'nessuna risposta in ' + (TEMPO / 1000) + ' secondi' }); }, TEMPO);
+        })]);
+      }
+      // Lo stesso criterio dell'applicazione: una voce col punto davanti vale per i sottodomini.
+      function indirizzoAmmesso() {
+        if (!A || !Array.isArray(A.host)) return null;
+        var host = String(location.hostname).toLowerCase(), si = false;
+        A.host.forEach(function (voce) {
+          voce = String(voce || '').toLowerCase();
+          if (!voce) return;
+          if (voce.charAt(0) === '.' ? (host.length > voce.length && host.slice(-voce.length) === voce) : host === voce) si = true;
+        });
+        return si;
+      }
+
+      // Un nome di file a caso, che il sito non ha: né la memoria del browser né
+      // il service worker possono rispondere al posto del sito. La risposta
+      // attesa è la pagina «non trovata» dell'applicazione.
+      function provaSito() {
+        var nome = 'rete-prova-' + Date.now() + '-' + Math.floor(Math.random() * 1000000) + '.txt';
+        return fetch(nome, { cache: 'no-store' }).then(function (r) {
+          return r.text().then(function (t) {
+            if (r.status === 404 && t.indexOf('Pagina non trovata') >= 0 && t.indexOf('Apri le Consegne') >= 0) return { ok: true, testo: 'raggiunto adesso' };
+            return { ok: false, testo: 'risposta inattesa (stato ' + r.status + '): al posto del sito ha risposto qualcos\'altro, forse un filtro della rete' };
+          });
+        }, function () {
+          return { ok: false, testo: 'non raggiunto adesso: la pagina che vedi viene dalla memoria del browser, oppure serve di nuovo l\'accesso al sito' };
+        });
+      }
+      function provaDatabase() {
+        if (!A || typeof A.supabaseUrl !== 'string' || typeof A.supabaseAnonKey !== 'string') return Promise.resolve({ ok: false, testo: 'non provato: il file dell\'ambiente non è arrivato' });
+        return fetch(A.supabaseUrl + '/auth/v1/health', { headers: { apikey: A.supabaseAnonKey }, cache: 'no-store' }).then(function (r) {
+          return r.text().then(function (t) {
+            var nome = '';
+            try { nome = String(JSON.parse(t).name || ''); } catch (e) {}
+            if (r.ok && nome === 'GoTrue') return { ok: true, testo: 'raggiunto' };
+            return { ok: false, testo: 'risposta inattesa (stato ' + r.status + ')' };
+          });
+        }, function () { return { ok: false, testo: 'non raggiunto' }; });
+      }
+      function provaTempoReale() {
+        if (!A || typeof A.supabaseUrl !== 'string' || typeof A.supabaseAnonKey !== 'string') return Promise.resolve({ ok: false, testo: 'non provato: il file dell\'ambiente non è arrivato' });
+        return new Promise(function (fatto) {
+          var canale = null;
+          try { canale = new WebSocket(A.supabaseUrl.replace(/^https:/, 'wss:') + '/realtime/v1/websocket?apikey=' + encodeURIComponent(A.supabaseAnonKey) + '&vsn=1.0.0'); }
+          catch (e) { return fatto({ ok: false, testo: 'non raggiunto' }); }
+          canale.onopen = function () { try { canale.close(); } catch (e) {} fatto({ ok: true, testo: 'raggiunto' }); };
+          canale.onerror = function () { fatto({ ok: false, testo: 'non raggiunto: senza questo canale l\'applicazione lavora lo stesso, ma si aggiorna più lentamente' }); };
+        });
+      }
+      function provaGoogle() {
+        return new Promise(function (fatto) {
+          var s = document.createElement('script');
+          s.src = 'https://accounts.google.com/gsi/client';
+          s.onload = function () {
+            var buono = !!(window.google && window.google.accounts && window.google.accounts.id);
+            fatto(buono ? { ok: true, testo: 'raggiunto' } : { ok: false, testo: 'è arrivato un file che non è quello di Google, forse un filtro della rete' });
+          };
+          s.onerror = function () { fatto({ ok: false, testo: 'non raggiunto' }); };
+          document.head.appendChild(s);
+        });
+      }
+      // Con HEAD il service worker, se c'è, non risponde dalla sua copia.
+      function provaLibrerie() {
+        return fetch('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js', { method: 'HEAD', cache: 'no-store' }).then(function (r) {
+          return r.ok ? { ok: true, testo: 'raggiunto' } : { ok: false, testo: 'risposta inattesa (stato ' + r.status + ')' };
+        }, function () { return { ok: false, testo: 'non raggiunto' }; });
+      }
+
+      var ammesso = indirizzoAmmesso();
+      var DATI = [
+        ['Indirizzo di questa pagina', location.origin + location.pathname],
+        ['Sito del reparto', A && A.nome ? String(A.nome) + (A.codice ? ' (' + String(A.codice) + ')' : '') : 'non si sa: il file dell\'ambiente non è arrivato'],
+        ['Questo indirizzo è fra quelli del sito', ammesso === null ? 'non si sa' : ammesso ? 'sì' : 'no: da qui l\'applicazione non partirebbe'],
+        ['Copia del sito tenuta da questo browser', (navigator.serviceWorker && navigator.serviceWorker.controller) ? 'presente: la pagina può arrivare da lì, conta la prima riga della tabella qui sotto' : 'assente'],
+        ['Data e ora', new Date().toLocaleString('it-IT')],
+        ['Browser', String(navigator.userAgent).slice(0, 160)]
+      ];
+      var PROVE = [
+        ['Il sito dell\'applicazione, da questo indirizzo', provaSito],
+        ['Il database', provaDatabase],
+        ['Gli aggiornamenti in tempo reale', provaTempoReale],
+        ['L\'accesso con Google', provaGoogle],
+        ['Le librerie dell\'applicazione', provaLibrerie]
+      ];
+
+      DATI.forEach(function (d) { riga('dati', d[0], d[1]); righe.push(d[0] + ': ' + d[1]); });
+      var celle = PROVE.map(function (p) { return riga('esiti', p[0], 'in corso…', 'attesa'); });
+      Promise.all(PROVE.map(function (p, i) {
+        var esito;
+        try { esito = entro(p[1]()); } catch (e) { esito = Promise.resolve({ ok: false, testo: 'la prova non è partita' }); }
+        // una risposta che si interrompe a metà (fetch riuscita, lettura del corpo no) è un «no», non un silenzio
+        return esito.then(null, function () { return { ok: false, testo: 'la risposta si è interrotta prima della fine' }; }).then(function (e) {
+          celle[i].textContent = (e.ok ? 'Sì: ' : 'NO: ') + e.testo;
+          celle[i].className = e.ok ? 'si' : 'no';
+          return e;
+        });
+      })).then(function (esiti) {
+        var mancano = [];
+        esiti.forEach(function (e, i) {
+          righe.push(PROVE[i][0] + ': ' + (e.ok ? 'sì' : 'NO') + ' (' + e.testo + ')');
+          if (!e.ok) mancano.push(PROVE[i][0]);
+        });
+        var r = document.getElementById('riepilogo');
+        if (!mancano.length && ammesso !== false) { r.textContent = 'Tutto raggiunto: da questo computer l\'applicazione può lavorare da questo indirizzo.'; r.className = 'si'; }
+        else if (!mancano.length) { r.textContent = 'La rete passa, ma questo indirizzo non è fra quelli del sito: da qui l\'applicazione non partirebbe.'; r.className = 'no'; }
+        else { r.textContent = 'Qualcosa non passa: ' + mancano.join('; ') + '.'; r.className = 'no'; }
+        righe.push(r.textContent);
+        document.getElementById('testo').value = righe.join('\n');
+        window.__esitoRete = { finito: true, tutto: !mancano.length, mancano: mancano, ammesso: ammesso };
+      });
+
+      document.getElementById('ripeti').addEventListener('click', function () { location.reload(); });
+      document.getElementById('copia').addEventListener('click', function () {
+        var t = document.getElementById('testo');
+        t.focus(); t.select();
+        try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t.value); else document.execCommand('copy'); } catch (e) {}
+      });
+    })();
+  </script>
+</body>
+</html>

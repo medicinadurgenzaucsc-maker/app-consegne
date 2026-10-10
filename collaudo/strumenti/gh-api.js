@@ -22,6 +22,15 @@ const AMBIENTI = {
 };
 // Solo i due nomi scritti qui sopra: «constructor» e simili non sono ambienti.
 const eAmbiente = (x) => Object.prototype.hasOwnProperty.call(AMBIENTI, String(x));
+// Anche il codice di un reparto (reparti/<codice>.json) vale da nome d'ambiente:
+// «gemelli-11n» è la produzione. Lo traduce reparti.js; le barriere restano
+// legate al nome «produzione», che è quello che esce di qui.
+function nomeAmbiente(x) {
+  const n = String(x).toLowerCase();
+  if (eAmbiente(n)) return n;
+  const storico = require('./reparti.js').nomeStorico(n);
+  return storico && eAmbiente(storico) ? storico : null;
+}
 const CONFERMA = '--confermo-produzione';
 const maschera = (s) => String(s || '').replace(/(gh[pousr]_|github_pat_)[A-Za-z0-9_]+/g, 'gh*_***');
 
@@ -49,7 +58,9 @@ function dalRemoto(remoto, utente) {
 
 // Tutto ciò che serve per lavorare su un ambiente.
 function per(ambiente) {
-  if (!eAmbiente(ambiente)) throw new Error('ambiente sconosciuto: ' + ambiente + ' (validi: ' + Object.keys(AMBIENTI).join(', ') + ')');
+  const scritto = ambiente;
+  ambiente = nomeAmbiente(ambiente);
+  if (!ambiente) throw new Error('ambiente sconosciuto: ' + scritto + ' (validi: ' + Object.keys(AMBIENTI).join(', ') + ', oppure il codice di un reparto)');
   const a = AMBIENTI[ambiente];
   const UTENTE = a.utente;
   const produzione = ambiente === 'produzione';
@@ -105,8 +116,8 @@ function argomenti(argv) {
   const sconosciuta = resto.filter((x) => /^--/.test(String(x)))[0];
   if (sconosciuta) throw new Error('opzione sconosciuta: ' + sconosciuta + ' (l\'unica ammessa è ' + CONFERMA + ')');
   let ambiente = 'collaudo', esplicito = false;
-  if (resto.length && eAmbiente(String(resto[0]).toLowerCase())) { ambiente = String(resto.shift()).toLowerCase(); esplicito = true; }
-  const fuoriPosto = resto.filter((x) => eAmbiente(String(x).toLowerCase()));
+  if (resto.length && nomeAmbiente(resto[0])) { ambiente = nomeAmbiente(resto.shift()); esplicito = true; }
+  const fuoriPosto = resto.filter((x) => nomeAmbiente(x));
   if (fuoriPosto.length) throw new Error('il nome dell\'ambiente («' + fuoriPosto[0] + '») va scritto per primo, subito dopo il nome dello strumento, e una volta sola');
   if (confermato && ambiente !== 'produzione') throw new Error(CONFERMA + ' vale solo per la produzione: scrivere «produzione» come primo argomento');
   return { ambiente, resto, confermato, esplicito };
@@ -117,7 +128,7 @@ function pretendiAmbiente(arg, comando) {
 }
 
 const collaudo = per('collaudo');
-module.exports = { gh: collaudo.gh, token: collaudo.token, UTENTE: collaudo.UTENTE, per, argomenti, pretendiAmbiente, maschera, AMBIENTI, CONFERMA };
+module.exports = { gh: collaudo.gh, token: collaudo.token, UTENTE: collaudo.UTENTE, per, argomenti, pretendiAmbiente, nomeAmbiente, maschera, AMBIENTI, CONFERMA };
 
 if (require.main === module) {
   const [metodo, percorso, corpo] = process.argv.slice(2);

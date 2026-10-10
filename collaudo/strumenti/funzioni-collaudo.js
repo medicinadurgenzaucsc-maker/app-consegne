@@ -87,11 +87,11 @@ async function configura() {
   const attuali = await c.query("select id, refresh_token from public.google_oauth where id in ('prova', 'reparto')");
   const buono = (id) => { const x = attuali.find((y) => y.id === id); return x && /^finto_[0-9a-f]{48}$/.test(x.refresh_token || '') ? x.refresh_token : null; };
   const segreto = buono('prova') || buono('reparto') || 'finto_' + crypto.randomBytes(24).toString('hex');
-  // Il client Google del collaudo (pubblico: sta in api.js). Serve quando il
+  // Il client Google del collaudo (pubblico: sta in reparti/collaudo.json). Serve quando il
   // consenso è vero: lo scambio del codice deve nominare lo stesso client che
   // l'ha chiesto dal browser.
-  const client = (/collaudo:\s*\{[\s\S]*?googleClientId:\s*'([^']+)'/.exec(fs.readFileSync(path.join(RADICE, 'docs', 'js', 'api.js'), 'utf8')) || [])[1];
-  if (!client) throw new Error('client Google del collaudo non trovato in docs/js/api.js');
+  const client = require('./reparti.js').risolvi('collaudo').googleClientId;
+  if (!client) throw new Error('client Google del collaudo non trovato in reparti/collaudo.json');
   // google-finto gira richieste a Google e non verifica il JWT: risponde solo
   // sotto un indirizzo che contiene questa chiave, così non è un passaggio
   // aperto. La chiave cambia a ogni «configura» (non si può rileggere) e vive

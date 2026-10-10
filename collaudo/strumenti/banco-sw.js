@@ -24,9 +24,22 @@ const path = require('path');
 const crypto = require('crypto');
 const { execFileSync } = require('child_process');
 const { elencoSito, prepara, RADICE } = require('./prepara-sito.js');
+const reparti = require('./reparti.js');
+// Il sito del banco è quello del reparto di COLLAUDO: docs/js/ambiente.js è
+// della 11N e non ammette questo PC. Per la versione di lavoro il file si
+// genera in memoria, la copia compressa si prepara per il collaudo. Lo stesso
+// per la versione in produzione, quando ha il file (dalla v190): su questo PC
+// il suo, che è della 11N, fermerebbe la pagina su «Indirizzo non riconosciuto»
+// e le prove guarderebbero un'app ferma. Se quella versione il file non lo ha
+// (la v189), non lo ha nemmeno qui.
+const REPARTO = reparti.risolvi('collaudo');
+if (REPARTO.tipo !== 'collaudo' || !reparti.hostAmmesso(REPARTO, 'localhost')) { console.log('il reparto del banco deve essere di collaudo e ammettere localhost'); process.exit(1); }
 
 const PORTA = Number(process.argv[2] || 8766);
-const RIF_PRODUZIONE = 'origin/master';
+// Di norma la «versione in produzione» è origin/master. Con BANCO_RIF=<riferimento git> il banco serve al suo
+// posto quel riferimento: serve a provare un passaggio diverso, per esempio un ritorno (da una versione nuova,
+// messa in BANCO_RIF, alle pagine di prima che stanno nella cartella di lavoro).
+const RIF_PRODUZIONE = process.env.BANCO_RIF || 'origin/master';
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
   '.json': 'application/json; charset=utf-8', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon',
@@ -45,9 +58,10 @@ function elenco(versione) {
 }
 function leggi(versione, p) {
   if (elenco(versione).indexOf(p) < 0 || p.charAt(0) === '_') return null;
+  if (p === 'js/ambiente.js' && versione !== 'compressa') return Buffer.from(reparti.ambienteJs(REPARTO), 'utf8');
   if (versione === 'lavoro') return fs.readFileSync(path.join(RADICE, 'docs', p));
   if (versione === 'compressa') {
-    if (!memoria.compressa) { prepara(COMPRESSA, { compressa: true }); memoria.compressa = true; }
+    if (!memoria.compressa) { prepara(COMPRESSA, { compressa: true, reparto: REPARTO.codice }); memoria.compressa = true; }
     return fs.readFileSync(path.join(COMPRESSA, p));
   }
   const k = 'file:' + p;

@@ -80,7 +80,8 @@ async function interroga(ref, tok, sql, solaLettura) {
 
 (async () => {
   const argomenti = process.argv.slice(2);
-  const ambiente = argomenti[0], azione = argomenti[1] || '', resto = argomenti.slice(2);
+  // anche il codice di un reparto: «gemelli-11n» è la produzione
+  const ambiente = require('./reparti.js').nomeStorico(argomenti[0]) || argomenti[0], azione = argomenti[1] || '', resto = argomenti.slice(2);
   const D = Object.prototype.hasOwnProperty.call(DESTINAZIONI, String(ambiente)) ? DESTINAZIONI[ambiente] : null;
   const ammesso = D && (
     (ambiente === 'collaudo' && ['', 'confronta', 'prima-copia'].includes(azione) && resto.length === 0)

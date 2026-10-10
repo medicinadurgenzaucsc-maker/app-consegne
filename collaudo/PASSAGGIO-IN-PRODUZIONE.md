@@ -79,8 +79,11 @@ indirizzo.
 
 ### A3. Codice e database, a cura di Claude
 
-1. Nel collaudo: aggiungere a `_AMBIENTI.produzione.host`, in
-   `docs/js/api.js`, l'indirizzo `'<nome>.pages.dev'`. Senza, il flusso si
+1. Nel collaudo: aggiungere l'indirizzo `<nome>.pages.dev` al campo `host` del
+   file del reparto in `reparti/` e rigenerare `docs/js/ambiente.js`
+   (`node collaudo/strumenti/reparti.js scrivi`). (Fino alla 189 l'elenco stava
+   in `_AMBIENTI.produzione.host`, in `docs/js/api.js`: dalla 190 quella
+   tabella è solo una riserva e non si tocca.) Senza, il flusso si
    rifiuta di pubblicare e l'app sul sito nuovo si ferma con «Indirizzo non
    riconosciuto». In produzione **niente voce col punto**: le anteprime di
    Cloudflare non devono poter lavorare sui pazienti veri. Versione nuova,
@@ -614,3 +617,113 @@ accettano l'ambiente come primo argomento.
 - **Restano**: il passaggio degli ultimi dispositivi al nuovo indirizzo; le
   voci della fase C; rifare dopo qualche giorno
   `verifica-chiusura.js produzione --archivi`.
+
+## Stato al 10/10/2026
+
+- **Ritorno su GitHub Pages**: il 09/10/2026 alle 13:20 il filtro Fortinet del
+  Policlinico ha bloccato `consegne-reparto.pages.dev` (categoria
+  «Information Technology»). Alle 13:26, su ordine di Stefano,
+  `scambio-repository.js produzione annulla --confermo-produzione`: 40
+  secondi. Da allora `origin` è di nuovo
+  `medicinadurgenzaucsc-maker/app-consegne`, pubblico; il sito del reparto è
+  `https://medicinadurgenzaucsc-maker.github.io/app-consegne/`, servito da
+  `docs/`; `CLOUDFLARE_AVVISA = no` e l'avviso ai PC lo dà di nuovo
+  `notify-deploy`. Il sito su Cloudflare resta pubblicato, dietro l'accesso,
+  ma dall'ospedale non si raggiunge; la pagina di rinvio è parcheggiata in
+  `app-consegne-rinvio`. Verificato: i 21 file serviti identici al commit
+  `28a7bc3` (v189), mail di prova partita il 10/10 alle 08:21.
+- **Lezione**: un filtro ospedaliero può bloccare `pages.dev` e
+  `cloudflareaccess.com`. Prima di ogni passaggio si prova la rete da un PC
+  del reparto (dalla 190: `rete.html`) e si tiene pronto l'indirizzo di prima.
+  Come andare avanti: `collaudo/PIANO-REPARTI.md`, 3.3.
+
+## Rilascio della 190: i reparti (fase 1 del piano)
+
+Per il reparto non cambia nulla di visibile: stesso indirizzo, stesso accesso,
+stesse schede. Cambia dove l'app legge chi è: da `js/ambiente.js`, generato da
+`reparti/gemelli-11n.json`, invece che dalla tabella in `api.js` (che resta
+come riserva). Nessuna modifica al database. In produzione **solo con l'ok di
+Stefano, di sera**.
+
+### A che punto è
+
+- **Banco, 10/10/2026**: controlli di rilascio tutti superati; `__prove()` 142
+  su 142 nel sorgente e nella copia compressa; `__proveSw()` 56 su 56 nel
+  sorgente e nella copia compressa; prova di fumo da scollegato pulita;
+  revisione indipendente fatta e correzioni applicate.
+- **Sito di collaudo**: da annotare qui sotto (passo 0).
+- **Ritorno**: da annotare qui sotto (passo 2).
+- **Produzione**: è ancora la 189.
+
+### Sequenza
+
+0. **Prima il sito di collaudo.** Commit sul ramo `collaudo`,
+   `git push collaudo collaudo:master`, `node collaudo/strumenti/pubblicazione.js`:
+   il passo «File del sito» deve dire «reparto: collaudo» e «Avvisa i PC
+   aperti» deve riuscire (da questa versione pretende che il segreto
+   `SUPABASE_URL` del repository sia il database del reparto: se fallisse con
+   quel messaggio, il segreto va riscritto nella forma
+   `https://<progetto>.supabase.co`). Poi dal sito di collaudo: versione 190 nel
+   menu della rotellina e, in console, `_AMB.origine` uguale a `file`.
+1. Sul commit da rilasciare, `node collaudo/strumenti/controlli-rilascio.js`:
+   tutti i controlli superati. Contano soprattutto «docs/js/ambiente.js è
+   quello generato per il reparto gemelli-11n» e «riconoscimento degli
+   indirizzi»: sono la sola prova possibile del file della 11N prima del
+   rilascio, perché su un PC di sviluppo quel file non si serve mai.
+2. **Il ritorno si prepara prima del push**, come per le versioni di prima:
+   ramo `ritorno-v189`, sopra il commit da rilasciare, con le pagine della 189
+   e il numero 191.
+
+   ```
+   git checkout -b ritorno-v189 <commit della 190>
+   git checkout 28a7bc3 -- docs
+   (191 in docs/sw.js e nel menu di docs/index.html, poi il commit)
+   ```
+
+   `git checkout 28a7bc3 -- docs` riporta i quattro file cambiati e **lascia al
+   loro posto `docs/js/ambiente.js` e `docs/rete.html`**, apposta: le pagine
+   della 189 non li chiedono, e con loro gli strumenti e il flusso della 190
+   continuano a funzionare, quindi il ritorno si può pubblicare anche nel
+   collaudo. Verifiche: `git merge-base --is-ancestor <commit della 190>
+   ritorno-v189` riesce; `git diff 28a7bc3 ritorno-v189 -- docs` mostra solo
+   le due righe della versione e i due file in più. Su quel commit
+   `controlli-rilascio.js` **dà dei KO attesi** (punti 3, 5 e 8: le pagine della
+   189 non hanno il tag di `js/ambiente.js`): la verifica di un ritorno è quel
+   confronto. Il passaggio dalla 190 al ritorno si prova nel banco del service
+   worker, lanciato dal ramo di ritorno con `BANCO_RIF=<commit della 190>`.
+3. **Non chiedere `…/app-consegne/js/ambiente.js` prima che GitHub Pages abbia
+   pubblicato**, nemmeno con un parametro in coda: la rete di GitHub non ne
+   tiene conto, e il 404 che terrebbe impedirebbe al service worker 190 di
+   installarsi.
+4. `git merge --ff-only collaudo` su `master`, `git fetch`, `git push origin
+   master`.
+5. Prima `node collaudo/strumenti/pubblicazione.js produzione`, che aspetta la
+   fine della pubblicazione e l'avviso di `notify-deploy`; solo dopo
+   `node .claude/stasera/verifica-sito-servito.js <commit> attendi`: ogni file
+   servito identico al commit, `js/ambiente.js` e `rete.html` compresi.
+6. Da un PC collegato (o dal Chrome di Stefano): rotellina, versione 190; in
+   console `_AMB.origine` deve dire `file`.
+7. Lo stesso push fa partire «Pubblica su Cloudflare» sul progetto
+   `consegne-reparto` (irraggiungibile dall'ospedale, non avvisa i PC): il
+   passo «File del sito» deve dire «reparto: gemelli-11n».
+8. Nei primi minuti qualche PC può partire dalla tabella di riserva (pagina
+   vecchia accanto al codice nuovo): lo si vede nel registro dell'app, senza
+   leggere i registri di Supabase:
+   `select count(*), to_timestamp(max(ts)/1000) from logs where tipo =
+   'ambiente-da-tabella'`. **Nessuna riga è l'esito normale** e non prova che
+   ogni PC abbia già ricaricato: dice solo che nessuna pagina è partita dalla
+   tabella.
+
+**Se un PC mostra «Indirizzo non riconosciuto» o «Configurazione del sito non
+valida»**: avvisare Stefano e aspettare. Se decide il ritorno:
+`git checkout master`, `git merge --ff-only refs/heads/ritorno-v189`,
+`git push origin master`. GitHub Pages torna alle pagine della 189 e
+`notify-deploy` avvisa i PC. Regge in ogni mescolanza di file vecchi e nuovi:
+le pagine della 189 non chiedono `js/ambiente.js`, e una pagina della 190
+rimasta nel browser lo trova ancora. Dopo un ritorno il ramo `collaudo` non
+discende più da `master` e va riallineato; il rilascio successivo porta il
+numero 192.
+
+**Dopo**: quando nel registro non compaiono righe `ambiente-da-tabella` da
+qualche giorno, una versione a parte toglie la tabella da `api.js` (elenco di
+ciò che va adattato in `CLAUDE.md`, «Reparti»).

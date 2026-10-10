@@ -145,6 +145,8 @@
     var esito = true;
     if (!c.doc) esito = url + ': al posto della pagina un errore del browser';
     else if (!c.doc.getElementById('navVersioneApp')) esito = url + ': titolo «' + c.doc.title + '», testo «' + c.doc.body.innerText.slice(0, 80) + '»';
+    // la pagina c'è, ma ferma: senza questo le prove passerebbero anche su un'app che non parte
+    else if (c.doc.getElementById('bloccoIndirizzo')) esito = url + ': la pagina è arrivata ma si è fermata su «' + c.doc.getElementById('bloccoIndirizzo').textContent.slice(0, 60) + '»';
     c.f.remove();
     return esito;
   }
@@ -177,13 +179,28 @@
     var c = await cornice(BASE);
     if (!(await prova('il service worker si installa e prende il controllo della pagina', function () { return attivo(c); }))) return;
     await prova('in cache tutti i file dell\'elenco, con risposte buone e senza segno di rinvio', function () { return cacheSana(atteso); });
+    // Dalla v190 chi è il sito lo dice js/ambiente.js: se la versione provata lo
+    // tiene in cache, deve reggere ai guasti come gli altri file. (La versione
+    // in produzione, finché è la v189, non lo ha.)
+    var conAmbiente = atteso.percorsi.indexOf('./js/ambiente.js') >= 0;
+    if (versione !== 'produzione') {
+      await prova('il file dell\'ambiente è fra quelli tenuti in cache, e la pagina riconosce il suo ambiente', function () {
+        if (!conAmbiente) return 'js/ambiente.js non è nell\'elenco del service worker';
+        if (!c.win || (c.doc && c.doc.getElementById('bloccoIndirizzo'))) return 'la pagina si è fermata sull\'indirizzo';
+        var o = c.win._AMB ? c.win._AMB.origine : '(api.js di prima)';
+        if (c.win.AMBIENTE !== 'collaudo') return 'ambiente: ' + c.win.AMBIENTE;
+        // in stile github il browser può avere ancora in memoria l'api.js di una prova di poco fa
+        return (o === 'file' || (stile === 'github' && o === '(api.js di prima)')) || ('origine dell\'ambiente: ' + o);
+      });
+    }
 
     var guasti = [['404', 'il sito risponde 404'], ['500', 'il sito risponde 500'], ['giu', 'la rete non risponde']];
     for (var i = 0; i < guasti.length; i++) {
       await imposta({ modo: guasti[i][0] });
       var G = 'quando ' + guasti[i][1] + ': ';
       await prova(G + 'i file dell\'app arrivano dalla cache', async function () {
-        var a = await fileSano(c, 'js/api.js', '_AMBIENTI'); if (a !== true) return a;
+        var a = await fileSano(c, 'js/api.js', 'SUPABASE_URL'); if (a !== true) return a;
+        if (conAmbiente) { a = await fileSano(c, 'js/ambiente.js', '_AMBIENTE'); if (a !== true) return a; }
         a = await fileSano(c, 'css/styles.css', '{'); if (a !== true) return a;
         return fileSano(c, 'print.html?layout=alt&saltaVuoti=1', 'Stampa Consegne');
       });
@@ -206,6 +223,7 @@
     var A = 'con un cancello di accesso che rinvia a un altro sito: ';
     await prova(A + 'i file dell\'app arrivano dalla cache', async function () {
       var a = await fileSano(c, 'js/app.js', 'function'); if (a !== true) return a;
+      if (conAmbiente) { a = await fileSano(c, 'js/ambiente.js', '_AMBIENTE'); if (a !== true) return a; }
       return (await immagine(c, 'favicon.png')) || 'un\'immagine del sito non si carica';
     });
     await prova(A + 'una navigazione viene lasciata andare alla pagina di accesso', async function () {
@@ -264,12 +282,21 @@
       await attendi(800);
       return cacheSana(nuovo);
     });
-    await prova('la pagina ricaricata è quella nuova', async function () {
+    // La pagina è nuova; i suoi file possono essere ancora un misto di vecchi e
+    // nuovi (in stile github il browser li tiene dieci minuti, ognuno per conto
+    // suo): in ogni combinazione la pagina deve riconoscere il suo ambiente. Con
+    // api.js nuovo (sempre, in stile cloudflare) l'ambiente viene dal file.
+    await prova('la pagina ricaricata è quella nuova, e riconosce il suo ambiente', async function () {
       var x = await cornice(BASE + '?_r=' + unico());
       var el = x.doc && x.doc.getElementById('navVersioneApp');
       var v = el ? el.textContent.trim() : '(assente)';
+      var ferma = !!(x.doc && x.doc.getElementById('bloccoIndirizzo'));
+      var amb = x.win ? x.win.AMBIENTE : undefined, origine = x.win && x.win._AMB ? x.win._AMB.origine : '(api.js di prima)';
       x.f.remove();
-      return ('consegne-v' + v === nuovo.nome) || ('versione mostrata: ' + v + ', attesa ' + nuovo.nome);
+      if ('consegne-v' + v !== nuovo.nome) return 'versione mostrata: ' + v + ', attesa ' + nuovo.nome;
+      if (ferma || amb !== 'collaudo') return 'la pagina nuova non riconosce il suo ambiente (ferma: ' + ferma + ', ambiente: ' + amb + ', origine: ' + origine + ')';
+      if (nuovo.percorsi.indexOf('./js/ambiente.js') >= 0 && origine !== 'file' && !(stile === 'github' && origine === '(api.js di prima)')) return 'l\'ambiente doveva venire dal file, origine: ' + origine;
+      return true;
     });
     await prova('subito dopo il passaggio regge un sito che risponde 404', async function () {
       await imposta({ modo: '404' });

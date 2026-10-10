@@ -11,6 +11,12 @@
 //   http://localhost:8765/                  l'app (cartella docs/)
 //   http://localhost:8765/?sloggato         la stessa, senza sessione (prova di fumo)
 //   http://localhost:8765/?senzaFiltro      la stessa, senza la libreria del filtro HTML
+//   http://localhost:8765/?ambiente=senza   la stessa, senza il tag di js/ambiente.js (una pagina
+//                                           della versione di prima accoppiata al codice nuovo)
+//   http://localhost:8765/?ambiente=X       la stessa, con un file d'ambiente FINTO al posto di quello
+//                                           del collaudo: assente (404), sintassi (non è JavaScript,
+//                                           come la pagina di blocco di un filtro), nullo, rotto,
+//                                           altro-sito, discorde. Mai il file di un reparto vero.
 //   http://localhost:8765/rubrica/          la rubrica aperta DA SOLA: deve restare sul messaggio fisso
 //   http://localhost:8765/trak-finto/       il finto TrakCare
 //   http://localhost:8765/pagina/…          generatore e prove che girano dentro l'app
@@ -19,16 +25,43 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { genera } = require('./gettone-prova.js');
+const reparti = require('./reparti.js');
 
 const RADICE = path.resolve(__dirname, '../..');
 const PORTA = Number(process.argv[2] || 8765);
 const COMPRESSA = process.argv[3] === 'compressa';
 if (process.argv[3] && !COMPRESSA) { console.log('secondo argomento non riconosciuto: ' + process.argv[3]); process.exit(1); }
+// docs/ è il sito della 11N: il suo js/ambiente.js non elenca questo PC, e
+// servito così com'è fermerebbe l'app («Indirizzo non riconosciuto»). Il banco
+// serve al suo posto il file del reparto di COLLAUDO, generato in memoria dal
+// suo file in reparti/. Mai un reparto di produzione: se il reparto del banco
+// non è di collaudo, o non ammette questo PC, il banco non parte.
+const REPARTO = reparti.risolvi('collaudo');
+if (REPARTO.tipo !== 'collaudo' || !reparti.hostAmmesso(REPARTO, 'localhost')) { console.log('il reparto del banco deve essere di collaudo e ammettere localhost'); process.exit(1); }
+if (REPARTO.supabaseUrl.indexOf('://' + require('./sb.js').REF_COLLAUDO + '.') < 0) { console.log('il reparto del banco non punta al database di collaudo degli strumenti'); process.exit(1); }
+// File d'ambiente FINTI per le prove, da un elenco chiuso. Il file di un reparto
+// vero non si serve mai su questo PC: se la regola che ferma l'app fosse rotta,
+// la pagina si collegherebbe al suo database. Il database di quelli finti non
+// esiste (dominio «.invalid»: non si risolve per definizione).
+const FINTO = { codice: 'finto', nome: 'Finto', ambiente: 'collaudo', lingua: 'it', versioneLocale: 0, host: ['localhost', '127.0.0.1'], supabaseUrl: 'https://database-finto.invalid', supabaseAnonKey: 'chiave-finta', googleClientId: 'client-finto' };
+const scritto = (o) => '// BANCO LOCALE: file d\'ambiente FINTO, generato al volo per una prova.\nwindow._AMBIENTE = ' + JSON.stringify(o) + ';\n';
+const VARIANTI = {
+  // non è JavaScript: lo script non parte, come se il file non fosse arrivato
+  sintassi: '<!DOCTYPE html><title>Pagina bloccata</title><p>BANCO LOCALE: al posto del file una pagina.</p>\n',
+  nullo: '// BANCO LOCALE: file d\'ambiente FINTO.\nwindow._AMBIENTE = null;\n',
+  // c'è ma non è scritto come deve: l'app si ferma
+  rotto: scritto({ ambiente: 'collaudo', host: ['localhost'] }),
+  // ben fatto, ma di un altro sito: questo PC non è fra i suoi indirizzi
+  'altro-sito': scritto(Object.assign({}, FINTO, { ambiente: 'produzione', host: ['sito-finto.example.org'] })),
+  // ben fatto e ammette questo PC, ma col database di un altro: non concorda con la tabella di riserva
+  discorde: scritto(FINTO),
+};
+const TAG_AMBIENTE = /<script src="js\/ambiente\.js"><\/script>/;
 // La copia compressa si prepara una volta, all'avvio: se non riesce il banco non parte.
 const SITO = COMPRESSA ? path.join(RADICE, '_sito', 'banco') : path.join(RADICE, 'docs');
 if (COMPRESSA) {
-  const r = require('./prepara-sito.js').prepara(SITO, { compressa: true });
-  console.log('copia compressa pronta: ' + r.elenco.length + ' file, ' + Math.round(r.byte / 1024) + ' KB (' + r.compressione.strumento + ')');
+  const r = require('./prepara-sito.js').prepara(SITO, { compressa: true, reparto: REPARTO.codice });
+  console.log('copia compressa pronta per il reparto «' + r.reparto + '»: ' + r.elenco.length + ' file, ' + Math.round(r.byte / 1024) + ' KB (' + r.compressione.strumento + ')');
 }
 const MONTAGGI = [
   ['/trak-finto/', path.join(RADICE, 'collaudo', 'trak-finto')],
@@ -106,6 +139,20 @@ http.createServer(async (req, res) => {
 
     if (percorso === '/banco-errori.js') return rispondi(res, 200, MIME['.js'], raccoglitore());
 
+    // Il file d'ambiente. Senza altro è quello del collaudo: generato in memoria
+    // quando il banco serve docs/, quello della copia quando serve la copia
+    // compressa (preparata per il collaudo). Con «variante» le prove chiedono
+    // apposta un file finto (vedi VARIANTI) o nessuno.
+    if (percorso === '/js/ambiente.js') {
+      const quale = url.searchParams.get('variante');
+      if (quale === 'assente') return rispondi(res, 404, 'text/plain; charset=utf-8', 'non trovato');
+      if (quale !== null) {
+        if (!Object.prototype.hasOwnProperty.call(VARIANTI, quale)) return rispondi(res, 400, 'text/plain; charset=utf-8', 'variante sconosciuta');
+        return rispondi(res, 200, MIME['.js'], VARIANTI[quale]);
+      }
+      if (!COMPRESSA) return rispondi(res, 200, MIME['.js'], reparti.ambienteJs(REPARTO));
+    }
+
     // Prove della mail: la cassaforte del collaudo passa alle credenziali finte
     // (e torna com'era alla fine), e il finto Google dice che cosa ha «spedito».
     // Solo dalle pagine del banco: di qui passa il segreto del finto Google.
@@ -143,6 +190,9 @@ http.createServer(async (req, res) => {
     const montaggio = MONTAGGI.find((m) => percorso.startsWith(m[0]));
     if (percorso.endsWith('/')) percorso += 'index.html';
     const file = path.normalize(path.join(montaggio[1], percorso.slice(montaggio[0].length)));
+    // docs/js/ambiente.js è della 11N e da questo banco non esce mai, per qualunque strada ci si arrivi
+    // (maiuscole, barre doppie, un indirizzo scritto in modo strano): al suo posto, quello del collaudo.
+    if (!COMPRESSA && path.resolve(file).toLowerCase() === path.resolve(reparti.AMBIENTE_JS).toLowerCase()) return rispondi(res, 200, MIME['.js'], reparti.ambienteJs(REPARTO));
     // Una cartella chiesta senza la barra finale («/rubrica»): rinvio alla cartella, come fanno GitHub e Cloudflare.
     if (file.startsWith(montaggio[1] + path.sep) && fs.existsSync(file) && fs.statSync(file).isDirectory() && fs.existsSync(path.join(file, 'index.html'))) {
       res.writeHead(301, { Location: url.pathname + '/' + url.search, 'Cache-Control': 'no-store' });
@@ -160,9 +210,19 @@ http.createServer(async (req, res) => {
         if (!TESTA_RUBRICA.test(html)) console.log('ATTENZIONE: in ' + relativo + ' non trovo il foglio di stile app.css: pagina servita senza raccolta degli errori');
         return rispondi(res, 200, MIME[est], html.replace(TESTA_RUBRICA, (tag) => '<script src="/banco-errori.js"></script>\n  ' + tag));
       }
-      if (!SDK.test(html)) console.log('ATTENZIONE: in ' + relativo + ' non trovo il tag dell\'SDK Supabase: pagina servita senza sessione di prova');
+      // 404.html e rete.html non caricano l'app: per loro l'avviso non serve
+      if ((relativo === 'index.html' || relativo === 'print.html') && !SDK.test(html)) console.log('ATTENZIONE: in ' + relativo + ' non trovo il tag dell\'SDK Supabase: pagina servita senza sessione di prova');
       const sloggato = url.searchParams.has('sloggato') ? '?sloggato' : '';
       let pagina = html.replace(SDK, (tag) => '<script src="/banco-avvio.js' + sloggato + '"></script>\n  ' + tag);
+      // ?ambiente=…: la pagina chiede un file d'ambiente diverso da quello del
+      // collaudo, oppure («senza») arriva senza il tag, come una pagina della
+      // versione di prima rimasta nel browser accanto al codice nuovo.
+      if ((relativo === 'index.html' || relativo === 'print.html') && !TAG_AMBIENTE.test(html)) console.log('ATTENZIONE: in ' + relativo + ' non trovo il tag di js/ambiente.js');
+      const amb = url.searchParams.get('ambiente');
+      if (amb !== null) {
+        if (amb !== 'senza' && amb !== 'assente' && !Object.prototype.hasOwnProperty.call(VARIANTI, amb)) return rispondi(res, 400, 'text/plain; charset=utf-8', 'ambiente non valido');
+        pagina = pagina.replace(TAG_AMBIENTE, amb === 'senza' ? '<!-- banco: tag di js/ambiente.js tolto -->' : '<script src="js/ambiente.js?variante=' + amb + '"></script>');
+      }
       // ?senzaFiltro: la pagina arriva senza la libreria del filtro dell'HTML,
       // come se il suo caricamento fosse fallito (l'app deve fermarsi e dirlo).
       if (url.searchParams.has('senzaFiltro')) pagina = pagina.replace(/<script\b[^>]*\bpurify[^>]*><\/script>/i, '<!-- banco: filtro tolto -->');

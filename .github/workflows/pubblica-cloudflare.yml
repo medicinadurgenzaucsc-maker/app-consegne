@@ -7,6 +7,9 @@ name: Pubblica su Cloudflare
 # Parte a ogni push sul ramo «master» che tocca il sito, e a mano. Il flusso è lo
 # stesso nei due repository (collaudo e produzione): a quale progetto di
 # Cloudflare pubblicare lo dicono le impostazioni del repository, non il codice.
+# Dal progetto si sa il REPARTO: è quello che in reparti/<codice>.json dichiara
+# quel progetto, e il sito si prepara per lui (cambia solo js/ambiente.js). Un
+# progetto che nessun reparto dichiara ferma il flusso.
 #   variabile  CLOUDFLARE_PROGETTO     nome del progetto Pages (es. consegne-collaudo)
 #   segreto    CLOUDFLARE_API_TOKEN    chiave col solo permesso «Cloudflare Pages: Edit»
 #   segreto    CLOUDFLARE_ACCOUNT_ID   identificativo dell'account Cloudflare
@@ -29,10 +32,12 @@ on:
     branches: [master]
     paths:
       - 'docs/**'
+      - 'reparti/**'
       - '.github/workflows/pubblica-cloudflare.yml'
       - '.github/pubblicazione/**'
       - '.github/compressione/**'
       - 'collaudo/strumenti/prepara-sito.js'
+      - 'collaudo/strumenti/reparti.js'
   workflow_dispatch:
 
 permissions:

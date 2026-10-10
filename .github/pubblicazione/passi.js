@@ -6,6 +6,13 @@
 //   node .github/pubblicazione/passi.js verifica        la pubblicazione è quella di questo commit
 //   node .github/pubblicazione/passi.js avvisa          aggiorna app_version: sui PC compare «Update»
 //
+// Per quale reparto si pubblica lo dice il progetto Pages scritto nelle
+// impostazioni del repository (CLOUDFLARE_PROGETTO): è il reparto che in
+// reparti/<codice>.json dichiara quel progetto. Il sito si prepara per lui
+// (js/ambiente.js generato dal suo file), e un progetto che nessun reparto
+// dichiara ferma il flusso. Dove Cloudflare non è configurato si controlla
+// soltanto, sul sito di docs/ così com'è.
+//
 // Tutto arriva dall'ambiente del flusso. Nessuna chiave viene mai stampata: di
 // Cloudflare e di Supabase si mostrano solo lo stato della risposta e i motivi
 // di un errore.
@@ -16,6 +23,16 @@ const RADICE = path.resolve(__dirname, '../..');
 const env = process.env;
 const errore = (t) => { console.log('::error::' + t); process.exit(1); };
 const esporta = (file, riga) => { if (file) fs.appendFileSync(file, riga + '\n'); };
+const reparti = require(path.join(RADICE, 'collaudo/strumenti/reparti.js'));
+
+// Il reparto di questa pubblicazione, oppure null se nel repository non è scritto nessun progetto.
+function repartoDelFlusso() {
+  if (!env.PROGETTO) return null;
+  let r = null;
+  try { r = reparti.perProgettoCloudflare(env.PROGETTO); } catch (e) { errore('i file in reparti/ non sono validi: ' + String((e && e.message) || e).split('\n').join(' | ').slice(0, 900)); }
+  if (!r) errore('nessun reparto in reparti/ pubblica sul progetto «' + env.PROGETTO + '» (campo pubblicazione.cloudflare.progetto): non si pubblica un sito senza sapere di chi è');
+  return r;
+}
 
 async function cloudflare(metodo, percorso, corpo) {
   const r = await fetch('https://api.cloudflare.com/client/v4/accounts/' + env.CLOUDFLARE_ACCOUNT_ID.trim() + '/pages/projects' + percorso, {
@@ -42,14 +59,18 @@ const PASSI = {
   sito() {
     if (Number(process.versions.node.split('.')[0]) < 22) errore('serve Node 22 o successivo, trovato ' + process.version);
     const { prepara } = require(path.join(RADICE, 'collaudo/strumenti/prepara-sito.js'));
+    const reparto = repartoDelFlusso();
     let r = null;
-    try { r = prepara(path.join(RADICE, '_sito'), { compressa: true }); } catch (e) { errore(String((e && e.message) || e).split('\n').join(' | ').slice(0, 900)); }
+    try { r = prepara(path.join(RADICE, '_sito'), { compressa: true, reparto: reparto ? reparto.codice : undefined }); } catch (e) { errore(String((e && e.message) || e).split('\n').join(' | ').slice(0, 900)); }
+    if (reparto && r.reparto !== reparto.codice) errore('il sito è stato preparato per «' + r.reparto + '» invece che per «' + reparto.codice + '»');
+    console.log('reparto: ' + r.reparto + (reparto ? '' : ' (nessun progetto Cloudflare in questo repository: è il sito di docs/, solo per controllo)'));
+    esporta(env.GITHUB_ENV, 'REPARTO=' + r.reparto);
     const kb = (n) => (n / 1024).toFixed(0).padStart(5) + ' KB';
     r.compressione.righe.forEach((x) => console.log('  ' + kb(x.prima) + ' → ' + kb(x.dopo) + '  ' + x.file.padEnd(34) + x.nota));
     console.log(r.elenco.length + ' file: da ' + kb(r.compressione.prima).trim() + ' a ' + kb(r.compressione.dopo).trim() + ' (' + r.compressione.strumento + '); ' + r.compressione.nomiGlobali + ' nomi globali rimasti identici');
     console.log('impronte dei file pubblicati (sha256):');
     r.compressione.righe.forEach((x) => console.log('  ' + x.impronta + '  ' + x.file));
-    ['index.html', 'print.html', '404.html', 'sw.js', 'manifest.json', 'js/api.js', 'rubrica/index.html', 'rubrica/app.js', 'rubrica/app.css'].forEach((p) => {
+    ['index.html', 'print.html', '404.html', 'sw.js', 'manifest.json', 'js/ambiente.js', 'js/api.js', 'rubrica/index.html', 'rubrica/app.js', 'rubrica/app.css'].forEach((p) => {
       if (r.elenco.indexOf(p) < 0) errore('fra i file del sito manca ' + p);
     });
     // dal sorgente: nella copia compressa la riga ha un'altra forma
@@ -89,8 +110,8 @@ const PASSI = {
     const p = r.dati.result;
     console.log('progetto: ' + p.name + ' | ramo di produzione: ' + p.production_branch + ' | indirizzo: https://' + p.subdomain);
     if (p.production_branch !== 'master') errore('il ramo di produzione del progetto è «' + p.production_branch + '», atteso «master»');
-    const api = fs.readFileSync(path.join(RADICE, 'docs/js/api.js'), 'utf8');
-    if (api.indexOf("'" + p.subdomain + "'") < 0) errore("l'indirizzo " + p.subdomain + " non è fra quelli che l'app riconosce (elenchi «host» in docs/js/api.js): va aggiunto all'ambiente giusto prima di pubblicare");
+    const reparto = repartoDelFlusso();
+    if (!reparti.hostAmmesso(reparto, p.subdomain)) errore("l'indirizzo " + p.subdomain + ' non è fra quelli del reparto «' + reparto.codice + '» (campo «host» di reparti/' + reparto.codice + '.json): il sito pubblicato lì si fermerebbe su «Indirizzo non riconosciuto»');
     esporta(env.GITHUB_ENV, 'SITO=https://' + p.subdomain);
   },
 
@@ -107,6 +128,7 @@ const PASSI = {
     if (fase.status !== 'success') errore('la pubblicazione non risulta conclusa: ' + fase.name + ' ' + fase.status);
     const riga = (t) => esporta(env.GITHUB_STEP_SUMMARY, t);
     riga('### Pubblicato su Cloudflare');
+    riga('- reparto: ' + repartoDelFlusso().codice);
     riga('- progetto: ' + env.PROGETTO);
     riga('- sito: ' + env.SITO);
     riga('- versione: ' + env.VERSIONE + ' (' + String(env.GITHUB_SHA).slice(0, 7) + ')');
@@ -118,6 +140,11 @@ const PASSI = {
     if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) errore('CLOUDFLARE_AVVISA vale «si» ma mancano i segreti SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY');
     const sha = String(env.GITHUB_SHA);
     const base = env.SUPABASE_URL.trim();
+    // «Update» va acceso sui PC del reparto che si è appena pubblicato, non su quelli di un altro:
+    // il database dei segreti deve essere quello scritto nel file del reparto. Il valore non si stampa.
+    const reparto = repartoDelFlusso();
+    if (!reparto) errore('avviso ai PC: in questo repository non è scritto il progetto Cloudflare, quindi non si sa di quale reparto siano');
+    if ((base.charAt(base.length - 1) === '/' ? base.slice(0, -1) : base) !== reparto.supabaseUrl) errore('il segreto SUPABASE_URL non è il database del reparto «' + reparto.codice + '»: l\'avviso arriverebbe ai PC di un altro');
     const r = await fetch((base.charAt(base.length - 1) === '/' ? base.slice(0, -1) : base) + '/rest/v1/app_version?id=eq.1', {
       method: 'PATCH',
       headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY.trim(), Authorization: 'Bearer ' + env.SUPABASE_SERVICE_ROLE_KEY.trim(), 'Content-Type': 'application/json', Prefer: 'return=representation' },

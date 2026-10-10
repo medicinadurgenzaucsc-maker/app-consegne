@@ -113,11 +113,10 @@ async function segretoSbagliato() {
 // delle prove, si fa rilasciare da Google un token nuovo. È ciò che fa l'app
 // prima di mostrare la procedura di invio. Nessuna mail parte.
 async function verifica() {
-  const fs = require('fs'), path = require('path');
-  const api = fs.readFileSync(path.join(__dirname, '../../docs/js/api.js'), 'utf8');
-  const blocco = api.slice(api.indexOf('collaudo: {'));
-  const url = (/supabaseUrl:\s*'([^']+)'/.exec(blocco) || [])[1], anon = (/supabaseAnonKey:\s*'([^']+)'/.exec(blocco) || [])[1];
-  if (!url || !anon || url.indexOf(collaudo().ref) < 0) throw new Error('indirizzo o chiave pubblica del collaudo non trovati in docs/js/api.js');
+  // indirizzo e chiave pubblica del collaudo: dal file del reparto (reparti/collaudo.json)
+  const rep = require('./reparti.js').risolvi('collaudo');
+  const url = rep.supabaseUrl, anon = rep.supabaseAnonKey;
+  if (rep.tipo !== 'collaudo' || url.indexOf('://' + collaudo().ref + '.') < 0) throw new Error('il reparto «collaudo» non punta al database di collaudo degli strumenti');
   const s = await require('./gettone-prova.js').genera(1);
   const r = await fetch(url + '/functions/v1/google-token', {
     method: 'POST',

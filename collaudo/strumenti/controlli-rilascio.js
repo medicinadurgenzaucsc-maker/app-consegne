@@ -5,16 +5,19 @@
 //  2. i due segnalibri TrakCare compilano anche collassati su una riga; se il
 //     loro codice è cambiato, deve essere cambiato anche il numero di versione
 //  3. nessun tag <script src> perso (un taglio sbagliato li porta via senza che
-//     la sintassi se ne accorga) e ordine giusto: libreria del filtro →
-//     sanifica.js → api.js, in tutte e due le pagine
+//     la sintassi se ne accorga) e ordine giusto: ambiente.js → libreria del
+//     filtro → sanifica.js → api.js, in tutte e due le pagine
 //  4. la libreria del filtro nel repository è quella dichiarata: la sua impronta
 //     è quella scritta in «integrity» nelle due pagine
 //  5. service worker: versione della cache alzata, e ogni file dell'elenco esiste
 //  6. ogni signOut dichiara scope 'local' (quello predefinito scollegherebbe
 //     tutti i PC del reparto, che usano lo stesso account)
 //  7. la versione scritta nel menu della rotellina è la stessa di CACHE_NAME
-//  8. indirizzi: ogni ambiente elenca i suoi, nessuno è di tutti e due, e un
-//     indirizzo sconosciuto non è di nessuno (l'app lì non deve partire)
+//  8. indirizzi: ogni reparto elenca i suoi (reparti/<codice>.json), nessuno è
+//     di due reparti, e con le funzioni vere di api.js un sito parte solo dai
+//     propri indirizzi: non da quelli di un altro, non da uno sconosciuto, non
+//     con un file dell'ambiente sbagliato; la tabella di riserva rimasta in
+//     api.js è identica a quella della v189 e concorda con i file dei reparti
 //  9. fra i file pubblicati su Cloudflare ci sono tutti quelli che le pagine e
 //     il service worker caricano
 // 10. flusso di pubblicazione: azione di GitHub fissata all'identificativo
@@ -30,6 +33,11 @@
 //     CSP stretta e niente scritto in linea, richieste e scritture in memoria
 //     da un punto solo, e il riquadro dell'app apre proprio quella pagina
 //     (tutto guardato nel codice vivo: ciò che sta in un commento non conta)
+// 14. reparti: i dati dei due ambienti scritti negli strumenti concordano con i
+//     file dei reparti; il codice di un reparto vale da nome d'ambiente senza
+//     togliere le barriere della produzione; il flusso riparte se cambia un
+//     reparto; il sito di OGNI reparto si costruisce, non porta dati di un
+//     altro e differisce dagli altri solo in js/ambiente.js (punto 12)
 //
 //   node collaudo/strumenti/controlli-rilascio.js [riferimento]
 //
@@ -42,6 +50,13 @@ const { execFileSync } = require('child_process');
 
 const RADICE = path.resolve(__dirname, '../..');
 const RIF = process.argv[2] || 'origin/master';
+if (process.argv.length > 3) { console.log('uso: controlli-rilascio.js [riferimento git]'); process.exit(2); }
+// Il nome di un reparto non è un riferimento git. «collaudo» però è anche un ramo: i confronti con la
+// versione precedente diventerebbero confronti del ramo con se stesso, e direbbero «nulla è cambiato».
+if (process.argv[2] && require('./reparti.js').nomeStorico(process.argv[2])) {
+  console.log('controlli-rilascio.js vuole un riferimento git, non il nome di un reparto: senza argomenti confronta con origin/master; per il ramo si scrive refs/heads/collaudo');
+  process.exit(2);
+}
 let errori = 0;
 const ko = (t) => { errori++; console.log('KO  ' + t); };
 const ok = (t) => console.log('ok  ' + t);
@@ -59,7 +74,7 @@ function compila(file) {
 fs.readdirSync(path.join(RADICE, 'docs/js')).filter((f) => f.endsWith('.js')).forEach((f) => compila('docs/js/' + f));
 compila('docs/sw.js');
 compila('docs/rubrica/app.js');
-['docs/index.html', 'docs/print.html', 'docs/rubrica/index.html'].forEach((f) => {
+['docs/index.html', 'docs/print.html', 'docs/rubrica/index.html', 'docs/rete.html'].forEach((f) => {
   const html = leggi(f);
   const re = /<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi;
   let m, n = 0, male = 0;
@@ -79,7 +94,10 @@ function segnalibro(html, nome, fine) {
   return html.slice(i0, i1).trim().replace(/\}\s*$/, '}').replace(/\r\n/g, '\n');
 }
 const ora = leggi('docs/index.html'), prima = diRif('docs/index.html');
-if (prima == null) console.log('--  riferimento «' + RIF + '» non leggibile: salto i confronti con la versione precedente');
+// Un riferimento scritto a mano e non leggibile è un errore (il nome di un reparto al posto di un ramo, per
+// esempio): saltare i confronti in silenzio farebbe passare un segnalibro cambiato senza la sua versione.
+if (prima == null && process.argv[2]) ko('riferimento «' + RIF + '» non leggibile: va scritto un ramo o un commit che esiste (i confronti con la versione precedente non si possono fare)');
+else if (prima == null) console.log('--  riferimento «' + RIF + '» non leggibile: salto i confronti con la versione precedente');
 [['_bmTerapiaSorgente', "var _BM_TERAPIA = 'javascript:(", '_BM_VERSIONE'], ['_bmLabSorgente', "var _BM_LAB = 'javascript:(", '_LAB_BM_VERSIONE']].forEach((c) => {
   const a = segnalibro(ora, c[0], c[1]), b = segnalibro(prima, c[0], c[1]);
   if (!a) return ko(c[0] + ': non trovato in index.html');
@@ -107,8 +125,12 @@ const tagSrc = (html) => (html.match(/<script\b[^>]*\bsrc=["'][^"']+["'][^>]*>/g
   if (x[3]) return;
   const lib = adesso.filter((t) => /(^|\/)purify[^/]*\.js$/.test(t.src))[0];
   if (!lib) return ko(x[0] + ': manca il tag della libreria del filtro (DOMPurify)');
-  const iL = nomi.indexOf(lib.src), iS = nomi.indexOf('js/sanifica.js'), iA = nomi.indexOf('js/api.js');
-  (iL >= 0 && iL < iS && iS < iA) ? ok(x[0] + ': ordine libreria del filtro → sanifica.js → api.js') : ko(x[0] + ': ordine sbagliato (libreria ' + iL + ', sanifica.js ' + iS + ', api.js ' + iA + ')');
+  const iL = nomi.indexOf(lib.src), iS = nomi.indexOf('js/sanifica.js'), iA = nomi.indexOf('js/api.js'), iE = nomi.indexOf('js/ambiente.js');
+  (iE >= 0 && iE < iL && iL < iS && iS < iA) ? ok(x[0] + ': ordine ambiente.js → libreria del filtro → sanifica.js → api.js') : ko(x[0] + ': ordine sbagliato (ambiente.js ' + iE + ', libreria ' + iL + ', sanifica.js ' + iS + ', api.js ' + iA + ')');
+  // Il file dell'ambiente deve essere ESEGUITO prima di api.js: un solo tag, scritto semplice.
+  // Con async, defer o type=module il browser lo eseguirebbe dopo, e api.js partirebbe dalla tabella di riserva.
+  const tagE = adesso.filter((t) => (t.src || '').split('?')[0] === 'js/ambiente.js');
+  if (tagE.length !== 1 || tagE[0].tag !== '<script src="js/ambiente.js">') ko(x[0] + ': il tag di js/ambiente.js deve essere uno solo e scritto così: <script src="js/ambiente.js"> (trovati: ' + (tagE.map((t) => t.tag).join(' ') || 'nessuno') + ')');
   if (/^https?:/i.test(lib.src)) return ko(x[0] + ': la libreria del filtro è caricata da fuori (' + lib.src + ') invece che dal repository');
   const file = path.join(RADICE, 'docs', lib.src);
   if (!fs.existsSync(file)) return ko(x[0] + ': il file ' + lib.src + ' non esiste');
@@ -135,7 +157,7 @@ if (swPrima != null) {
 const elenco = ((sw.match(/PRECACHE_ASSETS\s*=\s*\[([\s\S]*?)\]/) || [])[1] || '').match(/'[^']+'/g) || [];
 const mancanti = elenco.map((s) => s.slice(1, -1)).filter((p) => p !== './' && !fs.existsSync(path.join(RADICE, 'docs', p)));
 mancanti.length ? ko('sw.js elenca file che non esistono (l\'installazione del service worker fallirebbe): ' + mancanti.join(', ')) : ok('sw.js: i ' + elenco.length + ' file tenuti in cache esistono tutti');
-['./js/sanifica.js', './js/api.js', './js/app.js', './js/app2.js', './rubrica/', './rubrica/index.html', './rubrica/app.css', './rubrica/app.js'].concat(tagSrc(ora).map((t) => t.src).filter((s) => /purify/.test(s)).map((s) => './' + s)).forEach((p) => {
+['./js/ambiente.js', './js/sanifica.js', './js/api.js', './js/app.js', './js/app2.js', './rubrica/', './rubrica/index.html', './rubrica/app.css', './rubrica/app.js'].concat(tagSrc(ora).map((t) => t.src).filter((s) => /purify/.test(s)).map((s) => './' + s)).forEach((p) => {
   if (elenco.indexOf("'" + p + "'") < 0) ko('sw.js: ' + p + ' non è fra i file tenuti in cache');
 });
 
@@ -168,40 +190,108 @@ mancanti.length ? ko('sw.js elenca file che non esistono (l\'installazione del s
 }
 
 // ── 8. indirizzi e ambienti ──────────────────────────────────────────────
-// Ogni ambiente elenca i propri indirizzi (api.js): nessuno deve stare in tutti
-// e due, fra quelli di produzione non deve essercene uno di prova, e un
-// indirizzo sconosciuto non deve valere né da collaudo né da produzione.
+// Chi è un sito lo dice js/ambiente.js, generato dal file del suo reparto
+// (reparti/<codice>.json); in api.js decide _ambienteEsame. Qui, con le
+// funzioni VERE di api.js e i file VERI dei reparti, si prova che ogni sito
+// parta dai propri indirizzi e da nessun altro, e che un file sbagliato lo
+// fermi. È la sola prova possibile del file della 11N prima del rilascio: su
+// questo PC quel file non si serve mai.
+// TRANSITORIO: la tabella _AMBIENTI della v189 resta in api.js come riserva
+// per i minuti di un aggiornamento. Deve restare identica a com'era e
+// concordare con i file dei reparti; quando verrà tolta questo blocco andrà
+// riscritto senza di lei (e con lui prove.js, prove-sw.js, prepara-sito.js).
 {
+  const TABELLA_V189 = 'faa288d7b25f9f58db86572cd608ac8aa10e06c543d9c717871547030d5ce690';
+  const reparti = require('./reparti.js');
+  const vm = require('vm');
   const api = leggi('docs/js/api.js').replace(/\r\n/g, '\n');
-  const i0 = api.indexOf('var _AMBIENTI = {'), i1 = api.indexOf('var AMBIENTE = ');
-  let f = null;
-  if (i0 < 0 || i1 < i0) ko('api.js: blocco degli ambienti non trovato');
+  const i0 = api.indexOf('var _AMBIENTI = {'), iT = api.indexOf('// Un nome host è coperto da una voce'), i1 = api.indexOf('var _AMB_ESAME = ');
+  let tutti = null, g = null;
+  try { tutti = reparti.tutti(); ok('reparti: ' + tutti.length + ' file validi (' + tutti.map((r) => r.codice).join(', ') + '); nessun nome, indirizzo, database o progetto in comune; nei reparti di produzione nessuna anteprima, né localhost né 127.0.0.1'); }
+  catch (e) { ko('reparti: ' + String(e.message).split('\n').join(' | ')); }
+  if (tutti) { const c = reparti.controllaDocs(); c.ok ? ok('docs/js/ambiente.js è quello generato per il reparto «' + c.reparto + '», che pubblica da docs/') : ko(c.motivo); }
+  if (i0 < 0 || iT < i0 || i1 < iT) ko('api.js: blocco degli ambienti non trovato');
   else {
-    try { f = new Function(api.slice(i0, i1) + '\nreturn { ambienti: _AMBIENTI, da: _ambienteDaHost };')(); }
+    try { g = new Function(api.slice(i0, i1) + '\nreturn { ambienti: _AMBIENTI, da: _ambienteDaHost, esame: _ambienteEsame, di: _ambienteDi };')(); }
     catch (e) { ko('api.js: il blocco degli ambienti non compila: ' + e.message); }
   }
-  if (f) {
-    const P = f.ambienti.produzione.host, C = f.ambienti.collaudo.host;
-    const doppi = P.filter((h) => C.indexOf(h) >= 0);
-    doppi.length ? ko('indirizzi presenti in tutti e due gli ambienti: ' + doppi.join(', ')) : ok('ambienti: ' + P.length + ' indirizzi di produzione, ' + C.length + ' di collaudo, nessuno in comune');
-    const diProva = P.filter((h) => /collaudo|gistech|localhost|127[.]0[.]0[.]1/.test(h));
-    if (diProva.length) ko('fra gli indirizzi di PRODUZIONE ce n\'è uno di prova: ' + diProva.join(', '));
-    if (f.ambienti.produzione.supabaseUrl === f.ambienti.collaudo.supabaseUrl) ko('i due ambienti puntano allo stesso database');
-    const attesi = [['medicinadurgenzaucsc-maker.github.io', 'produzione'], ['gistech2026.github.io', 'collaudo'], ['localhost', 'collaudo'], ['LOCALHOST', 'collaudo'],
-      ['', null], ['example.org', null], ['github.io', null], ['pages.dev', null], ['xgistech2026.github.io', null],
-      ['gistech2026.github.io.example.org', null], ['medicinadurgenzaucsc-maker.github.io.example.org', null]];
-    // una voce col punto vale per i sottodomini, non per un nome incollato davanti né in coda
-    [[P, 'produzione'], [C, 'collaudo']].forEach((x) => x[0].filter((h) => h.charAt(0) === '.').forEach((h) => {
-      attesi.push(['anteprima' + h, x[1]], ['falso' + h.slice(1), null], [h.slice(1) + '.example.org', null]);
-    }));
-    // ogni indirizzo esatto è del suo ambiente; un sottodominio davanti vale solo se c'è anche la voce col punto
-    [[P, 'produzione'], [C, 'collaudo']].forEach((x) => x[0].filter((h) => h.charAt(0) !== '.').forEach((h) => {
-      attesi.push([h, x[1]], ['anteprima.' + h, x[0].indexOf('.' + h) >= 0 ? x[1] : null], [h + '.example.org', null]);
-    }));
-    // in produzione le anteprime di Cloudflare non devono essere riconosciute: sui pazienti veri si lavora solo dal sito
-    if (P.some((h) => h.charAt(0) === '.')) ko('fra gli indirizzi di PRODUZIONE c\'è una voce col punto: le anteprime lavorerebbero sui pazienti veri');
-    const sbagliati = attesi.filter((x) => f.da(x[0]) !== x[1]).map((x) => '«' + x[0] + '» → ' + f.da(x[0]) + ' (atteso ' + x[1] + ')');
-    sbagliati.length ? ko('riconoscimento degli indirizzi: ' + sbagliati.join('; ')) : ok('riconoscimento degli indirizzi: ' + attesi.length + ' casi giusti, sconosciuti compresi');
+  if (g && tutti) {
+    // la tabella di riserva: quella della v189, e d'accordo con i file dei reparti
+    (crypto.createHash('sha256').update(api.slice(i0, iT).trim()).digest('hex') === TABELLA_V189)
+      ? ok('tabella di riserva in api.js: identica a quella della v189')
+      : ko('tabella di riserva in api.js: è cambiata rispetto alla v189 (sta lì solo per i minuti di un aggiornamento: non si allunga e non si corregge)');
+    Object.keys(g.ambienti).forEach((nome) => {
+      const t = g.ambienti[nome];
+      const r = tutti.filter((x) => x.ambiente === nome && x.supabaseUrl === t.supabaseUrl)[0];
+      if (!r) return ko('tabella di riserva: nessun reparto ha l\'ambiente «' + nome + '» e il suo database');
+      const diversi = [];
+      if (r.supabaseAnonKey !== t.supabaseAnonKey) diversi.push('chiave pubblica');
+      if (r.googleClientId !== t.googleClientId) diversi.push('client Google');
+      const fuori = t.host.filter((h) => r.host.indexOf(h) < 0);
+      if (fuori.length) diversi.push('indirizzi (la tabella conosce ' + fuori.join(', ') + ', il file del reparto no: lì il sito partirebbe o si fermerebbe a seconda del file arrivato)');
+      diversi.length ? ko('reparti/' + r.codice + '.json e la tabella di riserva non concordano su: ' + diversi.join('; ')) : ok('reparti/' + r.codice + '.json concorda con la tabella di riserva («' + nome + '»: database, chiave pubblica, client Google, indirizzi)');
+    });
+
+    // il file di ogni reparto, così come lo riceve il browser
+    const file = {};
+    tutti.forEach((r) => { const w = {}; vm.runInNewContext(reparti.ambienteJs(r), { window: w }); file[r.codice] = w._AMBIENTE; });
+    const male = [];
+    let casi = 0;
+    const atteso = (cosa, ottenuto, voluto) => { casi++; if (ottenuto !== voluto) male.push(cosa + ' → ' + ottenuto + ' (atteso ' + voluto + ')'); };
+    const detto = (e) => e.esito ? 'PARTE' : 'fermo:' + e.motivo;
+    const SCONOSCIUTI = ['', 'example.org', 'github.io', 'pages.dev', 'supabase.co', 'xgistech2026.github.io', 'localhost.example.org'];
+    const CAMPI = ['ambiente', 'supabaseUrl', 'supabaseAnonKey', 'googleClientId'];
+    tutti.forEach((r) => {
+      const F = file[r.codice];
+      r.host.forEach((h) => {
+        const colPunto = h.charAt(0) === '.', nudo = h.replace(/^[.]/, '');
+        // dai propri indirizzi il sito parte, dal file, con i propri dati
+        (colPunto ? ['anteprima' + h, 'a.b' + h] : [h, h.toUpperCase()]).forEach((host) => {
+          const e = g.esame(F, host);
+          const suoi = e.esito && e.esito.ambiente === r.ambiente && e.esito.supabaseUrl === r.supabaseUrl && e.esito.supabaseAnonKey === r.supabaseAnonKey && e.esito.googleClientId === r.googleClientId;
+          atteso('sito ' + r.codice + ' da «' + host + '»', e.esito ? (e.esito.origine + (suoi ? ', dati suoi' : ', DATI DI ALTRI')) : 'fermo:' + e.motivo, 'file, dati suoi');
+        });
+        // un nome incollato davanti o in coda non vale; un sottodominio vale solo con la voce col punto
+        const finti = ['falso' + nudo, nudo + '.example.org'];
+        if (!colPunto && r.host.indexOf('.' + h) < 0) finti.push('anteprima.' + h);
+        finti.forEach((host) => atteso('sito ' + r.codice + ' da «' + host + '»', detto(g.esame(F, host)), 'fermo:indirizzo'));
+      });
+      SCONOSCIUTI.forEach((host) => atteso('sito ' + r.codice + ' da «' + host + '»', detto(g.esame(F, host)), 'fermo:indirizzo'));
+      // dagli indirizzi di un ALTRO reparto non parte
+      tutti.filter((x) => x.codice !== r.codice).forEach((x) => x.host.forEach((h) => {
+        const host = h.charAt(0) === '.' ? 'anteprima' + h : h;
+        atteso('sito ' + r.codice + ' dall\'indirizzo di ' + x.codice + ' «' + host + '»', detto(g.esame(F, host)), 'fermo:indirizzo');
+      }));
+      // un file che non è scritto come deve ferma l'app anche dal suo indirizzo
+      const buono = r.host.filter((h) => h.charAt(0) !== '.')[0];
+      [['vuoto', {}], ['una stringa', 'x'], ['zero', 0], ['falso', false], ['un elenco', []],
+        ['senza host', Object.assign({}, F, { host: undefined })], ['host non in elenco', Object.assign({}, F, { host: buono })],
+        ['ambiente sconosciuto', Object.assign({}, F, { ambiente: 'prova' })], ['database non https', Object.assign({}, F, { supabaseUrl: F.supabaseUrl.replace('https://', 'http://') })],
+        ['senza chiave', Object.assign({}, F, { supabaseAnonKey: '' })], ['senza client', Object.assign({}, F, { googleClientId: null })],
+      ].forEach((x) => atteso('sito ' + r.codice + ', file ' + x[0], detto(g.esame(x[1], buono)), 'fermo:file'));
+      // il file di un altro sito messo su questo indirizzo (stessi indirizzi, database dell'altro)
+      tutti.filter((x) => x.codice !== r.codice).forEach((x) => {
+        if (!g.da(buono)) return;
+        atteso('sito ' + r.codice + ' col file di ' + x.codice, detto(g.esame(Object.assign({}, file[x.codice], { host: r.host.slice() }), buono)), 'fermo:discorde');
+      });
+      // le due metà della regola, una per volta, col SUO file: solo il database cambiato, solo l'ambiente cambiato
+      if (g.da(buono)) {
+        atteso('sito ' + r.codice + ', suo file col database cambiato', detto(g.esame(Object.assign({}, F, { supabaseUrl: 'https://aaaaaaaaaaaaaaaaaaaa.supabase.co' }), buono)), 'fermo:discorde');
+        atteso('sito ' + r.codice + ', suo file con l\'ambiente cambiato', detto(g.esame(Object.assign({}, F, { ambiente: r.ambiente === 'produzione' ? 'collaudo' : 'produzione' }), buono)), 'fermo:discorde');
+      }
+      // senza il file (pagina della versione di prima) vale la tabella, e dà gli stessi dati del file
+      r.host.filter((h) => h.charAt(0) !== '.' && g.da(h)).forEach((h) => {
+        const a = g.esame(undefined, h), b = g.esame(null, h), c = g.esame(F, h);
+        const pari = a.esito && b.esito && c.esito && a.esito.origine === 'tabella' && b.esito.origine === 'tabella' && CAMPI.every((k) => a.esito[k] === c.esito[k] && b.esito[k] === c.esito[k]);
+        atteso('sito ' + r.codice + ' senza file da «' + h + '»', pari ? 'tabella, stessi dati del file' : 'DIVERSO', 'tabella, stessi dati del file');
+      });
+    });
+    // senza file, un indirizzo sconosciuto resta fermo
+    SCONOSCIUTI.forEach((host) => atteso('senza file da «' + host + '»', detto(g.esame(undefined, host)), 'fermo:indirizzo'));
+    atteso('_ambienteDi è l\'esito di _ambienteEsame', String(g.di({}, 'localhost') === null && g.di(undefined, 'example.org') === null && !!g.di(undefined, 'localhost')), 'true');
+    male.length
+      ? ko('riconoscimento degli indirizzi: ' + male.slice(0, 6).join('; ') + (male.length > 6 ? ' … e altri ' + (male.length - 6) : ''))
+      : ok('riconoscimento degli indirizzi: ' + casi + ' casi giusti con le funzioni di api.js e i file dei reparti (indirizzi propri, di altri reparti, sconosciuti; file sbagliato, di un altro sito, assente)');
   }
 }
 
@@ -227,7 +317,9 @@ mancanti.length ? ko('sw.js elenca file che non esistono (l\'installazione del s
   assenti.length
     ? ko('file caricati dalle pagine ma NON fra quelli pubblicati su Cloudflare (non registrati in git, o in una cartella dal nome che comincia con «_»): ' + assenti.join(', '))
     : ok('sito: ' + sito.length + ' file da pubblicare, compresi i ' + servono.size + ' che pagine e service worker caricano');
-  const fuoriCache = sito.filter((p) => ['_headers', '_redirects', '404.html', 'sw.js'].indexOf(p) < 0 && elenco.indexOf("'./" + p + "'") < 0);
+  // rete.html è la pagina di prova della rete: deve dire ciò che passa ADESSO, quindi non sta fra i file tenuti in cache
+  const fuoriCache = sito.filter((p) => ['_headers', '_redirects', '404.html', 'sw.js', 'rete.html'].indexOf(p) < 0 && elenco.indexOf("'./" + p + "'") < 0);
+  if (elenco.indexOf("'./rete.html'") >= 0) ko('sw.js: rete.html non deve stare fra i file tenuti in cache (è la pagina che prova la rete)');
   if (fuoriCache.length) ko('sw.js: file del sito che il service worker non tiene in cache: ' + fuoriCache.join(', '));
 }
 
@@ -305,10 +397,24 @@ mancanti.length ? ko('sw.js elenca file che non esistono (l\'installazione del s
     if ((flusso.match(/npm ci --ignore-scripts/g) || []).length < 2) ko('pubblica-cloudflare.yml: anche lo strumento di compressione va installato con «npm ci --ignore-scripts»');
     if (!/[.]github\/compressione\/\*\*/.test(flusso)) ko('pubblica-cloudflare.yml: una modifica a .github/compressione deve far ripartire la pubblicazione');
   } catch (e) { ko('strumento di compressione: ' + e.message); }
+  // La copia si costruisce per OGNI reparto: ognuna supera i controlli di
+  // comprimi.js e quello di prepara-sito.js (nessun dato di un altro reparto),
+  // e fra loro differiscono in un file solo, js/ambiente.js. È il senso di
+  // «un codice, tante configurazioni».
   try {
-    const r = require('./prepara-sito.js').prepara(path.join(RADICE, '_sito', 'controlli'), { compressa: true });
-    const c = r.compressione;
-    ok('copia compressa: ' + r.elenco.length + ' file, da ' + Math.round(c.prima / 1024) + ' a ' + Math.round(c.dopo / 1024) + ' KB; script che compilano, struttura delle pagine e ' + c.nomiGlobali + ' nomi globali identici, nessun indirizzo nuovo, segnalibri interi');
+    const { prepara } = require('./prepara-sito.js');
+    const impronte = {};
+    require('./reparti.js').tutti().forEach((rep, i) => {
+      const r = prepara(path.join(RADICE, '_sito', 'controlli-' + rep.codice), { compressa: true, reparto: rep.codice });
+      const c = r.compressione;
+      impronte[rep.codice] = Object.fromEntries(c.righe.map((x) => [x.file, x.impronta]));
+      if (i === 0) ok('copia compressa: ' + r.elenco.length + ' file, da ' + Math.round(c.prima / 1024) + ' a ' + Math.round(c.dopo / 1024) + ' KB; script che compilano, struttura delle pagine e ' + c.nomiGlobali + ' nomi globali identici, nessun indirizzo nuovo, segnalibri interi, contenuto di js/ambiente.js intatto');
+    });
+    const codici = Object.keys(impronte), diversi = new Set();
+    codici.slice(1).forEach((c) => Object.keys(impronte[codici[0]]).concat(Object.keys(impronte[c])).forEach((p) => { if (impronte[codici[0]][p] !== impronte[c][p]) diversi.add(p); }));
+    (codici.length < 2 || (diversi.size === 1 && diversi.has('js/ambiente.js')))
+      ? ok('sito per reparto: ' + codici.length + ' siti costruiti (' + codici.join(', ') + '), nessuno porta dati di un altro reparto, e differiscono SOLO in js/ambiente.js')
+      : ko('sito per reparto: i siti dei reparti devono differire solo in js/ambiente.js; differiscono in: ' + ([...diversi].join(', ') || 'nessun file'));
   } catch (e) { ko('copia compressa: ' + String((e && e.message) || e).split('\n').join(' | ').slice(0, 900)); }
 }
 
@@ -413,6 +519,59 @@ mancanti.length ? ko('sw.js elenca file che non esistono (l\'installazione del s
   const sospeso = (s0 >= 0 && u0 > s0) ? senzaCommenti(ora.slice(s0, u0), 'le funzioni del lavoro in sospeso di docs/index.html') : '';
   if (!/\.rubricaInSospeso\(\)/.test(sospeso) || !/_schedeInSospeso\(\)\s*\|\|\s*_rubricaInSospeso\(\)/.test(sospeso) || !/function rubricaInSospeso\(/.test(codice)) guai.push('l\'uscita non chiede più alla rubrica se ha un lavoro in sospeso (rubricaInSospeso)');
   guai.length ? guai.forEach((g) => ko('rubrica: ' + g)) : ok('rubrica: nessun service worker, indirizzo o chiave nel codice vivo; regola CSP stretta e niente in linea; richieste e memoria da un punto solo, solo le tre preferenze; il riquadro apre «rubrica/» e l\'uscita la svuota');
+}
+
+// ── 14. reparti e strumenti ──────────────────────────────────────────
+// I file dei reparti sono la fonte di indirizzi, database e chiavi pubbliche,
+// ma gli strumenti nati con due ambienti portano ancora le loro copie: devono
+// dire le stesse cose. Il codice di un reparto vale da nome d'ambiente
+// («gemelli-11n» è la produzione) e passa dalle stesse barriere.
+{
+  compila('collaudo/strumenti/reparti.js');
+  compila('collaudo/strumenti/banco.js');
+  compila('collaudo/strumenti/banco-sw.js');
+  try {
+    const reparti = require('./reparti.js'), sb = require('./sb.js'), gh = require('./gh-api.js');
+    const c = reparti.risolvi('collaudo'), p = reparti.risolvi('produzione');
+    const guai = [];
+    if (c.tipo !== 'collaudo' || p.tipo !== 'produzione') guai.push('i nomi «collaudo» e «produzione» non indicano reparti di quel tipo');
+    if (c.supabaseUrl !== 'https://' + sb.REF_COLLAUDO + '.supabase.co') guai.push('sb.js, REF_COLLAUDO');
+    if (p.supabaseUrl !== 'https://' + sb.REF_PRODUZIONE + '.supabase.co') guai.push('sb.js, REF_PRODUZIONE');
+    const aj = JSON.parse(leggi('collaudo/strumenti/ambiente.json'));
+    if (aj.url !== c.supabaseUrl || aj.anon !== c.supabaseAnonKey || aj.ref !== sb.REF_COLLAUDO) guai.push('collaudo/strumenti/ambiente.json');
+    if (gh.AMBIENTI.collaudo.sitoNuovo !== 'https://' + c.pubblicazione.cloudflare.progetto + '.pages.dev/') guai.push('gh-api.js, sito nuovo del collaudo');
+    if (gh.AMBIENTI.produzione.sitoNuovo !== 'https://' + p.pubblicazione.cloudflare.progetto + '.pages.dev/') guai.push('gh-api.js, sito nuovo della produzione');
+    if (p.pubblicazione.githubPages.repository.split('/')[0] !== gh.AMBIENTI.produzione.utente) guai.push('gh-api.js, account della produzione');
+    if (leggi('collaudo/pagina/prove.js').indexOf("var REF_PRODUZIONE = '" + sb.REF_PRODUZIONE + "';") < 0) guai.push('collaudo/pagina/prove.js, REF_PRODUZIONE');
+    guai.length ? ko('i dati dei due ambienti scritti negli strumenti non concordano con i file dei reparti: ' + guai.join('; ')) : ok('strumenti: i dati dei due ambienti in sb.js, ambiente.json, gh-api.js e prove.js concordano con i file dei reparti');
+
+    // nomi: il codice di un reparto è tradotto nel nome storico, e le barriere restano
+    const nomi = [['gemelli-11n', 'produzione'], ['GEMELLI-11N', 'produzione'], ['produzione', 'produzione'], ['collaudo', 'collaudo'], ['inesistente', null], ['constructor', null], ['', null], ['--confermo-produzione', null]];
+    const storti = nomi.filter((x) => reparti.nomeStorico(x[0]) !== x[1]).map((x) => '«' + x[0] + '» → ' + reparti.nomeStorico(x[0]));
+    const rifiuta = (f) => { try { f(); return false; } catch (e) { return true; } };
+    const a = gh.argomenti(['gemelli-11n', 'stato']);
+    if (a.ambiente !== 'produzione' || !a.esplicito || a.resto.join() !== 'stato') storti.push('gh-api.js non legge «gemelli-11n» come produzione');
+    if (!rifiuta(() => gh.argomenti(['stato', 'gemelli-11n']))) storti.push('gh-api.js accetta il nome del reparto fuori posto');
+    if (!rifiuta(() => gh.argomenti(['collaudo', gh.CONFERMA]))) storti.push('gh-api.js accetta la conferma di produzione sul collaudo');
+    if (gh.argomenti(['gemelli-11n']).confermato || !gh.per('gemelli-11n').produzione || gh.per('collaudo').produzione) storti.push('gh-api.js: «gemelli-11n» non passa dalle barriere della produzione');
+    if (!rifiuta(() => gh.per('inesistente'))) storti.push('gh-api.js accetta un reparto sconosciuto');
+    storti.length ? ko('nomi dei reparti negli strumenti: ' + storti.join('; ')) : ok('nomi dei reparti: «gemelli-11n» vale «produzione» negli strumenti, con la stessa conferma e la stessa sola lettura; un nome sconosciuto o fuori posto è rifiutato');
+
+    // la pubblicazione riparte quando cambia un reparto, e chi la segue lo sa
+    const flusso = leggi('.github/workflows/pubblica-cloudflare.yml'), passi = leggi('.github/pubblicazione/passi.js');
+    const manca = [];
+    if (!/- 'reparti\/\*\*'/.test(flusso) || !/- 'collaudo\/strumenti\/reparti[.]js'/.test(flusso)) manca.push('pubblica-cloudflare.yml non riparte se cambia reparti/ o reparti.js');
+    ['collaudo/strumenti/pubblicazione.js', 'collaudo/strumenti/scambio-repository.js'].forEach((s) => { if (!/DEL_SITO = \/\^\(docs\\\/\|reparti\\\/\|/.test(leggi(s))) manca.push(s + ': DEL_SITO non conta reparti/'); });
+    if (!/repartoDelFlusso\(\)/.test(passi) || !/reparto: reparto \? reparto[.]codice : undefined/.test(passi) || !/hostAmmesso\(reparto, p[.]subdomain\)/.test(passi)) manca.push('passi.js non prepara il sito per il reparto del progetto, o non controlla il suo indirizzo');
+    if (!/reparto[.]supabaseUrl\) errore\(/.test(passi)) manca.push('passi.js non confronta il database dell\'avviso con quello del reparto');
+    manca.length ? ko('pubblicazione per reparto: ' + manca.join('; ')) : ok('pubblicazione: il flusso riparte se cambia un reparto, prepara il sito del reparto del suo progetto, ne controlla l\'indirizzo e avvisa solo i suoi PC');
+
+    // la cartella di destinazione viene svuotata: prepara-sito.js accetta solo _sito
+    const fuori = path.join(RADICE, '_prova-fuori-da-sito-' + process.pid);
+    const rifiutata = rifiuta(() => require('./prepara-sito.js').prepara(fuori, {}));
+    fs.rmSync(fuori, { recursive: true, force: true });
+    rifiutata ? ok('prepara-sito.js rifiuta una cartella di destinazione fuori da _sito (la svuoterebbe)') : ko('prepara-sito.js ha accettato una cartella di destinazione fuori da _sito');
+  } catch (e) { ko('reparti e strumenti: ' + String((e && e.message) || e).split('\n').join(' | ').slice(0, 600)); }
 }
 
 console.log(errori ? ('\n' + errori + ' CONTROLLI FALLITI: non pubblicare') : '\ntutti i controlli superati');

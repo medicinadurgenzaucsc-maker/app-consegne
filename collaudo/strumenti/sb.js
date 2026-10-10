@@ -146,4 +146,16 @@ function produzione() {
   return { ref: REF_PRODUZIONE, leggi, leggiApi };
 }
 
-module.exports = { collaudo, produzione, maschera, senzaLetterali, REF_COLLAUDO, REF_PRODUZIONE };
+// Da un nome di reparto (o da «collaudo» / «produzione») all'accesso giusto.
+// Le barriere restano quelle delle due funzioni qui sopra: un reparto di
+// produzione si legge soltanto. Un reparto il cui database non è uno dei due
+// che questi strumenti conoscono non ha accesso da qui.
+function per(nome) {
+  const r = require('./reparti.js').risolvi(nome);
+  const ref = (/^https:\/\/([a-z]{20})\.supabase\.co$/.exec(r.supabaseUrl) || [])[1];
+  if (r.tipo === 'collaudo' && ref === REF_COLLAUDO) return collaudo();
+  if (r.tipo === 'produzione' && ref === REF_PRODUZIONE) return produzione();
+  throw new Error('per il reparto «' + r.codice + '» questi strumenti non hanno un accesso al database');
+}
+
+module.exports = { collaudo, produzione, per, maschera, senzaLetterali, REF_COLLAUDO, REF_PRODUZIONE };

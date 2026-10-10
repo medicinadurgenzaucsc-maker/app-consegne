@@ -28,7 +28,7 @@ const gh = AMB.gh, UTENTE = AMB.UTENTE;
 const RADICE = path.resolve(__dirname, '../..');
 const FLUSSO = 'pubblica-cloudflare.yml';
 // Se cambia uno di questi, il push fa partire il flusso (sono i percorsi scritti nel flusso stesso).
-const DEL_SITO = /^(docs\/|[.]github\/compressione\/|[.]github\/pubblicazione\/|[.]github\/workflows\/pubblica-cloudflare[.]yml$|collaudo\/strumenti\/prepara-sito[.]js$)/;
+const DEL_SITO = /^(docs\/|reparti\/|[.]github\/compressione\/|[.]github\/pubblicazione\/|[.]github\/workflows\/pubblica-cloudflare[.]yml$|collaudo\/strumenti\/(prepara-sito|reparti)[.]js$)/;
 const attendi = (ms) => new Promise((r) => setTimeout(r, ms));
 const git = (...a) => execFileSync('git', ['-C', RADICE].concat(a), { encoding: 'utf8' }).trim();
 
