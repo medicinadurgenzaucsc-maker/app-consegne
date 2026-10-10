@@ -651,8 +651,22 @@ Stefano, di sera**.
   su 142 nel sorgente e nella copia compressa; `__proveSw()` 56 su 56 nel
   sorgente e nella copia compressa; prova di fumo da scollegato pulita;
   revisione indipendente fatta e correzioni applicate.
-- **Sito di collaudo**: da annotare qui sotto (passo 0).
-- **Ritorno**: da annotare qui sotto (passo 2).
+- **Sito di collaudo, 10/10/2026 alle 09:46**: pubblicata dal flusso
+  (esecuzione n. 9, commit `04b54bb`). Il passo «File del sito» dice «reparto:
+  collaudo», «Avvisa i PC aperti» è riuscito (il segreto `SUPABASE_URL` è
+  quello giusto), l'impronta di `js/ambiente.js` pubblicato è quella del file
+  del collaudo. Dal Chrome di Stefano, già collegato: versione 190,
+  `_AMB.origine` uguale a `file`, 28 schede, service worker `consegne-v190`
+  con `js/ambiente.js` in cache (la pagina era passata da sola dalla 189 alla
+  190), `rete.html` con tutte e cinque le prove riuscite. Da estraneo ogni
+  indirizzo, file nuovi compresi, rimanda ancora al cancello.
+- **Ritorno, 10/10/2026**: ramo `ritorno-v189` preparato e provato nel banco.
+  Gli strumenti della 190 preparano e comprimono il suo sito per tutti e due i
+  reparti (il flusso di Cloudflare quindi lo pubblicherebbe). Nel banco del
+  service worker, passaggio dalla 190 al ritorno nei due stili: 54 prove su
+  56, e le due fallite sono quelle attese (il service worker 191 non tiene in
+  cache `js/ambiente.js`). Il ramo va ricostruito sopra il commit che si
+  rilascia davvero, se nel frattempo è cambiato.
 - **Produzione**: è ancora la 189.
 
 ### Sequenza
@@ -687,9 +701,11 @@ Stefano, di sera**.
    collaudo. Verifiche: `git merge-base --is-ancestor <commit della 190>
    ritorno-v189` riesce; `git diff 28a7bc3 ritorno-v189 -- docs` mostra solo
    le due righe della versione e i due file in più. Su quel commit
-   `controlli-rilascio.js` **dà dei KO attesi** (punti 3, 5 e 8: le pagine della
-   189 non hanno il tag di `js/ambiente.js`): la verifica di un ritorno è quel
-   confronto. Il passaggio dalla 190 al ritorno si prova nel banco del service
+   `controlli-rilascio.js` **dà sette KO attesi**, ai punti 3, 5, 8 e 9: le
+   pagine della 189 non hanno il tag di `js/ambiente.js`, il loro service
+   worker non lo tiene in cache e in `api.js` non c'è il blocco nuovo (a 190
+   rilasciata diventano nove: il confronto con `origin/master` vede anche il
+   tag sparito dalle due pagine). La verifica di un ritorno è quel confronto. Il passaggio dalla 190 al ritorno si prova nel banco del service
    worker, lanciato dal ramo di ritorno con `BANCO_RIF=<commit della 190>`.
 3. **Non chiedere `…/app-consegne/js/ambiente.js` prima che GitHub Pages abbia
    pubblicato**, nemmeno con un parametro in coda: la rete di GitHub non ne
