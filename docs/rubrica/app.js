@@ -59,7 +59,7 @@ function cacheDOM() {
   [
     'contactList','countLabel','searchBar','searchWrap','btnSearchClear',
     'searchSuggestions',
-    'btnTheme','btnSettings','btnAll','btnAlpha','btnNew',
+    'btnTheme','btnSettings','btnEsci','btnAll','btnAlpha','btnNew',
     'chips','installToast',
     'modalOverlay','modalTitle','modalBox','contactForm',
     'fId','fNome','fCategoria','numeriContainer','btnAddNum',
@@ -769,6 +769,13 @@ let avviata = false;
 let avvioInCorso = false;
 async function avvia() {
   if (avviata || avvioInCorso) return;
+  // Il collegamento «Apri le Consegne» del messaggio fisso nasce nascosto. In
+  // modo rubrica porterebbe all'applicazione intera, e lì non lo si mostra mai,
+  // nemmeno se questo file tarda ad arrivare; negli altri casi compare qui.
+  let inModoRubrica = true;
+  try { inModoRubrica = !!(window.parent && window.parent !== window && window.parent._MODO_RUBRICA === true); } catch (_) {}
+  const collegamento = document.querySelector('.avviso-link');
+  if (collegamento) collegamento.hidden = inModoRubrica;
   const m = madre();
   if (!m) return;                    // aperta da sola, o dentro una pagina che non è l'app
   avvioInCorso = true;
@@ -1019,6 +1026,19 @@ function updateCount(n) {
 function setupEvents() {
   // Tema (3 stati: light → dark → auto)
   D.btnTheme.addEventListener('click', cycleTheme);
+
+  // Uscita dall'account: il pulsante compare solo quando la pagina madre è
+  // aperta per la sola rubrica («modo rubrica»). L'uscita la fa lei, con le sue
+  // regole (solo su questo dispositivo, mai con un lavoro in sospeso, e prima
+  // chiede conferma): qui c'è soltanto il pulsante.
+  const madreDelModo = madre();
+  if (D.btnEsci && madreDelModo && madreDelModo._MODO_RUBRICA === true && typeof madreDelModo._esciSessione === 'function') {
+    D.btnEsci.hidden = false;
+    D.btnEsci.addEventListener('click', () => {
+      const m = madre();
+      if (m && typeof m._esciSessione === 'function') m._esciSessione();
+    });
+  }
 
   // Ciò che si fa qui dentro conta come attività anche per la pagina madre:
   // la sua ricarica notturna aspetta chi sta lavorando.

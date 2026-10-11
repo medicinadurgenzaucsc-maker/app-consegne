@@ -2973,6 +2973,141 @@
           return !guai.length || guai.join(' ‖ ');
         });
 
+        // ── 30. modo rubrica: la pagina aperta con ?rubrica=1 ──
+        // Chi arriva dall'icona dei numeri di telefono deve vedere, dopo
+        // l'accesso, SOLO la rubrica: l'app non parte e i dati dei pazienti non
+        // vengono né scaricati né disegnati. L'app intera si apre in una
+        // cornice, con la sessione di prova che la pagina delle prove ha già.
+        // L'uscita vera non si lascia mai partire: la memoria del browser è in
+        // comune, e scollegherebbe anche questa pagina.
+        await prova(S, 'nel riquadro dell\'app l\'icona per uscire dall\'account non compare', function () {
+          var b = w.document.getElementById('btnEsci');
+          return (!!b && b.hidden === true && window._MODO_RUBRICA === false) || ('icona assente o visibile (modo della pagina: ' + window._MODO_RUBRICA + ')');
+        });
+        var PAZIENTI = /\/rest\/v1\/(consegne|lab_esami|archivio|locks)\b|\/functions\/v1\/google-token/;
+        var versoIPazienti = function (win) { return win.performance.getEntriesByType('resource').map(function (e) { return e.name; }).filter(function (u) { return PAZIENTI.test(u); }); };
+        var rubricaDentro = function (win) {
+          return finche(function () {
+            var c = win.document.getElementById('rubricaIframe'), x = c && c.contentWindow;
+            return (x && typeof x.loadData === 'function' && x.document.querySelector('.contact-card')) ? x : false;
+          }, 30000, 200);
+        };
+        await prova(S, 'modo rubrica: dopo l\'accesso si vede solo la rubrica, a tutto schermo, e nessun dato dei pazienti viene scaricato o disegnato', async function () {
+          var fr = await cornice('/?rubrica=1&cb=' + Date.now()), fw = fr.contentWindow, fd = fw.document, guai = [];
+          try {
+            var x = await rubricaDentro(fw);
+            if (!x) return 'la rubrica non è comparsa (modo: ' + fw._MODO_RUBRICA + ', titolo «' + fd.title + '»)';
+            raccogliErrori(x);
+            if (fw._MODO_RUBRICA !== true || !/\bmodo-rubrica\b/.test(fd.documentElement.className)) guai.push('la pagina non è in modo rubrica');
+            // solo la rubrica, a tutto schermo
+            var p = fd.getElementById('rubricaPanel').getBoundingClientRect();
+            if (Math.abs(p.left) > 1 || Math.abs(p.top) > 1 || Math.abs(p.width - fw.innerWidth) > 1 || Math.abs(p.height - fw.innerHeight) > 1) guai.push('il riquadro non riempie la finestra: ' + [p.left, p.top, p.width, p.height].map(Math.round).join(',') + ' in ' + fw.innerWidth + '×' + fw.innerHeight);
+            var visibile = function (id) { var el = fd.getElementById(id); return !!el && fw.getComputedStyle(el).display !== 'none'; };
+            ['appBodyContent', 'backupCheckOverlay', 'versionUpdateOverlay', 'rubricaPanelHeader', 'loginOverlay'].forEach(function (id) { if (visibile(id)) guai.push('#' + id + ' è visibile'); });
+            if (!fd.getElementById('navVersioneApp')) guai.push('la versione nel menu non c\'è più nella pagina');
+            // nessun dato dei pazienti, nemmeno forzando le porte che in un'app normale li leggono da sole
+            fw._avviaFlussoApp(); fw._inizializzaRealtime(); fw._rtMiniResync(); fw._emergenzaAvviaPolling();
+            if ((await fw._emergenzaCheckSeMutato()) !== false) guai.push('_emergenzaCheckSeMutato ha letto la tabella dei pazienti');
+            // tornando in primo piano l'elenco si ricontrolla (una lettura della versione), ma non a raffica
+            var letture = function () { return fw.performance.getEntriesByType('resource').filter(function (e) { return /\/rest\/v1\/rubrica_versione\b/.test(e.name); }).length + x.performance.getEntriesByType('resource').filter(function (e) { return /\/rest\/v1\/rubrica_versione\b/.test(e.name); }).length; };
+            // (lo stato della pagina lo si finge: il pannello delle prove può essere nascosto, e senza
+            // «visible» anche la porta di api.js, che qui sotto deve restare chiusa, non verrebbe provata)
+            var stato = 'hidden';
+            Object.defineProperty(fd, 'visibilityState', { configurable: true, get: function () { return stato; } });
+            var primaDelRitorno = letture();
+            fd.dispatchEvent(new fw.Event('visibilitychange'));
+            await attendi(800);
+            if (letture() !== primaDelRitorno) guai.push('andando sullo sfondo la rubrica ha riletto la versione');
+            stato = 'visible';
+            fd.dispatchEvent(new fw.Event('visibilitychange'));
+            fd.dispatchEvent(new fw.Event('visibilitychange'));
+            await attendi(1500);
+            if (letture() !== primaDelRitorno + 1) guai.push('al ritorno in primo piano le letture della versione della rubrica sono state ' + (letture() - primaDelRitorno) + ' (attesa 1)');
+            // l'invito a installare, in modo rubrica, resta al browser
+            var invito = new fw.Event('beforeinstallprompt', { cancelable: true });
+            fw.dispatchEvent(invito);
+            if (invito.defaultPrevented) guai.push('in modo rubrica l\'invito a installare del browser viene fermato, e la stellina che lo sostituisce è nella barra nascosta');
+            if (fd.querySelectorAll('.patient-card').length) guai.push('nella pagina ci sono ' + fd.querySelectorAll('.patient-card').length + ' schede di pazienti');
+            var verso = versoIPazienti(fw);
+            if (verso.length) guai.push('richieste verso i dati dei pazienti: ' + verso.slice(0, 2).join(' , '));
+            if (fw._sb.getChannels().length) guai.push('canali in tempo reale aperti: ' + fw._sb.getChannels().length);
+            if (fw._emergenzaPollingAttivo && fw._emergenzaPollingAttivo()) guai.push('la modalità emergenza è accesa');
+            // nome, icona e manifesto sono quelli dei numeri di telefono, e i file ci sono davvero
+            if (!/Numeri Telefono$/.test(fd.title)) guai.push('titolo «' + fd.title + '»');
+            var man = fd.querySelector('link[rel="manifest"]'), mela = fd.querySelector('link[rel="apple-touch-icon"]'), nome = fd.querySelector('meta[name="apple-mobile-web-app-title"]');
+            if (!man || !/manifest-rubrica\.json$/.test(man.href) || man.getAttribute('crossorigin') !== 'use-credentials') guai.push('manifesto: ' + (man && man.getAttribute('href')));
+            else {
+              var rm = await fw.fetch(man.href, { cache: 'no-store' }), jm = rm.ok ? await rm.json() : null;
+              if (!jm || jm.start_url !== './?rubrica=1' || jm.scope !== './' || jm.id !== undefined) guai.push('il manifesto dei numeri non è quello atteso');
+              else {
+                for (var i = 0; i < jm.icons.length; i++) { var ri = await fw.fetch(new URL(jm.icons[i].src, man.href).href, { cache: 'no-store' }); if (!ri.ok) guai.push('icona non servita: ' + jm.icons[i].src); }
+              }
+            }
+            if (!mela || !/rubrica-apple-touch-icon\.png$/.test(mela.href) || !nome || nome.content !== 'Rubrica') guai.push('icona o nome per iPhone non scambiati');
+            // l'icona di uscita c'è, e chiama la pagina madre (qui una spia: l'uscita vera scollegherebbe anche queste prove)
+            var esci = x.document.getElementById('btnEsci'), vera = fw._esciSessione, chiamate = 0;
+            if (!esci || esci.hidden) guai.push('l\'icona per uscire dall\'account non si vede');
+            else {
+              fw._esciSessione = function () { chiamate++; };
+              try { esci.click(); } finally { fw._esciSessione = vera; }
+              if (chiamate !== 1) guai.push('il clic sull\'icona di uscita ha chiamato la pagina madre ' + chiamate + ' volte');
+              // la domanda che la pagina madre farebbe: parla dell'account, e «non confermato» non fa partire nulla
+              var viste = [], veraFire = fw.Swal.fire;
+              fw.Swal.fire = function (o) { viste.push(o || {}); return Promise.resolve({ isConfirmed: false }); };
+              try { fw._esciSessione(); await attendi(300); } finally { fw.Swal.fire = veraFire; }
+              if (viste.length !== 1 || String(viste[0].title) !== 'Uscire dall\'account?' || !/numeri di telefono/.test(String(viste[0].html)) || !/si esce anche dall'applicazione delle consegne/.test(String(viste[0].html))) guai.push('la domanda di uscita non è quella del modo rubrica: ' + viste.map(function (v) { return v.title; }).join(' , '));
+            }
+            // a larghezza di telefono la testata tiene i tre pulsanti sulla stessa riga, dentro lo schermo
+            fr.style.width = '360px';
+            await attendi(400);
+            var pulsanti = [].slice.call(x.document.querySelectorAll('.header-top .btn-icon')).filter(function (b) { return !b.hidden; }).map(function (b) { return b.getBoundingClientRect(); });
+            if (pulsanti.length !== 3) guai.push('pulsanti nella testata: ' + pulsanti.length);
+            else if (pulsanti.some(function (r) { return r.right > x.innerWidth + 1 || r.left < 0 || Math.abs(r.top - pulsanti[0].top) > 1; })) guai.push('a 360 px i pulsanti della testata non stanno su una riga dentro lo schermo');
+            fr.style.width = '1280px';
+            // gli errori della pagina madre in modo rubrica (quelli della rubrica sono già raccolti)
+            raccogliErrori(fw);
+          } finally { fr.remove(); }
+          return !guai.length || guai.join(' ‖ ');
+        });
+        await prova(S, 'modo rubrica: il segno resta dopo un aggiornamento, e solo «rubrica=1» lo accende', async function () {
+          var guai = [];
+          if (_indirizzoDiRicarica('/x/', '#a', 5, true) !== '/x/?_r=5&rubrica=1#a' || _indirizzoDiRicarica('/x/', '', 5, false) !== '/x/?_r=5') guai.push('l\'indirizzo del ricaricamento non conserva il segno');
+          // arrivati da un «Update»: via _r, resta il segno, nessun velo di aggiornamento
+          var fr = await cornice('/?_r=123&rubrica=1&cb=' + Date.now()), fw = fr.contentWindow;
+          try {
+            var x = await rubricaDentro(fw);
+            if (!x) guai.push('dopo un aggiornamento la rubrica non compare');
+            else {
+              raccogliErrori(x);
+              if (fw.location.search !== '?rubrica=1') guai.push('indirizzo dopo l\'avvio: «' + fw.location.search + '»');
+              if (fw.getComputedStyle(fw.document.getElementById('versionUpdateOverlay')).display !== 'none') guai.push('il velo «Aggiornamento in corso» copre la rubrica');
+              if (versoIPazienti(fw).length) guai.push('dopo un aggiornamento sono stati letti i dati dei pazienti');
+            }
+            raccogliErrori(fw);
+          } finally { fr.remove(); }
+          // con un avviso nell'indirizzo (?toast=) la pulizia lascia il segno
+          var fr3 = await cornice('/?rubrica=1&toast=info&msg=prova&cb=' + Date.now()), fw3 = fr3.contentWindow;
+          try {
+            var x3 = await rubricaDentro(fw3);
+            if (!x3 || fw3.location.search !== '?rubrica=1') guai.push('con un avviso nell\'indirizzo: rubrica ' + (x3 ? 'aperta' : 'non aperta') + ', indirizzo «' + fw3.location.search + '»');
+            if (x3) raccogliErrori(x3);
+            raccogliErrori(fw3);
+          } finally { fr3.remove(); }
+          // un valore diverso non accende il modo: l'app parte com'è sempre partita
+          var fr2 = await cornice('/?rubrica=10&cb=' + Date.now()), fw2 = fr2.contentWindow;
+          try {
+            var piene = await finche(function () { return fw2.document.querySelectorAll('.patient-card').length === 28; }, 30000, 300);
+            if (fw2._MODO_RUBRICA !== false || !piene) guai.push('con «rubrica=10» il modo vale ' + fw2._MODO_RUBRICA + ' e le schede sono ' + fw2.document.querySelectorAll('.patient-card').length);
+            // senza il modo, l'invito a installare lo ferma l'app (lo offre la stellina della barra)
+            var invito2 = new fw2.Event('beforeinstallprompt', { cancelable: true });
+            fw2.dispatchEvent(invito2);
+            if (!invito2.defaultPrevented) guai.push('senza il modo l\'invito a installare non viene più fermato dall\'app');
+            var man2 = fw2.document.querySelector('link[rel="manifest"]');
+            if (!man2 || man2.getAttribute('href') !== 'manifest.json' || /Numeri Telefono/.test(fw2.document.title)) guai.push('senza il segno giusto nome o manifesto sono cambiati');
+          } finally { fr2.remove(); }
+          return !guai.length || guai.join(' ‖ ');
+        });
+
         // ── a richiesta: scheda in modifica e riquadro (serve la finestra in primo piano) ──
         if (opz.fuoco && w) {
           await prova(S, 'scheda in modifica: il fuoco nella rubrica non chiude la modifica, e chiudendo il riquadro torna nella scheda', async function () {

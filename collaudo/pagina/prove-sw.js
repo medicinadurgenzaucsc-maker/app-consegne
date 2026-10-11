@@ -161,6 +161,24 @@
     c.f.remove();
     return esito;
   }
+  // La pagina aperta per i soli numeri di telefono (…/?rubrica=1): deve arrivare
+  // lei, in modo rubrica, col manifesto dei numeri. Qui nessuno è collegato:
+  // si vede la schermata di accesso, e la rubrica non parte.
+  async function paginaRubricaSana(url) {
+    var c = await cornice(url + (url.indexOf('?') < 0 ? '?' : '&') + '_r=' + unico());
+    var esito = true;
+    if (!c.doc) esito = url + ': al posto della pagina un errore del browser';
+    else if (!c.doc.getElementById('navVersioneApp')) esito = url + ': titolo «' + c.doc.title + '»';
+    else if (c.doc.getElementById('bloccoIndirizzo')) esito = url + ': la pagina si è fermata sull\'indirizzo';
+    else if (c.win._MODO_RUBRICA !== true) esito = url + ': la pagina non è in modo rubrica';
+    else {
+      var man = c.doc.querySelector('link[rel="manifest"]');
+      if (!man || !/manifest-rubrica\.json$/.test(man.href)) esito = url + ': manifesto «' + (man && man.getAttribute('href')) + '»';
+      else if (c.win.getComputedStyle(c.doc.getElementById('versionUpdateOverlay')).display !== 'none' || c.win.getComputedStyle(c.doc.getElementById('backupCheckOverlay')).display !== 'none') esito = url + ': un velo dell\'app copre la pagina';
+    }
+    c.f.remove();
+    return esito;
+  }
   function immagine(c, percorso) {
     return new Promise(function (ok) {
       var img = new c.win.Image();
@@ -183,6 +201,8 @@
     // tiene in cache, deve reggere ai guasti come gli altri file. (La versione
     // in produzione, finché è la v189, non lo ha.)
     var conAmbiente = atteso.percorsi.indexOf('./js/ambiente.js') >= 0;
+    // dalla v192 la stessa pagina, aperta con ?rubrica=1, è la rubrica da sola
+    var conRubrica = atteso.percorsi.indexOf('./manifest-rubrica.json') >= 0;
     if (versione !== 'produzione') {
       await prova('il file dell\'ambiente è fra quelli tenuti in cache, e la pagina riconosce il suo ambiente', function () {
         if (!conAmbiente) return 'js/ambiente.js non è nell\'elenco del service worker';
@@ -212,6 +232,13 @@
         var a = await rubricaSana(BASE + 'rubrica/'); if (a !== true) return a;
         return rubricaSana(BASE + 'rubrica/index.html');
       });
+      if (conRubrica) {
+        await prova(G + 'la pagina aperta per la rubrica (?rubrica=1) si apre dalla cache, col suo manifesto e la sua icona', async function () {
+          var a = await paginaRubricaSana(BASE + '?rubrica=1'); if (a !== true) return a;
+          a = await fileSano(c, 'manifest-rubrica.json', 'rubrica=1'); if (a !== true) return a;
+          return (await immagine(c, 'rubrica-icona-192.png')) || 'l\'icona dei numeri non si carica';
+        });
+      }
       await prova(G + 'in cache non finisce nulla di sbagliato', function () { return cacheSana(atteso); });
     }
     await prova('dopo i guasti il service worker è ancora registrato', async function () {

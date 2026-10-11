@@ -959,7 +959,8 @@ function _caricaCardIniziali(container, onDone) {
     var toastType = params.get('toast');
     var toastMsg  = params.get('msg');
     if (toastType && toastMsg) {
-      history.replaceState(null, '', window.location.pathname);
+      // dell'indirizzo resta solo il segno del modo rubrica, se c'era
+      history.replaceState(null, '', window.location.pathname + (window._MODO_RUBRICA === true ? '?rubrica=1' : ''));
       toastType = (toastType === 'success') ? 'success' : 'info';
       toastMsg  = String(toastMsg).replace(/[\u0000-\u001F\u007F]+/g, ' ').trim().slice(0, 200);
       if (!toastMsg) return;
@@ -2163,6 +2164,7 @@ var _realtimeTimer = null;
 var _realtimeChannel = null;
 
 function _inizializzaRealtime() {
+  if (window._MODO_RUBRICA === true) return;   // modo rubrica: nessun canale sulle consegne
   if (_realtimeChannel) { _sb.removeChannel(_realtimeChannel); }
 
   _realtimeChannel = _sb.channel('consegne-live')
@@ -2240,6 +2242,7 @@ var _rtRetryDelayMs   = 5000;
 var _rtSubscribeCount = 0;
 
 function _rtMiniResync() {
+  if (window._MODO_RUBRICA === true) return;   // modo rubrica: i dati dei pazienti non si leggono
   // Lock: stato fresco dal DB (payload ~0.5-1KB)
   _sbGetLocks().then(function(locks) {
     if (typeof _applicaLocks === 'function') _applicaLocks(locks || {});
@@ -2299,6 +2302,10 @@ function _onRealtimeStatus(status, ch) {
 var _lastVisResyncTs = 0;
 document.addEventListener('visibilitychange', function() {
   if (document.visibilityState !== 'visible') return;
+  // In modo rubrica (pagina aperta con ?rubrica=1) i dati dei pazienti non si
+  // toccano: senza questa riga il primo ritorno in primo piano aprirebbe il
+  // canale delle consegne e scaricherebbe le schede dietro la rubrica.
+  if (window._MODO_RUBRICA === true) return;
   var now = Date.now();
   if (now - _lastVisResyncTs < 10000) return; // throttle anti-raffica
   _lastVisResyncTs = now;
@@ -2650,6 +2657,7 @@ var _emergenzaForceSaveId = null;  // Force-save scan letti dirty (10s)
 // Avvia polling ogni 5s: aggiorna card pazienti + stato lock
 // Avvia force-save scan ogni 10s: rilancia salvataggi pending/falliti
 function _emergenzaAvviaPolling() {
+  if (window._MODO_RUBRICA === true) return;   // modo rubrica: nessuna lettura periodica delle consegne
   if (_emergenzaPollingId) return;
   console.log('[Emergenza] Polling attivato (check 30s + force-save 30s)');
   if (typeof window._log === 'function') {
@@ -2775,6 +2783,7 @@ var _emergFirmaInit   = false;  // baseline registrata? (flag esplicito, non nul
 var _emergSyncInCorso = false;  // full sync in volo: non accodarne altri
 
 function _emergenzaCheckSeMutato() {
+  if (window._MODO_RUBRICA === true) return Promise.resolve(false);   // modo rubrica: i dati dei pazienti non si leggono
   if (_emergSyncInCorso) return Promise.resolve(false);
   return _sb.from('consegne')
     .select('updated_at', { count: 'exact' })
@@ -3106,9 +3115,15 @@ function _applicaAggiornamentoVersione() {
       // registra lo SHA nuovo come baseline.
       try { localStorage.removeItem('_appDeploySha'); } catch(e){}
       // Hard reload con cache-bust via query string
-      var url = window.location.pathname + '?_r=' + Date.now() + window.location.hash;
+      var url = _indirizzoDiRicarica(window.location.pathname, window.location.hash, Date.now(), window._MODO_RUBRICA === true);
       window.location.replace(url);
     });
+}
+// L'indirizzo del ricaricamento dopo un aggiornamento. Il segno del modo
+// rubrica deve restare: senza, una pagina aperta per i soli numeri di telefono
+// si ricaricherebbe come applicazione intera, con i dati dei pazienti.
+function _indirizzoDiRicarica(percorso, ancora, ora, modoRubrica) {
+  return percorso + '?_r=' + ora + (modoRubrica ? '&rubrica=1' : '') + (ancora || '');
 }
 window._applicaAggiornamentoVersione = _applicaAggiornamentoVersione;
 

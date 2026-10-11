@@ -38,8 +38,12 @@
 //     togliere le barriere della produzione; il flusso riparte se cambia un
 //     reparto; il sito di OGNI reparto si costruisce, non porta dati di un
 //     altro e differisce dagli altri solo in js/ambiente.js (punto 12)
-// 15. riservatezza: il piano «un codice, tanti reparti» (licenze, contratti,
-//     prezzi) non sta fra i file né nella storia che un rilascio porterebbe
+// 16. modo rubrica (pagina aperta con ?rubrica=1): il segno è lo stesso
+//     dovunque; l'app parte da un punto solo, e in modo rubrica nessuna delle
+//     strade che leggono da sole i dati dei pazienti resta aperta; il segno
+//     sopravvive a «Update»; il secondo manifesto riapre lo stesso indirizzo
+// 15. riservatezza: il piano «un codice, tanti reparti», che è un documento
+//     riservato, non sta fra i file né nella storia che un rilascio porterebbe
 //     nel repository del reparto, che è pubblico
 //
 //   node collaudo/strumenti/controlli-rilascio.js [riferimento]
@@ -315,7 +319,10 @@ mancanti.length ? ko('sw.js elenca file che non esistono (l\'installazione del s
       if (u && !/^(https?:|data:|#)/i.test(u)) servono.add(path.posix.normalize(x[1] + locale(u)));
     });
   });
-  try { JSON.parse(leggi('docs/manifest.json')).icons.forEach((i) => servono.add(locale(i.src))); } catch (e) { ko('manifest.json non leggibile: ' + e.message); }
+  // i due manifesti: quello delle consegne e quello dei numeri di telefono (modo rubrica)
+  ['docs/manifest.json', 'docs/manifest-rubrica.json'].forEach((m) => {
+    try { JSON.parse(leggi(m)).icons.forEach((i) => servono.add(locale(i.src))); } catch (e) { ko(m + ' non leggibile: ' + e.message); }
+  });
   const assenti = [...servono].filter((p) => p && sito.indexOf(p) < 0);
   assenti.length
     ? ko('file caricati dalle pagine ma NON fra quelli pubblicati su Cloudflare (non registrati in git, o in una cartella dal nome che comincia con «_»): ' + assenti.join(', '))
@@ -618,8 +625,59 @@ mancanti.length ? ko('sw.js elenca file che non esistono (l\'installazione del s
   } catch (e) { ko('reparti e strumenti: ' + String((e && e.message) || e).split('\n').join(' | ').slice(0, 600)); }
 }
 
+// ── 16. modo rubrica ─────────────────────────────────────────────────
+// La pagina aperta con «?rubrica=1» mostra, dopo l'accesso, la sola rubrica:
+// i dati dei pazienti non devono essere né scaricati né disegnati. Qui si
+// sorveglia nel codice ciò che lo garantisce; il comportamento lo provano
+// prove.js (sezione rubrica) e prove-sw.js.
+{
+  const guai = [];
+  try {
+    const api = leggi('docs/js/api.js'), app = leggi('docs/js/app.js'), stile = leggi('docs/css/styles.css'), rub = leggi('docs/rubrica/app.js');
+    const { SEGNO_RUBRICA } = require('./rinvio-rubrica.js');
+    // il segno: uno solo, letto in un punto solo e con un confronto esatto
+    if (SEGNO_RUBRICA !== '?rubrica=1') guai.push('il segno del rinvio non è «?rubrica=1»');
+    const iTesta = ora.indexOf("modo = new URLSearchParams(window.location.search).get('rubrica') === '1';");
+    if (iTesta < 0 || ora.indexOf('window._MODO_RUBRICA = modo;') < iTesta) guai.push('index.html: lo script in testa non legge il segno con un confronto esatto');
+    else if (iTesta > ora.indexOf('<link href="https://cdn.jsdelivr.net') || iTesta > ora.indexOf('js/api.js')) guai.push('index.html: il modo va deciso in testa, prima dei fogli di stile e di ogni altro script');
+    if ((ora.match(/_MODO_RUBRICA\s*=[^=]/g) || []).length !== 1 || /_MODO_RUBRICA\s*=[^=]/.test(api + app + rub)) guai.push('il modo si assegna in un punto solo, lo script in testa a index.html');
+    // il secondo manifesto riapre lo stesso indirizzo, senza identità propria né indirizzi assoluti
+    const m = JSON.parse(leggi('docs/manifest-rubrica.json')), c = JSON.parse(leggi('docs/manifest.json'));
+    if (m.start_url !== './' + SEGNO_RUBRICA || m.scope !== './' || m.id !== undefined || /https?:|\/\//.test(JSON.stringify(m))) guai.push('manifest-rubrica.json: attesi start_url «./?rubrica=1», scope «./», nessun id e nessun indirizzo assoluto');
+    if (c.start_url !== './' || c.id !== undefined || c.scope !== undefined) guai.push('manifest.json delle consegne è cambiato: le icone già installate perderebbero la loro app');
+    if (ora.indexOf("imposta('link[rel=\"manifest\"]', 'href', 'manifest-rubrica.json');") < 0) guai.push('index.html: in modo rubrica il manifesto non viene scambiato');
+    // l'app parte da un punto solo
+    if ((ora.match(/window\._avviaFlussoApp\(\)/g) || []).length !== 1 || !/function _avviaDopoAccesso\(\) \{\s*if \(window\._MODO_RUBRICA === true\) \{ _avviaModoRubrica\(\); return; \}/.test(ora)) guai.push('index.html: l\'app deve partire da un punto solo, _avviaDopoAccesso, che in modo rubrica apre la rubrica');
+    if ((ora.match(/_avviaDopoAccesso\(\);/g) || []).length !== 2) guai.push('index.html: attese due chiamate a _avviaDopoAccesso (sessione ritrovata, accesso appena fatto)');
+    // le strade che leggono da sole i dati dei pazienti: tutte chiuse in modo rubrica
+    const COMMENTI = '(?:\\s*\\/\\/[^\\n]*\\n)*\\s*';
+    [[app, 'window\\._avviaFlussoApp = function\\(\\) \\{' + COMMENTI + 'if \\(window\\._MODO_RUBRICA === true\\) return;', 'app.js, _avviaFlussoApp'],
+      [api, 'function _inizializzaRealtime\\(\\) \\{' + COMMENTI + 'if \\(window\\._MODO_RUBRICA === true\\) return;', 'api.js, _inizializzaRealtime'],
+      [api, 'function _rtMiniResync\\(\\) \\{' + COMMENTI + 'if \\(window\\._MODO_RUBRICA === true\\) return;', 'api.js, _rtMiniResync'],
+      [api, 'function _emergenzaAvviaPolling\\(\\) \\{' + COMMENTI + 'if \\(window\\._MODO_RUBRICA === true\\) return;', 'api.js, _emergenzaAvviaPolling'],
+      [api, 'function _emergenzaCheckSeMutato\\(\\) \\{' + COMMENTI + 'if \\(window\\._MODO_RUBRICA === true\\) return Promise\\.resolve\\(false\\);', 'api.js, _emergenzaCheckSeMutato'],
+      [api, "addEventListener\\('visibilitychange', function\\(\\) \\{\\s*if \\(document\\.visibilityState !== 'visible'\\) return;" + COMMENTI + 'if \\(window\\._MODO_RUBRICA === true\\) return;', 'api.js, ritorno in primo piano'],
+      [ora, 'function _maybeDiagAuto\\(\\) \\{' + COMMENTI + 'if \\(window\\._MODO_RUBRICA === true\\) return;', 'index.html, diagnostica automatica'],
+    ].forEach((x) => { if (!new RegExp(x[1]).test(x[0])) guai.push(x[2] + ': manca in testa la guardia del modo rubrica (lì partirebbe la lettura dei dati dei pazienti)'); });
+    // il segno sopravvive al ricaricamento di «Update»
+    const f = /function _indirizzoDiRicarica\([^)]*\) \{[\s\S]*?\n\}/.exec(api.replace(/\r\n/g, '\n'));
+    let ricarica = null;
+    try { ricarica = f && new Function(f[0] + '\nreturn _indirizzoDiRicarica;')(); } catch (e) { ricarica = null; }
+    if (!ricarica || ricarica('/x/', '#a', 5, true) !== '/x/?_r=5&rubrica=1#a' || ricarica('/x/', '', 5, false) !== '/x/?_r=5' || api.indexOf("_indirizzoDiRicarica(window.location.pathname, window.location.hash, Date.now(), window._MODO_RUBRICA === true)") < 0) guai.push('api.js: il ricaricamento di «Update» non conserva il segno del modo rubrica');
+    // ciò che si vede: solo la rubrica, a tutto schermo
+    ['html.modo-rubrica #appBodyContent,', 'html.modo-rubrica #backupCheckOverlay,', 'html.modo-rubrica #versionUpdateOverlay { display: none !important; }', 'html.modo-rubrica #rubricaPanelHeader { display: none !important; }'].forEach((r) => { if (stile.indexOf(r) < 0) guai.push('styles.css: manca la regola «' + r + '»'); });
+    // l'icona di uscita: solo in modo rubrica, e l'uscita la fa la pagina madre
+    if (!/madreDelModo\._MODO_RUBRICA === true && typeof madreDelModo\._esciSessione === 'function'/.test(rub) || !/id="btnEsci"[^>]*\bhidden\b/.test(leggi('docs/rubrica/index.html'))) guai.push('rubrica: l\'icona di uscita deve nascere nascosta e comparire solo in modo rubrica');
+    // il collegamento all'app intera nasce nascosto, e in modo rubrica resta tale
+    if (!/class="avviso-link"[^>]*\bhidden\b/.test(leggi('docs/rubrica/index.html')) || rub.indexOf('collegamento.hidden = inModoRubrica;') < 0) guai.push('rubrica: «Apri le Consegne» deve nascere nascosto e comparire solo fuori dal modo rubrica');
+    // il riquadro lì non si richiude mai: l'elenco si ricontrolla al ritorno in primo piano
+    if (ora.indexOf("document.addEventListener('visibilitychange', _modoRubricaAlRitorno);") < 0 || !/function _modoRubricaAlRitorno\(\) \{\s*if \(window\._MODO_RUBRICA !== true \|\| !_modoRubricaAvviato \|\| _uscitaInCorso /.test(ora)) guai.push('index.html: in modo rubrica l\'elenco deve essere ricontrollato quando la pagina torna in primo piano (_modoRubricaAlRitorno)');
+  } catch (e) { guai.push(String((e && e.message) || e).slice(0, 300)); }
+  guai.length ? guai.forEach((g) => ko('modo rubrica: ' + g)) : ok('modo rubrica: segno unico «?rubrica=1» deciso in testa alla pagina; l\'app parte da un punto solo e in modo rubrica sono chiuse le 7 strade verso i dati dei pazienti; il segno sopravvive a «Update»; secondo manifesto e icona di uscita al loro posto');
+}
+
 // ── 15. ciò che non deve diventare pubblico ──────────────────────────
-// Il repository del reparto è pubblico. Il piano di vendita sta su un ramo a
+// Il repository del reparto è pubblico. Il piano, riservato, sta su un ramo a
 // parte («piano») del repository privato di collaudo: non deve comparire né
 // fra i file registrati né in un commit che un rilascio porterebbe su origin.
 // Una volta pubblicato non si richiama.

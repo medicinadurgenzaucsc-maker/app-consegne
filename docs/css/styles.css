@@ -1669,3 +1669,21 @@ hr.cl-separator {
   }
 }
 
+/* ── MODO RUBRICA (pagina aperta con ?rubrica=1) ────────────────────────
+   Dopo l'accesso si vede SOLO la rubrica, a tutto schermo: niente barra
+   dell'app, niente schede, niente velo di caricamento. La classe la mette
+   lo script in testa a index.html. Gli stili del riquadro sono scritti in
+   linea, per questo qui serve !important. La schermata di accesso e i
+   blocchi di sicurezza restano sopra, come sempre. */
+html.modo-rubrica body { padding-top: 0 !important; background: #263238 !important; overflow: hidden; }
+html.modo-rubrica #appBodyContent,
+html.modo-rubrica #backupCheckOverlay,
+html.modo-rubrica #versionUpdateOverlay { display: none !important; }
+html.modo-rubrica #rubricaPanel {
+  top: 0 !important; left: 0 !important; right: 0 !important; bottom: 0 !important;
+  width: auto !important; height: auto !important;
+  border-radius: 0 !important; box-shadow: none !important;
+  background: #263238 !important;
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+}
+html.modo-rubrica #rubricaPanelHeader { display: none !important; }

@@ -70,7 +70,7 @@ const PASSI = {
     console.log(r.elenco.length + ' file: da ' + kb(r.compressione.prima).trim() + ' a ' + kb(r.compressione.dopo).trim() + ' (' + r.compressione.strumento + '); ' + r.compressione.nomiGlobali + ' nomi globali rimasti identici');
     console.log('impronte dei file pubblicati (sha256):');
     r.compressione.righe.forEach((x) => console.log('  ' + x.impronta + '  ' + x.file));
-    ['index.html', 'print.html', '404.html', 'sw.js', 'manifest.json', 'js/ambiente.js', 'js/api.js', 'rubrica/index.html', 'rubrica/app.js', 'rubrica/app.css'].forEach((p) => {
+    ['index.html', 'print.html', '404.html', 'sw.js', 'manifest.json', 'manifest-rubrica.json', 'js/ambiente.js', 'js/api.js', 'rubrica/index.html', 'rubrica/app.js', 'rubrica/app.css'].forEach((p) => {
       if (r.elenco.indexOf(p) < 0) errore('fra i file del sito manca ' + p);
     });
     // dal sorgente: nella copia compressa la riga ha un'altra forma

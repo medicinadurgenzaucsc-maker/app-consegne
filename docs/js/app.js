@@ -14,6 +14,10 @@
     // Avvia il flusso dell'app dopo il login Google completato con successo.
     // Chiamata da _completaLogin() in index.html.
     window._avviaFlussoApp = function() {
+      // In modo rubrica (pagina aperta con ?rubrica=1) l'applicazione non
+      // parte: né sincronizzazione, né canale in tempo reale, né backup. La
+      // scelta sta in index.html (_avviaDopoAccesso); questa è la seconda porta.
+      if (window._MODO_RUBRICA === true) return;
 
       // ── Browser compatibility check ─────────────────────────────────
       if (!window._browserCompatibile) {

@@ -8,7 +8,7 @@
 // v83: fix privacy — la cache non deve MAI contenere risposte Supabase/Google
 // (dati pazienti a riposo su disco). Il bump cancella anche le cache
 // precedenti che li contenevano (handler 'activate').
-var CACHE_NAME = 'consegne-v190';
+var CACHE_NAME = 'consegne-v192';
 
 // Asset statici da pre-cachare all'installazione.
 // La rubrica («Numeri Telefono») è una pagina dell'app: il riquadro la chiede
@@ -26,6 +26,10 @@ var PRECACHE_ASSETS = [
   './icon-192.png',
   './icon-512.png',
   './manifest.json',
+  './manifest-rubrica.json',
+  './rubrica-icona-192.png',
+  './rubrica-icona-512.png',
+  './rubrica-apple-touch-icon.png',
   './css/styles.css',
   './js/ambiente.js',
   './js/librerie/purify-3.4.16.min.js',

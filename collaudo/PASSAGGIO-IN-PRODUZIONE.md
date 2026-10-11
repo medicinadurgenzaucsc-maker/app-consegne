@@ -746,3 +746,57 @@ numero 192.
 **Dopo**: quando nel registro non compaiono righe `ambiente-da-tabella` da
 qualche giorno, una versione a parte toglie la tabella da `api.js` (elenco di
 ciò che va adattato in `CLAUDE.md`, «Reparti»).
+
+## Stato all'11/10/2026
+
+- **La 190 è in produzione dalle 09:00** (commit `c953b37`, con l'ok di
+  Stefano, «anche adesso»). `pubblicazione.js produzione`: flusso di
+  Cloudflare riuscito con «reparto: gemelli-11n», avviso ai PC dato da
+  `notify-deploy`. `verifica-sito-servito.js`: i 23 file serviti identici al
+  commit. Registro dell'app: il primo PC ripartito alle 09:02, nessun errore e
+  nessuna riga `ambiente-da-tabella`. Il ramo `ritorno-v189` (`6c80c11`) resta
+  pronto.
+- **Il piano è rimasto privato.** Prima del rilascio la storia non ancora
+  pubblicata è stata riscritta senza `collaudo/PIANO-REPARTI.md`, che ora vive
+  nel ramo `piano` del repository privato di collaudo; la storia di prima è
+  nel ramo `archivio-con-piano-2026-10-11` dello stesso repository. È servita
+  una sola spinta forzata sul repository privato, autorizzata da Stefano. Per
+  questo i commit della 190 hanno cambiato nome (`04b54bb` è diventato
+  `5a7d141`). Due guardie: il controllo 15 di `controlli-rilascio.js` e il
+  gancio `pre-push` di questa cartella.
+- **Il vecchio indirizzo della rubrica risponde di nuovo**, dalle 09:22:
+  repository pubblico `medicinadurgenzaucsc-maker/rubrica-gemelli` con la sola
+  pagina di rinvio verso `…/app-consegne/?rubrica=1`, chiuso alle scritture
+  (`rinvio-rubrica.js stato`). Finché in produzione c'è la 190, che non
+  conosce il segno, chi arriva di lì vede l'app intera e apre la rubrica dal
+  menu; dalla 192 vede solo la rubrica.
+
+## Rilascio della 192: il modo rubrica
+
+Che cosa cambia: la pagina aperta con `?rubrica=1` mostra, dopo l'accesso,
+solo la rubrica a tutto schermo, con l'icona per uscire dall'account e una sua
+icona installabile; aperta senza il segno l'app resta com'è. Nessuna modifica
+al database. Regole in `CLAUDE.md`, «Modo rubrica».
+
+1. Nel collaudo: `controlli-rilascio.js` (punti 11 bis e 16), `__prove()` nel
+   sorgente e nella copia compressa, `__proveSw()` nelle due forme, prova di
+   fumo da scollegato con e senza il segno.
+2. Sito di collaudo: `git push collaudo collaudo:master`,
+   `pubblicazione.js`; poi dal sito, da un telefono: `…/?rubrica=1`, accesso,
+   solo la rubrica, icona di uscita, «Aggiungi a schermata Home». Su un
+   telefono Android che ha già l'icona delle consegne va guardato se Chrome
+   offre lo stesso di installare quella dei numeri: le due app hanno lo stesso
+   perimetro.
+3. Prima del push in produzione il ramo di ritorno `ritorno-v190`: le pagine
+   della 190 col numero 193, lasciando al loro posto i file nuovi di `docs/`.
+4. Produzione, solo con l'ok di Stefano: `git merge --ff-only collaudo` su
+   `master`, push, `pubblicazione.js produzione`, poi
+   `verifica-sito-servito.js <commit> attendi`. I file nuovi (manifesto e
+   icone) non si chiedono al sito prima che GitHub Pages abbia finito.
+5. Dopo: `rinvio-rubrica.js stato` deve dire che l'app in linea riconosce il
+   segno; dal telefono di un medico la vecchia icona porta alla rubrica.
+6. Su un PC del reparto una scheda rimasta sull'indirizzo col segno dai giorni
+   della 190 (ci si arrivava dal vecchio indirizzo della rubrica, anche dalla
+   riga rimasta in «Link utili») al primo ricaricamento mostra solo i numeri:
+   va chiusa, e l'app riaperta dal collegamento solito. L'icona di uscita, lì,
+   scollega anche le consegne di quel PC: la domanda lo dice.

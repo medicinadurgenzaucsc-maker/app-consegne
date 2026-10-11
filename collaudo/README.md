@@ -89,6 +89,7 @@ repository non c'è alcun segreto.
 | Script | A cosa serve |
 |---|---|
 | `sb.js` | Accesso ai due database: `collaudo()` legge e scrive solo sul progetto di collaudo, `produzione()` è in **sola lettura**; `per(nome)` dà quello giusto dal codice di un reparto. |
+| `rinvio-rubrica.js file\|stato\|pubblica --confermo-produzione` | Il vecchio indirizzo della rubrica (`…github.io/rubrica-gemelli/`, quello delle icone già installate sui telefoni): tiene lì un repository pubblico con la sola pagina di rinvio verso l'app aperta in modo rubrica (`?rubrica=1`) e un service worker che toglie quello di prima con la sua cache. Solo produzione; `stato` è in sola lettura. |
 | `reparti.js [mostra <codice>\|controlla\|scrivi]` | I reparti (`reparti/<codice>.json`): li elenca e li convalida, stampa il file `js/ambiente.js` di un reparto, controlla o riscrive `docs/js/ambiente.js` (che è sempre quello della 11N). Il codice di un reparto vale da nome d'ambiente in tutti gli strumenti: `gemelli-11n` è `produzione`. Schema in `reparti/README.md`. |
 | `clona-struttura.js ddl\|applica\|confronta` | Ricostruisce la struttura della produzione nel collaudo e ne verifica l'identità. |
 | `copia-config.js` | Ricopia la configurazione non personale. |
@@ -132,6 +133,7 @@ node collaudo/strumenti/banco.js 8765
 | `http://localhost:8765/?sloggato` | la stessa, senza sessione: è la **prova di fumo** |
 | `http://localhost:8765/?senzaFiltro` | la stessa, come se la libreria del filtro dell'HTML non si fosse caricata: deve comparire l'avviso a tutto schermo e nessuna scheda |
 | `http://localhost:8765/rubrica/` | la rubrica aperta **da sola**: deve restare sul messaggio fisso («La rubrica si apre dal menu…») senza chiedere nulla al database |
+| `http://localhost:8765/?rubrica=1` | il **modo rubrica**: dopo l'accesso solo la rubrica a tutto schermo, nessun dato dei pazienti scaricato; con `&sloggato` la schermata di accesso intitolata «Numeri Telefono» |
 | `http://localhost:8765/trak-finto/` | il finto TrakCare |
 
 Nel banco il service worker è spento e nessun file viene copiato o modificato.
@@ -260,7 +262,7 @@ rinvia ogni richiesta a un altro sito. Sa anche servire la versione oggi in
 produzione (`origin/master`), per provare il passaggio da quella alla versione
 di lavoro.
 
-Dalla pagina `http://localhost:8766/prove/`: `await window.__proveSw()`, 56
+Dalla pagina `http://localhost:8766/prove/`: `await window.__proveSw()`, 62
 prove nei due stili (`window.__avanzamentoSw()` dice a che punto è). Vanno
 rilanciate a ogni modifica di `docs/sw.js` o dell'elenco dei file del sito.
 Otto riguardano la cornice della rubrica: davanti a un guasto del sito la
@@ -280,7 +282,7 @@ in memoria (anche per la versione in produzione, quando ha il file), e ogni
 pagina arrivata deve anche riconoscere il proprio indirizzo. Senza, le prove
 passerebbero su un'app ferma su «Indirizzo non riconosciuto».
 
-`await window.__proveSw({ versione: 'compressa' })` esegue le 56 prove sulla
+`await window.__proveSw({ versione: 'compressa' })` esegue le 62 prove sulla
 copia compressa del sito: è la forma in cui il service worker arriva ai PC da
 Cloudflare.
 

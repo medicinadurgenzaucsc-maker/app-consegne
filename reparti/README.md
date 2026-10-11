@@ -100,5 +100,5 @@ compaiono più righe `ambiente-da-tabella`.
 ## Riservatezza
 
 Oggi il repository della 11N è pubblico e questa cartella contiene solo dati
-già pubblici. Il giorno in cui ci entrano i file di altri clienti (ospedale,
+già pubblici. Il giorno in cui ci entrano i file di altri reparti (ospedale,
 indirizzi, database) deve stare in un repository privato.
