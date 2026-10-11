@@ -635,7 +635,8 @@ accettano l'ambiente come primo argomento.
 - **Lezione**: un filtro ospedaliero può bloccare `pages.dev` e
   `cloudflareaccess.com`. Prima di ogni passaggio si prova la rete da un PC
   del reparto (dalla 190: `rete.html`) e si tiene pronto l'indirizzo di prima.
-  Come andare avanti: `collaudo/PIANO-REPARTI.md`, 3.3.
+  Come andare avanti: nel piano, capitolo 3.3 (il piano sta nel ramo `piano`
+  del repository privato di collaudo, non in questo repository).
 
 ## Rilascio della 190: i reparti (fase 1 del piano)
 
@@ -652,7 +653,9 @@ Stefano, di sera**.
   sorgente e nella copia compressa; prova di fumo da scollegato pulita;
   revisione indipendente fatta e correzioni applicate.
 - **Sito di collaudo, 10/10/2026 alle 09:46**: pubblicata dal flusso
-  (esecuzione n. 9, commit `04b54bb`). Il passo «File del sito» dice «reparto:
+  (esecuzione n. 9, commit `04b54bb`; l'11/10/2026 la storia non ancora pubblica
+  è stata riscritta per tenere privato il piano, e lo stesso contenuto è ora nel
+  commit `5a7d141`). Il passo «File del sito» dice «reparto:
   collaudo», «Avvisa i PC aperti» è riuscito (il segreto `SUPABASE_URL` è
   quello giusto), l'impronta di `js/ambiente.js` pubblicato è quella del file
   del collaudo. Dal Chrome di Stefano, già collegato: versione 190,

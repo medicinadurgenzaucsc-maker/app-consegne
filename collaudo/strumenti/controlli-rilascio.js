@@ -38,6 +38,9 @@
 //     togliere le barriere della produzione; il flusso riparte se cambia un
 //     reparto; il sito di OGNI reparto si costruisce, non porta dati di un
 //     altro e differisce dagli altri solo in js/ambiente.js (punto 12)
+// 15. riservatezza: il piano «un codice, tanti reparti» (licenze, contratti,
+//     prezzi) non sta fra i file né nella storia che un rilascio porterebbe
+//     nel repository del reparto, che è pubblico
 //
 //   node collaudo/strumenti/controlli-rilascio.js [riferimento]
 //
@@ -572,6 +575,24 @@ mancanti.length ? ko('sw.js elenca file che non esistono (l\'installazione del s
     fs.rmSync(fuori, { recursive: true, force: true });
     rifiutata ? ok('prepara-sito.js rifiuta una cartella di destinazione fuori da _sito (la svuoterebbe)') : ko('prepara-sito.js ha accettato una cartella di destinazione fuori da _sito');
   } catch (e) { ko('reparti e strumenti: ' + String((e && e.message) || e).split('\n').join(' | ').slice(0, 600)); }
+}
+
+// ── 15. ciò che non deve diventare pubblico ──────────────────────────
+// Il repository del reparto è pubblico. Il piano di vendita sta su un ramo a
+// parte («piano») del repository privato di collaudo: non deve comparire né
+// fra i file registrati né in un commit che un rilascio porterebbe su origin.
+// Una volta pubblicato non si richiama.
+{
+  try {
+    const git = (a) => execFileSync('git', ['-C', RADICE].concat(a), { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] });
+    const fraIFile = git(['ls-files']).split('\n').filter((f) => /PIANO-REPARTI/i.test(f));
+    let nellaStoria = [];
+    try { nellaStoria = git(['rev-list', '--objects', 'HEAD', '--not', RIF]).split('\n').filter((r) => /PIANO-REPARTI/i.test(r)); }
+    catch (e) { nellaStoria = ['storia non leggibile rispetto a ' + RIF]; }
+    (fraIFile.length || nellaStoria.length)
+      ? ko('riservatezza: il piano comparirebbe nel repository pubblico (' + (fraIFile.length ? 'fra i file: ' + fraIFile.join(', ') : 'nella storia da rilasciare: ' + nellaStoria.length + ' oggetti') + '). Sta nel ramo «piano» del repository privato di collaudo e non va rilasciato')
+      : ok('riservatezza: il piano non sta né fra i file né nella storia che un rilascio porterebbe nel repository pubblico');
+  } catch (e) { ko('riservatezza: ' + String((e && e.message) || e).slice(0, 300)); }
 }
 
 console.log(errori ? ('\n' + errori + ' CONTROLLI FALLITI: non pubblicare') : '\ntutti i controlli superati');
