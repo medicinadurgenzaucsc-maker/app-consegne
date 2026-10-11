@@ -795,8 +795,11 @@ al database. Regole in `CLAUDE.md`, «Modo rubrica».
    icone) non si chiedono al sito prima che GitHub Pages abbia finito.
 5. Dopo: `rinvio-rubrica.js stato` deve dire che l'app in linea riconosce il
    segno; dal telefono di un medico la vecchia icona porta alla rubrica.
-6. Su un PC del reparto una scheda rimasta sull'indirizzo col segno dai giorni
-   della 190 (ci si arrivava dal vecchio indirizzo della rubrica, anche dalla
-   riga rimasta in «Link utili») al primo ricaricamento mostra solo i numeri:
-   va chiusa, e l'app riaperta dal collegamento solito. L'icona di uscita, lì,
-   scollega anche le consegne di quel PC: la domanda lo dice.
+6. Su un PC del reparto può essere rimasta una scheda sull'indirizzo col segno
+   dai giorni della 190 (ci si arrivava dal vecchio indirizzo della rubrica,
+   anche dalla riga rimasta in «Link utili»). Con «Update» torna da sola
+   all'app intera: il ricaricamento lo fa ancora il codice della 190, che il
+   segno non lo conserva. Con F5 o col ricaricamento delle 04:00, che tengono
+   l'indirizzo, mostra invece solo i numeri: allora va chiusa, e l'app riaperta
+   dal collegamento solito. L'icona di uscita, lì, scollega anche le consegne
+   di quel PC: la domanda lo dice.

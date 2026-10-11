@@ -3064,7 +3064,9 @@
             if (pulsanti.length !== 3) guai.push('pulsanti nella testata: ' + pulsanti.length);
             else if (pulsanti.some(function (r) { return r.right > x.innerWidth + 1 || r.left < 0 || Math.abs(r.top - pulsanti[0].top) > 1; })) guai.push('a 360 px i pulsanti della testata non stanno su una riga dentro lo schermo');
             fr.style.width = '1280px';
-            // gli errori della pagina madre in modo rubrica (quelli della rubrica sono già raccolti)
+            // gli errori nati DURANTE la prova: quelli della rubrica (raccolti finora solo all'inizio: il ritorno
+            // in primo piano e il clic sull'icona di uscita sono venuti dopo) e quelli della pagina madre
+            raccogliErrori(x);
             raccogliErrori(fw);
           } finally { fr.remove(); }
           return !guai.length || guai.join(' ‖ ');
