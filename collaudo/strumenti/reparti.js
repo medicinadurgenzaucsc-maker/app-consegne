@@ -77,12 +77,21 @@ function difetti(r, nomeFile) {
   const p = r.pubblicazione;
   if (!p || typeof p !== 'object' || Array.isArray(p)) e.push('pubblicazione: atteso un oggetto');
   else {
-    Object.keys(p).forEach((k) => { if (['githubPages', 'cloudflare'].indexOf(k) < 0) e.push('pubblicazione: voce sconosciuta «' + k + '»'); });
-    if (!p.githubPages && !p.cloudflare) e.push('pubblicazione: serve almeno una voce fra githubPages e cloudflare');
+    Object.keys(p).forEach((k) => { if (['githubPages', 'cloudflare', 'sitoPubblico'].indexOf(k) < 0) e.push('pubblicazione: voce sconosciuta «' + k + '»'); });
+    if (!p.githubPages && !p.cloudflare && !p.sitoPubblico) e.push('pubblicazione: serve almeno una voce fra githubPages, cloudflare e sitoPubblico');
     if (p.cloudflare && !(typeof p.cloudflare.progetto === 'string' && /^[a-z0-9]([a-z0-9-]{0,56}[a-z0-9])?$/.test(p.cloudflare.progetto) && Object.keys(p.cloudflare).length === 1)) e.push('pubblicazione.cloudflare: atteso il solo campo «progetto», con un nome di progetto valido');
     if (p.cloudflare && Array.isArray(r.host) && r.host.indexOf(p.cloudflare.progetto + '.pages.dev') < 0) e.push('pubblicazione.cloudflare: «' + p.cloudflare.progetto + '.pages.dev» non è fra gli host del reparto');
     if (p.githubPages && !(typeof p.githubPages.repository === 'string' && /^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/.test(p.githubPages.repository) && p.githubPages.cartella === 'docs' && Object.keys(p.githubPages).length === 2)) e.push('pubblicazione.githubPages: attesi «repository» (proprietario/nome) e «cartella» = docs');
     if (p.githubPages && Array.isArray(r.host) && typeof p.githubPages.repository === 'string' && r.host.indexOf(p.githubPages.repository.split('/')[0].toLowerCase() + '.github.io') < 0) e.push('pubblicazione.githubPages: il sito del proprietario del repository non è fra gli host del reparto');
+    // il «livello 0»: un repository PUBBLICO che contiene solo il sito già compresso, servito da GitHub Pages
+    const sp = p.sitoPubblico;
+    if (sp !== undefined) {
+      if (!(sp && typeof sp === 'object' && !Array.isArray(sp) && typeof sp.repository === 'string' && /^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/.test(sp.repository) && Object.keys(sp).length === 1)) e.push('pubblicazione.sitoPubblico: atteso il solo campo «repository» (proprietario/nome)');
+      else {
+        if (Array.isArray(r.host) && r.host.indexOf(sp.repository.split('/')[0].toLowerCase() + '.github.io') < 0) e.push('pubblicazione.sitoPubblico: il sito del proprietario del repository non è fra gli host del reparto');
+        if (p.githubPages && typeof p.githubPages.repository === 'string' && p.githubPages.repository.toLowerCase() === sp.repository.toLowerCase()) e.push('pubblicazione.sitoPubblico: è lo stesso repository di githubPages, che contiene il sorgente; il sito pubblico vuole un repository suo');
+      }
+    }
   }
   if (!testo('supabaseUrl') || !/^https:\/\/[a-z]{20}\.supabase\.co$/.test(r.supabaseUrl)) e.push('supabaseUrl: atteso https://<progetto>.supabase.co, senza barra finale');
   if (!testo('supabaseAnonKey')) e.push('supabaseAnonKey mancante');
@@ -137,6 +146,14 @@ function tutti() {
     const pr = r.pubblicazione.cloudflare && r.pubblicazione.cloudflare.progetto;
     if (pr) { if (progetti[pr]) e.push('i reparti ' + progetti[pr] + ' e ' + r.codice + ' pubblicano sullo stesso progetto Cloudflare'); progetti[pr] = r.codice; }
   });
+  // un repository serve un sito solo: né due siti pubblici nello stesso, né un sito pubblico dove un reparto tiene il sorgente
+  const depositi = {};
+  elenco.forEach((r) => ['githubPages', 'sitoPubblico'].forEach((voce) => {
+    const dep = r.pubblicazione[voce] && String(r.pubblicazione[voce].repository).toLowerCase();
+    if (!dep) return;
+    if (depositi[dep] && depositi[dep] !== r.codice + ' ' + voce) e.push('il repository ' + dep + ' è dichiarato due volte: ' + depositi[dep] + ' e ' + r.codice + ' ' + voce);
+    depositi[dep] = r.codice + ' ' + voce;
+  }));
   elenco.forEach((a) => elenco.forEach((b) => {
     if (a.codice >= b.codice) return;
     a.host.forEach((ha) => b.host.forEach((hb) => {

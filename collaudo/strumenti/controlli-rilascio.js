@@ -27,7 +27,9 @@
 // 12. copia compressa (ciò che viene pubblicato su Cloudflare): strumento con
 //     versione fissa e impronte; la copia si costruisce e supera i suoi
 //     controlli: script che compilano, struttura delle pagine e nomi globali
-//     identici, nessun indirizzo di rete nuovo, segnalibri interi
+//     identici, nessun indirizzo di rete nuovo, segnalibri interi; per un
+//     reparto col sito pubblico (livello 0) i file che ci finirebbero sono
+//     tutti e soli quelli della copia compressa
 // 13. rubrica («Numeri Telefono», docs/rubrica/): solo i suoi tre file, nessun
 //     service worker né manifesto, nessun indirizzo o chiave nel codice, regola
 //     CSP stretta e niente scritto in linea, richieste e scritture in memoria
@@ -434,6 +436,31 @@ mancanti.length ? ko('sw.js elenca file che non esistono (l\'installazione del s
 //   npm ci --ignore-scripts   (dentro .github/compressione)
 {
   compila('.github/compressione/comprimi.js');
+  compila('collaudo/strumenti/sito-pubblico.js');
+  // Il sito pubblico (livello 0): la pubblicazione sostituisce l'intero contenuto di un repository, quindi lo
+  // strumento deve rifiutare un repository che non sia appena nato o già il sito di QUEL reparto.
+  try {
+    const sp = require('./sito-pubblico.js');
+    const amb = (ref) => 'window._AMBIENTE={codice:"x",supabaseUrl:"https://' + ref + '.supabase.co"};';
+    const A = 'abcdefghijklmnopqrst', B = 'tsrqponmlkjihgfedcba', sito = ['index.html', 'sw.js', 'js/ambiente.js', 'js/api.js', '.nojekyll'];
+    const casi = [
+      ['repository appena nato', sp.repositoryInadatto(['README.md'], '', amb(A)), true],
+      ['già il sito di questo reparto', sp.repositoryInadatto(sito, amb(A), amb(A)), true],
+      ['il sito di un altro reparto', sp.repositoryInadatto(sito, amb(B), amb(A)), false],
+      ['un repository col sorgente', sp.repositoryInadatto(['README.md', 'docs/index.html', 'docs/sw.js', 'docs/js/ambiente.js', 'collaudo/strumenti/sb.js'], '', amb(A)), false],
+      ['una pagina di rinvio', sp.repositoryInadatto(['index.html', 'sw.js', '404.html', '.nojekyll'], '', amb(A)), false],
+      ['un sito senza database nel file dell\'ambiente', sp.repositoryInadatto(sito, 'window._AMBIENTE={};', amb(A)), false],
+      ['un file dell\'ambiente nuovo con due database', sp.repositoryInadatto(sito, amb(A), amb(A) + amb(B)), false],
+    ];
+    const sbagliati = casi.filter((c) => (c[1] === null) !== c[2]).map((c) => c[0]);
+    const testo = leggi('collaudo/strumenti/sito-pubblico.js');
+    if (sbagliati.length) ko('sito pubblico: la guardia sul repository sbaglia nei casi: ' + sbagliati.join(', '));
+    else if (testo.indexOf('force: false') < 0 || /force:\s*true/.test(testo)) ko('sito pubblico: il ramo deve avanzare senza spinta forzata');
+    else if (testo.indexOf("if (inadatto) throw") < 0 || testo.indexOf("if (inadatto) throw") > testo.indexOf("'/git/blobs', {")) ko('sito pubblico: la guardia sul repository deve stare PRIMA di ogni scrittura');
+    else if (!/if \(sospese\.length\) throw/.test(testo) || !/if \(!crea\) throw/.test(testo) || testo.indexOf("await gh('GET', '/user')") < 0) ko('sito pubblico: mancano il rifiuto con modifiche non registrate, la creazione solo con «--crea» o il controllo di chi è la chiave');
+    else if (!/users\.noreply\.github\.com/.test(testo)) ko('sito pubblico: i commit devono avere un autore neutro, non l\'indirizzo di posta dell\'account');
+    else ok('sito pubblico: lo strumento rifiuta un repository che non è appena nato né già il sito di quel reparto (' + casi.length + ' casi), prima di ogni scrittura; nessuna spinta forzata; si pubblica solo ciò che è registrato; il repository si crea solo con «--crea» e con la chiave del suo account; autore dei commit neutro');
+  } catch (e) { ko('sito pubblico: ' + String((e && e.message) || e).slice(0, 300)); }
   try {
     const pacchetto = JSON.parse(leggi('.github/compressione/package.json')), impronte = JSON.parse(leggi('.github/compressione/package-lock.json'));
     const nomi = Object.keys(impronte.packages).filter(Boolean);
@@ -459,6 +486,16 @@ mancanti.length ? ko('sw.js elenca file che non esistono (l\'installazione del s
       const r = prepara(path.join(RADICE, '_sito', 'controlli-' + rep.codice), { compressa: true, reparto: rep.codice });
       const c = r.compressione;
       impronte[rep.codice] = Object.fromEntries(c.righe.map((x) => [x.file, x.impronta]));
+      // livello 0: nel repository pubblico finiscono SOLO i file della copia compressa (più il segno .nojekyll)
+      const sp = require('./sito-pubblico.js'), dest = sp.destinazione(rep);
+      if (dest) {
+        const pubblici = sp.fileDelSito(path.join(RADICE, '_sito', 'controlli-' + rep.codice), r.elenco).map((f) => f[0]);
+        const attesi = r.elenco.filter((p) => sp.SOLO_CLOUDFLARE.indexOf(p) < 0).concat(['.nojekyll']);
+        const fuori = pubblici.filter((p) => attesi.indexOf(p) < 0), mancanti = attesi.filter((p) => pubblici.indexOf(p) < 0);
+        if (fuori.length || mancanti.length || pubblici.some((p) => /^_|\/_|\.map$|^collaudo\/|^reparti\/|^\.github\//.test(p))) ko('sito pubblico del reparto «' + rep.codice + '»: l\'elenco dei file non è quello della copia compressa (in più: ' + (fuori.join(', ') || 'nessuno') + '; mancanti: ' + (mancanti.join(', ') || 'nessuno') + ')');
+        else if (rep.tipo === 'produzione') ko('sito pubblico: il reparto di produzione «' + rep.codice + '» dichiara un sito pubblico; il suo passaggio al livello 0 è un rilascio a sé e non è ancora stato fatto');
+        else ok('sito pubblico del reparto «' + rep.codice + '»: ' + dest.sito + ' riceverebbe ' + pubblici.length + ' file, tutti e soli quelli della copia compressa (senza i file di Cloudflare), e quell\'indirizzo è fra i suoi');
+      }
       if (i === 0) ok('copia compressa: ' + r.elenco.length + ' file, da ' + Math.round(c.prima / 1024) + ' a ' + Math.round(c.dopo / 1024) + ' KB; script che compilano, struttura delle pagine e ' + c.nomiGlobali + ' nomi globali identici, nessun indirizzo nuovo, segnalibri interi, contenuto di js/ambiente.js intatto');
     });
     const codici = Object.keys(impronte), diversi = new Set();

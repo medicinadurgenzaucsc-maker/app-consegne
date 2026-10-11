@@ -803,3 +803,81 @@ al database. Regole in `CLAUDE.md`, «Modo rubrica».
    l'indirizzo, mostra invece solo i numeri: allora va chiusa, e l'app riaperta
    dal collegamento solito. L'icona di uscita, lì, scollega anche le consegne
    di quel PC: la domanda lo dice.
+
+### Com'è andata (11/10/2026)
+
+- Revisione indipendente della 192, poi controllo indipendente delle sole
+  correzioni: nessun difetto nel codice servito; ritoccati una prova e due
+  documenti.
+- Collaudo: controlli statici, 145 prove nell'app (sorgente e copia
+  compressa), 62 nel service worker (nelle due forme), prova di fumo da
+  scollegato con e senza il segno. Sito di collaudo pubblicato (`8918f49`) e
+  guardato nel browser: col segno solo la rubrica, nessuna richiesta verso i
+  dati dei pazienti, icona di uscita al suo posto; senza il segno l'app di
+  sempre.
+- Ramo di ritorno `ritorno-v190` (`b18eeb0`): le pagine della 190 col numero
+  193, con manifesto e icone della rubrica lasciati al loro posto. Provato nel
+  banco del service worker con `BANCO_RIF=8918f49`: 56 prove su 56 (le 6 sulla
+  pagina aperta per la rubrica lì non si applicano).
+- Produzione: push alle 10:36:53 (`96de162`), avviso ai PC da `notify-deploy`
+  alle 10:37:38, `verifica-sito-servito.js`: i 27 file serviti identici al
+  commit. `rinvio-rubrica.js stato`: l'app in linea riconosce il segno, quindi
+  la vecchia icona dei telefoni apre solo la rubrica.
+
+## Livello 0: il sito pubblico di prova (11/10/2026)
+
+Che cos'è: il sito di un reparto servito da GitHub Pages da un repository
+**pubblico che contiene soltanto i file del sito, già compressi**; il sorgente
+(pagine leggibili, strumenti, documenti, storia) resta in un repository
+privato. GitHub Pages non si accende su un repository privato di un account
+gratuito: per questo il sito sta in un repository a parte.
+
+Nel collaudo, con l'ok di Stefano:
+
+- reparto `collaudo`, voce `pubblicazione.sitoPubblico`: repository
+  `gistech2026/collaudo-sito`, sito `https://gistech2026.github.io/collaudo-sito/`;
+- `node collaudo/strumenti/sito-pubblico.js collaudo pubblica`: repository
+  creato, 28 file (i 27 della copia compressa senza `_headers`, più
+  `.nojekyll`), sito pronto dopo 29 secondi con gli stessi file, impronta per
+  impronta;
+- da estraneo: nel repository ci sono solo quei file, nessuno del sorgente;
+  la storia ha due commit (quello iniziale di GitHub e il sito); un indirizzo
+  che non esiste riceve la pagina 404 del sito;
+- nel browser: ambiente riconosciuto (l'host era già fra quelli del collaudo),
+  service worker attivo con ambito `/collaudo-sito/`, 26 file in cache; da
+  collegato le schede del collaudo e il canale in tempo reale; col segno
+  `?rubrica=1` solo la rubrica, cornice in `/collaudo-sito/rubrica/`.
+
+Che cosa resta diverso dal sito su Cloudflare: nessun cancello davanti alle
+pagine (chiunque riceve il codice compresso, come oggi dal sito del reparto);
+il sito non si aggiorna da solo, va rilanciato `sito-pubblico.js` dopo ogni
+pubblicazione.
+
+Dopo la prima pubblicazione una revisione indipendente ha fatto aggiungere
+allo strumento quattro protezioni, perché ciò che arriva in un repository
+pubblico non si ritira: pubblica solo ciò che è registrato in git; prima di
+scrivere controlla che il repository sia appena nato o sia già il sito di
+quel reparto (la pubblicazione ne sostituisce tutto il contenuto); lo crea
+solo con `--crea`, e solo se la chiave è dell'account che lo possiede; firma
+i commit con un autore neutro. I primi due commit di `collaudo-sito`, fatti
+prima, portano come autore l'indirizzo di posta dell'account di collaudo:
+restano nella storia, e si tolgono solo rifacendo il repository da capo.
+
+Per portarci la 11N servono, ognuno col suo ok:
+
+1. Lo scambio dei repository con il sito al posto della pagina di rinvio: il
+   repository col sorgente diventa privato sotto un altro nome, e al nome di
+   sempre (`app-consegne`) va un repository pubblico col solo sito compresso.
+   L'indirizzo dei PC non cambia, nessuno rifà l'accesso, e `github.io` la
+   rete dell'ospedale lo lascia già passare. `scambio-repository.js` oggi
+   mette al vecchio nome la pagina di rinvio: va adattato e provato nel
+   collaudo.
+2. La pubblicazione dal flusso del repository privato: prepara la copia
+   compressa, la pubblica nel repository pubblico, aspetta che GitHub Pages
+   serva i file (`attendiServito`) e solo allora avvisa i PC. Oggi l'avviso lo
+   dà `notify-deploy`, che vive nel repository pubblicato da GitHub Pages.
+3. Una chiave che scriva solo in quel repository pubblico, messa da Stefano
+   nei segreti del repository privato.
+4. `docs/js/ambiente.js` della 11N non sarà più «il file servito così
+   com'è»: lo genererà la preparazione del sito, come per ogni altro reparto.
+5. Le copie del sorgente scaricate quando era pubblico non si richiamano.

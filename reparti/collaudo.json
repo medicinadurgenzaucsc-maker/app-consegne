@@ -20,6 +20,9 @@
   "pubblicazione": {
     "cloudflare": {
       "progetto": "consegne-collaudo"
+    },
+    "sitoPubblico": {
+      "repository": "gistech2026/collaudo-sito"
     }
   },
   "supabaseUrl": "https://rqvohwpthhumydpbwktq.supabase.co",

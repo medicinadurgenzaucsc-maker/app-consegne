@@ -60,7 +60,7 @@ node collaudo/strumenti/reparti.js scrivi           riscrive docs/js/ambiente.js
 | `supabaseAnonKey` | la chiave PUBBLICA di quel progetto |
 | `googleClientId` | l'identificativo del client Google dell'accesso |
 
-`pubblicazione` ha una o tutte e due queste voci:
+`pubblicazione` ha una o più di queste voci:
 
 - `cloudflare: { progetto }`: il progetto Pages. `<progetto>.pages.dev` deve
   essere fra gli `host`. Il flusso di pubblicazione riconosce il reparto da
@@ -68,8 +68,17 @@ node collaudo/strumenti/reparti.js scrivi           riscrive docs/js/ambiente.js
   `CLOUDFLARE_PROGETTO` del repository.
 - `githubPages: { repository, cartella: "docs" }`: vuol dire «la cartella
   `docs/` di questo repository, servita così com'è». Può averla un reparto
-  solo. Il repository pubblico col solo sito generato, previsto dal piano per
-  il livello 0, sarà un campo diverso: non va descritto con questo.
+  solo. Il repository pubblico col solo sito generato è la voce qui sotto:
+  non va descritto con questa.
+- `sitoPubblico: { repository }`: il «livello 0». Un repository PUBBLICO che
+  contiene soltanto i file che il sito serve, già compressi, servito da GitHub
+  Pages; il sorgente resta in un repository privato. Lo pubblica
+  `collaudo/strumenti/sito-pubblico.js`. Il sito risponde a
+  `<proprietario>.github.io/<nome>/`, e `<proprietario>.github.io` deve essere
+  fra gli `host`. Poiché due reparti non possono avere un host in comune (e su
+  uno stesso indirizzo condividerebbero anche la sessione nel browser), ogni
+  reparto al livello 0 vuole un account GitHub suo. Oggi lo ha solo il
+  collaudo, per prova.
 
 Nel file servito finiscono solo `codice`, `nome`, `ambiente`, `lingua`,
 `versioneLocale`, `host`, `supabaseUrl`, `supabaseAnonKey`, `googleClientId`.
