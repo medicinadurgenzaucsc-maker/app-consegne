@@ -146,7 +146,10 @@ function tutti() {
     const pr = r.pubblicazione.cloudflare && r.pubblicazione.cloudflare.progetto;
     if (pr) { if (progetti[pr]) e.push('i reparti ' + progetti[pr] + ' e ' + r.codice + ' pubblicano sullo stesso progetto Cloudflare'); progetti[pr] = r.codice; }
   });
-  // un repository serve un sito solo: né due siti pubblici nello stesso, né un sito pubblico dove un reparto tiene il sorgente
+  // un repository serve un sito solo. Fra quelli DICHIARATI nei file dei reparti: né due siti pubblici nello stesso,
+  // né un sito pubblico nel repository da cui un reparto pubblica docs/. Un repository col sorgente che nessun file
+  // dichiara (quello del collaudo) qui non si conosce: lo ferma sito-pubblico.js, che prima di scrivere guarda che
+  // cosa il repository contiene
   const depositi = {};
   elenco.forEach((r) => ['githubPages', 'sitoPubblico'].forEach((voce) => {
     const dep = r.pubblicazione[voce] && String(r.pubblicazione[voce].repository).toLowerCase();
