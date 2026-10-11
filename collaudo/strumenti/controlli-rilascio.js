@@ -379,6 +379,47 @@ mancanti.length ? ko('sw.js elenca file che non esistono (l\'installazione del s
   } catch (e) { ko('pagina di rinvio: ' + e.message); }
 }
 
+// ── 11 bis. rinvio dal vecchio indirizzo della rubrica ───────────────
+// La rubrica di prima aveva un indirizzo suo, con la sua icona sui telefoni.
+// Lì resta un repository pubblico con la SOLA pagina che porta all'app delle
+// consegne aperta per la rubrica, e un service worker che toglie quello di
+// prima con la sua cache (ci stavano nomi e numeri) senza toccare le cache
+// dell'app, che vive sullo stesso dominio.
+{
+  compila('collaudo/strumenti/rinvio-rubrica.js');
+  try {
+    const { fileRubrica, destinazioneVera, SEGNO_RUBRICA } = require('./rinvio-rubrica.js');
+    const vm = require('vm');
+    const D = destinazioneVera(require('./gh-api.js').AMBIENTI.produzione.utente);
+    const file = Object.fromEntries(fileRubrica(D.intera).map((x) => [x[0], x[1].toString('utf8')]));
+    const guai = [];
+    if (Object.keys(file).sort().join() !== ['.nojekyll', '404.html', 'README.md', 'index.html', 'robots.txt', 'sw.js'].join()) guai.push('file inattesi: ' + Object.keys(file).sort().join(', '));
+    if (D.intera !== D.app + SEGNO_RUBRICA || !/^https:\/\/[a-z0-9-]+[.]github[.]io\/app-consegne\/[?]rubrica=1$/.test(D.intera)) guai.push('destinazione inattesa');
+    // le chiavi che tenevano nomi e numeri: lo stesso elenco che la rubrica dentro l'app toglie all'avvio
+    const residui = ((/const LS_RESIDUI\s*=\s*\[([^\]]*)\]/.exec(leggi('docs/rubrica/app.js')) || [])[1] || '').match(/'[^']+'/g) || [];
+    ['index.html', '404.html'].forEach((n) => {
+      const codice = (/<script>([\s\S]*?)<\/script>/.exec(file[n]) || [])[1] || '';
+      const giro = (inCornice) => {
+        let dove = null; const tolte = [];
+        const finestra = {}; finestra.self = finestra; finestra.top = inCornice ? {} : finestra;
+        vm.runInNewContext(codice, { window: finestra, localStorage: { removeItem: (k) => { tolte.push(k); } }, location: { search: '?x=1', hash: '#y', replace: (u) => { dove = u; } } });
+        return { dove, tolte };
+      };
+      const a = giro(false), b = giro(true);
+      if (a.dove !== D.intera) guai.push(n + ' porta a «' + a.dove + '» invece che all\'app aperta per la rubrica');
+      if (b.dove !== null) guai.push(n + ' rimanda anche dentro una cornice: l\'app intera finirebbe nel riquadro di una vecchia pagina');
+      if (!residui.length || a.tolte.slice().sort().join() !== residui.map((x) => x.slice(1, -1)).sort().join()) guai.push(n + ' deve togliere dal dispositivo le stesse chiavi residue della rubrica di prima che toglie docs/rubrica/app.js (LS_RESIDUI), e solo quelle');
+      if (!/<noscript><meta http-equiv="refresh"/.test(file[n])) guai.push(n + ': manca il rinvio per chi ha JavaScript spento');
+      if (/eyJ[A-Za-z0-9_-]{10,}|supabase/i.test(file[n])) guai.push(n + ' contiene una chiave o un indirizzo di database');
+    });
+    const sw = file['sw.js'];
+    if (/addEventListener\('fetch'/.test(sw)) guai.push('sw.js non deve avere un gestore delle richieste');
+    if (!/registration\.unregister\(\)/.test(sw)) guai.push('sw.js deve togliersi da solo');
+    if ((sw.match(/caches\.delete\(/g) || []).length !== 1 || !/nomi\.filter\(function \(n\) \{ return n\.indexOf\('rubrica-'\) === 0; \}\)\.map\(function \(n\) \{ return caches\.delete\(n\); \}\)/.test(sw)) guai.push('sw.js deve togliere SOLO le cache «rubrica-…»: sullo stesso dominio vive l\'app delle consegne');
+    guai.length ? ko('rinvio della rubrica: ' + guai.join('; ')) : ok('rinvio della rubrica: 6 file, la pagina porta a ' + D.intera + ' (non dentro una cornice) e toglie la vecchia copia dei numeri; il service worker toglie solo le cache «rubrica-…» e se stesso');
+  } catch (e) { ko('rinvio della rubrica: ' + String((e && e.message) || e).slice(0, 300)); }
+}
+
 // ── 12. copia compressa ──────────────────────────────────────────────
 // Lo strumento che comprime trasforma il codice che arriva ai PC: versione
 // fissa, impronta di ogni pacchetto, e la copia prodotta deve superare i
