@@ -17,5 +17,8 @@ window._AMBIENTE = {
   ],
   "supabaseUrl": "https://ifmmcvxzhwdkmzhsxcvb.supabase.co",
   "supabaseAnonKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlmbW1jdnh6aHdka216aHN4Y3ZiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc2Nzk1ODAsImV4cCI6MjA5MzI1NTU4MH0.LH8h4Fivtl3-TuiA050oF8iS4b80xrd2Dn6z8JjCoeA",
-  "googleClientId": "170256871056-gchf386c3oic77ek2j5m3b1e5pbv6cre.apps.googleusercontent.com"
+  "googleClientId": "170256871056-gchf386c3oic77ek2j5m3b1e5pbv6cre.apps.googleusercontent.com",
+  "centrale": {
+    "url": "https://jnliuimxhrzcpyxiusoc.supabase.co"
+  }
 };
