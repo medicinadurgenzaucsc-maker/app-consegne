@@ -18,8 +18,9 @@ Cloudflare `consegne-collaudo.pages.dev` con le sue anteprime. Un indirizzo che
 non sta fra quelli del sito non è un ambiente: lì l'app non parte e mostra
 «Indirizzo non riconosciuto», quindi **un indirizzo nuovo si aggiunge al campo
 `host` del file del reparto** prima di essere usato (per la 11N poi
-`node collaudo/strumenti/reparti.js scrivi`). La tabella `_AMBIENTI` rimasta in
-`docs/js/api.js` è solo la riserva della versione 190: non si tocca.
+`node collaudo/strumenti/reparti.js scrivi`). Dalla versione 193 in
+`docs/js/api.js` non c'è più la tabella di riserva degli ambienti: senza il
+file l'app si ferma e offre «Ricarica».
 `docs/` è il sito della 11N: servita così com'è da un altro indirizzo (un
 server locale, o GitHub Pages dell'account di collaudo dopo un «annulla» dello
 scambio) le pagine arrivano ma l'app si ferma su «Indirizzo non riconosciuto».
@@ -144,8 +145,8 @@ reparto di collaudo, generato in memoria da `reparti/collaudo.json`. Per le
 prove sa servire anche file d'ambiente **finti** (mai quello di un reparto
 vero): `?ambiente=senza` toglie il tag dalla pagina, come una pagina della
 versione di prima; `assente`, `sintassi` e `nullo` fingono un file che non
-arriva; `rotto`, `altro-sito` e `discorde` un file sbagliato, davanti al quale
-l'app deve fermarsi.
+arriva, e l'app deve fermarsi offrendo «Ricarica»; `rotto` e `altro-sito` un
+file sbagliato, davanti al quale l'app deve fermarsi.
 Con `node collaudo/strumenti/banco.js 8767 compressa` il banco serve invece la
 **copia compressa** del sito, quella pubblicata su Cloudflare, preparata
 all'avvio in `_sito/banco`: dopo una modifica a `docs/` va riavviato. Le prove

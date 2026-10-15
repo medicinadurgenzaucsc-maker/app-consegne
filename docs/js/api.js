@@ -15,46 +15,13 @@
 // avrebbe collegato codice in prova al database dei pazienti veri. Una voce
 // che comincia col punto vale per i sottodomini.
 //
-// TRANSITORIO (v190). La tabella _AMBIENTI qui sotto è quella della v189, tale
-// e quale: serve SOLO quando js/ambiente.js non è stato caricato. Capita nei
-// minuti di un aggiornamento, quando il browser accoppia una pagina vecchia
-// (che non lo chiede) con questo file nuovo: i file dell'app si prendono dalla
-// rete e il browser li tiene dieci minuti, ognuno per conto suo. Con la
-// tabella ogni combinazione di vecchio e nuovo funziona. Si toglie in una
-// versione successiva, quando ogni PC ha la pagina nuova; fino ad allora non
-// si allunga e non si corregge (lo controlla controlli-rilascio.js).
-var _AMBIENTI = {
-  produzione: {
-    // consegne-reparto.pages.dev è il sito del reparto su Cloudflare. Le anteprime
-    // che Cloudflare crea a ogni pubblicazione qui NON sono riconosciute, apposta:
-    // sui pazienti veri si lavora solo dall'indirizzo del sito.
-    host:            ['medicinadurgenzaucsc-maker.github.io', 'consegne-reparto.pages.dev'],
-    supabaseUrl:     'https://ifmmcvxzhwdkmzhsxcvb.supabase.co',
-    supabaseAnonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlmbW1jdnh6aHdka216aHN4Y3ZiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc2Nzk1ODAsImV4cCI6MjA5MzI1NTU4MH0.LH8h4Fivtl3-TuiA050oF8iS4b80xrd2Dn6z8JjCoeA',
-    googleClientId:  '170256871056-gchf386c3oic77ek2j5m3b1e5pbv6cre.apps.googleusercontent.com'
-  },
-  collaudo: {
-    // consegne-collaudo.pages.dev è il sito di collaudo su Cloudflare; la voce
-    // col punto copre le anteprime che Cloudflare crea a ogni pubblicazione.
-    host:            ['gistech2026.github.io', 'localhost', '127.0.0.1',
-                      'consegne-collaudo.pages.dev', '.consegne-collaudo.pages.dev'],
-    supabaseUrl:     'https://rqvohwpthhumydpbwktq.supabase.co',
-    supabaseAnonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJxdm9od3B0aGh1bXlkcGJ3a3RxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTExMjUyNjAsImV4cCI6MjEwNjcwMTI2MH0.tA5uy7aJM9x8UmHjYBM9wvRmR5eqR5fH2mVctp4l0xo',
-    googleClientId:  '223005241786-ds6ctquq91gtq4d539kflq1ptbb1r5d5.apps.googleusercontent.com'
-  }
-};
-// Nome host → nome dell'ambiente, oppure null se non è di nessuno dei due.
-function _ambienteDaHost(host) {
-  host = String(host || '').toLowerCase();
-  var trovato = null;
-  ['produzione', 'collaudo'].forEach(function (nome) {
-    _AMBIENTI[nome].host.forEach(function (h) {
-      var vale = (h.charAt(0) === '.') ? (host.length > h.length && host.slice(-h.length) === h) : (host === h);
-      if (vale && !trovato) trovato = nome;
-    });
-  });
-  return trovato;
-}
+// Senza js/ambiente.js non c'è ambiente: l'app si ferma e offre «Ricarica».
+// Capita nei minuti di un aggiornamento, quando il browser accoppia una
+// pagina vecchia a questo file nuovo, oppure se al posto del file arriva
+// altro (un 404, la pagina di un filtro). Fino alla v192 qui c'era la tabella
+// degli ambienti della v189, come riserva per quei minuti: tolta nella v193,
+// quando nel registro dell'app non comparivano più pagine partite da lei.
+
 // Un nome host è coperto da una voce dell'elenco? Una voce col punto davanti
 // vale per i sottodomini.
 function _hostCoperto(voce, host) {
@@ -67,27 +34,18 @@ function _hostCoperto(voce, host) {
 // Restituisce { esito, motivo }. «esito» è l'ambiente della pagina, cioè
 // {ambiente, supabaseUrl, supabaseAnonKey, googleClientId, origine}, oppure
 // null: nessun ambiente, l'app non parte, e «motivo» dice perché:
+//   'assente'    js/ambiente.js non è arrivato (o la pagina non lo chiede)
 //   'indirizzo'  la pagina è aperta da un indirizzo che non è fra i suoi
 //   'file'       js/ambiente.js c'è ma non è scritto come deve
-//   'discorde'   js/ambiente.js è quello di un altro sito
+// Il file di un altro reparto sullo stesso indirizzo non può capitare: due
+// reparti non hanno mai un indirizzo in comune (lo convalida reparti.js), e
+// dopo l'accesso la riga AMBIENTE del database fa da seconda barriera.
 // Non tocca la pagina: la chiamano anche le prove automatiche.
 function _ambienteEsame(file, host) {
   host = String(host || '').toLowerCase();
-  var daTabella = _ambienteDaHost(host);
   function no(motivo) { return { esito: null, motivo: motivo }; }
-  if (file === undefined || file === null) {
-    // js/ambiente.js non caricato: vale la tabella di prima (vedi sopra)
-    if (!daTabella) return no('indirizzo');
-    return { esito: {
-      ambiente: daTabella,
-      supabaseUrl: _AMBIENTI[daTabella].supabaseUrl,
-      supabaseAnonKey: _AMBIENTI[daTabella].supabaseAnonKey,
-      googleClientId: _AMBIENTI[daTabella].googleClientId,
-      origine: 'tabella'
-    }, motivo: '' };
-  }
+  if (file === undefined || file === null) return no('assente');
   // Il file c'è: decide lui, e un file che non si capisce non è un ambiente.
-  // Non si ripiega sulla tabella: un file sbagliato deve farsi vedere subito.
   if (typeof file !== 'object') return no('file');
   if (file.ambiente !== 'produzione' && file.ambiente !== 'collaudo') return no('file');
   if (!Array.isArray(file.host)) return no('file');
@@ -99,10 +57,6 @@ function _ambienteEsame(file, host) {
     if (typeof file.host[i] === 'string' && _hostCoperto(file.host[i], host)) ammesso = true;
   }
   if (!ammesso) return no('indirizzo');
-  // Finché c'è la tabella di prima: se riconosce questo indirizzo deve dare lo
-  // stesso ambiente e lo stesso database del file. Se non concordano il file è
-  // quello di un altro sito, e ci si ferma.
-  if (daTabella && (daTabella !== file.ambiente || _AMBIENTI[daTabella].supabaseUrl !== file.supabaseUrl)) return no('discorde');
   return { esito: {
     ambiente: file.ambiente,
     supabaseUrl: file.supabaseUrl,
@@ -117,9 +71,9 @@ var _AMB_ESAME = _ambienteEsame(window._AMBIENTE, location.hostname);
 var _AMB = _AMB_ESAME.esito;
 var AMBIENTE = _AMB ? _AMB.ambiente : null;
 if (!AMBIENTE) {
-  // Indirizzo sconosciuto (o file dell'ambiente non valido, o di un altro
-  // sito): nessun database e nessun accesso. Lo si dice a tutto schermo e ci si
-  // ferma qui: il resto del file non viene eseguito.
+  // File dell'ambiente non arrivato, indirizzo sconosciuto o file non valido:
+  // nessun database e nessun accesso. Lo si dice a tutto schermo e ci si ferma
+  // qui: il resto del file non viene eseguito.
   (function () {
     var motivo = _AMB_ESAME.motivo;
     function avvisa() {
@@ -132,20 +86,32 @@ if (!AMBIENTE) {
       var t = document.createElement('div');
       var s = document.createElement('div');
       s.setAttribute('style', 'font-weight:400;font-size:15px;margin-top:10px;max-width:560px');
-      if (motivo === 'indirizzo') {
+      var bottone = null;
+      if (motivo === 'assente') {
+        // di solito i minuti di un aggiornamento: ricaricando arriva tutto
+        t.textContent = "L'applicazione non ha ricevuto la sua configurazione.";
+        s.textContent = "Succede nei minuti di un aggiornamento: premi «Ricarica». Se il messaggio ricompare, attendi qualche minuto e riprova; se resta, avvisa chi gestisce l'applicazione. Indirizzo di questa pagina: " + location.hostname;
+        bottone = document.createElement('button');
+        bottone.type = 'button';
+        bottone.id = 'bloccoIndirizzoRicarica';
+        bottone.textContent = 'Ricarica';
+        bottone.setAttribute('style', 'margin-top:22px;padding:10px 28px;font:600 16px system-ui,Arial,sans-serif;color:#263238;background:#fff;border:0;border-radius:6px;cursor:pointer');
+        bottone.addEventListener('click', function () { location.reload(); });
+      } else if (motivo === 'indirizzo') {
         t.textContent = "Indirizzo non riconosciuto: da qui l'applicazione non si collega a nessun database.";
         s.textContent = "Aprila dal suo indirizzo abituale. Se ci sei arrivato da un collegamento, avvisa chi gestisce l'applicazione. Indirizzo di questa pagina: " + location.hostname;
       } else {
         // l'indirizzo non c'entra: è arrivato un file dell'ambiente sbagliato
         t.textContent = "Configurazione del sito non valida: da qui l'applicazione non si collega a nessun database.";
-        s.textContent = "Ricarica la pagina. Se il messaggio ricompare, avvisa chi gestisce l'applicazione: " + (motivo === 'discorde' ? "il file dell'ambiente è quello di un altro sito" : "il file dell'ambiente non è valido") + ". Indirizzo di questa pagina: " + location.hostname;
+        s.textContent = "Ricarica la pagina. Se il messaggio ricompare, avvisa chi gestisce l'applicazione: il file dell'ambiente non è valido. Indirizzo di questa pagina: " + location.hostname;
       }
       d.appendChild(t); d.appendChild(s);
+      if (bottone) d.appendChild(bottone);
       (document.body || document.documentElement).appendChild(d);
     }
     if (document.body) avvisa(); else document.addEventListener('DOMContentLoaded', avvisa);
   })();
-  throw new Error('[Ambiente] ' + (_AMB_ESAME.motivo === 'indirizzo' ? 'indirizzo non riconosciuto' : _AMB_ESAME.motivo === 'discorde' ? 'js/ambiente.js è di un altro sito' : 'js/ambiente.js non valido') + ': ' + location.hostname);
+  throw new Error('[Ambiente] ' + (_AMB_ESAME.motivo === 'assente' ? 'js/ambiente.js non arrivato' : _AMB_ESAME.motivo === 'indirizzo' ? 'indirizzo non riconosciuto' : 'js/ambiente.js non valido') + ': ' + location.hostname);
 }
 var SUPABASE_URL      = _AMB.supabaseUrl;
 var SUPABASE_ANON_KEY = _AMB.supabaseAnonKey;
@@ -241,11 +207,6 @@ function _filtroPronto() {
     (document.body || document.documentElement).appendChild(d);
   }
   function verifica() {
-    // TRANSITORIO, finché c'è la tabella di riserva: si annota nel registro
-    // quando una pagina è partita dalla tabella invece che da js/ambiente.js.
-    // Quando queste righe smettono di comparire la tabella si può togliere.
-    // Una riga per pagina, e solo in quel caso: di norma non scrive nulla.
-    if (_AMB.origine === 'tabella') _log('info', 'ambiente-da-tabella', 'js/ambiente.js non caricato: ambiente preso dalla tabella di riserva', null, null);
     _q(_sb.from('impostazioni').select('valore').eq('chiave', 'AMBIENTE').maybeSingle())
       .then(function (row) {
         var db = row && row.valore ? String(row.valore).trim() : '';

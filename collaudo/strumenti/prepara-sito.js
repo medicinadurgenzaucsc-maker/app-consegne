@@ -63,20 +63,6 @@ function segniDi(reparto) {
   return segni;
 }
 
-// TRANSITORIO (v190): js/api.js porta ancora la tabella _AMBIENTI della v189,
-// con i dati dei due ambienti di allora, come riserva per i minuti di un
-// aggiornamento (vedi il commento in testa ad api.js). È l'unico punto in cui
-// un sito può nominare un altro reparto, e qui lo si salta: SOLO la tabella,
-// il resto del file si controlla. Quando la tabella sparisce da api.js questa
-// funzione non trova più nulla da togliere e il file si controlla per intero.
-function senzaTabellaTransitoria(testo) {
-  const i = testo.indexOf('var _AMBIENTI = {');
-  if (i < 0) return testo;
-  const j = testo.indexOf('\n};', i);
-  if (j < 0) throw new Error('js/api.js: la tabella _AMBIENTI comincia ma non finisce');
-  return testo.slice(0, i) + testo.slice(j + 3);
-}
-
 // Nel sito preparato per un reparto non deve comparire nulla che appartenga a
 // un altro. Restituisce l'elenco dei difetti (vuoto = a posto): nomi di file e
 // di cose, mai i valori.
@@ -85,8 +71,7 @@ function datiDiAltri(cartella, elenco, reparto) {
   const altri = reparti.tutti().filter((r) => r.codice !== reparto.codice);
   const difetti = [];
   elenco.forEach((p) => {
-    let testo = fs.readFileSync(path.join(cartella, p), 'latin1');
-    if (p === 'js/api.js') testo = senzaTabellaTransitoria(testo.replace(/\r\n/g, '\n'));
+    const testo = fs.readFileSync(path.join(cartella, p), 'latin1');
     altri.forEach((r) => {
       segniDi(r).forEach((s) => {
         // un valore che i due reparti hanno in comune non dice di chi è il sito
@@ -141,7 +126,7 @@ function prepara(destinazione, opzioni) {
   return { elenco, byte: esito.dopo, compressione: esito, reparto: reparto.codice };
 }
 
-module.exports = { elencoSito, prepara, datiDiAltri, senzaTabellaTransitoria, RADICE, AMBIENTE };
+module.exports = { elencoSito, prepara, datiDiAltri, RADICE, AMBIENTE };
 
 if (require.main === module) {
   try {

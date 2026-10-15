@@ -745,7 +745,7 @@ numero 192.
 
 **Dopo**: quando nel registro non compaiono righe `ambiente-da-tabella` da
 qualche giorno, una versione a parte toglie la tabella da `api.js` (elenco di
-ciò che va adattato in `CLAUDE.md`, «Reparti»).
+ciò che va adattato in `CLAUDE.md`, «Reparti»). Fatto con la 193, qui sotto.
 
 ## Stato all'11/10/2026
 
@@ -881,3 +881,30 @@ Per portarci la 11N servono, ognuno col suo ok:
 4. `docs/js/ambiente.js` della 11N non sarà più «il file servito così
    com'è»: lo genererà la preparazione del sito, come per ogni altro reparto.
 5. Le copie del sorgente scaricate quando era pubblico non si richiamano.
+
+## Rilascio della 193: via la tabella di riserva
+
+Che cosa cambia: `docs/js/api.js` non porta più la tabella `_AMBIENTI` della
+189. Chi è un sito lo dice solo `js/ambiente.js`; senza il file l'app si ferma
+col messaggio «L'applicazione non ha ricevuto la sua configurazione» e il
+pulsante «Ricarica» (motivo `assente`). Il motivo `discorde` sparisce: senza la
+tabella non c'è con che cosa confrontare, e due reparti non hanno mai un
+indirizzo in comune. Nessuna modifica al database.
+
+Perché adesso: dall'11 al 15/10/2026 nel registro dell'app nessuna riga
+`ambiente-da-tabella`, su 63 dispositivi visti nei venti giorni del registro.
+Una pagina della 190, 191 o 192 rimasta nel browser chiede già il file, quindi
+qualunque mescolanza di file vecchi e nuovi riconosce il suo ambiente; resta
+ferma solo una pagina della 189 o precedente, e «Ricarica» la porta alla 193.
+
+1. Collaudo: `controlli-rilascio.js` (controllo 8 riscritto: niente tabella,
+   nessun dato di un reparto in `api.js`, 96 casi con le funzioni vere),
+   `__prove()` 144 su 144 nel sorgente e nella copia compressa (sezione
+   `ambiente` di 20 prove), `__proveSw()` 62 su 62 nelle due forme, prova di
+   fumo da scollegato con e senza il segno, e con `?ambiente=senza`.
+2. Ramo di ritorno `ritorno-v192`: le pagine della 192 col numero 194.
+3. Produzione, solo con l'ok di Stefano: `git merge --ff-only` del ramo
+   `collaudo` su `master`, push, `pubblicazione.js produzione`, poi
+   `verifica-sito-servito.js <commit> attendi`.
+4. Dopo: nel registro dell'app nessun errore nuovo; un PC fermo sul messaggio
+   riparte con «Ricarica».

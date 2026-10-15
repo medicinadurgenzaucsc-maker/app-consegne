@@ -16,7 +16,7 @@
 //   http://localhost:8765/?ambiente=X       la stessa, con un file d'ambiente FINTO al posto di quello
 //                                           del collaudo: assente (404), sintassi (non è JavaScript,
 //                                           come la pagina di blocco di un filtro), nullo, rotto,
-//                                           altro-sito, discorde. Mai il file di un reparto vero.
+//                                           altro-sito. Mai il file di un reparto vero.
 //   http://localhost:8765/rubrica/          la rubrica aperta DA SOLA: deve restare sul messaggio fisso
 //   http://localhost:8765/trak-finto/       il finto TrakCare
 //   http://localhost:8765/pagina/…          generatore e prove che girano dentro l'app
@@ -53,8 +53,6 @@ const VARIANTI = {
   rotto: scritto({ ambiente: 'collaudo', host: ['localhost'] }),
   // ben fatto, ma di un altro sito: questo PC non è fra i suoi indirizzi
   'altro-sito': scritto(Object.assign({}, FINTO, { ambiente: 'produzione', host: ['sito-finto.example.org'] })),
-  // ben fatto e ammette questo PC, ma col database di un altro: non concorda con la tabella di riserva
-  discorde: scritto(FINTO),
 };
 const TAG_AMBIENTE = /<script src="js\/ambiente\.js"><\/script>/;
 // La copia compressa si prepara una volta, all'avvio: se non riesce il banco non parte.

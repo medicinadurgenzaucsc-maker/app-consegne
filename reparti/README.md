@@ -91,20 +91,14 @@ Nel file servito finiscono solo `codice`, `nome`, `ambiente`, `lingua`,
 3. `node collaudo/strumenti/controlli-rilascio.js` costruisce il sito di ogni
    reparto e pretende che differiscano solo in `js/ambiente.js`.
 
-## Finché in `api.js` resta la tabella di riserva
+## La tabella di riserva, tolta nella 193
 
-La versione 190 tiene in `docs/js/api.js` la tabella degli ambienti della 189,
-tale e quale, per i minuti di un aggiornamento in cui il browser accoppia una
-pagina vecchia al codice nuovo. Finché c'è:
-
-- la tabella non si allunga e non si corregge (lo controlla `controlli-rilascio.js`);
-- gli indirizzi e il database della 11N e del collaudo non si possono cambiare
-  qui senza fermare quei siti: se la tabella riconosce un indirizzo, file e
-  tabella devono concordare su ambiente e database;
-- il controllo «nessun dato di altri reparti nel sito» salta quella sola tabella.
-
-Si toglie in una versione successiva, quando nel registro dell'applicazione non
-compaiono più righe `ambiente-da-tabella`.
+Le versioni 190, 191 e 192 tenevano in `docs/js/api.js` la tabella degli
+ambienti della 189, per i minuti di un aggiornamento in cui il browser accoppia
+una pagina vecchia al codice nuovo. La 193 l'ha tolta: da allora chi è un sito
+lo dice solo il suo file, senza il file l'app si ferma e offre «Ricarica», e il
+controllo «nessun dato di altri reparti nel sito» guarda `api.js` per intero.
+Gli indirizzi e il database di un reparto si cambiano nel suo file e basta.
 
 ## Riservatezza
 

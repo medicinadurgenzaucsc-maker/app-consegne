@@ -16,8 +16,8 @@
 //  8. indirizzi: ogni reparto elenca i suoi (reparti/<codice>.json), nessuno è
 //     di due reparti, e con le funzioni vere di api.js un sito parte solo dai
 //     propri indirizzi: non da quelli di un altro, non da uno sconosciuto, non
-//     con un file dell'ambiente sbagliato; la tabella di riserva rimasta in
-//     api.js è identica a quella della v189 e concorda con i file dei reparti
+//     con un file dell'ambiente sbagliato, e senza il file si ferma; in api.js
+//     la tabella di riserva della v189, tolta nella v193, non c'è più
 //  9. fra i file pubblicati su Cloudflare ci sono tutti quelli che le pagine e
 //     il service worker caricano
 // 10. flusso di pubblicazione: azione di GitHub fissata all'identificativo
@@ -205,41 +205,33 @@ mancanti.length ? ko('sw.js elenca file che non esistono (l\'installazione del s
 // parta dai propri indirizzi e da nessun altro, e che un file sbagliato lo
 // fermi. È la sola prova possibile del file della 11N prima del rilascio: su
 // questo PC quel file non si serve mai.
-// TRANSITORIO: la tabella _AMBIENTI della v189 resta in api.js come riserva
-// per i minuti di un aggiornamento. Deve restare identica a com'era e
-// concordare con i file dei reparti; quando verrà tolta questo blocco andrà
-// riscritto senza di lei (e con lui prove.js, prove-sw.js, prepara-sito.js).
+// Fino alla v192 api.js teneva la tabella _AMBIENTI della v189 come riserva
+// per i minuti di un aggiornamento; tolta nella v193: senza il file l'app si
+// ferma e offre «Ricarica». Qui si pretende che non ritorni.
 {
-  const TABELLA_V189 = 'faa288d7b25f9f58db86572cd608ac8aa10e06c543d9c717871547030d5ce690';
   const reparti = require('./reparti.js');
   const vm = require('vm');
   const api = leggi('docs/js/api.js').replace(/\r\n/g, '\n');
-  const i0 = api.indexOf('var _AMBIENTI = {'), iT = api.indexOf('// Un nome host è coperto da una voce'), i1 = api.indexOf('var _AMB_ESAME = ');
+  const i0 = api.indexOf('// Un nome host è coperto da una voce'), i1 = api.indexOf('var _AMB_ESAME = ');
   let tutti = null, g = null;
   try { tutti = reparti.tutti(); ok('reparti: ' + tutti.length + ' file validi (' + tutti.map((r) => r.codice).join(', ') + '); nessun nome, indirizzo, database o progetto in comune; nei reparti di produzione nessuna anteprima, né localhost né 127.0.0.1'); }
   catch (e) { ko('reparti: ' + String(e.message).split('\n').join(' | ')); }
   if (tutti) { const c = reparti.controllaDocs(); c.ok ? ok('docs/js/ambiente.js è quello generato per il reparto «' + c.reparto + '», che pubblica da docs/') : ko(c.motivo); }
-  if (i0 < 0 || iT < i0 || i1 < iT) ko('api.js: blocco degli ambienti non trovato');
+  // la tabella di riserva non torna: né lei, né la funzione che la leggeva, né la riga nel registro
+  const resti = ['_AMBIENTI', '_ambienteDaHost', 'ambiente-da-tabella', "origine: 'tabella'"].filter((x) => api.indexOf(x) >= 0);
+  resti.length ? ko('api.js: c\'è ancora la tabella di riserva, tolta nella v193 (' + resti.join(', ') + ')') : ok('api.js: nessuna tabella di riserva degli ambienti: chi è il sito lo dice solo js/ambiente.js');
+  // nessun indirizzo, chiave o database di un reparto scritto in api.js
+  if (tutti) {
+    const dentro = [];
+    tutti.forEach((r) => [r.supabaseUrl, r.supabaseAnonKey, r.googleClientId].concat(r.host.filter((h) => ['localhost', '127.0.0.1'].indexOf(h) < 0)).forEach((v) => { if (api.indexOf(String(v).replace(/^[.]/, '')) >= 0) dentro.push(r.codice); }));
+    dentro.length ? ko('api.js contiene dati dei reparti ' + [...new Set(dentro)].join(', ') + ': stanno solo nei loro file') : ok('api.js non contiene indirizzi, chiavi o database di nessun reparto');
+  }
+  if (i0 < 0 || i1 < i0) ko('api.js: blocco degli ambienti non trovato');
   else {
-    try { g = new Function(api.slice(i0, i1) + '\nreturn { ambienti: _AMBIENTI, da: _ambienteDaHost, esame: _ambienteEsame, di: _ambienteDi };')(); }
+    try { g = new Function(api.slice(i0, i1) + '\nreturn { esame: _ambienteEsame, di: _ambienteDi };')(); }
     catch (e) { ko('api.js: il blocco degli ambienti non compila: ' + e.message); }
   }
   if (g && tutti) {
-    // la tabella di riserva: quella della v189, e d'accordo con i file dei reparti
-    (crypto.createHash('sha256').update(api.slice(i0, iT).trim()).digest('hex') === TABELLA_V189)
-      ? ok('tabella di riserva in api.js: identica a quella della v189')
-      : ko('tabella di riserva in api.js: è cambiata rispetto alla v189 (sta lì solo per i minuti di un aggiornamento: non si allunga e non si corregge)');
-    Object.keys(g.ambienti).forEach((nome) => {
-      const t = g.ambienti[nome];
-      const r = tutti.filter((x) => x.ambiente === nome && x.supabaseUrl === t.supabaseUrl)[0];
-      if (!r) return ko('tabella di riserva: nessun reparto ha l\'ambiente «' + nome + '» e il suo database');
-      const diversi = [];
-      if (r.supabaseAnonKey !== t.supabaseAnonKey) diversi.push('chiave pubblica');
-      if (r.googleClientId !== t.googleClientId) diversi.push('client Google');
-      const fuori = t.host.filter((h) => r.host.indexOf(h) < 0);
-      if (fuori.length) diversi.push('indirizzi (la tabella conosce ' + fuori.join(', ') + ', il file del reparto no: lì il sito partirebbe o si fermerebbe a seconda del file arrivato)');
-      diversi.length ? ko('reparti/' + r.codice + '.json e la tabella di riserva non concordano su: ' + diversi.join('; ')) : ok('reparti/' + r.codice + '.json concorda con la tabella di riserva («' + nome + '»: database, chiave pubblica, client Google, indirizzi)');
-    });
 
     // il file di ogni reparto, così come lo riceve il browser
     const file = {};
@@ -249,7 +241,6 @@ mancanti.length ? ko('sw.js elenca file che non esistono (l\'installazione del s
     const atteso = (cosa, ottenuto, voluto) => { casi++; if (ottenuto !== voluto) male.push(cosa + ' → ' + ottenuto + ' (atteso ' + voluto + ')'); };
     const detto = (e) => e.esito ? 'PARTE' : 'fermo:' + e.motivo;
     const SCONOSCIUTI = ['', 'example.org', 'github.io', 'pages.dev', 'supabase.co', 'xgistech2026.github.io', 'localhost.example.org'];
-    const CAMPI = ['ambiente', 'supabaseUrl', 'supabaseAnonKey', 'googleClientId'];
     tutti.forEach((r) => {
       const F = file[r.codice];
       r.host.forEach((h) => {
@@ -278,29 +269,18 @@ mancanti.length ? ko('sw.js elenca file che non esistono (l\'installazione del s
         ['ambiente sconosciuto', Object.assign({}, F, { ambiente: 'prova' })], ['database non https', Object.assign({}, F, { supabaseUrl: F.supabaseUrl.replace('https://', 'http://') })],
         ['senza chiave', Object.assign({}, F, { supabaseAnonKey: '' })], ['senza client', Object.assign({}, F, { googleClientId: null })],
       ].forEach((x) => atteso('sito ' + r.codice + ', file ' + x[0], detto(g.esame(x[1], buono)), 'fermo:file'));
-      // il file di un altro sito messo su questo indirizzo (stessi indirizzi, database dell'altro)
-      tutti.filter((x) => x.codice !== r.codice).forEach((x) => {
-        if (!g.da(buono)) return;
-        atteso('sito ' + r.codice + ' col file di ' + x.codice, detto(g.esame(Object.assign({}, file[x.codice], { host: r.host.slice() }), buono)), 'fermo:discorde');
-      });
-      // le due metà della regola, una per volta, col SUO file: solo il database cambiato, solo l'ambiente cambiato
-      if (g.da(buono)) {
-        atteso('sito ' + r.codice + ', suo file col database cambiato', detto(g.esame(Object.assign({}, F, { supabaseUrl: 'https://aaaaaaaaaaaaaaaaaaaa.supabase.co' }), buono)), 'fermo:discorde');
-        atteso('sito ' + r.codice + ', suo file con l\'ambiente cambiato', detto(g.esame(Object.assign({}, F, { ambiente: r.ambiente === 'produzione' ? 'collaudo' : 'produzione' }), buono)), 'fermo:discorde');
-      }
-      // senza il file (pagina della versione di prima) vale la tabella, e dà gli stessi dati del file
-      r.host.filter((h) => h.charAt(0) !== '.' && g.da(h)).forEach((h) => {
-        const a = g.esame(undefined, h), b = g.esame(null, h), c = g.esame(F, h);
-        const pari = a.esito && b.esito && c.esito && a.esito.origine === 'tabella' && b.esito.origine === 'tabella' && CAMPI.every((k) => a.esito[k] === c.esito[k] && b.esito[k] === c.esito[k]);
-        atteso('sito ' + r.codice + ' senza file da «' + h + '»', pari ? 'tabella, stessi dati del file' : 'DIVERSO', 'tabella, stessi dati del file');
+      // senza il file (pagina della versione di prima, 404, pagina di un filtro) si ferma, anche dai suoi indirizzi
+      r.host.filter((h) => h.charAt(0) !== '.').forEach((h) => {
+        atteso('sito ' + r.codice + ' senza file da «' + h + '»', detto(g.esame(undefined, h)), 'fermo:assente');
+        atteso('sito ' + r.codice + ' col file nullo da «' + h + '»', detto(g.esame(null, h)), 'fermo:assente');
       });
     });
-    // senza file, un indirizzo sconosciuto resta fermo
-    SCONOSCIUTI.forEach((host) => atteso('senza file da «' + host + '»', detto(g.esame(undefined, host)), 'fermo:indirizzo'));
-    atteso('_ambienteDi è l\'esito di _ambienteEsame', String(g.di({}, 'localhost') === null && g.di(undefined, 'example.org') === null && !!g.di(undefined, 'localhost')), 'true');
+    // senza file, anche un indirizzo sconosciuto: fermo perché il file manca
+    SCONOSCIUTI.forEach((host) => atteso('senza file da «' + host + '»', detto(g.esame(undefined, host)), 'fermo:assente'));
+    atteso('_ambienteDi è l\'esito di _ambienteEsame', String(g.di({}, 'localhost') === null && g.di(undefined, 'localhost') === null && !!g.di(file[tutti[0].codice], tutti[0].host.filter((h) => h.charAt(0) !== '.')[0])), 'true');
     male.length
       ? ko('riconoscimento degli indirizzi: ' + male.slice(0, 6).join('; ') + (male.length > 6 ? ' … e altri ' + (male.length - 6) : ''))
-      : ok('riconoscimento degli indirizzi: ' + casi + ' casi giusti con le funzioni di api.js e i file dei reparti (indirizzi propri, di altri reparti, sconosciuti; file sbagliato, di un altro sito, assente)');
+      : ok('riconoscimento degli indirizzi: ' + casi + ' casi giusti con le funzioni di api.js e i file dei reparti (indirizzi propri, di altri reparti, sconosciuti; file sbagliato o assente)');
   }
 }
 

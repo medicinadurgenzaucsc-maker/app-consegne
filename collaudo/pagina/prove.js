@@ -109,12 +109,8 @@
     await prova(S, 'l\'app si dichiara «collaudo» e punta al progetto di collaudo', function () {
       return (AMBIENTE === 'collaudo' && SUPABASE_URL.indexOf(REF_PRODUZIONE) < 0 && /rqvohwpthhumydpbwktq/.test(SUPABASE_URL)) || ('AMBIENTE=' + AMBIENTE + ' url=' + SUPABASE_URL);
     });
-    await prova(S, 'ogni indirizzo ha il suo ambiente, e uno sconosciuto non ne ha nessuno', function () {
-      var attesi = [['medicinadurgenzaucsc-maker.github.io', 'produzione'], ['gistech2026.github.io', 'collaudo'], ['localhost', 'collaudo'], ['127.0.0.1', 'collaudo'],
-        ['consegne-collaudo.pages.dev', 'collaudo'], ['abc123.consegne-collaudo.pages.dev', 'collaudo'], ['CONSEGNE-COLLAUDO.PAGES.DEV', 'collaudo'],
-        ['falsoconsegne-collaudo.pages.dev', null], ['consegne-collaudo.pages.dev.example.org', null], ['pages.dev', null], ['github.io', null], ['example.org', null], ['', null]];
-      var male = attesi.filter(function (x) { return _ambienteDaHost(x[0]) !== x[1]; }).map(function (x) { return '«' + x[0] + '» → ' + _ambienteDaHost(x[0]); });
-      return !male.length || male.join(' ; ');
+    await prova(S, 'la tabella di riserva degli ambienti non c\'è più (tolta nella v193)', function () {
+      return (typeof _AMBIENTI === 'undefined' && typeof _ambienteDaHost === 'undefined') || 'in api.js c\'è ancora la tabella di riserva';
     });
     await prova(S, 'su un indirizzo conosciuto non compare l\'avviso «indirizzo non riconosciuto»', function () {
       return !document.getElementById('bloccoIndirizzo') || 'è comparso il blocco dell\'indirizzo';
@@ -133,13 +129,13 @@
       return !document.getElementById('bloccoAmbiente') || 'è comparso il blocco d\'ambiente';
     });
     // ── chi è questo sito lo dice js/ambiente.js (dalla v190) ──
-    // Senza queste prove tutto il resto passerebbe anche se il file non
-    // arrivasse mai: l'app partirebbe dalla tabella di riserva senza dirlo.
+    // Senza il file l'app si ferma (dalla v193 non c'è più la tabella di
+    // riserva): queste prove dicono che il file arriva ed è quello giusto.
     var FILE = window._AMBIENTE;
     var detto = function (file, host) { var e = _ambienteEsame(file, host); return e.esito ? e.esito.ambiente + '/' + e.esito.origine : 'fermo:' + e.motivo; };
     await prova(S, 'l\'ambiente viene da js/ambiente.js, ed è quello del reparto di collaudo', function () {
       if (typeof _AMB === 'undefined' || !_AMB) return 'manca _AMB';
-      if (_AMB.origine !== 'file') return 'origine «' + _AMB.origine + '»: la pagina è partita dalla tabella di riserva, js/ambiente.js non è stato caricato';
+      if (_AMB.origine !== 'file') return 'origine «' + _AMB.origine + '»: l\'ambiente non viene da js/ambiente.js';
       if (!FILE || FILE.codice !== 'collaudo' || FILE.ambiente !== 'collaudo') return 'file di un altro reparto: ' + (FILE && FILE.codice);
       return (SUPABASE_URL === FILE.supabaseUrl && SUPABASE_ANON_KEY === FILE.supabaseAnonKey && GOOGLE_CLIENT_ID === FILE.googleClientId) || 'indirizzo, chiave o client non sono quelli del file';
     });
@@ -165,69 +161,64 @@
       var male = rotti.filter(function (x) { return detto(x[1], 'localhost') !== 'fermo:file'; }).map(function (x) { return x[0] + ' → ' + detto(x[1], 'localhost'); });
       return !male.length || male.join(' ; ');
     });
-    await prova(S, 'il file di un altro sito sullo stesso indirizzo ferma l\'app (non concorda con la tabella di riserva)', function () {
-      var a = detto(Object.assign({}, FILE, { supabaseUrl: 'https://database-finto.invalid' }), 'localhost');
-      var b = detto(Object.assign({}, FILE, { ambiente: 'produzione' }), 'localhost');
-      return (a === 'fermo:discorde' && b === 'fermo:discorde') || ('database diverso → ' + a + ' ; ambiente diverso → ' + b);
-    });
-    await prova(S, 'senza il file vale la tabella di riserva, con gli stessi dati del file', function () {
-      var t = _ambienteEsame(undefined, 'localhost').esito, n = _ambienteEsame(null, 'localhost').esito;
-      if (!t || !n || t.origine !== 'tabella' || n.origine !== 'tabella') return 'senza file da localhost: ' + detto(undefined, 'localhost');
-      if (t.ambiente !== 'collaudo' || t.supabaseUrl !== FILE.supabaseUrl || t.supabaseAnonKey !== FILE.supabaseAnonKey || t.googleClientId !== FILE.googleClientId) return 'la tabella dà dati diversi dal file';
-      return (detto(undefined, 'example.org') === 'fermo:indirizzo' && _ambienteDi(undefined, 'example.org') === null && _ambienteDi({}, 'localhost') === null) || 'un indirizzo sconosciuto senza file non resta fermo';
+    await prova(S, 'senza il file l\'app si ferma, da qualunque indirizzo (motivo «assente»)', function () {
+      var male = [['localhost', undefined], ['localhost', null], ['gistech2026.github.io', undefined], ['example.org', undefined]].filter(function (x) { return detto(x[1], x[0]) !== 'fermo:assente'; }).map(function (x) { return '«' + x[0] + '» → ' + detto(x[1], x[0]); });
+      return (!male.length && _ambienteDi(undefined, 'localhost') === null && _ambienteDi({}, 'localhost') === null) || male.join(' ; ');
     });
 
     // Pagine vere, servite dal banco con un file d'ambiente FINTO al posto di
     // quello del collaudo (banco.js, VARIANTI). Mai il file di un reparto vero:
     // se la regola che ferma l'app fosse rotta, la pagina si collegherebbe al
     // suo database. Il database dei file finti non esiste.
-    var inizioCornici = Date.now();
     async function paginaCon(variante) {
       var f = await cornice('/print.html?senzaStampa=1&layout=main&ambiente=' + variante + '&cb=' + Date.now());
       var win = f.contentWindow, blocco = win.document.getElementById('bloccoIndirizzo');
       var verso = win.performance.getEntriesByType('resource').map(function (e) { return e.name; }).filter(function (u) { return u.indexOf('database-finto') >= 0 || u.indexOf(REF_PRODUZIONE) >= 0; });
-      var esito = { variante: variante, blocco: blocco ? blocco.getAttribute('data-motivo') : null, origine: (win._AMB && win._AMB.origine) || null, ambiente: win.AMBIENTE === undefined ? 'non definito' : win.AMBIENTE,
+      var esito = { variante: variante, blocco: blocco ? blocco.getAttribute('data-motivo') : null, bottone: !!win.document.getElementById('bloccoIndirizzoRicarica'), origine: (win._AMB && win._AMB.origine) || null, ambiente: win.AMBIENTE === undefined ? 'non definito' : win.AMBIENTE,
         client: typeof win._sb !== 'undefined', url: win.SUPABASE_URL || null, verso: verso, testo: blocco ? blocco.textContent.slice(0, 90) : '' };
       f.remove();
       return esito;
     }
-    var daTabella = function (e) { return e.blocco === null && e.origine === 'tabella' && e.ambiente === 'collaudo' && e.client && e.url === SUPABASE_URL && !e.verso.length; };
     var ferma = function (e, motivo) { return e.blocco === motivo && e.ambiente === null && !e.client && !e.url && !e.verso.length; };
+    var senzaFile = function (e) { return ferma(e, 'assente') && e.bottone && /non ha ricevuto la sua configurazione/.test(e.testo); };
     await prova(S, 'la stampa parte da js/ambiente.js come l\'app', async function () {
       var f = await cornice('/print.html?senzaStampa=1&layout=main&cb=' + Date.now());
       var w = f.contentWindow, o = w._AMB && w._AMB.origine, c = w._AMBIENTE && w._AMBIENTE.codice;
       f.remove();
       return (o === 'file' && c === 'collaudo') || ('origine ' + o + ', reparto ' + c);
     });
-    await prova(S, 'pagina senza il tag di js/ambiente.js (versione di prima accanto al codice nuovo): parte dalla tabella di riserva', async function () {
+    await prova(S, 'pagina senza il tag di js/ambiente.js (versione di prima accanto al codice nuovo): si ferma, lo dice e offre «Ricarica»', async function () {
       var e = await paginaCon('senza');
-      return daTabella(e) || JSON.stringify(e);
+      return senzaFile(e) || JSON.stringify(e);
     });
-    await prova(S, 'file dell\'ambiente che non arriva (404, una pagina al suo posto, vuoto): si parte dalla tabella di riserva', async function () {
+    await prova(S, 'file dell\'ambiente che non arriva (404, una pagina al suo posto, vuoto): si ferma, lo dice e offre «Ricarica»', async function () {
       var male = [], varianti = ['assente', 'sintassi', 'nullo'];
-      for (var i = 0; i < varianti.length; i++) { var e = await paginaCon(varianti[i]); if (!daTabella(e)) male.push(JSON.stringify(e)); }
+      for (var i = 0; i < varianti.length; i++) { var e = await paginaCon(varianti[i]); if (!senzaFile(e)) male.push(JSON.stringify(e)); }
       return !male.length || male.join(' ‖ ');
     });
     await prova(S, 'file dell\'ambiente scritto male: la pagina si ferma, lo dice, e non crea nessun collegamento', async function () {
       var e = await paginaCon('rotto');
       return (ferma(e, 'file') && /Configurazione del sito non valida/.test(e.testo)) || JSON.stringify(e);
     });
-    await prova(S, 'file dell\'ambiente di un altro sito: la pagina si ferma (indirizzo non suo, oppure database non suo)', async function () {
-      var a = await paginaCon('altro-sito'), b = await paginaCon('discorde');
-      return (ferma(a, 'indirizzo') && /Indirizzo non riconosciuto/.test(a.testo) && ferma(b, 'discorde') && /Configurazione del sito non valida/.test(b.testo)) || (JSON.stringify(a) + ' ‖ ' + JSON.stringify(b));
+    await prova(S, 'file dell\'ambiente di un altro sito: la pagina si ferma sull\'indirizzo', async function () {
+      var a = await paginaCon('altro-sito');
+      return (ferma(a, 'indirizzo') && !a.bottone && /Indirizzo non riconosciuto/.test(a.testo)) || JSON.stringify(a);
     });
-    await prova(S, 'l\'app intera parte anche dalla tabella di riserva (pagina senza il tag), e lo annota nel registro', async function () {
-      var inizioApp = Date.now(), mio = _getDeviceId();
+    await prova(S, 'l\'app intera senza il file: si ferma prima di ogni collegamento, e «Ricarica» ricarica la pagina', async function () {
       var f = await cornice('/?ambiente=senza&cb=' + Date.now());
-      var win = f.contentWindow;
-      var piene = await finche(function () { return win.document.querySelectorAll('.patient-card').length === 28; }, 30000, 300);
-      var origine = win._AMB && win._AMB.origine, schede = win.document.querySelectorAll('.patient-card').length;
-      var righe = await finche(async function () { var r = await _q(_sb.from('logs').select('id').eq('tipo', 'ambiente-da-tabella').eq('device_id', mio).gte('ts', inizioApp)); return r && r.length ? r : false; }, 10000, 500);
-      f.remove();
-      // via le righe di questa batteria (anche quelle delle cornici di stampa), solo di questo dispositivo
-      try { await _q(_sb.from('logs').delete().eq('tipo', 'ambiente-da-tabella').eq('device_id', mio).gte('ts', inizioCornici)); } catch (e) {}
-      if (!piene || origine !== 'tabella') return 'schede ' + schede + ', origine ' + origine;
-      return !!righe || 'nel registro non è comparsa la riga «ambiente-da-tabella»';
+      var caricamenti = 0;
+      f.addEventListener('load', function () { caricamenti++; });
+      try {
+        var win = f.contentWindow;
+        var b = await finche(function () { return win.document.getElementById('bloccoIndirizzoRicarica'); }, 15000, 200);
+        if (!b) return 'il pulsante «Ricarica» non è comparso';
+        var blocco = win.document.getElementById('bloccoIndirizzo');
+        if (!blocco || blocco.getAttribute('data-motivo') !== 'assente') return 'motivo del fermo: ' + (blocco && blocco.getAttribute('data-motivo'));
+        if (win.document.querySelectorAll('.patient-card').length || typeof win._sb !== 'undefined') return 'l\'app è andata avanti senza il file';
+        b.click();
+        var ricaricata = await finche(function () { return caricamenti >= 1 && f.contentWindow.document.getElementById('bloccoIndirizzo'); }, 15000, 200);
+        return !!ricaricata || 'il pulsante non ha ricaricato la pagina';
+      } finally { f.remove(); }
     });
     await prova(S, 'nessuna richiesta di rete verso il progetto di produzione', function () {
       var verso = performance.getEntriesByType('resource').map(function (e) { return e.name; }).filter(function (u) { return u.indexOf(REF_PRODUZIONE) >= 0; });
