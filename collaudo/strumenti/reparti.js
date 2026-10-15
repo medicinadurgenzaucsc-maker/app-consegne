@@ -24,7 +24,7 @@ const CARTELLA = path.join(RADICE, 'reparti');
 const AMBIENTE_JS = path.join(RADICE, 'docs', 'js', 'ambiente.js');
 
 const CAMPI = ['codice', 'sinonimi', 'nome', 'ospedale', 'tipo', 'ambiente', 'hosting', 'accesso', 'lingua', 'canale',
-  'versioneLocale', 'livello', 'host', 'pubblicazione', 'supabaseUrl', 'supabaseAnonKey', 'googleClientId'];
+  'versioneLocale', 'livello', 'host', 'pubblicazione', 'supabaseUrl', 'supabaseAnonKey', 'googleClientId', 'centrale'];
 const TIPI = ['produzione', 'collaudo'];
 const HOSTING = ['reparto', 'fornitore', 'condiviso', 'locale'];
 const ACCESSI = ['google'];
@@ -108,6 +108,12 @@ function difetti(r, nomeFile) {
     }
   }
   if (!testo('googleClientId') || !/^\d+-[a-z0-9]+\.apps\.googleusercontent\.com$/.test(r.googleClientId)) e.push('googleClientId: atteso un identificativo di client Google (…apps.googleusercontent.com), non un segreto');
+  // facoltativo: la centrale che riceve il battito dei dispositivi. Il solo indirizzo, mai una chiave
+  if (r.centrale !== undefined) {
+    const c = r.centrale;
+    if (!(c && typeof c === 'object' && !Array.isArray(c) && Object.keys(c).length === 1 && typeof c.url === 'string' && /^https:\/\/[a-z]{20}\.supabase\.co$/.test(c.url))) e.push('centrale: atteso il solo campo «url», https://<progetto>.supabase.co senza barra finale');
+    else if (c.url === r.supabaseUrl) e.push('centrale: è lo stesso database del reparto');
+  }
   return e;
 }
 
@@ -146,6 +152,8 @@ function tutti() {
     const pr = r.pubblicazione.cloudflare && r.pubblicazione.cloudflare.progetto;
     if (pr) { if (progetti[pr]) e.push('i reparti ' + progetti[pr] + ' e ' + r.codice + ' pubblicano sullo stesso progetto Cloudflare'); progetti[pr] = r.codice; }
   });
+  // la centrale è una per tutti, ma non è mai il database di un reparto
+  elenco.forEach((r) => { if (r.centrale && basi[r.centrale.url]) e.push('la centrale di ' + r.codice + ' è il database del reparto ' + basi[r.centrale.url]); });
   // un repository serve un sito solo. Fra quelli DICHIARATI nei file dei reparti: né due siti pubblici nello stesso,
   // né un sito pubblico nel repository da cui un reparto pubblica docs/. Un repository col sorgente che nessun file
   // dichiara (quello del collaudo) qui non si conosce: lo ferma sito-pubblico.js, che prima di scrivere guarda che
@@ -221,6 +229,7 @@ function ambienteJs(reparto) {
     supabaseAnonKey: reparto.supabaseAnonKey,
     googleClientId: reparto.googleClientId,
   };
+  if (reparto.centrale) dati.centrale = { url: reparto.centrale.url };
   // JSON è anche JavaScript, tolti due separatori di riga (codici 2028 e 2029) che in un file .js vanno scritti per esteso
   const json = JSON.stringify(dati, null, 2)
     .split(String.fromCharCode(0x2028)).join(String.fromCharCode(92) + 'u2028')

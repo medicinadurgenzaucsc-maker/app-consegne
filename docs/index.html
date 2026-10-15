@@ -5194,7 +5194,7 @@
             <li>
               <span class="dropdown-item-text d-block px-3" style="font-family:monospace;font-size:0.75rem;color:#546e7a;line-height:1.3;">
                 <i class="bi bi-tag me-1"></i>Versione applicazione:<br>
-                <strong id="navVersioneApp" class="ms-1" style="color:#263238;">193</strong>
+                <strong id="navVersioneApp" class="ms-1" style="color:#263238;">194</strong>
               </span>
             </li>
             <!-- Uscita: chiude la sessione solo su questo dispositivo (_esciSessione) -->
@@ -6267,6 +6267,59 @@
     // sostituito dal LOGIN UNIFICATO qui sopra: la conferma dell'account
     // è ora parte della schermata di login stessa — un solo passaggio.)
 
+    // Il battito verso la centrale (dalla v194). Una volta al giorno il
+    // dispositivo dice alla centrale chi è: l'identificativo fatto dall'app,
+    // una descrizione del browser, la versione e il modo. Nessun dato dei
+    // pazienti, nessuna chiave, nessuna sessione: la richiesta parte senza
+    // intestazioni e senza cookie. Solo se il file dell'ambiente nomina una
+    // centrale. Della risposta si guarda soltanto se è arrivata; un errore
+    // resta nella console e l'app lavora lo stesso. Il giorno si segna prima
+    // dell'invio (e si toglie se la rete manca), così due avvii vicini non
+    // mandano due battiti. Restituisce una promessa con l'esito, per le prove.
+    window._battitoCentrale = function (opzioni) {
+      opzioni = opzioni || {};
+      var modo = opzioni.modo === 'rubrica' ? 'rubrica' : 'app';
+      function giornoDi(d) { return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); }
+      function leggiGiorno() { try { return localStorage.getItem('_battitoGiorno') || ''; } catch (e) { return ''; } }
+      function scriviGiorno(v) { try { if (v) localStorage.setItem('_battitoGiorno', v); else localStorage.removeItem('_battitoGiorno'); } catch (e) {} }
+      try {
+        var A = window._AMBIENTE, c = A && A.centrale;
+        if (!c || typeof c.url !== 'string' || !/^https:\/\/[a-z]{20}\.supabase\.co$/.test(c.url)) return Promise.resolve('senza-centrale');
+        if (typeof AMBIENTE !== 'string' || !AMBIENTE || typeof A.codice !== 'string') return Promise.resolve('senza-ambiente');
+        var id = typeof _getDeviceId === 'function' ? _getDeviceId() : '';
+        if (!/^dev_[a-z0-9]{1,16}_[a-z0-9]{7,8}$/.test(id)) return Promise.resolve('senza-dispositivo');
+        var v = document.getElementById('navVersioneApp');
+        var versione = parseInt(v ? v.textContent : '', 10);
+        if (!(versione >= 1 && versione <= 9999)) return Promise.resolve('senza-versione');
+        var nome = modo === 'rubrica' ? (typeof _parseUA === 'function' ? _parseUA(navigator.userAgent || '') : '') : (typeof _getDeviceName === 'function' ? _getDeviceName() : '');
+        nome = String(nome || '').replace(/[\u0000-\u001f<>]/g, '').slice(0, 120);
+        var locale = parseInt(A.versioneLocale, 10) || 0;
+        var corpo = JSON.stringify({ reparto: A.codice, ambiente: AMBIENTE, dispositivo: id, nome: nome, versione: versione, versioneLocale: locale, modo: modo });
+        var attesa = opzioni.subito ? 0 : (modo === 'rubrica' ? 3000 : 30000);
+        return new Promise(function (fatto) {
+          setTimeout(function () {
+            var oggi = giornoDi(new Date()), prima = leggiGiorno();
+            if (!opzioni.ignoraGiorno && prima === oggi) return fatto('gia-oggi');
+            scriviGiorno(oggi);
+            window.fetch(c.url + '/functions/v1/battito', { method: 'POST', body: corpo, cache: 'no-store', credentials: 'omit', referrerPolicy: 'no-referrer' }).then(function (r) {
+              return r.json().then(function (d) { return d && d.ok === true; }, function () { return false; });
+            }).then(function (buono) {
+              if (!buono) console.warn('[battito] la centrale non ha confermato');
+              fatto(buono ? 'inviato' : 'risposta-strana');
+            }, function () {
+              scriviGiorno(prima);
+              console.warn('[battito] centrale non raggiunta: si riprova al prossimo avvio');
+              fatto('rete');
+            });
+          }, attesa);
+        });
+      } catch (e) {
+        console.warn('[battito] non partito');
+        return Promise.resolve('errore');
+      }
+    };
+    // fine del battito
+
     // Dopo l'accesso, o a sessione ritrovata, parte l'applicazione. In MODO
     // RUBRICA no: si apre soltanto la rubrica, e i dati dei pazienti non
     // vengono né scaricati né disegnati (vedi lo script in testa alla pagina).
@@ -6274,10 +6327,12 @@
     var _modoRubricaAvviato = false;
     function _avviaDopoAccesso() {
       if (window._MODO_RUBRICA === true) { _avviaModoRubrica(); return; }
+      window._battitoCentrale({ modo: 'app' });
       if (typeof window._avviaFlussoApp === 'function') window._avviaFlussoApp();
     }
     function _avviaModoRubrica() {
       _modoRubricaAvviato = true;
+      window._battitoCentrale({ modo: 'rubrica' });
       window._inVersionUpdateReload = false;
       // via dall'indirizzo il segno lasciato da un aggiornamento: resta solo quello della rubrica
       try {

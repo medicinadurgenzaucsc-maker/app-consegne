@@ -58,9 +58,15 @@ function fileDelSito(cartella, elenco) {
   return file;
 }
 
-// I database nominati in un file dell'ambiente (uno solo, in un file giusto).
+// I database nominati in un file dell'ambiente (uno solo, in un file giusto). Conta il solo campo
+// «supabaseUrl», nella forma del sorgente o in quella compressa: dalla v194 il file nomina anche la
+// centrale, che è un altro progetto di Supabase. Il file non si esegue: arriva da un repository pubblico.
 function databaseDi(testo) {
-  return (String(testo || '').match(/https:\/\/[a-z]{20}\.supabase\.co/g) || []).filter((v, i, a) => a.indexOf(v) === i);
+  const trovati = [];
+  const re = /["']?supabaseUrl["']?\s*:\s*["'](https:\/\/[a-z]{20}\.supabase\.co)["']/g;
+  let m;
+  while ((m = re.exec(String(testo || '')))) trovati.push(m[1]);
+  return trovati.filter((v, i, a) => a.indexOf(v) === i);
 }
 // La pubblicazione sostituisce l'INTERO contenuto del ramo. Il repository va bene solo se è appena nato
 // (c'è il solo file iniziale) oppure è già il sito pubblico di QUESTO reparto: ha i file di un sito e il

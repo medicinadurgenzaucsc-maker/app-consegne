@@ -44,6 +44,9 @@
 //     dovunque; l'app parte da un punto solo, e in modo rubrica nessuna delle
 //     strade che leggono da sole i dati dei pazienti resta aperta; il segno
 //     sopravvive a «Update»; il secondo manifesto riapre lo stesso indirizzo
+// 17. battito verso la centrale: parte dai due soli punti d'avvio, senza
+//     chiavi, sessione né cookie, con i soli campi attesi; i nomi riservati
+//     alla fase 2 non compaiono nel sito
 // 15. riservatezza: il piano «un codice, tanti reparti», che è un documento
 //     riservato, non sta fra i file né nella storia che un rilascio porterebbe
 //     nel repository del reparto, che è pubblico
@@ -431,6 +434,8 @@ mancanti.length ? ko('sw.js elenca file che non esistono (l\'installazione del s
       ['una pagina di rinvio', sp.repositoryInadatto(['index.html', 'sw.js', '404.html', '.nojekyll'], '', amb(A)), false],
       ['un sito senza database nel file dell\'ambiente', sp.repositoryInadatto(sito, 'window._AMBIENTE={};', amb(A)), false],
       ['un file dell\'ambiente nuovo con due database', sp.repositoryInadatto(sito, amb(A), amb(A) + amb(B)), false],
+      ['un file dell\'ambiente che nomina anche la centrale', sp.repositoryInadatto(sito, amb(A), amb(A).replace('};', ',centrale:{url:"https://' + B + '.supabase.co"}};')), true],
+      ['la forma del sorgente, con le virgolette', sp.repositoryInadatto(sito, 'window._AMBIENTE = {\n  "supabaseUrl": "https://' + A + '.supabase.co"\n};', amb(A)), true],
     ];
     const sbagliati = casi.filter((c) => (c[1] === null) !== c[2]).map((c) => c[0]);
     const testo = leggi('collaudo/strumenti/sito-pubblico.js');
@@ -691,6 +696,31 @@ mancanti.length ? ko('sw.js elenca file che non esistono (l\'installazione del s
     if (ora.indexOf("document.addEventListener('visibilitychange', _modoRubricaAlRitorno);") < 0 || !/function _modoRubricaAlRitorno\(\) \{\s*if \(window\._MODO_RUBRICA !== true \|\| !_modoRubricaAvviato \|\| _uscitaInCorso /.test(ora)) guai.push('index.html: in modo rubrica l\'elenco deve essere ricontrollato quando la pagina torna in primo piano (_modoRubricaAlRitorno)');
   } catch (e) { guai.push(String((e && e.message) || e).slice(0, 300)); }
   guai.length ? guai.forEach((g) => ko('modo rubrica: ' + g)) : ok('modo rubrica: segno unico «?rubrica=1» deciso in testa alla pagina; l\'app parte da un punto solo e in modo rubrica sono chiuse le 7 strade verso i dati dei pazienti; il segno sopravvive a «Update»; secondo manifesto e icona di uscita al loro posto');
+}
+
+// ── 17. battito verso la centrale ────────────────────────────────────
+// Il dispositivo dice alla centrale chi è, una volta al giorno. È l'unica
+// richiesta del sito verso un servizio che non è del reparto: deve restare
+// piccola e muta. Il comportamento lo prova la sezione «centrale» di prove.js.
+{
+  const guai = [];
+  try {
+    const ora = leggi('docs/index.html').replace(/\r\n/g, '\n');
+    const i0 = ora.indexOf('    window._battitoCentrale = function (opzioni) {'), i1 = ora.indexOf('    // fine del battito', i0);
+    if (i0 < 0 || i1 < 0 || ora.indexOf('window._battitoCentrale = function', i1) >= 0) throw new Error('index.html: la funzione del battito non c\'è, o c\'è due volte');
+    const corpo = ora.slice(i0, i1).split('\n').filter((r) => !/^\s*\/\//.test(r)).join('\n');
+    if (/apikey|Authorization|headers|getSession|_sb\b|SUPABASE_ANON_KEY|SUPABASE_URL|credentials: 'include'/.test(corpo)) guai.push('il battito non deve portare chiavi, intestazioni o la sessione');
+    if (corpo.indexOf("credentials: 'omit'") < 0 || corpo.indexOf("referrerPolicy: 'no-referrer'") < 0) guai.push('il battito deve partire senza cookie e senza indirizzo di provenienza');
+    if ((corpo.match(/window\.fetch\(/g) || []).length !== 1 || corpo.indexOf("c.url + '/functions/v1/battito'") < 0) guai.push('il battito deve fare una sola richiesta, alla funzione della centrale');
+    const campi = /JSON\.stringify\(\{ ([^}]*) \}\)/.exec(corpo);
+    const nomi = campi ? campi[1].split(',').map((x) => x.split(':')[0].trim()).sort().join(',') : '';
+    if (nomi !== 'ambiente,dispositivo,modo,nome,reparto,versione,versioneLocale') guai.push('il battito deve mandare i soli sette campi attesi (trovati: ' + (nomi || 'nessuno') + ')');
+    if ((ora.match(/window\._battitoCentrale\(/g) || []).length !== 2 || ora.indexOf("if (window._MODO_RUBRICA === true) { _avviaModoRubrica(); return; }\n      window._battitoCentrale({ modo: 'app' });\n      if (typeof window._avviaFlussoApp === 'function') window._avviaFlussoApp();") < 0 || ora.indexOf("_modoRubricaAvviato = true;\n      window._battitoCentrale({ modo: 'rubrica' });") < 0) guai.push('il battito deve partire dai due soli punti d\'avvio (app e modo rubrica)');
+    const sito = ['docs/index.html', 'docs/print.html', 'docs/rete.html', 'docs/js/api.js', 'docs/js/app.js', 'docs/js/app2.js', 'docs/js/sanifica.js', 'docs/sw.js', 'docs/rubrica/app.js', 'docs/rubrica/index.html'].filter((f) => fs.existsSync(path.join(RADICE, f)));
+    const riservati = sito.filter((f) => /versioneMinima|versione_minima/.test(leggi(f)));
+    if (riservati.length) guai.push('i nomi riservati alla fase 2 compaiono in: ' + riservati.join(', '));
+  } catch (e) { guai.push(String((e && e.message) || e).slice(0, 300)); }
+  guai.length ? guai.forEach((g) => ko('battito: ' + g)) : ok('battito: una sola richiesta alla funzione della centrale, senza chiavi, sessione né cookie, con i sette campi attesi, dai due soli punti d\'avvio; nessun nome riservato alla fase 2 nel sito');
 }
 
 // ── 15. ciò che non deve diventare pubblico ──────────────────────────

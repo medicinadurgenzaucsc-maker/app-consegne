@@ -140,8 +140,10 @@
       return (SUPABASE_URL === FILE.supabaseUrl && SUPABASE_ANON_KEY === FILE.supabaseAnonKey && GOOGLE_CLIENT_ID === FILE.googleClientId) || 'indirizzo, chiave o client non sono quelli del file';
     });
     await prova(S, 'il file dell\'ambiente porta solo i campi attesi e niente della produzione', function () {
-      var campi = Object.keys(FILE || {}).sort().join(',');
+      // dalla v194 il file può nominare anche la centrale (il solo indirizzo): la provano le prove «centrale»
+      var campi = Object.keys(FILE || {}).filter(function (k) { return k !== 'centrale'; }).sort().join(',');
       if (campi !== 'ambiente,codice,googleClientId,host,lingua,nome,supabaseAnonKey,supabaseUrl,versioneLocale') return 'campi: ' + campi;
+      if (FILE.centrale !== undefined && Object.keys(FILE.centrale || {}).join(',') !== 'url') return 'centrale con campi in più';
       var testo = JSON.stringify(FILE);
       return !(testo.indexOf(REF_PRODUZIONE) >= 0 || /medicinadurgenzaucsc|consegne-reparto/.test(testo)) || 'nel file del collaudo c\'è un dato della produzione';
     });
@@ -3171,7 +3173,106 @@
       return !nuovi.length || nuovi.slice(0, 5).join(' | ');
     });
   }
-  var SEZIONI = { ambiente: sezioneAmbiente, trak: sezioneTrak, xss: sezioneXss, mail: sezioneMail, rubrica: sezioneRubrica };
+  // ═════════════════════════════════════════════════════════════════════
+  // CENTRALE: il battito dei dispositivi (dalla v194)
+  // ═════════════════════════════════════════════════════════════════════
+  // Le richieste alla centrale sono intercettate: le prove non scrivono nulla
+  // nella centrale, tranne l'ultima, che la chiama davvero con GET (non scrive).
+  // Il giorno del battito di questo dispositivo è rimesso com'era alla fine.
+  async function sezioneCentrale() {
+    var S = 'centrale';
+    var C = window._AMBIENTE && window._AMBIENTE.centrale;
+    var giornoPrima = null;
+    try { giornoPrima = localStorage.getItem('_battitoGiorno'); } catch (e) {}
+    function oggi() { var d = new Date(); return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); }
+    function giorno(v) { try { if (v === null || v === undefined) localStorage.removeItem('_battitoGiorno'); else localStorage.setItem('_battitoGiorno', v); } catch (e) {} }
+    function leggiGiorno() { try { return localStorage.getItem('_battitoGiorno'); } catch (e) { return null; } }
+    // un battito vero già in attesa (30 secondi dopo l'avvio) trova il giorno segnato e non parte
+    giorno(oggi());
+    var veraFetch = window.fetch;
+    async function conRichieste(risposta, fai) {
+      var prese = [];
+      window.fetch = function (url, op) {
+        if (C && typeof url === 'string' && url.indexOf(C.url) === 0) {
+          prese.push({ url: url, op: op || {} });
+          return risposta === 'rete' ? Promise.reject(new TypeError('rete assente')) : Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+        }
+        return veraFetch.apply(this, arguments);
+      };
+      try { var esito = await fai(); return { esito: esito, prese: prese }; }
+      finally { window.fetch = veraFetch; }
+    }
+    try {
+      await prova(S, 'il file del collaudo nomina la centrale, che non è il database del reparto', function () {
+        if (!C || Object.keys(C).join(',') !== 'url') return 'campo centrale: ' + JSON.stringify(C);
+        return (/^https:\/\/[a-z]{20}\.supabase\.co$/.test(C.url) && C.url !== SUPABASE_URL && C.url.indexOf(REF_PRODUZIONE) < 0) || 'indirizzo della centrale non valido';
+      });
+      await prova(S, 'il battito parte con i soli sette campi, senza chiavi, sessione né cookie', async function () {
+        var r = await conRichieste('buona', function () { return window._battitoCentrale({ modo: 'app', subito: true, ignoraGiorno: true }); });
+        if (r.esito !== 'inviato') return 'esito ' + r.esito;
+        if (r.prese.length !== 1) return r.prese.length + ' richieste';
+        var p = r.prese[0], op = p.op;
+        if (p.url !== C.url + '/functions/v1/battito' || op.method !== 'POST') return 'richiesta a ' + p.url + ' con ' + op.method;
+        if (op.headers !== undefined || op.credentials !== 'omit' || op.referrerPolicy !== 'no-referrer') return 'intestazioni, cookie o provenienza nella richiesta';
+        var b = JSON.parse(op.body);
+        if (Object.keys(b).sort().join(',') !== 'ambiente,dispositivo,modo,nome,reparto,versione,versioneLocale') return 'campi: ' + Object.keys(b).sort().join(',');
+        if (b.reparto !== 'collaudo' || b.ambiente !== 'collaudo' || b.modo !== 'app' || b.versioneLocale !== 0) return 'valori: ' + [b.reparto, b.ambiente, b.modo, b.versioneLocale].join(' ');
+        if (b.dispositivo !== _getDeviceId()) return 'non è l\'identificativo di questo dispositivo';
+        var versione = parseInt(document.getElementById('navVersioneApp').textContent, 10);
+        if (b.versione !== versione) return 'versione ' + b.versione + ' invece di ' + versione;
+        if (typeof b.nome !== 'string' || !b.nome || b.nome.length > 120 || /[<>]/.test(b.nome)) return 'nome non valido';
+        var testo = op.body;
+        return !(testo.indexOf(SUPABASE_ANON_KEY) >= 0 || /eyJ|sb_|access_token|refresh/.test(testo)) || 'nel corpo c\'è qualcosa che somiglia a una chiave';
+      });
+      await prova(S, 'una volta al giorno: col giorno già segnato non parte nulla', async function () {
+        giorno(oggi());
+        var r = await conRichieste('buona', function () { return window._battitoCentrale({ modo: 'app', subito: true }); });
+        return (r.esito === 'gia-oggi' && r.prese.length === 0) || ('esito ' + r.esito + ', ' + r.prese.length + ' richieste');
+      });
+      await prova(S, 'un giorno nuovo: parte e segna il giorno', async function () {
+        giorno('2000-1-1');
+        var r = await conRichieste('buona', function () { return window._battitoCentrale({ modo: 'app', subito: true }); });
+        return (r.esito === 'inviato' && r.prese.length === 1 && leggiGiorno() === oggi()) || ('esito ' + r.esito + ', giorno ' + leggiGiorno());
+      });
+      await prova(S, 'senza rete l\'app non si ferma e il giorno non resta segnato', async function () {
+        giorno('2000-1-1');
+        var r = await conRichieste('rete', function () { return window._battitoCentrale({ modo: 'app', subito: true }); });
+        return (r.esito === 'rete' && r.prese.length === 1 && leggiGiorno() === '2000-1-1') || ('esito ' + r.esito + ', giorno ' + leggiGiorno());
+      });
+      await prova(S, 'in modo rubrica il nome dice solo browser e sistema', async function () {
+        var r = await conRichieste('buona', function () { return window._battitoCentrale({ modo: 'rubrica', subito: true, ignoraGiorno: true }); });
+        if (r.esito !== 'inviato' || r.prese.length !== 1) return 'esito ' + r.esito;
+        var b = JSON.parse(r.prese[0].op.body);
+        return (b.modo === 'rubrica' && b.nome === _parseUA(navigator.userAgent || '') && b.nome.indexOf('·') < 0) || ('modo ' + b.modo + ', nome di ' + b.nome.length + ' caratteri');
+      });
+      await prova(S, 'senza la centrale nel file dell\'ambiente il battito non parte', async function () {
+        var tolta = window._AMBIENTE.centrale;
+        delete window._AMBIENTE.centrale;
+        try {
+          var r = await conRichieste('buona', function () { return window._battitoCentrale({ modo: 'app', subito: true, ignoraGiorno: true }); });
+          return (r.esito === 'senza-centrale' && r.prese.length === 0) || ('esito ' + r.esito);
+        } finally { window._AMBIENTE.centrale = tolta; }
+      });
+      await prova(S, 'una centrale scritta male non riceve nulla', async function () {
+        var tolta = window._AMBIENTE.centrale;
+        window._AMBIENTE.centrale = { url: 'https://esempio.invalid' };
+        try {
+          var r = await conRichieste('buona', function () { return window._battitoCentrale({ modo: 'app', subito: true, ignoraGiorno: true }); });
+          return (r.esito === 'senza-centrale' && r.prese.length === 0) || ('esito ' + r.esito);
+        } finally { window._AMBIENTE.centrale = tolta; }
+      });
+      await prova(S, 'la centrale vera risponde alla prova senza scrittura', async function () {
+        var r = await veraFetch(C.url + '/functions/v1/battito', { cache: 'no-store', credentials: 'omit' });
+        var d = null; try { d = await r.json(); } catch (e) {}
+        return (r.ok && d && d.ok === true && d.servizio === 'battito') || ('stato ' + r.status);
+      });
+    } finally {
+      window.fetch = veraFetch;
+      giorno(giornoPrima);
+    }
+  }
+
+  var SEZIONI = { ambiente: sezioneAmbiente, trak: sezioneTrak, xss: sezioneXss, mail: sezioneMail, rubrica: sezioneRubrica, centrale: sezioneCentrale };
 
   window.__prove = async function (opz) {
     opz = opz || {};

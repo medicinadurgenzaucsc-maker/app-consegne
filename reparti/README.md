@@ -59,6 +59,7 @@ node collaudo/strumenti/reparti.js scrivi           riscrive docs/js/ambiente.js
 | `supabaseUrl` | `https://<progetto>.supabase.co`, senza barra finale |
 | `supabaseAnonKey` | la chiave PUBBLICA di quel progetto |
 | `googleClientId` | l'identificativo del client Google dell'accesso |
+| `centrale` | facoltativo, dalla v194: `{ url }`, l'indirizzo `https://<progetto>.supabase.co` della centrale che riceve una volta al giorno il battito dei dispositivi. Il solo indirizzo, mai una chiave; non può essere il database di un reparto. Senza, il battito non parte |
 
 `pubblicazione` ha una o più di queste voci:
 
@@ -81,7 +82,7 @@ node collaudo/strumenti/reparti.js scrivi           riscrive docs/js/ambiente.js
   collaudo, per prova.
 
 Nel file servito finiscono solo `codice`, `nome`, `ambiente`, `lingua`,
-`versioneLocale`, `host`, `supabaseUrl`, `supabaseAnonKey`, `googleClientId`.
+`versioneLocale`, `host`, `supabaseUrl`, `supabaseAnonKey`, `googleClientId` e, se c'è, `centrale`.
 
 ## Aggiungere un reparto
 

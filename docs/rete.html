@@ -127,6 +127,21 @@
         }, function () { return { ok: false, testo: 'non raggiunto' }; });
       }
 
+      // La centrale riceve una volta al giorno il battito dei dispositivi: senza,
+      // l'applicazione lavora lo stesso. Con GET non si scrive nulla.
+      function provaCentrale() {
+        var c = A && A.centrale;
+        if (!c || typeof c.url !== 'string' || !/^https:\/\/[a-z]{20}\.supabase\.co$/.test(c.url)) return Promise.resolve({ ok: false, testo: 'non provato: il file dell\'ambiente non nomina la centrale' });
+        return fetch(c.url + '/functions/v1/battito', { cache: 'no-store', credentials: 'omit' }).then(function (r) {
+          return r.text().then(function (t) {
+            var servizio = '';
+            try { servizio = String(JSON.parse(t).servizio || ''); } catch (e) {}
+            if (r.ok && servizio === 'battito') return { ok: true, testo: 'raggiunta' };
+            return { ok: false, testo: 'risposta inattesa (stato ' + r.status + ')' };
+          });
+        }, function () { return { ok: false, testo: 'non raggiunta: senza la centrale l\'applicazione lavora lo stesso' }; });
+      }
+
       var ammesso = indirizzoAmmesso();
       var DATI = [
         ['Indirizzo di questa pagina', location.origin + location.pathname],
@@ -143,6 +158,7 @@
         ['L\'accesso con Google', provaGoogle],
         ['Le librerie dell\'applicazione', provaLibrerie]
       ];
+      if (A && A.centrale) PROVE.push(['La centrale dei reparti', provaCentrale]);
 
       DATI.forEach(function (d) { riga('dati', d[0], d[1]); righe.push(d[0] + ': ' + d[1]); });
       var celle = PROVE.map(function (p) { return riga('esiti', p[0], 'in corso…', 'attesa'); });
