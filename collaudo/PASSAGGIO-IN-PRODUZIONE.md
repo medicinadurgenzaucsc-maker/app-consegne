@@ -950,3 +950,18 @@ dicono alla centrale «197», quindi ricevono cinque moduli, che il codice della
 finché si resta sul ritorno i moduli di quei dispositivi restano quelli che sapevano. Per un
 ritorno d'emergenza va bene. I rami `ritorno-v194` e `ritorno-v193` portano numeri ormai
 superati: se servissero, vanno ricostruiti sopra il commit della 196 col numero 197.
+
+## Rilascio della 197: il battito a ogni caricamento (preparata nel collaudo il 16/10/2026)
+
+Che cosa cambia: il battito verso la centrale parte a ogni caricamento della pagina (F5,
+«Update», apertura dell'icona), pochi secondi dopo l'avvio, e a pagina aperta una volta
+all'ora; al più uno ogni 15 secondi per dispositivo. Prima partiva a ogni avvio ma al più
+uno ogni 10 minuti, e 30 secondi dopo l'avvio. Così un cambio di moduli fatto nella centrale
+arriva al primo F5, o entro un'ora. L'app non aspetta mai la risposta. Decisione di Stefano
+del 16/10/2026. Per la 11N circa 15 mila chiamate al mese, il 3% del piano gratuito della
+centrale.
+
+Viene dopo la 196, col rito di sempre e l'ok di Stefano; si può rilasciare insieme alle
+precedenti. Il ramo di ritorno si costruisce sopra il commit che va in produzione, col
+numero libero dopo l'ultima versione pubblicata nel collaudo (il ramo `licenza` usa già
+la 198).

@@ -5266,7 +5266,7 @@
             <li>
               <span class="dropdown-item-text d-block px-3" style="font-family:monospace;font-size:0.75rem;color:#546e7a;line-height:1.3;">
                 <i class="bi bi-tag me-1"></i>Versione applicazione:<br>
-                <strong id="navVersioneApp" class="ms-1" style="color:#263238;">196</strong>
+                <strong id="navVersioneApp" class="ms-1" style="color:#263238;">197</strong>
               </span>
             </li>
             <!-- Uscita: chiude la sessione solo su questo dispositivo (_esciSessione) -->
@@ -6344,22 +6344,26 @@
     // sostituito dal LOGIN UNIFICATO qui sopra: la conferma dell'account
     // è ora parte della schermata di login stessa — un solo passaggio.)
 
-    // Il battito verso la centrale (dalla v194; dalla v195 a ogni avvio, con i
-    // moduli). Il dispositivo dice alla centrale chi è: l'identificativo fatto
-    // dall'app, una descrizione del browser, la versione e il modo. Nessun dato
-    // dei pazienti, nessuna chiave, nessuna sessione: la richiesta parte senza
-    // intestazioni e senza cookie. Solo se il file dell'ambiente nomina una
-    // centrale. Parte a ogni avvio dopo l'accesso, al più uno ogni 10 minuti
-    // per dispositivo: l'ora si segna prima dell'invio, così due avvii vicini
-    // non mandano due battiti, e si toglie se la rete manca. Della risposta si
-    // guardano solo «ok» e i moduli del reparto, che passano da _moduliValidi
-    // e si applicano con _applicaModuli (script in testa alla pagina); un
-    // errore resta nella console e l'app lavora lo stesso. Restituisce una
-    // promessa con l'esito, per le prove.
+    // Il battito verso la centrale (dalla v194; dalla v195 con i moduli). Il
+    // dispositivo dice alla centrale chi è: l'identificativo fatto dall'app, una
+    // descrizione del browser, la versione e il modo. Nessun dato dei pazienti,
+    // nessuna chiave, nessuna sessione: la richiesta parte senza intestazioni e
+    // senza cookie. Solo se il file dell'ambiente nomina una centrale.
+    // Dalla v197 parte a OGNI CARICAMENTO della pagina dopo l'accesso (3 secondi
+    // dopo l'avvio dell'app, 1 in modo rubrica) e, a pagina aperta, una volta
+    // all'ora: un cambio fatto nella centrale arriva al primo F5, o entro un'ora.
+    // Al più uno ogni 15 secondi per dispositivo, contro i ricaricamenti a
+    // raffica: l'ora si segna prima dell'invio e si toglie se la rete manca.
+    // L'app non aspetta mai la risposta: lavora con ciò che sapeva, e la
+    // centrale irraggiungibile non cambia nulla. Della risposta si guardano solo
+    // «ok» e i moduli del reparto, che passano da _moduliValidi e si applicano
+    // con _applicaModuli (script in testa alla pagina); un errore resta nella
+    // console. Restituisce una promessa con l'esito, per le prove («subito»
+    // toglie l'attesa e non avvia il giro orario, «ignoraTs» salta i 15 secondi).
     window._battitoCentrale = function (opzioni) {
       opzioni = opzioni || {};
       var modo = opzioni.modo === 'rubrica' ? 'rubrica' : 'app';
-      var INTERVALLO = 600000;
+      var INTERVALLO = 15000, OGNI_ORA = 3600000;
       function leggiTs() { try { return parseInt(localStorage.getItem('_battitoTs') || '0', 10) || 0; } catch (e) { return 0; } }
       function scriviTs(v) { try { if (v) localStorage.setItem('_battitoTs', String(v)); else localStorage.removeItem('_battitoTs'); } catch (e) {} }
       try { localStorage.removeItem('_battitoGiorno'); } catch (e) {}
@@ -6376,7 +6380,9 @@
         nome = String(nome || '').replace(/[\u0000-\u001f<>]/g, '').slice(0, 120);
         var locale = parseInt(A.versioneLocale, 10) || 0;
         var corpo = JSON.stringify({ reparto: A.codice, ambiente: AMBIENTE, dispositivo: id, nome: nome, versione: versione, versioneLocale: locale, modo: modo });
-        var attesa = opzioni.subito ? 0 : (modo === 'rubrica' ? 3000 : 30000);
+        var attesa = opzioni.subito ? 0 : (modo === 'rubrica' ? 1000 : 3000);
+        // a pagina aperta, un battito all'ora: lo avvia il primo battito vero della pagina, una volta sola
+        if (!opzioni.subito && !window._battitoOrario) window._battitoOrario = setInterval(function () { window._battitoCentrale({ modo: modo, ripetuto: true }); }, OGNI_ORA);
         return new Promise(function (fatto) {
           setTimeout(function () {
             var adesso = Date.now(), prima = leggiTs();
@@ -6391,7 +6397,7 @@
               fatto('inviato');
             }, function () {
               scriviTs(prima);
-              console.warn('[battito] centrale non raggiunta: si riprova al prossimo avvio');
+              console.warn('[battito] centrale non raggiunta: si riprova al prossimo caricamento, o fra un\'ora');
               fatto('rete');
             });
           }, attesa);

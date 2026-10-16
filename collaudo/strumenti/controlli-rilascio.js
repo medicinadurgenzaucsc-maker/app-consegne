@@ -717,7 +717,8 @@ mancanti.length ? ko('sw.js elenca file che non esistono (l\'installazione del s
     const campi = /JSON\.stringify\(\{ ([^}]*) \}\)/.exec(corpo);
     const nomi = campi ? campi[1].split(',').map((x) => x.split(':')[0].trim()).sort().join(',') : '';
     if (nomi !== 'ambiente,dispositivo,modo,nome,reparto,versione,versioneLocale') guai.push('il battito deve mandare i soli sette campi attesi (trovati: ' + (nomi || 'nessuno') + ')');
-    if ((ora.match(/window\._battitoCentrale\(/g) || []).length !== 2 || ora.indexOf("if (window._MODO_RUBRICA === true) { _avviaModoRubrica(); return; }\n      window._battitoCentrale({ modo: 'app' });\n      if (typeof window._avviaFlussoApp === 'function') window._avviaFlussoApp();") < 0 || ora.indexOf("_modoRubricaAvviato = true;\n      window._battitoCentrale({ modo: 'rubrica' });") < 0) guai.push('il battito deve partire dai due soli punti d\'avvio (app e modo rubrica)');
+    // fuori dalla funzione, i due soli punti d'avvio; dentro, dalla v197, il solo giro orario
+    if (((ora.slice(0, i0) + ora.slice(i1)).match(/window\._battitoCentrale\(/g) || []).length !== 2 || ora.indexOf("if (window._MODO_RUBRICA === true) { _avviaModoRubrica(); return; }\n      window._battitoCentrale({ modo: 'app' });\n      if (typeof window._avviaFlussoApp === 'function') window._avviaFlussoApp();") < 0 || ora.indexOf("_modoRubricaAvviato = true;\n      window._battitoCentrale({ modo: 'rubrica' });") < 0) guai.push('il battito deve partire dai due soli punti d\'avvio (app e modo rubrica)');
     const sito = ['docs/index.html', 'docs/print.html', 'docs/rete.html', 'docs/js/api.js', 'docs/js/app.js', 'docs/js/app2.js', 'docs/js/sanifica.js', 'docs/sw.js', 'docs/rubrica/app.js', 'docs/rubrica/index.html'].filter((f) => fs.existsSync(path.join(RADICE, f)));
     const riservati = sito.filter((f) => /versioneMinima|versione_minima/.test(leggi(f)));
     if (riservati.length) guai.push('i nomi riservati alla fase 2 compaiono in: ' + riservati.join(', '));
@@ -751,7 +752,10 @@ mancanti.length ? ko('sw.js elenca file che non esistono (l\'installazione del s
     // della risposta solo ok e i moduli, e i moduli solo attraverso _moduliValidi (in qualunque forma si scriva l'accesso)
     const senzaLecito = corpo.replace('window._moduliValidi(d.moduli)', '');
     if (corpo.indexOf('window._moduliValidi(d.moduli)') < 0 || /\.moduli\b|\[\s*['"]moduli['"]\s*\]/.test(senzaLecito)) guai.push('della risposta del battito i moduli si leggono solo attraverso _moduliValidi');
-    if (/localStorage\.(get|set)Item\('_battitoGiorno'/.test(corpo) || corpo.indexOf("'_battitoTs'") < 0) guai.push('il battito parte a ogni avvio, al più uno ogni 10 minuti (_battitoTs), e non usa più il giorno');
+    if (/localStorage\.(get|set)Item\('_battitoGiorno'/.test(corpo) || corpo.indexOf("'_battitoTs'") < 0 || corpo.indexOf('var INTERVALLO = 15000, OGNI_ORA = 3600000;') < 0) guai.push('il battito parte a ogni caricamento, al più uno ogni 15 secondi (_battitoTs), e non usa più il giorno');
+    // dalla v197: a pagina aperta un battito all'ora, avviato una volta sola e mai dalle prove («subito»)
+    if ((corpo.match(/window\._battitoCentrale\(/g) || []).length !== 1 || corpo.indexOf('if (!opzioni.subito && !window._battitoOrario) window._battitoOrario = setInterval(function () { window._battitoCentrale({ modo: modo, ripetuto: true }); }, OGNI_ORA);') < 0) guai.push('a pagina aperta il battito deve ripartire una volta all\'ora, da un solo giro avviato dal primo battito vero');
+    if (corpo.indexOf("var attesa = opzioni.subito ? 0 : (modo === 'rubrica' ? 1000 : 3000);") < 0) guai.push('il battito parte pochi secondi dopo il caricamento (3 nell\'app, 1 in modo rubrica)');
     // i varchi: la classe su ciò che apre il modulo, e la guardia intera (avviso e return) in testa alla funzione che lo apre
     [['class="tb-btn tb-scale modulo-scale"', 'il pulsante delle scale'], ['class="tb-btn tb-terapia modulo-terapia"', 'il pulsante della terapia'],
       ['class="tb-btn tb-laboratorio modulo-laboratorio"', 'il pulsante del laboratorio'], ['<li class="nav-item modulo-rubrica"><a class="nav-link active" href="javascript:void(0)" onclick="apriRubrica();">', 'la voce di menu della rubrica']]
@@ -809,7 +813,7 @@ mancanti.length ? ko('sw.js elenca file che non esistono (l\'installazione del s
       kj.primoFallito(Object.assign({}, tuttiOk, { ESITO_PING: 'skipped' })) === '') guai.push('keepalive.js: «ok» solo se tutti i passi sono riusciti, e il passo fallito per primo nei «ko»');
     passi.forEach((id) => { if (ka.indexOf('id: ' + id + '\n') < 0 || ka.indexOf('ESITO_' + id.toUpperCase() + ': $' + '{{ steps.' + id + '.outcome }}') < 0) guai.push('il passo «' + id + '» di keepalive.js non è nel flusso, o il suo esito non arriva alla centrale'); });
   } catch (e) { guai.push(String((e && e.message) || e).slice(0, 300)); }
-  guai.length ? guai.forEach((g) => ko('battito: ' + g)) : ok('battito: una sola richiesta alla funzione della centrale, senza chiavi, sessione né cookie, con i sette campi attesi, dai due soli punti d\'avvio; nessun nome riservato alla fase 2 nel sito; moduli dallo script in testa e solo attraverso _moduliValidi, che tollera le chiavi sconosciute (provato coi casi), cinque moduli coi loro varchi, classe e guardia, blocco del laboratorio e pannello del modo rubrica; flusso Keepalive senza dati scritti a mano, con l\'esito alla centrale');
+  guai.length ? guai.forEach((g) => ko('battito: ' + g)) : ok('battito: una sola richiesta alla funzione della centrale, senza chiavi, sessione né cookie, con i sette campi attesi, dai due soli punti d\'avvio, a ogni caricamento e ogni ora a pagina aperta; nessun nome riservato alla fase 2 nel sito; moduli dallo script in testa e solo attraverso _moduliValidi, che tollera le chiavi sconosciute (provato coi casi), cinque moduli coi loro varchi, classe e guardia, blocco del laboratorio e pannello del modo rubrica; flusso Keepalive senza dati scritti a mano, con l\'esito alla centrale');
 }
 
 // ── 15. ciò che non deve diventare pubblico ──────────────────────────

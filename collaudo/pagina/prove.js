@@ -3239,16 +3239,47 @@
         if (typeof b.nome !== 'string' || !b.nome || b.nome.length > 120 || /[<>]/.test(b.nome)) return 'nome non valido';
         return !(op.body.indexOf(SUPABASE_ANON_KEY) >= 0 || /eyJ|sb_|access_token|refresh/.test(op.body)) || 'nel corpo c\'è qualcosa che somiglia a una chiave';
       });
-      await prova(S, 'a ogni avvio, ma al più un battito ogni 10 minuti per dispositivo', async function () {
-        memoria('_battitoTs', String(Date.now() - 60000));
+      await prova(S, 'a ogni caricamento, ma al più un battito ogni 15 secondi per dispositivo', async function () {
+        memoria('_battitoTs', String(Date.now() - 5000));
         var a = await conRichieste('buona', function () { return batti({ ignoraTs: false }); });
-        memoria('_battitoTs', String(Date.now() - 11 * 60000));
+        memoria('_battitoTs', String(Date.now() - 20000));
         var b = await conRichieste('buona', function () { return batti({ ignoraTs: false }); });
         var ts = parseInt(memoria('_battitoTs'), 10);
-        if (a.esito !== 'troppo-presto' || a.prese.length) return 'a un minuto dal precedente: ' + a.esito + ', ' + a.prese.length + ' richieste';
-        if (b.esito !== 'inviato' || b.prese.length !== 1) return 'a undici minuti dal precedente: ' + b.esito + ', ' + b.prese.length + ' richieste';
+        if (a.esito !== 'troppo-presto' || a.prese.length) return 'a 5 secondi dal precedente: ' + a.esito + ', ' + a.prese.length + ' richieste';
+        if (b.esito !== 'inviato' || b.prese.length !== 1) return 'a 20 secondi dal precedente: ' + b.esito + ', ' + b.prese.length + ' richieste';
         if (!(Date.now() - ts < 10000)) return 'l\'ora del battito non è stata segnata';
         return memoria('_battitoGiorno') === null || 'resta la chiave del giorno della 194';
+      });
+      await prova(S, 'a pagina aperta un battito all\'ora: il giro parte dal primo battito vero, una volta sola, e mai dalle prove', async function () {
+        // la pagina l'ha avviato al suo primo battito; per guardarlo senza aspettare un'ora si ferma, si rifà
+        // con setInterval sostituito per un attimo, e alla fine si riavvia quello vero (nessun battito vero parte)
+        if (!window._battitoOrario) return 'all\'avvio della pagina il giro orario non è partito';
+        var veroSI = window.setInterval, giri = [], guai = [];
+        window.setInterval = function (fn, ms) { giri.push({ fn: fn, ms: ms }); return 0; };
+        try {
+          memoria('_battitoTs', String(Date.now()));
+          await conRichieste('buona', function () { return window._battitoCentrale({ modo: 'app' }); });
+          if (giri.length) guai.push('un altro battito vero ha avviato un secondo giro');
+          await conRichieste('buona', function () { return batti(); });
+          if (giri.length) guai.push('una prova («subito») ha avviato un giro');
+          clearInterval(window._battitoOrario); window._battitoOrario = null;
+          memoria('_battitoTs', String(Date.now()));
+          await conRichieste('buona', function () { return window._battitoCentrale({ modo: 'app' }); });
+          var orari = giri.filter(function (g) { return g.ms === 3600000; });
+          if (orari.length !== 1) guai.push(orari.length + ' giri orari');
+          else {
+            memoria('_battitoTs', String(Date.now() - 60000));
+            var r = await conRichieste('buona', async function () { orari[0].fn(); await attendi(3600); });
+            if (r.prese.length !== 1) guai.push('il giro orario ha mandato ' + r.prese.length + ' battiti');
+          }
+        } finally {
+          window.setInterval = veroSI;
+          if (!window._battitoOrario) {
+            window._battitoOrario = null; memoria('_battitoTs', String(Date.now()));
+            await conRichieste('buona', function () { return window._battitoCentrale({ modo: 'app' }); });
+          }
+        }
+        return !guai.length || guai.join(' ‖ ');
       });
       await prova(S, 'un orologio andato avanti (ora del battito nel futuro) non blocca il battito', async function () {
         memoria('_battitoTs', String(Date.now() + 86400000));
@@ -3517,7 +3548,7 @@
         salvati = { moduli: JSON.parse(JSON.stringify(window._MODULI)), copia: localStorage.getItem('_moduliReparto'), ts: localStorage.getItem('_battitoTs') };
         window._applicaModuli({ rubrica: true, terapia: true, laboratorio: true, scale: true, dimissioni: true });
         localStorage.setItem('_battitoTs', String(Date.now()));
-        salvati.rinnovo = setInterval(function () { try { localStorage.setItem('_battitoTs', String(Date.now())); } catch (e) {} }, 60000);
+        salvati.rinnovo = setInterval(function () { try { localStorage.setItem('_battitoTs', String(Date.now())); } catch (e) {} }, 5000);
       }
       try { await SEZIONI[nomi[i]](opz); }
       catch (e) { esiti.push({ sezione: nomi[i], nome: 'la sezione si è interrotta', ok: false, dettaglio: String((e && e.stack) || e).slice(0, 600), ms: 0 }); }
