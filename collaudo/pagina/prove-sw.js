@@ -171,6 +171,8 @@
     else if (!c.doc.getElementById('navVersioneApp')) esito = url + ': titolo «' + c.doc.title + '»';
     else if (c.doc.getElementById('bloccoIndirizzo')) esito = url + ': la pagina si è fermata sull\'indirizzo';
     else if (c.win._MODO_RUBRICA !== true) esito = url + ': la pagina non è in modo rubrica';
+    // dalla v195: senza accesso il pannello «rubrica non attiva» non compare mai (lo apre solo l'avvio dopo l'accesso)
+    else if (c.doc.getElementById('rubricaSpenta') && !c.doc.getElementById('rubricaSpenta').hidden) esito = url + ': il pannello della rubrica spenta si vede senza accesso';
     else {
       var man = c.doc.querySelector('link[rel="manifest"]');
       if (!man || !/manifest-rubrica\.json$/.test(man.href)) esito = url + ': manifesto «' + (man && man.getAttribute('href')) + '»';

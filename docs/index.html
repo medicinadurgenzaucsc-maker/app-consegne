@@ -83,10 +83,17 @@
         if (!nonConservare) { try { localStorage.setItem('_moduliReparto', JSON.stringify(v)); } catch (e) {} }
         return cambiati;
       };
-      // la guardia di una funzione spenta: lo dice, e non fa altro
-      window._avvisaModuloSpento = function (nome) {
+      // la guardia di una funzione spenta: lo dice, e non fa altro. Con una scheda in modifica, alla
+      // chiusura dell'avviso il fuoco torna dove era (o sul primo campo della scheda): regola del fuoco
+      window._avvisaModuloSpento = function (nome, card) {
         var testo = 'La funzione «' + (TITOLI[nome] || 'richiesta') + '» non è attiva per questo reparto.';
-        try { if (window.Swal) { window.Swal.fire({ icon: 'info', title: 'Funzione non attiva', text: testo, confirmButtonColor: '#37474f', returnFocus: false }); return; } } catch (e) {}
+        var prima = document.activeElement;
+        function rifocalizza() {
+          if (!card || !card.isConnected || !card.classList || !card.classList.contains('focus-mode')) return;
+          var dove = (prima && prima.isConnected && card.contains(prima) && prima !== document.body) ? prima : card.querySelector('[contenteditable="true"]');
+          if (dove && typeof dove.focus === 'function') { try { dove.focus({ preventScroll: true }); } catch (e) { try { dove.focus(); } catch (e2) {} } }
+        }
+        try { if (window.Swal) { window.Swal.fire({ icon: 'info', title: 'Funzione non attiva', text: testo, confirmButtonColor: '#37474f', returnFocus: false }).then(rifocalizza, rifocalizza); return; } } catch (e) {}
       };
       var conservati = null;
       try { conservati = JSON.parse(localStorage.getItem('_moduliReparto') || 'null'); } catch (e) { conservati = null; }
@@ -1872,7 +1879,7 @@
     // Esami Colturali. Stessa scala ricalcolata = sostituisce (valore+data).
     // ══════════════════════════════════════════════════════════════════
     window._apriModalScale = function(card) {
-      if (!window._moduloAttivo('scale')) { window._avvisaModuloSpento('scale'); return; }
+      if (!window._moduloAttivo('scale')) { window._avvisaModuloSpento('scale', card); return; }
       if (!card || !card.classList.contains('focus-mode')) return;
       Swal.fire({
         title: '<i class="bi bi-clipboard-pulse me-2" style="color:#1565c0;"></i>Scale di valutazione',
@@ -3771,7 +3778,7 @@
 
     // ── Modal: sopra il focus mode, che NON viene mai chiuso ───────────
     window._apriLabModal = function(card){
-      if (!window._moduloAttivo('laboratorio')) { window._avvisaModuloSpento('laboratorio'); return; }
+      if (!window._moduloAttivo('laboratorio')) { window._avvisaModuloSpento('laboratorio', card); return; }
       if(!card) return;
       var vecchio=document.getElementById('labModalOverlay');
       if(vecchio && vecchio.parentNode) vecchio.parentNode.removeChild(vecchio);
@@ -3997,7 +4004,7 @@
     }, true);
 
     window._importaTerapiaTrak = function(card){
-      if (!window._moduloAttivo('terapia')) { window._avvisaModuloSpento('terapia'); return; }
+      if (!window._moduloAttivo('terapia')) { window._avvisaModuloSpento('terapia', card); return; }
       if(!card || !card.classList.contains('focus-mode')) return;
       var p;
       try { p = (navigator.clipboard && navigator.clipboard.readText) ? navigator.clipboard.readText() : Promise.reject(); }
@@ -4012,7 +4019,7 @@
     // in focus mode entra (come la matita) e poi avvia l'import — perché
     // l'import richiede il focus mode (edit + lock DB).
     window._terapiaDaPlaceholder = function(el){
-      if (!window._moduloAttivo('terapia')) { window._avvisaModuloSpento('terapia'); return; }
+      if (!window._moduloAttivo('terapia')) { window._avvisaModuloSpento('terapia', null); return; }
       var card = (el && el.closest) ? el.closest('.patient-card') : el;
       if(!card) return;
       // Come tutto il resto, la pillola agisce SOLO in focus mode: se non ci
@@ -4172,6 +4179,8 @@
       var campo = ev.target.closest ? ev.target.closest('[data-field="NoteTerapia"]') : null;
       if(!campo) return;
       var card = campo.closest('.patient-card'); if(!card || !card.classList.contains('focus-mode')) return;
+      // modulo «terapia» spento (dalla v195): niente pillola (styles.css), e il clic resta quello del campo
+      if (!window._moduloAttivo('terapia')) return;
       var box = campo.querySelector(':scope > .terapia-box');
       if(!box || !_terapiaBoxVuoto(box)) return; // niente pillola o già terapia -> edit normale
       var r = box.getBoundingClientRect();
@@ -6382,9 +6391,11 @@
     // rubrica, dove le schede non ci sono) e il pannello del modo rubrica. Una
     // finestra già aperta resta aperta finché la si chiude.
     function _moduliDallaCentrale(m) {
-      var cambiati = window._applicaModuli(m) || [];
-      if (cambiati.indexOf('laboratorio') >= 0 && window._MODO_RUBRICA !== true && typeof window._labBottoniAggiorna === 'function') window._labBottoniAggiorna(true);
-      if (cambiati.indexOf('rubrica') >= 0 && window._MODO_RUBRICA === true && _modoRubricaAvviato) _modoRubricaMostra();
+      try {
+        var cambiati = window._applicaModuli(m) || [];
+        if (cambiati.indexOf('laboratorio') >= 0 && window._MODO_RUBRICA !== true && typeof window._labBottoniAggiorna === 'function') window._labBottoniAggiorna(true);
+        if (cambiati.indexOf('rubrica') >= 0 && window._MODO_RUBRICA === true && _modoRubricaAvviato && !_uscitaInCorso && window._browserCompatibile) _modoRubricaMostra();
+      } catch (e) { console.warn('[battito] moduli non applicati'); }
     }
     // fine del battito
 
@@ -6414,11 +6425,14 @@
     }
     // In modo rubrica, con la rubrica spenta dalla centrale (dalla v195), al
     // posto del riquadro c'è un pannello fisso di solo testo con l'uscita
-    // (#rubricaSpenta; styles.css nasconde il riquadro). Con la rubrica
-    // accesa si apre il riquadro, come sempre.
+    // (#rubricaSpenta; styles.css nasconde il riquadro quando il pannello si
+    // vede). Con la rubrica accesa si apre il riquadro, come sempre. Un
+    // lavoro non salvato nella rubrica non si copre: il cambio aspetta il
+    // prossimo ritorno in primo piano, o il prossimo avvio.
     function _modoRubricaMostra() {
       var spenta = !window._moduloAttivo('rubrica');
       var p = document.getElementById('rubricaSpenta');
+      if (spenta && p && p.hidden && _rubricaInSospeso()) return;
       if (p) p.hidden = !spenta;
       if (!spenta && typeof window.apriRubrica === 'function') window.apriRubrica();
     }

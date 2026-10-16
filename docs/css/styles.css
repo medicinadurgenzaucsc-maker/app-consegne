@@ -1697,8 +1697,14 @@ html.modulo-rubrica-spento .modulo-rubrica,
 html.modulo-terapia-spento .modulo-terapia,
 html.modulo-laboratorio-spento .modulo-laboratorio,
 html.modulo-scale-spento .modulo-scale { display: none !important; }
-/* Modo rubrica con la rubrica spenta: al posto del riquadro, solo testo e l'uscita. */
-html.modo-rubrica.modulo-rubrica-spento #rubricaPanel { display: none !important; }
+/* Terapia spenta: niente pillola «clicca qui +» e niente barra gialla che chiede di reimportare da TrakCare. */
+html.modulo-terapia-spento .patient-card.focus-mode .terapia-box:empty { padding: 0; cursor: auto; }
+html.modulo-terapia-spento .patient-card.focus-mode .terapia-box:empty::before,
+html.modulo-terapia-spento .patient-card.focus-mode .terapia-box:empty::after,
+html.modulo-terapia-spento [data-field="NoteTerapia"].terapia-scaduta::before { content: none !important; display: none !important; }
+/* Modo rubrica con la rubrica spenta: al posto del riquadro, solo testo e l'uscita. Il riquadro si nasconde
+   solo quando il pannello di testo si vede (lo decide _modoRubricaMostra, che non copre un lavoro non salvato). */
+html.modo-rubrica .rubrica-spenta:not([hidden]) ~ #rubricaPanel { display: none !important; }
 .rubrica-spenta:not([hidden]) { position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 9500; display: flex; align-items: center; justify-content: center; padding: 24px; background: #263238; color: #eceff1; text-align: center; }
 .rubrica-spenta-testo { max-width: 420px; }
 .rubrica-spenta-testo .bi-telephone-x { font-size: 48px; color: #90a4ae; }

@@ -3249,6 +3249,11 @@
         if (!(Date.now() - ts < 10000)) return 'l\'ora del battito non è stata segnata';
         return memoria('_battitoGiorno') === null || 'resta la chiave del giorno della 194';
       });
+      await prova(S, 'un orologio andato avanti (ora del battito nel futuro) non blocca il battito', async function () {
+        memoria('_battitoTs', String(Date.now() + 86400000));
+        var r = await conRichieste('buona', function () { return batti({ ignoraTs: false }); });
+        return (r.esito === 'inviato' && r.prese.length === 1 && Date.now() - parseInt(memoria('_battitoTs'), 10) < 10000) || ('esito ' + r.esito + ', ' + r.prese.length + ' richieste');
+      });
       await prova(S, 'senza rete l\'app non si ferma e l\'ora del battito torna quella di prima', async function () {
         var prima = String(Date.now() - 11 * 60000);
         memoria('_battitoTs', prima);
@@ -3319,18 +3324,58 @@
         return !guai.length || guai.join(' ‖ ');
       });
       await prova(S, 'moduli: con il laboratorio spento spariscono i blocchi dalle schede e lab_esami non si legge; riacceso tornano', async function () {
-        var letture = function () { return performance.getEntriesByType('resource').filter(function (e) { return /\/rest\/v1\/lab_esami\b/.test(e.name); }).length; };
-        await window._labBottoniAggiorna(true);
-        var n0 = document.querySelectorAll('.patient-card .lab-box').length, l0 = letture();
-        window._applicaModuli(con({ laboratorio: false }), true);
-        await window._labBottoniAggiorna(true);
-        await attendi(300);
-        var spento = { blocchi: document.querySelectorAll('.patient-card .lab-box').length, letture: letture() - l0 };
-        window._applicaModuli(TUTTI, true);
-        await window._labBottoniAggiorna(true);
-        var n1 = document.querySelectorAll('.patient-card .lab-box').length;
-        if (spento.blocchi !== 0 || spento.letture !== 0) return 'col laboratorio spento: ' + spento.blocchi + ' blocchi, ' + spento.letture + ' letture di lab_esami';
-        return n1 === n0 || ('blocchi prima ' + n0 + ', dopo la riaccensione ' + n1);
+        // le letture si contano sul client (l'elenco delle risorse del browser si ferma a 250 voci); il blocco
+        // si fa comparire con un riepilogo finto su una scheda vera, che resta solo nella pagina e non si salva
+        var card = [].slice.call(document.querySelectorAll('#cardsContainer .patient-card[data-bed]')).filter(function (c) { return !c.classList.contains('focus-mode') && c.querySelector('[data-field="EsamiColturali"]'); })[0];
+        if (!card) return 'nessuna scheda su cui provare';
+        var letto = card.getAttribute('data-bed'), oggi = new Date(), iso = oggi.getFullYear() + '-' + ('0' + (oggi.getMonth() + 1)).slice(-2) + '-' + ('0' + oggi.getDate()).slice(-2);
+        var veraFrom = _sb.from, letture = 0;
+        _sb.from = function (tab) { if (tab === 'lab_esami') letture++; return veraFrom.apply(this, arguments); };
+        var blocchi = function () { return card.querySelectorAll('.lab-box').length; };
+        var finto = function () { window._labInfoLetti = Object.assign({}, window._labInfoLetti || {}); window._labInfoLetti[letto] = { n: 2, a: null, u: iso, v: null }; };
+        try {
+          finto(); window._labBottoniApplica();
+          var acceso = blocchi();
+          var l0 = letture; await window._labBottoniAggiorna(true); var lettureAcceso = letture - l0;
+          window._applicaModuli(con({ laboratorio: false }), true);
+          finto();
+          var l1 = letture; await window._labBottoniAggiorna(true); await attendi(200);
+          var spento = { blocchi: blocchi(), letture: letture - l1 };
+          window._applicaModuli(TUTTI, true);
+          finto(); window._labBottoniApplica();
+          var riacceso = blocchi();
+          if (acceso !== 1) return 'col laboratorio acceso il blocco finto non compare (' + acceso + ')';
+          if (lettureAcceso < 1) return 'il contatore delle letture non vede nulla: la prova non proverebbe niente';
+          if (spento.blocchi !== 0 || spento.letture !== 0) return 'col laboratorio spento: ' + spento.blocchi + ' blocchi, ' + spento.letture + ' letture di lab_esami';
+          return riacceso === 1 || ('riacceso: ' + riacceso + ' blocchi');
+        } finally {
+          _sb.from = veraFrom;
+          window._applicaModuli(TUTTI, true);
+          await window._labBottoniAggiorna(true);
+        }
+      });
+      await prova(S, 'moduli: con la terapia spenta la pillola «clicca qui +» non c\'è e il clic resta quello del campo', async function () {
+        var finta = document.createElement('div'); finta.className = 'patient-card focus-mode';
+        var campo = document.createElement('div'); campo.setAttribute('data-field', 'NoteTerapia');
+        var box = document.createElement('div'); box.className = 'terapia-box';
+        campo.appendChild(box); finta.appendChild(campo); document.body.appendChild(finta);
+        var veraImporta = window._importaTerapiaTrak, importa = 0;
+        window._importaTerapiaTrak = function () { importa++; };
+        var clic = function () { var r = box.getBoundingClientRect(); var ev = new MouseEvent('click', { bubbles: true, cancelable: true, clientX: r.left + r.width / 2, clientY: r.top + Math.max(1, r.height / 2) }); box.dispatchEvent(ev); return ev.defaultPrevented; };
+        try {
+          var accesa = { scritta: getComputedStyle(box, '::after').content, fermato: clic(), importa: importa };
+          window._applicaModuli(con({ terapia: false }), true);
+          importa = 0;
+          var spenta = {};
+          var viste = await spiaSwal(async function () { spenta.fermato = clic(); await attendi(100); });
+          spenta.scritta = getComputedStyle(box, '::after').content; spenta.importa = importa; spenta.avvisi = viste.length;
+          if (!/clicca qui/.test(accesa.scritta) || !accesa.fermato || accesa.importa !== 1) return 'con la terapia accesa la pillola non funziona come prima: ' + JSON.stringify(accesa);
+          return (spenta.scritta === 'none' && spenta.fermato === false && spenta.importa === 0 && spenta.avvisi === 0) || ('con la terapia spenta: ' + JSON.stringify(spenta));
+        } finally {
+          window._importaTerapiaTrak = veraImporta;
+          window._applicaModuli(TUTTI, true);
+          finta.remove();
+        }
       });
       await prova(S, 'modo rubrica con la rubrica spenta: pannello di solo testo con l\'uscita, il riquadro non si carica, nessun dato dei pazienti', async function () {
         memoria('_moduliReparto', JSON.stringify(con({ rubrica: false })));
@@ -3355,6 +3400,45 @@
           if (richieste.some(function (u) { return /\/rubrica\/|\/rest\/v1\/rubrica_/.test(u); })) guai.push('la rubrica è stata letta');
           if (richieste.some(function (u) { return /\/rest\/v1\/(consegne|lab_esami|archivio|locks)\b/.test(u); })) guai.push('sono stati letti dati dei pazienti');
           if (richieste.some(function (u) { return u.indexOf(C.url) === 0; })) guai.push('la cornice ha mandato un battito vero');
+        } finally { fr.remove(); memoria('_moduliReparto', JSON.stringify(TUTTI)); }
+        return !guai.length || guai.join(' ‖ ');
+      });
+      await prova(S, 'modo rubrica: la risposta che spegne la rubrica non copre un contatto non salvato; il cambio arriva al ritorno, e la riaccensione riapre il riquadro', async function () {
+        memoria('_moduliReparto', JSON.stringify(TUTTI));
+        memoria('_battitoTs', String(Date.now()));
+        var fr = await cornice('/?rubrica=1&cb=' + Date.now()), fw = fr.contentWindow, fd = fw.document, guai = [];
+        try {
+          var x = await finche(function () { var c = fd.getElementById('rubricaIframe'), w = c && c.contentWindow; return (w && typeof w.rubricaInSospeso === 'function' && w.document.querySelector('.contact-card')) ? w : false; }, 30000, 200);
+          if (!x) return 'la rubrica non è comparsa';
+          var veraFw = fw.fetch, rispostaModuli = null;
+          fw.fetch = function (url, op) {
+            if (typeof url === 'string' && url.indexOf(C.url) === 0) return Promise.resolve(new fw.Response(JSON.stringify({ ok: true, moduli: rispostaModuli }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+            return veraFw.apply(this, arguments);
+          };
+          var pannello = function () { return !fd.getElementById('rubricaSpenta').hidden; };
+          var riquadro = function () { return fw.getComputedStyle(fd.getElementById('rubricaPanel')).display !== 'none'; };
+          var stato = 'visible';
+          Object.defineProperty(fd, 'visibilityState', { configurable: true, get: function () { return stato; } });
+          try {
+            // un contatto scritto e non salvato: la risposta che spegne la rubrica non lo copre
+            var veroSospeso = x.rubricaInSospeso;
+            x.rubricaInSospeso = function () { return true; };
+            rispostaModuli = con({ rubrica: false });
+            await fw._battitoCentrale({ modo: 'rubrica', subito: true, ignoraTs: true });
+            if (pannello() || !riquadro()) guai.push('con un lavoro non salvato il pannello ha coperto la rubrica');
+            if (!fd.documentElement.classList.contains('modulo-rubrica-spento')) guai.push('il modulo non risulta spento nella pagina');
+            // salvato il lavoro, il cambio arriva al ritorno in primo piano
+            x.rubricaInSospeso = veroSospeso;
+            stato = 'hidden'; fd.dispatchEvent(new fw.Event('visibilitychange'));
+            stato = 'visible'; fd.dispatchEvent(new fw.Event('visibilitychange'));
+            await attendi(300);
+            if (!pannello() || riquadro()) guai.push('al ritorno in primo piano il pannello di testo non è comparso');
+            // la centrale riaccende la rubrica: il pannello sparisce e il riquadro torna
+            rispostaModuli = TUTTI;
+            await fw._battitoCentrale({ modo: 'rubrica', subito: true, ignoraTs: true });
+            await attendi(300);
+            if (pannello() || !riquadro()) guai.push('alla riaccensione il riquadro della rubrica non è tornato');
+          } finally { fw.fetch = veraFw; }
         } finally { fr.remove(); memoria('_moduliReparto', JSON.stringify(TUTTI)); }
         return !guai.length || guai.join(' ‖ ');
       });
@@ -3390,11 +3474,13 @@
         salvati = { moduli: JSON.parse(JSON.stringify(window._MODULI)), copia: localStorage.getItem('_moduliReparto'), ts: localStorage.getItem('_battitoTs') };
         window._applicaModuli({ rubrica: true, terapia: true, laboratorio: true, scale: true });
         localStorage.setItem('_battitoTs', String(Date.now()));
+        salvati.rinnovo = setInterval(function () { try { localStorage.setItem('_battitoTs', String(Date.now())); } catch (e) {} }, 60000);
       }
       try { await SEZIONI[nomi[i]](opz); }
       catch (e) { esiti.push({ sezione: nomi[i], nome: 'la sezione si è interrotta', ok: false, dettaglio: String((e && e.stack) || e).slice(0, 600), ms: 0 }); }
       finally {
         if (protetta) {
+          clearInterval(salvati.rinnovo);
           window._applicaModuli(salvati.moduli, true);
           if (salvati.copia === null) localStorage.removeItem('_moduliReparto'); else localStorage.setItem('_moduliReparto', salvati.copia);
           if (salvati.ts === null) localStorage.removeItem('_battitoTs'); else localStorage.setItem('_battitoTs', salvati.ts);

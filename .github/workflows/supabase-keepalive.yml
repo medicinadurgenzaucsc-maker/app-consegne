@@ -10,8 +10,9 @@ name: Keepalive
 #   3. verifica end-to-end: RPC ping() via REST anon, che a sua volta SCRIVE
 #      (hard-fail: se fallisce il run e' rosso e arriva l'email di GitHub)
 #   4. commit vuoto se il repo e' fermo da 45+ gg (GitHub spegne i cron a 60)
-# Dalla v195 «un codice, tante configurazioni»: il reparto si riconosce dal
-# proprietario del repository (collaudo/strumenti/keepalive.js); progetto,
+# Dalla v195 «un codice, tante configurazioni»: il reparto si riconosce dalla
+# variabile CLOUDFLARE_PROGETTO del repository, la stessa del flusso di
+# pubblicazione (collaudo/strumenti/keepalive.js); progetto,
 # indirizzo e chiave pubblica vengono dal suo file in reparti/, e a fine giro
 # l'esito va alla centrale, se il file la nomina. Gira quindi anche nel
 # repository del collaudo, con la sua chiave.
@@ -35,7 +36,11 @@ jobs:
 
       - name: Reparto di questo repository
         id: reparto
-        run: node collaudo/strumenti/keepalive.js reparto "$GITHUB_REPOSITORY_OWNER" >> "$GITHUB_OUTPUT"
+        env:
+          PROGETTO: ${{ vars.CLOUDFLARE_PROGETTO }}
+        run: |
+          out=$(node collaudo/strumenti/keepalive.js reparto "$PROGETTO" "$GITHUB_REPOSITORY")
+          printf '%s\n' "$out" >> "$GITHUB_OUTPUT"
 
       - name: Il segreto SUPABASE_MGMT_TOKEN c'è
         id: segreto

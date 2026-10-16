@@ -1356,6 +1356,7 @@ function _labBottoniApplica(soloCard) {
 }
 var _labBottoniTs = 0;
 function _labBottoniAggiorna(forza) {
+  if (window._MODO_RUBRICA === true) return Promise.resolve();
   _labBottoniApplica();                        // subito con quello che si sa già
   // modulo «laboratorio» spento: niente lettura di lab_esami
   if (typeof window._moduloAttivo === 'function' && !window._moduloAttivo('laboratorio')) return Promise.resolve();

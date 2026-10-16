@@ -214,15 +214,6 @@ function delSitoInDocs() {
   return trovati[0];
 }
 
-// Il reparto il cui sito si pubblica da un repository di quel proprietario (githubPages o sitoPubblico):
-// così il flusso Keepalive di un repository sa di quale reparto è (dalla v195). Errore se non è uno solo.
-function perProprietario(nome) {
-  const n = String(nome || '').toLowerCase();
-  const trovati = tutti().filter((r) => ['githubPages', 'sitoPubblico'].some((v) => r.pubblicazione[v] && String(r.pubblicazione[v].repository).split('/')[0].toLowerCase() === n));
-  if (trovati.length !== 1) throw new Error('atteso un solo reparto pubblicato da un repository di «' + nome + '», trovati ' + trovati.length);
-  return trovati[0];
-}
-
 // Il testo di js/ambiente.js per un reparto. Solo ciò che serve all'app, nient'altro del file del reparto.
 function ambienteJs(reparto) {
   const d = difetti(reparto);
@@ -265,7 +256,7 @@ function controllaDocs() {
   return trovato === atteso ? { ok: true, reparto: delSitoInDocs().codice } : { ok: false, motivo: 'docs/js/ambiente.js non è quello generato da reparti/' + delSitoInDocs().codice + '.json: rifarlo con «node collaudo/strumenti/reparti.js scrivi»' };
 }
 
-module.exports = { RADICE, CARTELLA, AMBIENTE_JS, CAMPI, difetti, codici, leggi, tutti, risolvi, nomeStorico, perProgettoCloudflare, perProprietario, delSitoInDocs, hostCoperto, hostAmmesso, ambienteJs, controllaDocs, ruoloDellaChiave };
+module.exports = { RADICE, CARTELLA, AMBIENTE_JS, CAMPI, difetti, codici, leggi, tutti, risolvi, nomeStorico, perProgettoCloudflare, delSitoInDocs, hostCoperto, hostAmmesso, ambienteJs, controllaDocs, ruoloDellaChiave };
 
 if (require.main === module) {
   try {

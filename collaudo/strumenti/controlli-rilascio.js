@@ -681,6 +681,7 @@ mancanti.length ? ko('sw.js elenca file che non esistono (l\'installazione del s
       [api, 'function _emergenzaCheckSeMutato\\(\\) \\{' + COMMENTI + 'if \\(window\\._MODO_RUBRICA === true\\) return Promise\\.resolve\\(false\\);', 'api.js, _emergenzaCheckSeMutato'],
       [api, "addEventListener\\('visibilitychange', function\\(\\) \\{\\s*if \\(document\\.visibilityState !== 'visible'\\) return;" + COMMENTI + 'if \\(window\\._MODO_RUBRICA === true\\) return;', 'api.js, ritorno in primo piano'],
       [ora, 'function _maybeDiagAuto\\(\\) \\{' + COMMENTI + 'if \\(window\\._MODO_RUBRICA === true\\) return;', 'index.html, diagnostica automatica'],
+      [api, 'function _labBottoniAggiorna\\(forza\\) \\{' + COMMENTI + 'if \\(window\\._MODO_RUBRICA === true\\) return Promise\\.resolve\\(\\);', 'api.js, riepilogo del laboratorio'],
     ].forEach((x) => { if (!new RegExp(x[1]).test(x[0])) guai.push(x[2] + ': manca in testa la guardia del modo rubrica (lì partirebbe la lettura dei dati dei pazienti)'); });
     // il segno sopravvive al ricaricamento di «Update»
     const f = /function _indirizzoDiRicarica\([^)]*\) \{[\s\S]*?\n\}/.exec(api.replace(/\r\n/g, '\n'));
@@ -696,7 +697,7 @@ mancanti.length ? ko('sw.js elenca file che non esistono (l\'installazione del s
     // il riquadro lì non si richiude mai: l'elenco si ricontrolla al ritorno in primo piano
     if (ora.indexOf("document.addEventListener('visibilitychange', _modoRubricaAlRitorno);") < 0 || !/function _modoRubricaAlRitorno\(\) \{\s*if \(window\._MODO_RUBRICA !== true \|\| !_modoRubricaAvviato \|\| _uscitaInCorso /.test(ora)) guai.push('index.html: in modo rubrica l\'elenco deve essere ricontrollato quando la pagina torna in primo piano (_modoRubricaAlRitorno)');
   } catch (e) { guai.push(String((e && e.message) || e).slice(0, 300)); }
-  guai.length ? guai.forEach((g) => ko('modo rubrica: ' + g)) : ok('modo rubrica: segno unico «?rubrica=1» deciso in testa alla pagina; l\'app parte da un punto solo e in modo rubrica sono chiuse le 7 strade verso i dati dei pazienti; il segno sopravvive a «Update»; secondo manifesto e icona di uscita al loro posto');
+  guai.length ? guai.forEach((g) => ko('modo rubrica: ' + g)) : ok('modo rubrica: segno unico «?rubrica=1» deciso in testa alla pagina; l\'app parte da un punto solo e in modo rubrica sono chiuse le 8 strade verso i dati dei pazienti; il segno sopravvive a «Update»; secondo manifesto e icona di uscita al loro posto');
 }
 
 // ── 17. battito verso la centrale ────────────────────────────────────
@@ -727,34 +728,53 @@ mancanti.length ? ko('sw.js elenca file che non esistono (l\'installazione del s
       "window._applicaModuli(window._moduliValidi(conservati) || window._MODULI, true);"].forEach((s) => { if (testa.indexOf(s) < 0) guai.push('i moduli devono nascere nello script in testa alla pagina, prima dei fogli di stile (manca «' + s.slice(0, 40) + '»)'); });
     const ap0 = ora.indexOf('window._applicaModuli = function'), ap1 = ora.indexOf('window._avvisaModuloSpento = function');
     if (ap0 < 0 || ap1 < ap0 || /innerHTML|insertAdjacentHTML|outerHTML|document\.write/.test(ora.slice(ap0, ap1))) guai.push('_applicaModuli deve toccare solo le classi e la memoria del browser');
-    if (corpo.indexOf('window._moduliValidi(d.moduli)') < 0 || /\.moduli\b(?!\))/.test(corpo.replace('window._moduliValidi(d.moduli)', ''))) guai.push('della risposta del battito i moduli si leggono solo attraverso _moduliValidi');
+    // della risposta solo ok e i moduli, e i moduli solo attraverso _moduliValidi (in qualunque forma si scriva l'accesso)
+    const senzaLecito = corpo.replace('window._moduliValidi(d.moduli)', '');
+    if (corpo.indexOf('window._moduliValidi(d.moduli)') < 0 || /\.moduli\b|\[\s*['"]moduli['"]\s*\]/.test(senzaLecito)) guai.push('della risposta del battito i moduli si leggono solo attraverso _moduliValidi');
     if (/localStorage\.(get|set)Item\('_battitoGiorno'/.test(corpo) || corpo.indexOf("'_battitoTs'") < 0) guai.push('il battito parte a ogni avvio, al più uno ogni 10 minuti (_battitoTs), e non usa più il giorno');
-    // i varchi: la classe su ciò che apre il modulo, e la guardia in testa alla funzione che lo apre
+    // i varchi: la classe su ciò che apre il modulo, e la guardia intera (avviso e return) in testa alla funzione che lo apre
     [['class="tb-btn tb-scale modulo-scale"', 'il pulsante delle scale'], ['class="tb-btn tb-terapia modulo-terapia"', 'il pulsante della terapia'],
       ['class="tb-btn tb-laboratorio modulo-laboratorio"', 'il pulsante del laboratorio'], ['<li class="nav-item modulo-rubrica"><a class="nav-link active" href="javascript:void(0)" onclick="apriRubrica();">', 'la voce di menu della rubrica']]
       .forEach((x) => { if (ora.indexOf(x[0]) < 0) guai.push(x[1] + ' deve portare la classe del suo modulo'); });
     if ((ora.match(/onclick="apriRubrica\(\);"/g) || []).length !== 1) guai.push('la rubrica si apre da una voce di menu sola, quella con la classe del modulo');
-    [['window._apriModalScale = function(card) {', 'scale'], ['window._apriLabModal = function(card){', 'laboratorio'], ['window._importaTerapiaTrak = function(card){', 'terapia'], ['window._terapiaDaPlaceholder = function(el){', 'terapia'], ['window.apriRubrica = function() {', 'rubrica']]
+    const testaDi = (inizio) => { const p = ora.indexOf(inizio); return p < 0 ? '' : ora.slice(p + inizio.length, p + inizio.length + 320).split('\n').filter((r) => !/^\s*\/\//.test(r)).join('\n'); };
+    [['window._apriModalScale = function(card) {', 'scale', 'card'], ['window._apriLabModal = function(card){', 'laboratorio', 'card'], ['window._importaTerapiaTrak = function(card){', 'terapia', 'card'],
+      ['window._terapiaDaPlaceholder = function(el){', 'terapia', 'null']]
       .forEach((x) => {
-        const p = ora.indexOf(x[0]);
-        const dopo = p < 0 ? '' : ora.slice(p + x[0].length, p + x[0].length + 260).split('\n').filter((r) => !/^\s*\/\//.test(r)).join('\n');
-        if (!new RegExp("^\\s*if \\(!window\\._moduloAttivo\\('" + x[1] + "'\\)\\) \\{").test(dopo)) guai.push(x[0].replace(/ = function.*/, '') + ' deve cominciare con la guardia del modulo «' + x[1] + '»');
+        const guardia = "^\\s*if \\(!window\\._moduloAttivo\\('" + x[1] + "'\\)\\) \\{ window\\._avvisaModuloSpento\\('" + x[1] + "', " + x[2] + "\\); return; \\}";
+        if (!new RegExp(guardia).test(testaDi(x[0]))) guai.push(x[0].replace(/ = function.*/, '') + ' deve cominciare con la guardia intera del modulo «' + x[1] + '» (avviso e return)');
       });
+    if (!/^\s*if \(!window\._moduloAttivo\('rubrica'\)\) \{ if \(window\._MODO_RUBRICA !== true\) window\._avvisaModuloSpento\('rubrica'\); return; \}/.test(testaDi('window.apriRubrica = function() {'))) guai.push('window.apriRubrica deve cominciare con la guardia intera del modulo «rubrica»');
+    // la pillola «clicca qui +» della terapia: il gestore vivo del clic ha la sua guardia
+    if (ora.indexOf("var card = campo.closest('.patient-card'); if(!card || !card.classList.contains('focus-mode')) return;\n      // modulo «terapia» spento (dalla v195): niente pillola (styles.css), e il clic resta quello del campo\n      if (!window._moduloAttivo('terapia')) return;\n      var box = campo.querySelector(':scope > .terapia-box');") < 0) guai.push('il clic sulla pillola della terapia deve rispettare il modulo «terapia»');
     const apiTesto = leggi('docs/js/api.js').replace(/\r\n/g, '\n');
     ['function _labBottoniApplica(soloCard) {', 'function _labBottoniAggiorna(forza) {'].forEach((f) => {
       const p = apiTesto.indexOf(f);
-      if (p < 0 || apiTesto.slice(p, p + 420).indexOf("_moduloAttivo('laboratorio')") < 0) guai.push('api.js: ' + f.replace(/ \{$/, '') + ' deve rispettare il modulo «laboratorio»');
+      if (p < 0 || apiTesto.slice(p, p + 480).indexOf("_moduloAttivo('laboratorio')") < 0) guai.push('api.js: ' + f.replace(/ \{$/, '') + ' deve rispettare il modulo «laboratorio»');
     });
     const css = leggi('docs/css/styles.css').replace(/\r\n/g, '\n');
     ['html.modulo-rubrica-spento .modulo-rubrica,', 'html.modulo-terapia-spento .modulo-terapia,', 'html.modulo-laboratorio-spento .modulo-laboratorio,', 'html.modulo-scale-spento .modulo-scale { display: none !important; }',
-      'html.modo-rubrica.modulo-rubrica-spento #rubricaPanel { display: none !important; }', '.rubrica-spenta:not([hidden])'].forEach((s) => { if (css.indexOf(s) < 0) guai.push('styles.css: manca «' + s.slice(0, 50) + '»'); });
+      'html.modulo-terapia-spento .patient-card.focus-mode .terapia-box:empty::after,', 'html.modulo-terapia-spento [data-field="NoteTerapia"].terapia-scaduta::before { content: none !important; display: none !important; }',
+      'html.modo-rubrica .rubrica-spenta:not([hidden]) ~ #rubricaPanel { display: none !important; }', '.rubrica-spenta:not([hidden])'].forEach((s) => { if (css.indexOf(s) < 0) guai.push('styles.css: manca «' + s.slice(0, 60) + '»'); });
     if (ora.indexOf('<div id="rubricaSpenta" class="rubrica-spenta" hidden>') < 0 || ora.indexOf("e.target.closest('#rubricaSpentaEsci')") < 0) guai.push('nel modo rubrica, con la rubrica spenta, serve il pannello di testo con l\'uscita');
-    // dalla v195: il flusso Keepalive è di ogni reparto. Nessun progetto o chiave scritti a mano, il reparto dal proprietario
+    if (ora.indexOf("if (spenta && p && p.hidden && _rubricaInSospeso()) return;") < 0) guai.push('nel modo rubrica il pannello di testo non deve coprire un lavoro non salvato della rubrica');
+    // dalla v195: il flusso Keepalive è di ogni reparto. Nessun progetto o chiave scritti a mano: il reparto dalla variabile CLOUDFLARE_PROGETTO
     const ka = leggi('.github/workflows/supabase-keepalive.yml').replace(/\r\n/g, '\n');
-    const passi = require('./keepalive.js').PASSI.map((x) => x[0]);
+    const kj = require('./keepalive.js');
+    const passi = kj.PASSI.map((x) => x[0]);
     const scrittiAMano = require('./reparti.js').tutti().some((r) => ka.indexOf(r.supabaseUrl.replace(/^https:\/\//, '').slice(0, 20)) >= 0 || ka.indexOf(r.supabaseAnonKey) >= 0);
     if (scrittiAMano || /eyJ|[a-z]{20}\.supabase\.co|repository_owner ==/.test(ka)) guai.push('il flusso Keepalive non deve avere progetti, chiavi o proprietari scritti a mano: li trova keepalive.js dal file del reparto');
-    if (ka.indexOf('node collaudo/strumenti/keepalive.js reparto "$GITHUB_REPOSITORY_OWNER"') < 0 || ka.indexOf('node collaudo/strumenti/keepalive.js segnala') < 0 || ka.indexOf("if: always() && steps.reparto.outputs.centrale != ''") < 0) guai.push('il flusso Keepalive deve trovare il reparto con keepalive.js e mandare sempre l\'esito alla centrale');
+    if (ka.indexOf('PROGETTO: $' + '{{ vars.CLOUDFLARE_PROGETTO }}') < 0 || ka.indexOf('out=$(node collaudo/strumenti/keepalive.js reparto "$PROGETTO" "$GITHUB_REPOSITORY")') < 0 || ka.indexOf("printf '%s\\n' \"$out\" >> \"$GITHUB_OUTPUT\"") < 0 ||
+      ka.indexOf('node collaudo/strumenti/keepalive.js segnala') < 0 || ka.indexOf("if: always() && steps.reparto.outputs.centrale != ''") < 0) guai.push('il flusso Keepalive deve trovare il reparto con keepalive.js (dalla variabile CLOUDFLARE_PROGETTO, errori fuori dalle uscite) e mandare sempre l\'esito alla centrale');
+    // le funzioni del keepalive si eseguono davvero: i due repository di oggi, una copia, un progetto sconosciuto, gli esiti
+    const repartoO = (p, r) => { try { return kj.repartoDi(p, r).codice; } catch (e) { return 'errore'; } };
+    const casiRep = [[['consegne-collaudo', 'gistech2026/app-consegne-sorgente'], 'collaudo'], [['consegne-reparto', 'medicinadurgenzaucsc-maker/app-consegne'], 'gemelli-11n'],
+      [['', 'medicinadurgenzaucsc-maker/app-consegne'], 'gemelli-11n'], [['', 'gistech2026/app-consegne-sorgente'], 'errore'], [['consegne-reparto', 'qualcuno/una-copia'], 'errore'], [['inesistente', 'x/y'], 'errore']];
+    const repSbagliati = casiRep.filter((c) => repartoO(c[0][0], c[0][1]) !== c[1]).map((c) => c[0].join(' '));
+    if (repSbagliati.length) guai.push('keepalive.js riconosce male il reparto nei casi: ' + repSbagliati.join(' ; '));
+    const tuttiOk = {}; passi.forEach((id) => { tuttiOk['ESITO_' + id.toUpperCase()] = 'success'; });
+    if (kj.primoFallito(tuttiOk) !== '' || kj.primoFallito({}) === '' || kj.primoFallito(Object.assign({}, tuttiOk, { ESITO_STATO: 'failure', ESITO_HEARTBEAT: 'skipped' })) !== kj.PASSI[1][1] ||
+      kj.primoFallito(Object.assign({}, tuttiOk, { ESITO_PING: 'skipped' })) === '') guai.push('keepalive.js: «ok» solo se tutti i passi sono riusciti, e il passo fallito per primo nei «ko»');
     passi.forEach((id) => { if (ka.indexOf('id: ' + id + '\n') < 0 || ka.indexOf('ESITO_' + id.toUpperCase() + ': $' + '{{ steps.' + id + '.outcome }}') < 0) guai.push('il passo «' + id + '» di keepalive.js non è nel flusso, o il suo esito non arriva alla centrale'); });
   } catch (e) { guai.push(String((e && e.message) || e).slice(0, 300)); }
   guai.length ? guai.forEach((g) => ko('battito: ' + g)) : ok('battito: una sola richiesta alla funzione della centrale, senza chiavi, sessione né cookie, con i sette campi attesi, dai due soli punti d\'avvio; nessun nome riservato alla fase 2 nel sito; moduli dallo script in testa e solo attraverso _moduliValidi, quattro varchi con classe e guardia, blocco del laboratorio e pannello del modo rubrica; flusso Keepalive senza dati scritti a mano, con l\'esito alla centrale');
