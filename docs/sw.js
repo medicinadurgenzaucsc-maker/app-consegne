@@ -8,7 +8,7 @@
 // v83: fix privacy — la cache non deve MAI contenere risposte Supabase/Google
 // (dati pazienti a riposo su disco). Il bump cancella anche le cache
 // precedenti che li contenevano (handler 'activate').
-var CACHE_NAME = 'consegne-v195';
+var CACHE_NAME = 'consegne-v196';
 
 // Asset statici da pre-cachare all'installazione.
 // La rubrica («Numeri Telefono») è una pagina dell'app: il riquadro la chiede

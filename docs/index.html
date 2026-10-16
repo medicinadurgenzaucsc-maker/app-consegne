@@ -46,7 +46,8 @@
 
     // MODULI (dalla v195). Le funzioni facoltative del reparto: la rubrica
     // («Numeri Telefono»), l'importazione della terapia e degli esami di
-    // laboratorio da TrakCare, le scale di valutazione. Le decide la centrale
+    // laboratorio da TrakCare, le scale di valutazione e, dalla v196, la mail
+    // di dimissione con le sue impostazioni. Le decide la centrale
     // e le porta la risposta del battito; qui si conserva l'ultima risposta
     // (localStorage «_moduliReparto», letta come ostile) e la si applica PRIMA
     // del primo disegno, con una classe su <html> per ogni modulo spento
@@ -54,20 +55,29 @@
     // interruttore di cortesia: i dati non cambiano mai, e ogni funzione che
     // apre un modulo ha anche la sua guardia (_moduloAttivo).
     (function () {
-      var NOMI = ['rubrica', 'terapia', 'laboratorio', 'scale'];
-      var TITOLI = { rubrica: 'Numeri Telefono', terapia: 'Importa terapia da TrakCare', laboratorio: 'Esami di laboratorio da TrakCare', scale: 'Scale di valutazione' };
-      // esattamente le quattro chiavi, ognuna vera o falsa; qualunque altra cosa vale null
+      var NOMI = ['rubrica', 'terapia', 'laboratorio', 'scale', 'dimissioni'];
+      var TITOLI = { rubrica: 'Numeri Telefono', terapia: 'Importa terapia da TrakCare', laboratorio: 'Esami di laboratorio da TrakCare', scale: 'Scale di valutazione', dimissioni: 'Mail di dimissione' };
+      // Dalla v196 la convalida è tollerante: un oggetto semplice; le chiavi che
+      // questa versione conosce, se ci sono, vere o false; una chiave nota che
+      // manca vale accesa (la 195 ne mandava quattro); una chiave sconosciuta si
+      // ignora (un modulo che questa versione non ha). Qualunque altra cosa vale
+      // null, e allora non cambia nulla.
       window._moduliValidi = function (x) {
         if (!x || typeof x !== 'object' || Array.isArray(x)) return null;
-        if (Object.keys(x).length !== NOMI.length) return null;
+        var proto = Object.getPrototypeOf(x);
+        if (proto !== Object.prototype && proto !== null) return null;
+        var chiavi = Object.keys(x);
+        if (chiavi.length > 50) return null;
+        for (var j = 0; j < chiavi.length; j++) { if (chiavi[j] === '__proto__' || chiavi[j] === 'constructor' || chiavi[j] === 'prototype') return null; }
         var pulito = {};
         for (var i = 0; i < NOMI.length; i++) {
-          if (!Object.prototype.hasOwnProperty.call(x, NOMI[i]) || typeof x[NOMI[i]] !== 'boolean') return null;
+          if (!Object.prototype.hasOwnProperty.call(x, NOMI[i])) { pulito[NOMI[i]] = true; continue; }
+          if (typeof x[NOMI[i]] !== 'boolean') return null;
           pulito[NOMI[i]] = x[NOMI[i]];
         }
         return pulito;
       };
-      window._MODULI = { rubrica: true, terapia: true, laboratorio: true, scale: true };
+      window._MODULI = { rubrica: true, terapia: true, laboratorio: true, scale: true, dimissioni: true };
       window._moduloAttivo = function (nome) { return !window._MODULI || window._MODULI[nome] !== false; };
       // applica i moduli (solo classi e memoria del browser) e dice quali sono cambiati; null se non validi
       window._applicaModuli = function (m, nonConservare) {
@@ -5140,7 +5150,7 @@
             <li><a class="dropdown-item" href="javascript:void(0)" data-emerg-disable="1" data-bs-toggle="modal" data-bs-target="#modalSposta"><i class="bi bi-arrow-left-right text-primary me-2"></i>Sposta / Scambia</a></li>
             <li><a class="dropdown-item" href="javascript:void(0)" data-emerg-disable="1" data-bs-toggle="modal" data-bs-target="#modalDimetti"><i class="bi bi-person-dash text-danger me-2"></i>Dimetti / Svuota Letto</a></li>
             <li><a class="dropdown-item" href="javascript:void(0)" data-emerg-disable="1" data-bs-toggle="modal" data-bs-target="#modalCambiaTipologiaLetto"><i class="bi bi-tags text-info me-2"></i>Cambia Tipologia ad un Letto</a></li>
-            <li><a class="dropdown-item" href="javascript:void(0)" onclick="apriModalMailDimissioni()"><i class="bi bi-send-fill text-primary me-2"></i>Invia mail dimissioni</a></li>
+            <li class="modulo-dimissioni"><a class="dropdown-item" href="javascript:void(0)" onclick="apriModalMailDimissioni()"><i class="bi bi-send-fill text-primary me-2"></i>Invia mail dimissioni</a></li>
             <li><a class="dropdown-item" href="javascript:void(0)" onclick="_stampaCheckListOdierna()"><i class="bi bi-card-checklist text-success me-2"></i>Stampa Check List Odierna</a></li>
             <li><hr class="dropdown-divider"></li>
             <li>
@@ -5180,7 +5190,7 @@
         <!-- Mancano i permessi di invio della mail per il mittente scelto in
              «Impostazioni email»: si concedono UNA volta, da UN solo PC, e
              valgono per tutti. -->
-        <li class="nav-item me-2" id="navItemCassaforte" style="display:none;">
+        <li class="nav-item me-2 modulo-dimissioni" id="navItemCassaforte" style="display:none;">
           <button id="btnCassaforte"
                   class="btn btn-warning btn-sm fw-bold py-0 px-2"
                   onclick="window._cassaforteAutorizza && window._cassaforteAutorizza()"
@@ -5235,7 +5245,7 @@
             <li><a class="dropdown-item" href="javascript:void(0)" data-emerg-disable="1" data-bs-toggle="modal" data-bs-target="#modalRinomina"><i class="bi bi-pencil-square text-primary me-2"></i>Modifica Nome Consegne</a></li>
             <li><hr class="dropdown-divider"></li>
             <li><a class="dropdown-item" href="javascript:void(0)" data-emerg-disable="1" onclick="apriImpostazioniArchivio()"><i class="bi bi-archive text-secondary me-2"></i>Impostazioni archivio consegne</a></li>
-            <li><a class="dropdown-item" href="javascript:void(0)" onclick="_apriImpostazioniEmail()"><i class="bi bi-envelope-at text-primary me-2"></i>Impostazioni email</a></li>
+            <li class="modulo-dimissioni"><a class="dropdown-item" href="javascript:void(0)" onclick="_apriImpostazioniEmail()"><i class="bi bi-envelope-at text-primary me-2"></i>Impostazioni email</a></li>
             <li><a class="dropdown-item" href="javascript:void(0)" data-emerg-disable="1" onclick="_avviaBackupManuale()"><i class="bi bi-cloud-arrow-up-fill text-success me-2"></i>Esegui Backup Manuale</a></li>
             <li><a class="dropdown-item" href="javascript:void(0)" data-emerg-disable="1" onclick="_apriRipristina()"><i class="bi bi-arrow-counterclockwise text-danger me-2"></i>Ripristina da Backup</a></li>
             <li><hr class="dropdown-divider"></li>
@@ -5256,7 +5266,7 @@
             <li>
               <span class="dropdown-item-text d-block px-3" style="font-family:monospace;font-size:0.75rem;color:#546e7a;line-height:1.3;">
                 <i class="bi bi-tag me-1"></i>Versione applicazione:<br>
-                <strong id="navVersioneApp" class="ms-1" style="color:#263238;">195</strong>
+                <strong id="navVersioneApp" class="ms-1" style="color:#263238;">196</strong>
               </span>
             </li>
             <!-- Uscita: chiude la sessione solo su questo dispositivo (_esciSessione) -->
@@ -5800,6 +5810,7 @@
     // «mittente» è l'indirizzo mostrato a chi scrive: se nel frattempo è
     // cambiato il server non spedisce (non si scrive a nome di un altro).
     window._cassaforteInvia = function(destinatari, oggetto, html, mittente) {
+      if (!window._moduloAttivo('dimissioni')) return Promise.reject(new Error('La funzione «Mail di dimissione» non è attiva per questo reparto.'));
       var corpo = { azione: 'invia', destinatari: destinatari, oggetto: oggetto, html: html };
       if (mittente) corpo.mittente = mittente;
       return _cassaCall(corpo).then(function(j) {
@@ -5815,6 +5826,8 @@
     // Controllo invisibile all'avvio: nessuna finestra, solo una fetch.
     // Se manca l'autorizzazione compare il bottoncino giallo in barra.
     window._cassaforteAvvio = function() {
+      // modulo «dimissioni» spento (dalla v196): nessuna domanda al server della mail
+      if (!window._moduloAttivo('dimissioni')) return;
       _cassaCall({ azione: 'stato' }).then(function(st) {
         if (st && st.autorizzato) {
           _cassaforteBadge(false);
@@ -5917,6 +5930,7 @@
     // Restituisce una promessa: true se i permessi sono stati registrati, false
     // se l'utente ha rinunciato o qualcosa non è riuscito (già mostrato).
     window._cassaforteAutorizza = function(opz) {
+      if (!window._moduloAttivo('dimissioni')) { window._avvisaModuloSpento('dimissioni', null); return Promise.resolve(false); }
       opz = opz || {};
       return new Promise(function(risolvi) {
         var pStato = opz.stato ? Promise.resolve(opz.stato) : window._cassaforteStato(false);
@@ -6060,6 +6074,7 @@
     // indirizzo: cambiato il mittente, il suo account deve concederli.
     var _MITTENTE_VALIDO = /^[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,190}\.[A-Za-z]{2,24}$/;
     window._apriImpostazioniEmail = function() {
+      if (!window._moduloAttivo('dimissioni')) { window._avvisaModuloSpento('dimissioni', null); return; }
       Swal.fire({
         title: '<i class="bi bi-envelope-at me-2 text-primary"></i>Impostazioni email',
         html: '<div class="text-center py-3"><div class="spinner-border text-secondary"></div></div>',
@@ -6395,6 +6410,7 @@
         var cambiati = window._applicaModuli(m) || [];
         if (cambiati.indexOf('laboratorio') >= 0 && window._MODO_RUBRICA !== true && typeof window._labBottoniAggiorna === 'function') window._labBottoniAggiorna(true);
         if (cambiati.indexOf('rubrica') >= 0 && window._MODO_RUBRICA === true && _modoRubricaAvviato && !_uscitaInCorso && window._browserCompatibile) _modoRubricaMostra();
+        if (cambiati.indexOf('dimissioni') >= 0 && window._moduloAttivo('dimissioni') && window._MODO_RUBRICA !== true && typeof window._cassaforteAvvio === 'function') window._cassaforteAvvio();
       } catch (e) { console.warn('[battito] moduli non applicati'); }
     }
     // fine del battito
@@ -10294,6 +10310,7 @@
     // li si chiede qui, e la procedura non compare finché non ci sono: così
     // non si prepara una mail che poi non può partire.
     window.apriModalMailDimissioni = function() {
+      if (!window._moduloAttivo('dimissioni')) { window._avvisaModuloSpento('dimissioni', null); return; }
       Swal.fire({
         title: '<i class="bi bi-send-fill me-2 text-primary"></i>Invia mail dimissioni',
         html: '<div class="text-center py-3"><div class="spinner-border text-secondary"></div><div class="mt-2 text-muted small">Controllo i permessi di invio…</div></div>',

@@ -932,3 +932,21 @@ si può rilasciare la 195 direttamente: contiene la 194, e il suo ramo di ritorn
 
 Dopo il rilascio: il giorno dopo la riga della 11N nella pagina della centrale mostra i
 dispositivi e il keepalive; nel registro dell'app nessun errore nuovo.
+
+## Rilascio della 196: il quinto modulo (preparata nel collaudo il 16/10/2026)
+
+Che cosa cambia: il quinto modulo, `dimissioni` (le voci «Invia mail dimissioni» e
+«Impostazioni email», il bottoncino giallo «Autorizza Google», con le loro guardie; spento,
+all'avvio non si chiede nulla al server della mail). E la convalida dei moduli diventa
+tollerante: una chiave sconosciuta si ignora, una chiave nota che manca vale accesa. La
+centrale (funzione `battito` v4, migrazione 010) ritaglia la risposta alla versione: fino
+alla 195 i quattro moduli di prima, dalla 196 i cinque. Per la 11N tutti accesi: nel reparto
+non cambia nulla di visibile.
+
+Viene dopo la 195, col rito di sempre e l'ok di Stefano; le tre (194, 195, 196) si possono
+rilasciare in un colpo solo, perché ognuna contiene le precedenti. Ramo di ritorno
+`ritorno-v195`: le pagine della 195 col numero 197. **Attenzione**: le pagine di ritorno
+dicono alla centrale «197», quindi ricevono cinque moduli, che il codice della 195 scarta;
+finché si resta sul ritorno i moduli di quei dispositivi restano quelli che sapevano. Per un
+ritorno d'emergenza va bene. I rami `ritorno-v194` e `ritorno-v193` portano numeri ormai
+superati: se servissero, vanno ricostruiti sopra il commit della 196 col numero 197.

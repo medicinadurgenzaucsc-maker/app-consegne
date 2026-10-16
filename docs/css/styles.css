@@ -1696,7 +1696,8 @@ html.modo-rubrica #rubricaPanelHeader { display: none !important; }
 html.modulo-rubrica-spento .modulo-rubrica,
 html.modulo-terapia-spento .modulo-terapia,
 html.modulo-laboratorio-spento .modulo-laboratorio,
-html.modulo-scale-spento .modulo-scale { display: none !important; }
+html.modulo-scale-spento .modulo-scale,
+html.modulo-dimissioni-spento .modulo-dimissioni { display: none !important; }
 /* Terapia spenta: niente pillola «clicca qui +» e niente barra gialla che chiede di reimportare da TrakCare. */
 html.modulo-terapia-spento .patient-card.focus-mode .terapia-box:empty { padding: 0; cursor: auto; }
 html.modulo-terapia-spento .patient-card.focus-mode .terapia-box:empty::before,

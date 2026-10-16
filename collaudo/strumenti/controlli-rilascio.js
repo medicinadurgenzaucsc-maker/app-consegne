@@ -726,6 +726,26 @@ mancanti.length ? ko('sw.js elenca file che non esistono (l\'installazione del s
     const testa = ora.slice(0, ora.indexOf('css/styles.css'));
     ['window._moduliValidi = function', 'window._applicaModuli = function', 'window._moduloAttivo = function', 'window._avvisaModuloSpento = function',
       "window._applicaModuli(window._moduliValidi(conservati) || window._MODULI, true);"].forEach((s) => { if (testa.indexOf(s) < 0) guai.push('i moduli devono nascere nello script in testa alla pagina, prima dei fogli di stile (manca «' + s.slice(0, 40) + '»)'); });
+    // dalla v196 la convalida è tollerante: la si esegue davvero, fuori dal browser, coi casi che contano
+    const nomiTesta = /var NOMI = (\[[^\]]*\]);/.exec(testa), mv0 = testa.indexOf('window._moduliValidi = function'), mv1 = testa.indexOf('window._MODULI = {', mv0);
+    if (!nomiTesta || mv0 < 0 || mv1 < 0) guai.push('script in testa: non trovo NOMI o _moduliValidi');
+    else {
+      const finestra = {};
+      new Function('window', 'var NOMI = ' + nomiTesta[1] + ';\n' + testa.slice(mv0, mv1))(finestra);
+      const mv = finestra._moduliValidi, s = (x) => JSON.stringify(x);
+      const CINQUE = '{"rubrica":true,"terapia":true,"laboratorio":true,"scale":true,"dimissioni":true}';
+      const casiMv = [
+        ['quattro chiavi della 195', { rubrica: true, terapia: true, laboratorio: true, scale: false }, '{"rubrica":true,"terapia":true,"laboratorio":true,"scale":false,"dimissioni":true}'],
+        ['cinque chiavi', { rubrica: true, terapia: true, laboratorio: true, scale: true, dimissioni: false }, '{"rubrica":true,"terapia":true,"laboratorio":true,"scale":true,"dimissioni":false}'],
+        ['sei chiavi, una sconosciuta', { rubrica: false, terapia: true, laboratorio: true, scale: true, dimissioni: true, futuro: false }, '{"rubrica":false,"terapia":true,"laboratorio":true,"scale":true,"dimissioni":true}'],
+        ['oggetto vuoto', {}, CINQUE],
+        ['chiave nota non booleana', { rubrica: 'false' }, 'null'], ['chiave nota nulla', { scale: null }, 'null'],
+        ['elenco', [true, true, true, true, true], 'null'], ['testo', 'tutti', 'null'], ['nulla', null, 'null'],
+        ['__proto__ fra le chiavi', JSON.parse('{"rubrica":true,"__proto__":{"scale":false}}'), 'null'], ['constructor fra le chiavi', { constructor: true }, 'null'],
+        ['prototipo diverso', Object.assign(Object.create({ rubrica: false }), { terapia: true }), 'null'],
+      ];
+      casiMv.forEach((c) => { const r = s(mv(c[1])); if (r !== c[2]) guai.push('_moduliValidi, ' + c[0] + ': ' + r + ' invece di ' + c[2]); });
+    }
     const ap0 = ora.indexOf('window._applicaModuli = function'), ap1 = ora.indexOf('window._avvisaModuloSpento = function');
     if (ap0 < 0 || ap1 < ap0 || /innerHTML|insertAdjacentHTML|outerHTML|document\.write/.test(ora.slice(ap0, ap1))) guai.push('_applicaModuli deve toccare solo le classi e la memoria del browser');
     // della risposta solo ok e i moduli, e i moduli solo attraverso _moduliValidi (in qualunque forma si scriva l'accesso)
@@ -737,6 +757,12 @@ mancanti.length ? ko('sw.js elenca file che non esistono (l\'installazione del s
       ['class="tb-btn tb-laboratorio modulo-laboratorio"', 'il pulsante del laboratorio'], ['<li class="nav-item modulo-rubrica"><a class="nav-link active" href="javascript:void(0)" onclick="apriRubrica();">', 'la voce di menu della rubrica']]
       .forEach((x) => { if (ora.indexOf(x[0]) < 0) guai.push(x[1] + ' deve portare la classe del suo modulo'); });
     if ((ora.match(/onclick="apriRubrica\(\);"/g) || []).length !== 1) guai.push('la rubrica si apre da una voce di menu sola, quella con la classe del modulo');
+    // dalla v196 il quinto modulo, «dimissioni»: le due voci di menu e il bottoncino giallo dei permessi
+    [['<li class="modulo-dimissioni"><a class="dropdown-item" href="javascript:void(0)" onclick="apriModalMailDimissioni()">', 'la voce «Invia mail dimissioni»'],
+      ['<li class="modulo-dimissioni"><a class="dropdown-item" href="javascript:void(0)" onclick="_apriImpostazioniEmail()">', 'la voce «Impostazioni email»'],
+      ['<li class="nav-item me-2 modulo-dimissioni" id="navItemCassaforte"', 'il bottoncino «Autorizza Google»']]
+      .forEach((x) => { if (ora.indexOf(x[0]) < 0) guai.push(x[1] + ' deve portare la classe del modulo «dimissioni»'); });
+    if ((ora.match(/onclick="apriModalMailDimissioni\(\)"/g) || []).length !== 1 || (ora.match(/onclick="_apriImpostazioniEmail\(\)"/g) || []).length !== 1) guai.push('mail e impostazioni email si aprono da una voce di menu sola ciascuna, quella con la classe del modulo');
     const testaDi = (inizio) => { const p = ora.indexOf(inizio); return p < 0 ? '' : ora.slice(p + inizio.length, p + inizio.length + 320).split('\n').filter((r) => !/^\s*\/\//.test(r)).join('\n'); };
     [['window._apriModalScale = function(card) {', 'scale', 'card'], ['window._apriLabModal = function(card){', 'laboratorio', 'card'], ['window._importaTerapiaTrak = function(card){', 'terapia', 'card'],
       ['window._terapiaDaPlaceholder = function(el){', 'terapia', 'null']]
@@ -745,6 +771,12 @@ mancanti.length ? ko('sw.js elenca file che non esistono (l\'installazione del s
         if (!new RegExp(guardia).test(testaDi(x[0]))) guai.push(x[0].replace(/ = function.*/, '') + ' deve cominciare con la guardia intera del modulo «' + x[1] + '» (avviso e return)');
       });
     if (!/^\s*if \(!window\._moduloAttivo\('rubrica'\)\) \{ if \(window\._MODO_RUBRICA !== true\) window\._avvisaModuloSpento\('rubrica'\); return; \}/.test(testaDi('window.apriRubrica = function() {'))) guai.push('window.apriRubrica deve cominciare con la guardia intera del modulo «rubrica»');
+    [['window.apriModalMailDimissioni = function() {', "if (!window._moduloAttivo('dimissioni')) { window._avvisaModuloSpento('dimissioni', null); return; }"],
+      ['window._apriImpostazioniEmail = function() {', "if (!window._moduloAttivo('dimissioni')) { window._avvisaModuloSpento('dimissioni', null); return; }"],
+      ['window._cassaforteAutorizza = function(opz) {', "if (!window._moduloAttivo('dimissioni')) { window._avvisaModuloSpento('dimissioni', null); return Promise.resolve(false); }"],
+      ['window._cassaforteAvvio = function() {', "if (!window._moduloAttivo('dimissioni')) return;"],
+      ['window._cassaforteInvia = function(destinatari, oggetto, html, mittente) {', "if (!window._moduloAttivo('dimissioni')) return Promise.reject("]]
+      .forEach((x) => { if (testaDi(x[0]).trim().indexOf(x[1]) !== 0) guai.push(x[0].replace(/ = function.*/, '') + ' deve cominciare con la guardia del modulo «dimissioni»'); });
     // la pillola «clicca qui +» della terapia: il gestore vivo del clic ha la sua guardia
     if (ora.indexOf("var card = campo.closest('.patient-card'); if(!card || !card.classList.contains('focus-mode')) return;\n      // modulo «terapia» spento (dalla v195): niente pillola (styles.css), e il clic resta quello del campo\n      if (!window._moduloAttivo('terapia')) return;\n      var box = campo.querySelector(':scope > .terapia-box');") < 0) guai.push('il clic sulla pillola della terapia deve rispettare il modulo «terapia»');
     const apiTesto = leggi('docs/js/api.js').replace(/\r\n/g, '\n');
@@ -753,7 +785,7 @@ mancanti.length ? ko('sw.js elenca file che non esistono (l\'installazione del s
       if (p < 0 || apiTesto.slice(p, p + 480).indexOf("_moduloAttivo('laboratorio')") < 0) guai.push('api.js: ' + f.replace(/ \{$/, '') + ' deve rispettare il modulo «laboratorio»');
     });
     const css = leggi('docs/css/styles.css').replace(/\r\n/g, '\n');
-    ['html.modulo-rubrica-spento .modulo-rubrica,', 'html.modulo-terapia-spento .modulo-terapia,', 'html.modulo-laboratorio-spento .modulo-laboratorio,', 'html.modulo-scale-spento .modulo-scale { display: none !important; }',
+    ['html.modulo-rubrica-spento .modulo-rubrica,', 'html.modulo-terapia-spento .modulo-terapia,', 'html.modulo-laboratorio-spento .modulo-laboratorio,', 'html.modulo-scale-spento .modulo-scale,', 'html.modulo-dimissioni-spento .modulo-dimissioni { display: none !important; }',
       'html.modulo-terapia-spento .patient-card.focus-mode .terapia-box:empty::after,', 'html.modulo-terapia-spento [data-field="NoteTerapia"].terapia-scaduta::before { content: none !important; display: none !important; }',
       'html.modo-rubrica .rubrica-spenta:not([hidden]) ~ #rubricaPanel { display: none !important; }', '.rubrica-spenta:not([hidden])'].forEach((s) => { if (css.indexOf(s) < 0) guai.push('styles.css: manca «' + s.slice(0, 60) + '»'); });
     if (ora.indexOf('<div id="rubricaSpenta" class="rubrica-spenta" hidden>') < 0 || ora.indexOf("e.target.closest('#rubricaSpentaEsci')") < 0) guai.push('nel modo rubrica, con la rubrica spenta, serve il pannello di testo con l\'uscita');
@@ -777,7 +809,7 @@ mancanti.length ? ko('sw.js elenca file che non esistono (l\'installazione del s
       kj.primoFallito(Object.assign({}, tuttiOk, { ESITO_PING: 'skipped' })) === '') guai.push('keepalive.js: «ok» solo se tutti i passi sono riusciti, e il passo fallito per primo nei «ko»');
     passi.forEach((id) => { if (ka.indexOf('id: ' + id + '\n') < 0 || ka.indexOf('ESITO_' + id.toUpperCase() + ': $' + '{{ steps.' + id + '.outcome }}') < 0) guai.push('il passo «' + id + '» di keepalive.js non è nel flusso, o il suo esito non arriva alla centrale'); });
   } catch (e) { guai.push(String((e && e.message) || e).slice(0, 300)); }
-  guai.length ? guai.forEach((g) => ko('battito: ' + g)) : ok('battito: una sola richiesta alla funzione della centrale, senza chiavi, sessione né cookie, con i sette campi attesi, dai due soli punti d\'avvio; nessun nome riservato alla fase 2 nel sito; moduli dallo script in testa e solo attraverso _moduliValidi, quattro varchi con classe e guardia, blocco del laboratorio e pannello del modo rubrica; flusso Keepalive senza dati scritti a mano, con l\'esito alla centrale');
+  guai.length ? guai.forEach((g) => ko('battito: ' + g)) : ok('battito: una sola richiesta alla funzione della centrale, senza chiavi, sessione né cookie, con i sette campi attesi, dai due soli punti d\'avvio; nessun nome riservato alla fase 2 nel sito; moduli dallo script in testa e solo attraverso _moduliValidi, che tollera le chiavi sconosciute (provato coi casi), cinque moduli coi loro varchi, classe e guardia, blocco del laboratorio e pannello del modo rubrica; flusso Keepalive senza dati scritti a mano, con l\'esito alla centrale');
 }
 
 // ── 15. ciò che non deve diventare pubblico ──────────────────────────

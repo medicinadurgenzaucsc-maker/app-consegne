@@ -3174,7 +3174,7 @@
     });
   }
   // ═════════════════════════════════════════════════════════════════════
-  // CENTRALE: il battito dei dispositivi (dalla v194) e i moduli (dalla v195)
+  // CENTRALE: il battito dei dispositivi (dalla v194) e i moduli (dalla v195; il quinto, «dimissioni», dalla v196)
   // ═════════════════════════════════════════════════════════════════════
   // Le richieste alla centrale sono intercettate: le prove non scrivono nulla
   // nella centrale, tranne l'ultima, che la chiama davvero con GET (non scrive).
@@ -3182,8 +3182,9 @@
   async function sezioneCentrale() {
     var S = 'centrale';
     var C = window._AMBIENTE && window._AMBIENTE.centrale;
-    var TUTTI = { rubrica: true, terapia: true, laboratorio: true, scale: true };
-    var SPENTI = { rubrica: false, terapia: false, laboratorio: false, scale: false };
+    var NOMI = ['rubrica', 'terapia', 'laboratorio', 'scale', 'dimissioni'];
+    var TUTTI = { rubrica: true, terapia: true, laboratorio: true, scale: true, dimissioni: true };
+    var SPENTI = { rubrica: false, terapia: false, laboratorio: false, scale: false, dimissioni: false };
     var con = function (cambi) { return Object.assign({}, TUTTI, cambi); };
     var memoria = function (k, v) { try { if (v === undefined) return localStorage.getItem(k); if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) { return null; } return null; };
     var tsPrima = memoria('_battitoTs'), moduliPrima = memoria('_moduliReparto'), moduliInMemoria = copia(window._MODULI || TUTTI);
@@ -3206,10 +3207,10 @@
     }
     var batti = function (opz) { return window._battitoCentrale(Object.assign({ modo: 'app', subito: true, ignoraTs: true }, opz || {})); };
     var rispondi = function (corpo) { return conRichieste(corpo, function () { return batti(); }); };
-    var classi = function () { return ['rubrica', 'terapia', 'laboratorio', 'scale'].filter(function (m) { return document.documentElement.classList.contains('modulo-' + m + '-spento'); }).join(','); };
-    var conservati = function () { var v = null; try { v = JSON.parse(memoria('_moduliReparto') || 'null'); } catch (e) {} return v ? ['rubrica', 'terapia', 'laboratorio', 'scale'].filter(function (m) { return v[m] === false; }).join(',') : '(niente)'; };
+    var classi = function () { return NOMI.filter(function (m) { return document.documentElement.classList.contains('modulo-' + m + '-spento'); }).join(','); };
+    var conservati = function () { var v = null; try { v = JSON.parse(memoria('_moduliReparto') || 'null'); } catch (e) {} return v ? NOMI.filter(function (m) { return v[m] === false; }).join(',') : '(niente)'; };
     // un elemento di prova per modulo: deve sparire solo quello del modulo spento
-    var sonde = ['rubrica', 'terapia', 'laboratorio', 'scale'].map(function (m) { var b = document.createElement('span'); b.className = 'modulo-' + m; b.textContent = m; document.body.appendChild(b); return b; });
+    var sonde = NOMI.map(function (m) { var b = document.createElement('span'); b.className = 'modulo-' + m; b.textContent = m; document.body.appendChild(b); return b; });
     var visibili = function () { return sonde.filter(function (b) { return getComputedStyle(b).display !== 'none'; }).map(function (b) { return b.textContent; }).join(','); };
     async function spiaSwal(fai) {
       var viste = [], vera = window.Swal.fire;
@@ -3290,12 +3291,12 @@
         var a = await rispondi({ ok: true, moduli: con({ laboratorio: false }) });
         var dopoSpento = { esito: a.esito, classi: classi(), attivo: window._moduloAttivo('laboratorio'), conservati: conservati(), visibili: visibili() };
         var b = await rispondi({ ok: true, moduli: TUTTI });
-        if (dopoSpento.esito !== 'inviato' || dopoSpento.classi !== 'laboratorio' || dopoSpento.attivo !== false || dopoSpento.conservati !== 'laboratorio' || dopoSpento.visibili !== 'rubrica,terapia,scale') return 'spento: ' + JSON.stringify(dopoSpento);
-        return (b.esito === 'inviato' && classi() === '' && window._moduloAttivo('laboratorio') && conservati() === '' && visibili() === 'rubrica,terapia,laboratorio,scale') || ('riacceso: classi «' + classi() + '», conservati «' + conservati() + '», visibili ' + visibili());
+        if (dopoSpento.esito !== 'inviato' || dopoSpento.classi !== 'laboratorio' || dopoSpento.attivo !== false || dopoSpento.conservati !== 'laboratorio' || dopoSpento.visibili !== 'rubrica,terapia,scale,dimissioni') return 'spento: ' + JSON.stringify(dopoSpento);
+        return (b.esito === 'inviato' && classi() === '' && window._moduloAttivo('laboratorio') && conservati() === '' && visibili() === 'rubrica,terapia,laboratorio,scale,dimissioni') || ('riacceso: classi «' + classi() + '», conservati «' + conservati() + '», visibili ' + visibili());
       });
       await prova(S, 'moduli: una risposta senza moduli, o con moduli scritti male, non cambia nulla', async function () {
         await rispondi({ ok: true, moduli: con({ scale: false }) });
-        var ostili = [undefined, null, 'tutti', [true, true, true, true], con({ altro: true }), { rubrica: true, terapia: true, laboratorio: true },
+        var ostili = [undefined, null, 'tutti', [true, true, true, true, true], con({ dimissioni: 'no' }),
           con({ rubrica: 'false' }), con({ terapia: 0 }), con({ laboratorio: null }), JSON.parse('{"rubrica":true,"terapia":true,"laboratorio":true,"scale":true,"__proto__":{"x":1}}')];
         var male = [];
         for (var i = 0; i < ostili.length; i++) {
@@ -3303,25 +3304,67 @@
           var r = await rispondi(corpo);
           if (r.esito !== 'inviato' || classi() !== 'scale' || conservati() !== 'scale' || window._moduloAttivo('scale') !== false) male.push(i + ': classi «' + classi() + '», conservati «' + conservati() + '»');
         }
-        var diretti = [window._moduliValidi(con({ rubrica: 1 })), window._moduliValidi('x'), window._moduliValidi([]), window._moduliValidi(Object.assign(Object.create({ rubrica: true }), { terapia: true, laboratorio: true, scale: true }))];
+        var diretti = [window._moduliValidi(con({ rubrica: 1 })), window._moduliValidi('x'), window._moduliValidi([]), window._moduliValidi(Object.assign(Object.create({ rubrica: true }), { terapia: true, laboratorio: true, scale: true })), window._moduliValidi({ constructor: true })];
         if (diretti.some(function (d) { return d !== null; })) male.push('_moduliValidi accetta una forma sbagliata');
         await rispondi({ ok: true, moduli: TUTTI });
         return !male.length || male.join(' ; ');
       });
-      await prova(S, 'moduli: con i moduli spenti ogni varco mostra l\'avviso e non apre nulla', async function () {
+      await prova(S, 'moduli (dalla v196): la convalida tollera le chiavi sconosciute, e una chiave nota che manca vale accesa', async function () {
+        var guai = [];
+        var a = await rispondi({ ok: true, moduli: { rubrica: true, terapia: true, laboratorio: true, scale: false } });
+        if (a.esito !== 'inviato' || classi() !== 'scale' || window._moduloAttivo('dimissioni') !== true) guai.push('quattro chiavi della 195: classi «' + classi() + '»');
+        await rispondi({ ok: true, moduli: con({ dimissioni: false }) });
+        if (classi() !== 'dimissioni' || conservati() !== 'dimissioni') guai.push('cinque chiavi: classi «' + classi() + '», conservati «' + conservati() + '»');
+        await rispondi({ ok: true, moduli: con({ terapia: false, futuro: false }) });
+        if (classi() !== 'terapia' || Object.prototype.hasOwnProperty.call(window._MODULI, 'futuro')) guai.push('sei chiavi: classi «' + classi() + '», moduli ' + JSON.stringify(window._MODULI));
+        await rispondi({ ok: true, moduli: { laboratorio: false } });
+        if (classi() !== 'laboratorio') guai.push('una chiave sola: classi «' + classi() + '»');
+        if (JSON.stringify(window._moduliValidi({})) !== JSON.stringify(TUTTI)) guai.push('oggetto vuoto: ' + JSON.stringify(window._moduliValidi({})));
+        await rispondi({ ok: true, moduli: TUTTI });
+        if (classi() !== '') guai.push('alla fine: classi «' + classi() + '»');
+        return !guai.length || guai.join(' ‖ ');
+      });
+      await prova(S, 'moduli: con i moduli spenti ogni varco mostra l\'avviso e non apre nulla, e la mail non chiede nulla al suo server', async function () {
         window._applicaModuli(SPENTI, true);
         var pannello = document.getElementById('rubricaPanel'), primaRubrica = pannello ? pannello.style.display : '';
         var finta = document.createElement('div'); finta.className = 'patient-card focus-mode';
-        var viste = await spiaSwal(async function () {
-          window._apriLabModal(finta); window._apriModalScale(finta); window._importaTerapiaTrak(finta); window._terapiaDaPlaceholder(finta); window.apriRubrica();
-          await attendi(200);
-        });
-        window._applicaModuli(TUTTI, true);
+        var veraF = window.fetch, allaMail = 0, inviaRifiutata = false, autorizza = null;
+        window.fetch = function (url) { if (typeof url === 'string' && url.indexOf('/functions/v1/google-token') >= 0) { allaMail++; return Promise.reject(new TypeError('bloccata dalla prova')); } return veraF.apply(this, arguments); };
+        var viste;
+        try {
+          viste = await spiaSwal(async function () {
+            window._apriLabModal(finta); window._apriModalScale(finta); window._importaTerapiaTrak(finta); window._terapiaDaPlaceholder(finta); window.apriRubrica();
+            window.apriModalMailDimissioni(); window._apriImpostazioniEmail(); autorizza = await window._cassaforteAutorizza();
+            window._cassaforteAvvio();
+            try { await window._cassaforteInvia(['prova@example.com'], 'x', 'x', null); } catch (e) { inviaRifiutata = /non è attiva/.test(String(e && e.message)); }
+            await attendi(300);
+          });
+        } finally { window.fetch = veraF; window._applicaModuli(TUTTI, true); }
         var guai = [];
-        if (viste.length !== 5 || viste.some(function (v) { return v.title !== 'Funzione non attiva' || !/non è attiva per questo reparto/.test(String(v.text)) || v.returnFocus !== false; })) guai.push('avvisi: ' + viste.map(function (v) { return v.title + ' / ' + v.text; }).join(' | '));
+        if (viste.length !== 8 || viste.some(function (v) { return v.title !== 'Funzione non attiva' || !/non è attiva per questo reparto/.test(String(v.text)) || v.returnFocus !== false; })) guai.push(viste.length + ' avvisi: ' + viste.map(function (v) { return v.title + ' / ' + v.text; }).join(' | '));
         if (document.getElementById('labModalOverlay')) guai.push('si è aperta la finestra del laboratorio');
         if (pannello && pannello.style.display !== primaRubrica) guai.push('si è aperto il riquadro della rubrica');
+        if (allaMail !== 0) guai.push(allaMail + ' richieste al server della mail');
+        if (autorizza !== false) guai.push('la richiesta dei permessi non ha risposto «no»');
+        if (!inviaRifiutata) guai.push('l\'invio non è stato rifiutato');
         return !guai.length || guai.join(' ‖ ');
+      });
+      await prova(S, 'moduli: con «dimissioni» spento spariscono le due voci di menu e il bottoncino giallo; riacceso tornano', async function () {
+        var voci = [].slice.call(document.querySelectorAll('li.modulo-dimissioni'));
+        var giallo = document.getElementById('navItemCassaforte'), primaGiallo = giallo ? giallo.style.display : null;
+        if (voci.length !== 3 || !giallo || voci.indexOf(giallo) < 0) return 'varchi con la classe: ' + voci.length;
+        var testi = voci.map(function (v) { return v.textContent.trim(); }).join(' | ');
+        if (!/Invia mail dimissioni/.test(testi) || !/Impostazioni email/.test(testi)) return 'voci: ' + testi;
+        try {
+          giallo.style.display = '';
+          var nascoste = function () { return voci.filter(function (v) { return getComputedStyle(v).display === 'none'; }).length; };
+          var acceso = nascoste();
+          window._applicaModuli(con({ dimissioni: false }), true);
+          var spento = nascoste();
+          window._applicaModuli(TUTTI, true);
+          var riacceso = nascoste();
+          return (acceso === 0 && spento === 3 && riacceso === 0) || ('nascoste: acceso ' + acceso + ', spento ' + spento + ', riacceso ' + riacceso);
+        } finally { giallo.style.display = primaGiallo; window._applicaModuli(TUTTI, true); }
       });
       await prova(S, 'moduli: con il laboratorio spento spariscono i blocchi dalle schede e lab_esami non si legge; riacceso tornano', async function () {
         // le letture si contano sul client (l'elenco delle risorse del browser si ferma a 250 voci); il blocco
@@ -3472,7 +3515,7 @@
       var protetta = nomi[i] !== 'centrale' && typeof window._applicaModuli === 'function', salvati = null;
       if (protetta) {
         salvati = { moduli: JSON.parse(JSON.stringify(window._MODULI)), copia: localStorage.getItem('_moduliReparto'), ts: localStorage.getItem('_battitoTs') };
-        window._applicaModuli({ rubrica: true, terapia: true, laboratorio: true, scale: true });
+        window._applicaModuli({ rubrica: true, terapia: true, laboratorio: true, scale: true, dimissioni: true });
         localStorage.setItem('_battitoTs', String(Date.now()));
         salvati.rinnovo = setInterval(function () { try { localStorage.setItem('_battitoTs', String(Date.now())); } catch (e) {} }, 60000);
       }
