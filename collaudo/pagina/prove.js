@@ -3174,33 +3174,48 @@
     });
   }
   // ═════════════════════════════════════════════════════════════════════
-  // CENTRALE: il battito dei dispositivi (dalla v194)
+  // CENTRALE: il battito dei dispositivi (dalla v194) e i moduli (dalla v195)
   // ═════════════════════════════════════════════════════════════════════
   // Le richieste alla centrale sono intercettate: le prove non scrivono nulla
   // nella centrale, tranne l'ultima, che la chiama davvero con GET (non scrive).
-  // Il giorno del battito di questo dispositivo è rimesso com'era alla fine.
+  // L'ora dell'ultimo battito e i moduli di questo dispositivo tornano com'erano.
   async function sezioneCentrale() {
     var S = 'centrale';
     var C = window._AMBIENTE && window._AMBIENTE.centrale;
-    var giornoPrima = null;
-    try { giornoPrima = localStorage.getItem('_battitoGiorno'); } catch (e) {}
-    function oggi() { var d = new Date(); return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); }
-    function giorno(v) { try { if (v === null || v === undefined) localStorage.removeItem('_battitoGiorno'); else localStorage.setItem('_battitoGiorno', v); } catch (e) {} }
-    function leggiGiorno() { try { return localStorage.getItem('_battitoGiorno'); } catch (e) { return null; } }
-    // un battito vero già in attesa (30 secondi dopo l'avvio) trova il giorno segnato e non parte
-    giorno(oggi());
+    var TUTTI = { rubrica: true, terapia: true, laboratorio: true, scale: true };
+    var SPENTI = { rubrica: false, terapia: false, laboratorio: false, scale: false };
+    var con = function (cambi) { return Object.assign({}, TUTTI, cambi); };
+    var memoria = function (k, v) { try { if (v === undefined) return localStorage.getItem(k); if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) { return null; } return null; };
+    var tsPrima = memoria('_battitoTs'), moduliPrima = memoria('_moduliReparto'), moduliInMemoria = copia(window._MODULI || TUTTI);
+    // un battito vero già in attesa (30 secondi dopo l'avvio) trova l'ora segnata e non parte
+    memoria('_battitoTs', String(Date.now()));
     var veraFetch = window.fetch;
     async function conRichieste(risposta, fai) {
       var prese = [];
       window.fetch = function (url, op) {
         if (C && typeof url === 'string' && url.indexOf(C.url) === 0) {
           prese.push({ url: url, op: op || {} });
-          return risposta === 'rete' ? Promise.reject(new TypeError('rete assente')) : Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+          if (risposta === 'rete') return Promise.reject(new TypeError('rete assente'));
+          var corpo = (risposta && typeof risposta === 'object') ? risposta : { ok: true };
+          return Promise.resolve(new Response(JSON.stringify(corpo), { status: 200, headers: { 'Content-Type': 'application/json' } }));
         }
         return veraFetch.apply(this, arguments);
       };
       try { var esito = await fai(); return { esito: esito, prese: prese }; }
       finally { window.fetch = veraFetch; }
+    }
+    var batti = function (opz) { return window._battitoCentrale(Object.assign({ modo: 'app', subito: true, ignoraTs: true }, opz || {})); };
+    var rispondi = function (corpo) { return conRichieste(corpo, function () { return batti(); }); };
+    var classi = function () { return ['rubrica', 'terapia', 'laboratorio', 'scale'].filter(function (m) { return document.documentElement.classList.contains('modulo-' + m + '-spento'); }).join(','); };
+    var conservati = function () { var v = null; try { v = JSON.parse(memoria('_moduliReparto') || 'null'); } catch (e) {} return v ? ['rubrica', 'terapia', 'laboratorio', 'scale'].filter(function (m) { return v[m] === false; }).join(',') : '(niente)'; };
+    // un elemento di prova per modulo: deve sparire solo quello del modulo spento
+    var sonde = ['rubrica', 'terapia', 'laboratorio', 'scale'].map(function (m) { var b = document.createElement('span'); b.className = 'modulo-' + m; b.textContent = m; document.body.appendChild(b); return b; });
+    var visibili = function () { return sonde.filter(function (b) { return getComputedStyle(b).display !== 'none'; }).map(function (b) { return b.textContent; }).join(','); };
+    async function spiaSwal(fai) {
+      var viste = [], vera = window.Swal.fire;
+      window.Swal.fire = function (o) { viste.push(o || {}); return Promise.resolve({ isConfirmed: false }); };
+      try { await fai(); } finally { window.Swal.fire = vera; }
+      return viste;
     }
     try {
       await prova(S, 'il file del collaudo nomina la centrale, che non è il database del reparto', function () {
@@ -3208,7 +3223,7 @@
         return (/^https:\/\/[a-z]{20}\.supabase\.co$/.test(C.url) && C.url !== SUPABASE_URL && C.url.indexOf(REF_PRODUZIONE) < 0) || 'indirizzo della centrale non valido';
       });
       await prova(S, 'il battito parte con i soli sette campi, senza chiavi, sessione né cookie', async function () {
-        var r = await conRichieste('buona', function () { return window._battitoCentrale({ modo: 'app', subito: true, ignoraGiorno: true }); });
+        var r = await conRichieste('buona', function () { return batti(); });
         if (r.esito !== 'inviato') return 'esito ' + r.esito;
         if (r.prese.length !== 1) return r.prese.length + ' richieste';
         var p = r.prese[0], op = p.op;
@@ -3221,26 +3236,28 @@
         var versione = parseInt(document.getElementById('navVersioneApp').textContent, 10);
         if (b.versione !== versione) return 'versione ' + b.versione + ' invece di ' + versione;
         if (typeof b.nome !== 'string' || !b.nome || b.nome.length > 120 || /[<>]/.test(b.nome)) return 'nome non valido';
-        var testo = op.body;
-        return !(testo.indexOf(SUPABASE_ANON_KEY) >= 0 || /eyJ|sb_|access_token|refresh/.test(testo)) || 'nel corpo c\'è qualcosa che somiglia a una chiave';
+        return !(op.body.indexOf(SUPABASE_ANON_KEY) >= 0 || /eyJ|sb_|access_token|refresh/.test(op.body)) || 'nel corpo c\'è qualcosa che somiglia a una chiave';
       });
-      await prova(S, 'una volta al giorno: col giorno già segnato non parte nulla', async function () {
-        giorno(oggi());
-        var r = await conRichieste('buona', function () { return window._battitoCentrale({ modo: 'app', subito: true }); });
-        return (r.esito === 'gia-oggi' && r.prese.length === 0) || ('esito ' + r.esito + ', ' + r.prese.length + ' richieste');
+      await prova(S, 'a ogni avvio, ma al più un battito ogni 10 minuti per dispositivo', async function () {
+        memoria('_battitoTs', String(Date.now() - 60000));
+        var a = await conRichieste('buona', function () { return batti({ ignoraTs: false }); });
+        memoria('_battitoTs', String(Date.now() - 11 * 60000));
+        var b = await conRichieste('buona', function () { return batti({ ignoraTs: false }); });
+        var ts = parseInt(memoria('_battitoTs'), 10);
+        if (a.esito !== 'troppo-presto' || a.prese.length) return 'a un minuto dal precedente: ' + a.esito + ', ' + a.prese.length + ' richieste';
+        if (b.esito !== 'inviato' || b.prese.length !== 1) return 'a undici minuti dal precedente: ' + b.esito + ', ' + b.prese.length + ' richieste';
+        if (!(Date.now() - ts < 10000)) return 'l\'ora del battito non è stata segnata';
+        return memoria('_battitoGiorno') === null || 'resta la chiave del giorno della 194';
       });
-      await prova(S, 'un giorno nuovo: parte e segna il giorno', async function () {
-        giorno('2000-1-1');
-        var r = await conRichieste('buona', function () { return window._battitoCentrale({ modo: 'app', subito: true }); });
-        return (r.esito === 'inviato' && r.prese.length === 1 && leggiGiorno() === oggi()) || ('esito ' + r.esito + ', giorno ' + leggiGiorno());
+      await prova(S, 'senza rete l\'app non si ferma e l\'ora del battito torna quella di prima', async function () {
+        var prima = String(Date.now() - 11 * 60000);
+        memoria('_battitoTs', prima);
+        var r = await conRichieste('rete', function () { return batti({ ignoraTs: false }); });
+        return (r.esito === 'rete' && r.prese.length === 1 && memoria('_battitoTs') === prima) || ('esito ' + r.esito + ', ora ' + memoria('_battitoTs'));
       });
-      await prova(S, 'senza rete l\'app non si ferma e il giorno non resta segnato', async function () {
-        giorno('2000-1-1');
-        var r = await conRichieste('rete', function () { return window._battitoCentrale({ modo: 'app', subito: true }); });
-        return (r.esito === 'rete' && r.prese.length === 1 && leggiGiorno() === '2000-1-1') || ('esito ' + r.esito + ', giorno ' + leggiGiorno());
-      });
+      memoria('_battitoTs', String(Date.now()));
       await prova(S, 'in modo rubrica il nome dice solo browser e sistema', async function () {
-        var r = await conRichieste('buona', function () { return window._battitoCentrale({ modo: 'rubrica', subito: true, ignoraGiorno: true }); });
+        var r = await conRichieste('buona', function () { return batti({ modo: 'rubrica' }); });
         if (r.esito !== 'inviato' || r.prese.length !== 1) return 'esito ' + r.esito;
         var b = JSON.parse(r.prese[0].op.body);
         return (b.modo === 'rubrica' && b.nome === _parseUA(navigator.userAgent || '') && b.nome.indexOf('·') < 0) || ('modo ' + b.modo + ', nome di ' + b.nome.length + ' caratteri');
@@ -3249,7 +3266,7 @@
         var tolta = window._AMBIENTE.centrale;
         delete window._AMBIENTE.centrale;
         try {
-          var r = await conRichieste('buona', function () { return window._battitoCentrale({ modo: 'app', subito: true, ignoraGiorno: true }); });
+          var r = await conRichieste('buona', function () { return batti(); });
           return (r.esito === 'senza-centrale' && r.prese.length === 0) || ('esito ' + r.esito);
         } finally { window._AMBIENTE.centrale = tolta; }
       });
@@ -3257,9 +3274,89 @@
         var tolta = window._AMBIENTE.centrale;
         window._AMBIENTE.centrale = { url: 'https://esempio.invalid' };
         try {
-          var r = await conRichieste('buona', function () { return window._battitoCentrale({ modo: 'app', subito: true, ignoraGiorno: true }); });
+          var r = await conRichieste('buona', function () { return batti(); });
           return (r.esito === 'senza-centrale' && r.prese.length === 0) || ('esito ' + r.esito);
         } finally { window._AMBIENTE.centrale = tolta; }
+      });
+
+      // ── i moduli (dalla v195) ──
+      window._applicaModuli(TUTTI);
+      await prova(S, 'moduli: la risposta della centrale spegne e riaccende un modulo, e la scelta resta nel browser', async function () {
+        var a = await rispondi({ ok: true, moduli: con({ laboratorio: false }) });
+        var dopoSpento = { esito: a.esito, classi: classi(), attivo: window._moduloAttivo('laboratorio'), conservati: conservati(), visibili: visibili() };
+        var b = await rispondi({ ok: true, moduli: TUTTI });
+        if (dopoSpento.esito !== 'inviato' || dopoSpento.classi !== 'laboratorio' || dopoSpento.attivo !== false || dopoSpento.conservati !== 'laboratorio' || dopoSpento.visibili !== 'rubrica,terapia,scale') return 'spento: ' + JSON.stringify(dopoSpento);
+        return (b.esito === 'inviato' && classi() === '' && window._moduloAttivo('laboratorio') && conservati() === '' && visibili() === 'rubrica,terapia,laboratorio,scale') || ('riacceso: classi «' + classi() + '», conservati «' + conservati() + '», visibili ' + visibili());
+      });
+      await prova(S, 'moduli: una risposta senza moduli, o con moduli scritti male, non cambia nulla', async function () {
+        await rispondi({ ok: true, moduli: con({ scale: false }) });
+        var ostili = [undefined, null, 'tutti', [true, true, true, true], con({ altro: true }), { rubrica: true, terapia: true, laboratorio: true },
+          con({ rubrica: 'false' }), con({ terapia: 0 }), con({ laboratorio: null }), JSON.parse('{"rubrica":true,"terapia":true,"laboratorio":true,"scale":true,"__proto__":{"x":1}}')];
+        var male = [];
+        for (var i = 0; i < ostili.length; i++) {
+          var corpo = { ok: true }; if (ostili[i] !== undefined) corpo.moduli = ostili[i];
+          var r = await rispondi(corpo);
+          if (r.esito !== 'inviato' || classi() !== 'scale' || conservati() !== 'scale' || window._moduloAttivo('scale') !== false) male.push(i + ': classi «' + classi() + '», conservati «' + conservati() + '»');
+        }
+        var diretti = [window._moduliValidi(con({ rubrica: 1 })), window._moduliValidi('x'), window._moduliValidi([]), window._moduliValidi(Object.assign(Object.create({ rubrica: true }), { terapia: true, laboratorio: true, scale: true }))];
+        if (diretti.some(function (d) { return d !== null; })) male.push('_moduliValidi accetta una forma sbagliata');
+        await rispondi({ ok: true, moduli: TUTTI });
+        return !male.length || male.join(' ; ');
+      });
+      await prova(S, 'moduli: con i moduli spenti ogni varco mostra l\'avviso e non apre nulla', async function () {
+        window._applicaModuli(SPENTI, true);
+        var pannello = document.getElementById('rubricaPanel'), primaRubrica = pannello ? pannello.style.display : '';
+        var finta = document.createElement('div'); finta.className = 'patient-card focus-mode';
+        var viste = await spiaSwal(async function () {
+          window._apriLabModal(finta); window._apriModalScale(finta); window._importaTerapiaTrak(finta); window._terapiaDaPlaceholder(finta); window.apriRubrica();
+          await attendi(200);
+        });
+        window._applicaModuli(TUTTI, true);
+        var guai = [];
+        if (viste.length !== 5 || viste.some(function (v) { return v.title !== 'Funzione non attiva' || !/non è attiva per questo reparto/.test(String(v.text)) || v.returnFocus !== false; })) guai.push('avvisi: ' + viste.map(function (v) { return v.title + ' / ' + v.text; }).join(' | '));
+        if (document.getElementById('labModalOverlay')) guai.push('si è aperta la finestra del laboratorio');
+        if (pannello && pannello.style.display !== primaRubrica) guai.push('si è aperto il riquadro della rubrica');
+        return !guai.length || guai.join(' ‖ ');
+      });
+      await prova(S, 'moduli: con il laboratorio spento spariscono i blocchi dalle schede e lab_esami non si legge; riacceso tornano', async function () {
+        var letture = function () { return performance.getEntriesByType('resource').filter(function (e) { return /\/rest\/v1\/lab_esami\b/.test(e.name); }).length; };
+        await window._labBottoniAggiorna(true);
+        var n0 = document.querySelectorAll('.patient-card .lab-box').length, l0 = letture();
+        window._applicaModuli(con({ laboratorio: false }), true);
+        await window._labBottoniAggiorna(true);
+        await attendi(300);
+        var spento = { blocchi: document.querySelectorAll('.patient-card .lab-box').length, letture: letture() - l0 };
+        window._applicaModuli(TUTTI, true);
+        await window._labBottoniAggiorna(true);
+        var n1 = document.querySelectorAll('.patient-card .lab-box').length;
+        if (spento.blocchi !== 0 || spento.letture !== 0) return 'col laboratorio spento: ' + spento.blocchi + ' blocchi, ' + spento.letture + ' letture di lab_esami';
+        return n1 === n0 || ('blocchi prima ' + n0 + ', dopo la riaccensione ' + n1);
+      });
+      await prova(S, 'modo rubrica con la rubrica spenta: pannello di solo testo con l\'uscita, il riquadro non si carica, nessun dato dei pazienti', async function () {
+        memoria('_moduliReparto', JSON.stringify(con({ rubrica: false })));
+        memoria('_battitoTs', String(Date.now()));   // la pagina nella cornice non manda un battito vero
+        var fr = await cornice('/?rubrica=1&cb=' + Date.now()), fw = fr.contentWindow, fd = fw.document, guai = [];
+        try {
+          var p = await finche(function () { var x = fd.getElementById('rubricaSpenta'); return (x && !x.hidden) ? x : false; }, 30000, 200);
+          if (!p) return 'il pannello «rubrica non attiva» non è comparso (modo: ' + fw._MODO_RUBRICA + ')';
+          if (!fd.documentElement.classList.contains('modulo-rubrica-spento') || !fd.documentElement.classList.contains('modo-rubrica')) guai.push('classi della pagina: ' + fd.documentElement.className);
+          if (fw.getComputedStyle(p).display === 'none') guai.push('il pannello non si vede');
+          if (fw.getComputedStyle(fd.getElementById('rubricaPanel')).display !== 'none') guai.push('il riquadro della rubrica si vede');
+          if (fd.getElementById('rubricaIframe').getAttribute('src') !== '') guai.push('la cornice della rubrica è stata caricata');
+          var esci = fd.getElementById('rubricaSpentaEsci');
+          if (!esci || fw.getComputedStyle(esci).display === 'none') guai.push('manca l\'uscita');
+          else {
+            var vera = fw._esciSessione, chiamate = 0;
+            fw._esciSessione = function () { chiamate++; };
+            try { esci.click(); } finally { fw._esciSessione = vera; }
+            if (chiamate !== 1) guai.push('l\'uscita ha chiamato la pagina madre ' + chiamate + ' volte');
+          }
+          var richieste = fw.performance.getEntriesByType('resource').map(function (e) { return e.name; });
+          if (richieste.some(function (u) { return /\/rubrica\/|\/rest\/v1\/rubrica_/.test(u); })) guai.push('la rubrica è stata letta');
+          if (richieste.some(function (u) { return /\/rest\/v1\/(consegne|lab_esami|archivio|locks)\b/.test(u); })) guai.push('sono stati letti dati dei pazienti');
+          if (richieste.some(function (u) { return u.indexOf(C.url) === 0; })) guai.push('la cornice ha mandato un battito vero');
+        } finally { fr.remove(); memoria('_moduliReparto', JSON.stringify(TUTTI)); }
+        return !guai.length || guai.join(' ‖ ');
       });
       await prova(S, 'la centrale vera risponde alla prova senza scrittura', async function () {
         var r = await veraFetch(C.url + '/functions/v1/battito', { cache: 'no-store', credentials: 'omit' });
@@ -3268,7 +3365,11 @@
       });
     } finally {
       window.fetch = veraFetch;
-      giorno(giornoPrima);
+      sonde.forEach(function (b) { b.remove(); });
+      window._applicaModuli(moduliInMemoria, true);
+      memoria('_moduliReparto', moduliPrima);
+      memoria('_battitoTs', tsPrima);
+      if (typeof window._labBottoniAggiorna === 'function') window._labBottoniAggiorna(true);
     }
   }
 
@@ -3282,8 +3383,23 @@
     var nomi = opz.sezioni || Object.keys(SEZIONI);
     for (var i = 0; i < nomi.length; i++) {
       if (!SEZIONI[nomi[i]]) { esiti.push({ sezione: nomi[i], nome: 'sezione sconosciuta', ok: false, dettaglio: '', ms: 0 }); continue; }
+      // dalla v195: un modulo lasciato spento nel collaudo non deve far fallire le altre sezioni, e le
+      // pagine aperte nelle cornici non devono mandare battiti veri (ora e moduli tornano com'erano)
+      var protetta = nomi[i] !== 'centrale' && typeof window._applicaModuli === 'function', salvati = null;
+      if (protetta) {
+        salvati = { moduli: JSON.parse(JSON.stringify(window._MODULI)), copia: localStorage.getItem('_moduliReparto'), ts: localStorage.getItem('_battitoTs') };
+        window._applicaModuli({ rubrica: true, terapia: true, laboratorio: true, scale: true });
+        localStorage.setItem('_battitoTs', String(Date.now()));
+      }
       try { await SEZIONI[nomi[i]](opz); }
       catch (e) { esiti.push({ sezione: nomi[i], nome: 'la sezione si è interrotta', ok: false, dettaglio: String((e && e.stack) || e).slice(0, 600), ms: 0 }); }
+      finally {
+        if (protetta) {
+          window._applicaModuli(salvati.moduli, true);
+          if (salvati.copia === null) localStorage.removeItem('_moduliReparto'); else localStorage.setItem('_moduliReparto', salvati.copia);
+          if (salvati.ts === null) localStorage.removeItem('_battitoTs'); else localStorage.setItem('_battitoTs', salvati.ts);
+        }
+      }
     }
     var casa = document.getElementById('proveCornici'); if (casa) casa.remove();
     var falliti = esiti.filter(function (e) { return !e.ok; });

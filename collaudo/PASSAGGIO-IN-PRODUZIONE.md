@@ -908,3 +908,27 @@ ferma solo una pagina della 189 o precedente, e «Ricarica» la porta alla 193.
    `verifica-sito-servito.js <commit> attendi`.
 4. Dopo: nel registro dell'app nessun errore nuovo; un PC fermo sul messaggio
    riparte con «Ricarica».
+
+## Rilascio della 194 e della 195: la centrale (preparati nel collaudo il 15 e 16/10/2026)
+
+Che cosa cambia nella 194: il battito verso la centrale (`window._battitoCentrale`, sette
+campi, nessuna chiave, sessione o cookie), `rete.html` prova anche la centrale, e il file
+della 11N nomina la centrale (`reparti/gemelli-11n.json`, `docs/js/ambiente.js` rigenerato).
+Commit `22ea107`; ramo di ritorno `ritorno-v193` (pagine della 193 col numero 195),
+provato nel banco del service worker 62 su 62.
+
+Che cosa cambia nella 195: i moduli (rubrica, terapia, laboratorio, scale) decisi dalla
+centrale e consegnati dalla risposta del battito, che parte a ogni avvio (al più uno ogni
+10 minuti); i quattro varchi con classe e guardia; il pannello di testo del modo rubrica con
+la rubrica spenta; il flusso Keepalive di ogni reparto, che manda l'esito alla centrale.
+Per la 11N i moduli sono tutti accesi: nel reparto non cambia nulla di visibile.
+
+Prima della 194 in produzione, da Stefano: la prova della rete da un PC del reparto
+(`https://gistech2026.github.io/collaudo-sito/rete.html`, riga «La centrale dei reparti»:
+deve dire «Sì»), poi il suo ok. Se la 195 è pronta e provata nel collaudo quando arriva l'ok,
+si può rilasciare la 195 direttamente: contiene la 194, e il suo ramo di ritorno
+`ritorno-v194` riporta le pagine della 194 (col numero 196); per tornare fino alla 193 resta
+`ritorno-v193`, da ricostruire sopra il commit della 195.
+
+Dopo il rilascio: il giorno dopo la riga della 11N nella pagina della centrale mostra i
+dispositivi e il keepalive; nel registro dell'app nessun errore nuovo.

@@ -1303,7 +1303,8 @@ function _labAssicuraScrivibile(campo) {
 // È uno stato DERIVATO: si ricostruisce da zero a ogni giro, così un residuo
 // salvato in una versione precedente non sopravvive mai.
 function _labBottoniApplica(soloCard) {
-  var info = window._labInfoLetti || {};
+  // modulo «laboratorio» spento (dalla v195): nessun blocco, come per un letto senza esami
+  var info = (typeof window._moduloAttivo === 'function' && !window._moduloAttivo('laboratorio')) ? {} : (window._labInfoLetti || {});
   var lista = soloCard ? [soloCard] : [].slice.call(document.querySelectorAll('.patient-card[data-bed]'));
   lista.forEach(function(c) {
     var campo = c.querySelector('[data-field="EsamiColturali"]');
@@ -1356,6 +1357,8 @@ function _labBottoniApplica(soloCard) {
 var _labBottoniTs = 0;
 function _labBottoniAggiorna(forza) {
   _labBottoniApplica();                        // subito con quello che si sa già
+  // modulo «laboratorio» spento: niente lettura di lab_esami
+  if (typeof window._moduloAttivo === 'function' && !window._moduloAttivo('laboratorio')) return Promise.resolve();
   if (!forza && Date.now() - _labBottoniTs < 300000) return Promise.resolve();
   _labBottoniTs = Date.now();
   return _q(_sb.from('lab_esami').select('letto,allarme_giorni,ultimo_esame,n_esami,allarme_visto'))

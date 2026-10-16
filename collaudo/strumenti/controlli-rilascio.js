@@ -46,7 +46,8 @@
 //     sopravvive a «Update»; il secondo manifesto riapre lo stesso indirizzo
 // 17. battito verso la centrale: parte dai due soli punti d'avvio, senza
 //     chiavi, sessione né cookie, con i soli campi attesi; i nomi riservati
-//     alla fase 2 non compaiono nel sito
+//     alla fase 2 non compaiono nel sito; dalla v195 i moduli (classe e
+//     guardia per ogni varco) e il flusso Keepalive di ogni reparto
 // 15. riservatezza: il piano «un codice, tanti reparti», che è un documento
 //     riservato, non sta fra i file né nella storia che un rilascio porterebbe
 //     nel repository del reparto, che è pubblico
@@ -719,8 +720,44 @@ mancanti.length ? ko('sw.js elenca file che non esistono (l\'installazione del s
     const sito = ['docs/index.html', 'docs/print.html', 'docs/rete.html', 'docs/js/api.js', 'docs/js/app.js', 'docs/js/app2.js', 'docs/js/sanifica.js', 'docs/sw.js', 'docs/rubrica/app.js', 'docs/rubrica/index.html'].filter((f) => fs.existsSync(path.join(RADICE, f)));
     const riservati = sito.filter((f) => /versioneMinima|versione_minima/.test(leggi(f)));
     if (riservati.length) guai.push('i nomi riservati alla fase 2 compaiono in: ' + riservati.join(', '));
+    // dalla v195: i moduli. Nascono nello script in testa, prima dei fogli di stile (nessun lampeggio);
+    // la risposta del battito passa da _moduliValidi; _applicaModuli tocca solo classi e memoria
+    const testa = ora.slice(0, ora.indexOf('css/styles.css'));
+    ['window._moduliValidi = function', 'window._applicaModuli = function', 'window._moduloAttivo = function', 'window._avvisaModuloSpento = function',
+      "window._applicaModuli(window._moduliValidi(conservati) || window._MODULI, true);"].forEach((s) => { if (testa.indexOf(s) < 0) guai.push('i moduli devono nascere nello script in testa alla pagina, prima dei fogli di stile (manca «' + s.slice(0, 40) + '»)'); });
+    const ap0 = ora.indexOf('window._applicaModuli = function'), ap1 = ora.indexOf('window._avvisaModuloSpento = function');
+    if (ap0 < 0 || ap1 < ap0 || /innerHTML|insertAdjacentHTML|outerHTML|document\.write/.test(ora.slice(ap0, ap1))) guai.push('_applicaModuli deve toccare solo le classi e la memoria del browser');
+    if (corpo.indexOf('window._moduliValidi(d.moduli)') < 0 || /\.moduli\b(?!\))/.test(corpo.replace('window._moduliValidi(d.moduli)', ''))) guai.push('della risposta del battito i moduli si leggono solo attraverso _moduliValidi');
+    if (/localStorage\.(get|set)Item\('_battitoGiorno'/.test(corpo) || corpo.indexOf("'_battitoTs'") < 0) guai.push('il battito parte a ogni avvio, al più uno ogni 10 minuti (_battitoTs), e non usa più il giorno');
+    // i varchi: la classe su ciò che apre il modulo, e la guardia in testa alla funzione che lo apre
+    [['class="tb-btn tb-scale modulo-scale"', 'il pulsante delle scale'], ['class="tb-btn tb-terapia modulo-terapia"', 'il pulsante della terapia'],
+      ['class="tb-btn tb-laboratorio modulo-laboratorio"', 'il pulsante del laboratorio'], ['<li class="nav-item modulo-rubrica"><a class="nav-link active" href="javascript:void(0)" onclick="apriRubrica();">', 'la voce di menu della rubrica']]
+      .forEach((x) => { if (ora.indexOf(x[0]) < 0) guai.push(x[1] + ' deve portare la classe del suo modulo'); });
+    if ((ora.match(/onclick="apriRubrica\(\);"/g) || []).length !== 1) guai.push('la rubrica si apre da una voce di menu sola, quella con la classe del modulo');
+    [['window._apriModalScale = function(card) {', 'scale'], ['window._apriLabModal = function(card){', 'laboratorio'], ['window._importaTerapiaTrak = function(card){', 'terapia'], ['window._terapiaDaPlaceholder = function(el){', 'terapia'], ['window.apriRubrica = function() {', 'rubrica']]
+      .forEach((x) => {
+        const p = ora.indexOf(x[0]);
+        const dopo = p < 0 ? '' : ora.slice(p + x[0].length, p + x[0].length + 260).split('\n').filter((r) => !/^\s*\/\//.test(r)).join('\n');
+        if (!new RegExp("^\\s*if \\(!window\\._moduloAttivo\\('" + x[1] + "'\\)\\) \\{").test(dopo)) guai.push(x[0].replace(/ = function.*/, '') + ' deve cominciare con la guardia del modulo «' + x[1] + '»');
+      });
+    const apiTesto = leggi('docs/js/api.js').replace(/\r\n/g, '\n');
+    ['function _labBottoniApplica(soloCard) {', 'function _labBottoniAggiorna(forza) {'].forEach((f) => {
+      const p = apiTesto.indexOf(f);
+      if (p < 0 || apiTesto.slice(p, p + 420).indexOf("_moduloAttivo('laboratorio')") < 0) guai.push('api.js: ' + f.replace(/ \{$/, '') + ' deve rispettare il modulo «laboratorio»');
+    });
+    const css = leggi('docs/css/styles.css').replace(/\r\n/g, '\n');
+    ['html.modulo-rubrica-spento .modulo-rubrica,', 'html.modulo-terapia-spento .modulo-terapia,', 'html.modulo-laboratorio-spento .modulo-laboratorio,', 'html.modulo-scale-spento .modulo-scale { display: none !important; }',
+      'html.modo-rubrica.modulo-rubrica-spento #rubricaPanel { display: none !important; }', '.rubrica-spenta:not([hidden])'].forEach((s) => { if (css.indexOf(s) < 0) guai.push('styles.css: manca «' + s.slice(0, 50) + '»'); });
+    if (ora.indexOf('<div id="rubricaSpenta" class="rubrica-spenta" hidden>') < 0 || ora.indexOf("e.target.closest('#rubricaSpentaEsci')") < 0) guai.push('nel modo rubrica, con la rubrica spenta, serve il pannello di testo con l\'uscita');
+    // dalla v195: il flusso Keepalive è di ogni reparto. Nessun progetto o chiave scritti a mano, il reparto dal proprietario
+    const ka = leggi('.github/workflows/supabase-keepalive.yml').replace(/\r\n/g, '\n');
+    const passi = require('./keepalive.js').PASSI.map((x) => x[0]);
+    const scrittiAMano = require('./reparti.js').tutti().some((r) => ka.indexOf(r.supabaseUrl.replace(/^https:\/\//, '').slice(0, 20)) >= 0 || ka.indexOf(r.supabaseAnonKey) >= 0);
+    if (scrittiAMano || /eyJ|[a-z]{20}\.supabase\.co|repository_owner ==/.test(ka)) guai.push('il flusso Keepalive non deve avere progetti, chiavi o proprietari scritti a mano: li trova keepalive.js dal file del reparto');
+    if (ka.indexOf('node collaudo/strumenti/keepalive.js reparto "$GITHUB_REPOSITORY_OWNER"') < 0 || ka.indexOf('node collaudo/strumenti/keepalive.js segnala') < 0 || ka.indexOf("if: always() && steps.reparto.outputs.centrale != ''") < 0) guai.push('il flusso Keepalive deve trovare il reparto con keepalive.js e mandare sempre l\'esito alla centrale');
+    passi.forEach((id) => { if (ka.indexOf('id: ' + id + '\n') < 0 || ka.indexOf('ESITO_' + id.toUpperCase() + ': $' + '{{ steps.' + id + '.outcome }}') < 0) guai.push('il passo «' + id + '» di keepalive.js non è nel flusso, o il suo esito non arriva alla centrale'); });
   } catch (e) { guai.push(String((e && e.message) || e).slice(0, 300)); }
-  guai.length ? guai.forEach((g) => ko('battito: ' + g)) : ok('battito: una sola richiesta alla funzione della centrale, senza chiavi, sessione né cookie, con i sette campi attesi, dai due soli punti d\'avvio; nessun nome riservato alla fase 2 nel sito');
+  guai.length ? guai.forEach((g) => ko('battito: ' + g)) : ok('battito: una sola richiesta alla funzione della centrale, senza chiavi, sessione né cookie, con i sette campi attesi, dai due soli punti d\'avvio; nessun nome riservato alla fase 2 nel sito; moduli dallo script in testa e solo attraverso _moduliValidi, quattro varchi con classe e guardia, blocco del laboratorio e pannello del modo rubrica; flusso Keepalive senza dati scritti a mano, con l\'esito alla centrale');
 }
 
 // ── 15. ciò che non deve diventare pubblico ──────────────────────────

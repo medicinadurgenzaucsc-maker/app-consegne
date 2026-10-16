@@ -10,6 +10,12 @@ name: Keepalive
 #   3. verifica end-to-end: RPC ping() via REST anon, che a sua volta SCRIVE
 #      (hard-fail: se fallisce il run e' rosso e arriva l'email di GitHub)
 #   4. commit vuoto se il repo e' fermo da 45+ gg (GitHub spegne i cron a 60)
+# Dalla v195 «un codice, tante configurazioni»: il reparto si riconosce dal
+# proprietario del repository (collaudo/strumenti/keepalive.js); progetto,
+# indirizzo e chiave pubblica vengono dal suo file in reparti/, e a fine giro
+# l'esito va alla centrale, se il file la nomina. Gira quindi anche nel
+# repository del collaudo, con la sua chiave.
+#   segreto SUPABASE_MGMT_TOKEN   chiave di gestione dell'account Supabase del reparto
 on:
   schedule:
     - cron: '7 5 * * *'   # ogni giorno
@@ -20,15 +26,29 @@ permissions:
 
 jobs:
   keepalive:
-    # Solo nel repository di produzione (il progetto e i segreti sono i suoi).
-    if: github.repository_owner == 'medicinadurgenzaucsc-maker'
     runs-on: ubuntu-latest
     steps:
-      - name: Stato progetto + auto-restore se in pausa
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Reparto di questo repository
+        id: reparto
+        run: node collaudo/strumenti/keepalive.js reparto "$GITHUB_REPOSITORY_OWNER" >> "$GITHUB_OUTPUT"
+
+      - name: Il segreto SUPABASE_MGMT_TOKEN c'è
+        id: segreto
         env:
           MGMT: ${{ secrets.SUPABASE_MGMT_TOKEN }}
+        run: test -n "$MGMT" || { echo "::error::manca il segreto SUPABASE_MGMT_TOKEN"; exit 1; }
+
+      - name: Stato progetto + auto-restore se in pausa
+        id: stato
+        env:
+          MGMT: ${{ secrets.SUPABASE_MGMT_TOKEN }}
+          REF: ${{ steps.reparto.outputs.ref }}
         run: |
-          REF=ifmmcvxzhwdkmzhsxcvb
           status=$(curl -sS -H "Authorization: Bearer $MGMT" "https://api.supabase.com/v1/projects/$REF" | sed -nE 's/.*"status":"([^"]*)".*/\1/p')
           echo "Stato: $status"
           if [ "$status" != "ACTIVE_HEALTHY" ]; then
@@ -45,10 +65,11 @@ jobs:
           test "$status" = "ACTIVE_HEALTHY"
 
       - name: Heartbeat SQL (scrittura vera sul DB)
+        id: heartbeat
         env:
           MGMT: ${{ secrets.SUPABASE_MGMT_TOKEN }}
+          REF: ${{ steps.reparto.outputs.ref }}
         run: |
-          REF=ifmmcvxzhwdkmzhsxcvb
           out=$(curl -sS -X POST "https://api.supabase.com/v1/projects/$REF/database/query" \
             -H "Authorization: Bearer $MGMT" -H "Content-Type: application/json" \
             -d '{"query":"update public.keepalive set updated_at = now() where id = 1 returning updated_at;"}')
@@ -56,21 +77,20 @@ jobs:
           echo "$out" | grep -q "updated_at"
 
       - name: Verifica end-to-end (RPC ping via REST anon, scrive anche lei)
+        id: ping
+        env:
+          URL: ${{ steps.reparto.outputs.url }}
+          ANON: ${{ steps.reparto.outputs.chiave }}
         run: |
-          ANON="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlmbW1jdnh6aHdka216aHN4Y3ZiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc2Nzk1ODAsImV4cCI6MjA5MzI1NTU4MH0.LH8h4Fivtl3-TuiA050oF8iS4b80xrd2Dn6z8JjCoeA"
           code=$(curl -sS -o /tmp/r -w "%{http_code}" -X POST \
-            "https://ifmmcvxzhwdkmzhsxcvb.supabase.co/rest/v1/rpc/ping" \
+            "$URL/rest/v1/rpc/ping" \
             -H "apikey: $ANON" -H "Authorization: Bearer $ANON" \
             -H "Content-Type: application/json" -d '{}')
           echo "RPC ping -> HTTP $code"; cat /tmp/r 2>/dev/null; echo
           test "$code" = "200"
 
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
       - name: Rinnova il repo se fermo da 45+ giorni (anti-disable cron)
+        id: rinnovo
         run: |
           DIFF=$(( ( $(date +%s) - $(git log -1 --format=%ct) ) / 86400 ))
           echo "Giorni dall'ultimo commit: $DIFF"
@@ -82,3 +102,17 @@ jobs:
           else
             echo "Nessun rinnovo necessario"
           fi
+
+      - name: Esito alla centrale
+        if: always() && steps.reparto.outputs.centrale != ''
+        env:
+          CENTRALE: ${{ steps.reparto.outputs.centrale }}
+          REPARTO: ${{ steps.reparto.outputs.codice }}
+          AMBIENTE: ${{ steps.reparto.outputs.ambiente }}
+          FLUSSO: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          ESITO_SEGRETO: ${{ steps.segreto.outcome }}
+          ESITO_STATO: ${{ steps.stato.outcome }}
+          ESITO_HEARTBEAT: ${{ steps.heartbeat.outcome }}
+          ESITO_PING: ${{ steps.ping.outcome }}
+          ESITO_RINNOVO: ${{ steps.rinnovo.outcome }}
+        run: node collaudo/strumenti/keepalive.js segnala

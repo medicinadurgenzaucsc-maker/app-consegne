@@ -1687,3 +1687,20 @@ html.modo-rubrica #rubricaPanel {
   padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
 }
 html.modo-rubrica #rubricaPanelHeader { display: none !important; }
+
+/* ── MODULI (dalla v195) ─────────────────────────────────────────────
+   Le funzioni facoltative del reparto, decise dalla centrale. La classe
+   su <html> la mette _applicaModuli (script in testa a index.html) per
+   ogni modulo spento; ciò che apre il modulo porta la classe «modulo-…»
+   e sparisce. Nascosto non basta: ogni funzione ha anche la sua guardia. */
+html.modulo-rubrica-spento .modulo-rubrica,
+html.modulo-terapia-spento .modulo-terapia,
+html.modulo-laboratorio-spento .modulo-laboratorio,
+html.modulo-scale-spento .modulo-scale { display: none !important; }
+/* Modo rubrica con la rubrica spenta: al posto del riquadro, solo testo e l'uscita. */
+html.modo-rubrica.modulo-rubrica-spento #rubricaPanel { display: none !important; }
+.rubrica-spenta:not([hidden]) { position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 9500; display: flex; align-items: center; justify-content: center; padding: 24px; background: #263238; color: #eceff1; text-align: center; }
+.rubrica-spenta-testo { max-width: 420px; }
+.rubrica-spenta-testo .bi-telephone-x { font-size: 48px; color: #90a4ae; }
+.rubrica-spenta-testo p { margin: 12px 0 0; font-size: 18px; }
+.rubrica-spenta-testo .rubrica-spenta-sotto { font-size: 14px; color: #b0bec5; margin-bottom: 20px; }
