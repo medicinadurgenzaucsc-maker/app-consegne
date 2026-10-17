@@ -24,7 +24,7 @@ const sb = require('./sb.js');
 let ARG, AMB;
 try { ARG = ghApi.argomenti(process.argv.slice(2)); AMB = ghApi.per(ARG.ambiente); }
 catch (e) { console.log('ERRORE: ' + ghApi.maschera(e.message)); process.exit(1); }
-const gh = AMB.gh, UTENTE = AMB.UTENTE;
+const gh = AMB.gh;
 const RADICE = path.resolve(__dirname, '../..');
 const FLUSSO = 'pubblica-cloudflare.yml';
 // Se cambia uno di questi, il push fa partire il flusso (sono i percorsi scritti nel flusso stesso).
@@ -32,12 +32,14 @@ const DEL_SITO = /^(docs\/|reparti\/|[.]github\/compressione\/|[.]github\/pubbli
 const attendi = (ms) => new Promise((r) => setTimeout(r, ms));
 const git = (...a) => execFileSync('git', ['-C', RADICE].concat(a), { encoding: 'utf8' }).trim();
 
-// Il nome del repository dal remoto, senza mai stampare la chiave che l'indirizzo può contenere.
+// Proprietario e nome del repository dal remoto, senza mai stampare la chiave che l'indirizzo può contenere.
+// Il proprietario può essere l'utente o un'organizzazione nominata dal file del reparto (un sorgente
+// trasferito alla società, dalla v199).
 function repository() {
   const pezzi = git('remote', 'get-url', AMB.remoto).replace(/[.]git$/, '').split('/');
   const nome = pezzi.pop(), proprietario = (pezzi.pop() || '').split('@').pop().split(':').pop();
-  if (proprietario.toLowerCase() !== UTENTE.toLowerCase() || !/^[A-Za-z0-9._-]+$/.test(nome)) throw new Error('il remoto «' + AMB.remoto + '» non punta a un repository di ' + UTENTE);
-  return nome;
+  if (AMB.proprietari.indexOf(proprietario.toLowerCase()) < 0 || !/^[A-Za-z0-9._-]+$/.test(nome)) throw new Error('il remoto «' + AMB.remoto + '» non punta a un repository di ' + AMB.proprietari.join(' o di '));
+  return { proprietario, nome };
 }
 // La riga che annuncia la versione ai PC: in produzione si legge soltanto.
 async function versioneAnnunciata() {
@@ -83,9 +85,9 @@ async function toccaIlSito(R, commit, ultima) {
     console.log('In PRODUZIONE «avvia» ripubblica il sito del reparto: va lanciato con ' + ghApi.CONFERMA + ', e solo con l\'ok di chi gestisce l\'app.');
     process.exit(1);
   }
-  const nome = repository();
-  const R = '/repos/' + UTENTE + '/' + nome;
-  console.log('ambiente: ' + ARG.ambiente + ' | repository ' + UTENTE + '/' + nome);
+  const { proprietario, nome } = repository();
+  const R = '/repos/' + proprietario + '/' + nome;
+  console.log('ambiente: ' + ARG.ambiente + ' | repository ' + proprietario + '/' + nome);
   // «notify-deploy» scatta solo dove GitHub Pages pubblica questo repository: in produzione, finché il
   // repository ha il suo sito. Altrove (collaudo; produzione dopo lo scambio) l'avviso deve darlo il flusso.
   const scheda = await gh('GET', R);

@@ -140,18 +140,25 @@
       return (SUPABASE_URL === FILE.supabaseUrl && SUPABASE_ANON_KEY === FILE.supabaseAnonKey && GOOGLE_CLIENT_ID === FILE.googleClientId) || 'indirizzo, chiave o client non sono quelli del file';
     });
     await prova(S, 'il file dell\'ambiente porta solo i campi attesi e niente della produzione', function () {
-      // dalla v194 il file può nominare anche la centrale (il solo indirizzo): la provano le prove «centrale»
-      var campi = Object.keys(FILE || {}).filter(function (k) { return k !== 'centrale'; }).sort().join(',');
+      // dalla v194 il file può nominare anche la centrale (il solo indirizzo): la provano le prove «centrale»;
+      // dalla v199 anche la squadra di Cloudflare Access (il solo nome), per la riga di rete.html
+      var campi = Object.keys(FILE || {}).filter(function (k) { return k !== 'centrale' && k !== 'squadraAccess'; }).sort().join(',');
       if (campi !== 'ambiente,codice,googleClientId,host,lingua,nome,supabaseAnonKey,supabaseUrl,versioneLocale') return 'campi: ' + campi;
       if (FILE.centrale !== undefined && Object.keys(FILE.centrale || {}).join(',') !== 'url') return 'centrale con campi in più';
+      if (FILE.squadraAccess !== undefined && !(typeof FILE.squadraAccess === 'string' && /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(FILE.squadraAccess))) return 'squadra di Access scritta male';
       var testo = JSON.stringify(FILE);
       return !(testo.indexOf(REF_PRODUZIONE) >= 0 || /medicinadurgenzaucsc|consegne-reparto/.test(testo)) || 'nel file del collaudo c\'è un dato della produzione';
     });
     await prova(S, 'col file del collaudo il sito parte dai suoi indirizzi e da nessun altro', function () {
+      // dalla v199 anche i nomi nuovi della società, accanto ai vecchi: il sito sul dominio e il livello 0 dell'organizzazione
       var attesi = [['localhost', 'collaudo/file'], ['LOCALHOST', 'collaudo/file'], ['127.0.0.1', 'collaudo/file'], ['gistech2026.github.io', 'collaudo/file'],
         ['consegne-collaudo.pages.dev', 'collaudo/file'], ['abc123.consegne-collaudo.pages.dev', 'collaudo/file'],
+        ['torsadestech.github.io', 'collaudo/file'], ['consegne-collaudo.torsadestech.com', 'collaudo/file'], ['CONSEGNE-COLLAUDO.TORSADESTECH.COM', 'collaudo/file'],
         ['medicinadurgenzaucsc-maker.github.io', 'fermo:indirizzo'], ['consegne-reparto.pages.dev', 'fermo:indirizzo'], ['falsoconsegne-collaudo.pages.dev', 'fermo:indirizzo'],
-        ['consegne-collaudo.pages.dev.example.org', 'fermo:indirizzo'], ['anteprima.gistech2026.github.io', 'fermo:indirizzo'], ['pages.dev', 'fermo:indirizzo'], ['example.org', 'fermo:indirizzo'], ['', 'fermo:indirizzo']];
+        ['consegne-collaudo.pages.dev.example.org', 'fermo:indirizzo'], ['anteprima.gistech2026.github.io', 'fermo:indirizzo'], ['pages.dev', 'fermo:indirizzo'], ['example.org', 'fermo:indirizzo'], ['', 'fermo:indirizzo'],
+        ['torsadestech.com', 'fermo:indirizzo'], ['www.torsadestech.com', 'fermo:indirizzo'], ['admin.torsadestech.com', 'fermo:indirizzo'], ['consegne.torsadestech.com', 'fermo:indirizzo'],
+        ['anteprima.consegne-collaudo.torsadestech.com', 'fermo:indirizzo'], ['consegne-collaudo.torsadestech.com.example.org', 'fermo:indirizzo'], ['falsoconsegne-collaudo.torsadestech.com', 'fermo:indirizzo'],
+        ['xtorsadestech.github.io', 'fermo:indirizzo'], ['anteprima.torsadestech.github.io', 'fermo:indirizzo'], ['torsadestech.github.io.example.org', 'fermo:indirizzo'], ['consegne-collaudo.cloudflareaccess.com', 'fermo:indirizzo']];
       var male = attesi.filter(function (x) { return detto(FILE, x[0]) !== x[1]; }).map(function (x) { return '«' + x[0] + '» → ' + detto(FILE, x[0]); });
       return !male.length || male.join(' ; ');
     });
@@ -164,7 +171,7 @@
       return !male.length || male.join(' ; ');
     });
     await prova(S, 'senza il file l\'app si ferma, da qualunque indirizzo (motivo «assente»)', function () {
-      var male = [['localhost', undefined], ['localhost', null], ['gistech2026.github.io', undefined], ['example.org', undefined]].filter(function (x) { return detto(x[1], x[0]) !== 'fermo:assente'; }).map(function (x) { return '«' + x[0] + '» → ' + detto(x[1], x[0]); });
+      var male = [['localhost', undefined], ['localhost', null], ['gistech2026.github.io', undefined], ['torsadestech.github.io', undefined], ['consegne-collaudo.torsadestech.com', null], ['example.org', undefined]].filter(function (x) { return detto(x[1], x[0]) !== 'fermo:assente'; }).map(function (x) { return '«' + x[0] + '» → ' + detto(x[1], x[0]); });
       return (!male.length && _ambienteDi(undefined, 'localhost') === null && _ambienteDi({}, 'localhost') === null) || male.join(' ; ');
     });
 

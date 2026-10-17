@@ -59,7 +59,13 @@ function segniDi(reparto) {
   reparto.host.forEach((h) => { if (LOCALI.indexOf(h) < 0) segni.push(["l'indirizzo", h.replace(/^\./, '')]); });
   const p = reparto.pubblicazione;
   if (p.cloudflare) segni.push(['il progetto Cloudflare', p.cloudflare.progetto + '.pages.dev']);
+  // dalla v199: il nome sul dominio della società, accanto al .pages.dev (sta anche fra gli host, ma lo si dice per nome)
+  if (p.cloudflare && p.cloudflare.dominio) segni.push(['il dominio', p.cloudflare.dominio]);
+  // e la squadra di Access, che arriva nel suo js/ambiente.js: nel sito di un altro reparto non deve comparire
+  if (p.cloudflare && p.cloudflare.squadra) segni.push(['la squadra di Access', p.cloudflare.squadra]);
   if (p.githubPages) segni.push(['il repository', p.githubPages.repository]);
+  // il repository del sorgente: un sito pubblicato non lo nomina mai, tanto meno quello di un altro reparto
+  if (reparto.github && reparto.github.sorgente) segni.push(['il repository del sorgente', reparto.github.sorgente]);
   return segni;
 }
 

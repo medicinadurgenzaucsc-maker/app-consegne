@@ -24,7 +24,7 @@ const CARTELLA = path.join(RADICE, 'reparti');
 const AMBIENTE_JS = path.join(RADICE, 'docs', 'js', 'ambiente.js');
 
 const CAMPI = ['codice', 'sinonimi', 'nome', 'ospedale', 'tipo', 'ambiente', 'hosting', 'accesso', 'lingua', 'canale',
-  'versioneLocale', 'livello', 'host', 'pubblicazione', 'supabaseUrl', 'supabaseAnonKey', 'googleClientId', 'centrale'];
+  'versioneLocale', 'livello', 'host', 'pubblicazione', 'github', 'supabaseUrl', 'supabaseAnonKey', 'googleClientId', 'centrale'];
 const TIPI = ['produzione', 'collaudo'];
 const HOSTING = ['reparto', 'fornitore', 'condiviso', 'locale'];
 const ACCESSI = ['google'];
@@ -34,6 +34,9 @@ const LINGUE = ['it'];
 const HOST = /^\.?[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/;
 const CODICE = /^[a-z0-9]([a-z0-9-]{0,40}[a-z0-9])?$/;
 const LOCALI = ['localhost', '127.0.0.1'];
+// Un account (persona od organizzazione) e un repository di GitHub.
+const UTENTE_GITHUB = /^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$/;
+const REPOSITORY = /^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/;
 
 // Il ruolo scritto dentro una chiave di Supabase (la parte centrale è JSON in base64).
 function ruoloDellaChiave(chiave) {
@@ -79,8 +82,25 @@ function difetti(r, nomeFile) {
   else {
     Object.keys(p).forEach((k) => { if (['githubPages', 'cloudflare', 'sitoPubblico'].indexOf(k) < 0) e.push('pubblicazione: voce sconosciuta «' + k + '»'); });
     if (!p.githubPages && !p.cloudflare && !p.sitoPubblico) e.push('pubblicazione: serve almeno una voce fra githubPages, cloudflare e sitoPubblico');
-    if (p.cloudflare && !(typeof p.cloudflare.progetto === 'string' && /^[a-z0-9]([a-z0-9-]{0,56}[a-z0-9])?$/.test(p.cloudflare.progetto) && Object.keys(p.cloudflare).length === 1)) e.push('pubblicazione.cloudflare: atteso il solo campo «progetto», con un nome di progetto valido');
-    if (p.cloudflare && Array.isArray(r.host) && r.host.indexOf(p.cloudflare.progetto + '.pages.dev') < 0) e.push('pubblicazione.cloudflare: «' + p.cloudflare.progetto + '.pages.dev» non è fra gli host del reparto');
+    // Cloudflare Pages: il progetto (risponde da <progetto>.pages.dev), e due voci facoltative:
+    //  - «dominio», il nome sul dominio della società collegato allo stesso progetto (dalla v199): accanto al
+    //    .pages.dev, mai al suo posto, perché il progetto risponde da tutti e due;
+    //  - «squadra», la squadra di Cloudflare Access che chiude il sito: il cancello sta su
+    //    https://<squadra>.cloudflareaccess.com, ed è lì che un estraneo deve essere rimandato.
+    const cf = p.cloudflare;
+    if (cf !== undefined) {
+      if (!(cf && typeof cf === 'object' && !Array.isArray(cf) && typeof cf.progetto === 'string' && /^[a-z0-9]([a-z0-9-]{0,56}[a-z0-9])?$/.test(cf.progetto))) e.push('pubblicazione.cloudflare: atteso il campo «progetto», con un nome di progetto valido');
+      else {
+        Object.keys(cf).forEach((k) => { if (['progetto', 'dominio', 'squadra'].indexOf(k) < 0) e.push('pubblicazione.cloudflare: voce sconosciuta «' + k + '» (ammesse: progetto, dominio, squadra)'); });
+        if (Array.isArray(r.host) && r.host.indexOf(cf.progetto + '.pages.dev') < 0) e.push('pubblicazione.cloudflare: «' + cf.progetto + '.pages.dev» non è fra gli host del reparto');
+        if (cf.dominio !== undefined) {
+          if (typeof cf.dominio !== 'string' || cf.dominio !== cf.dominio.toLowerCase() || cf.dominio.charAt(0) === '.' || !HOST.test(cf.dominio) || cf.dominio.indexOf('.') < 0 || cf.dominio.length > 120) e.push('pubblicazione.cloudflare.dominio: atteso un nome scritto per esteso, minuscolo, senza https:// e senza percorso');
+          else if (/[.](pages[.]dev|github[.]io|supabase[.]co|cloudflareaccess[.]com)$/.test(cf.dominio) || LOCALI.indexOf(cf.dominio) >= 0) e.push('pubblicazione.cloudflare.dominio: «' + cf.dominio + '» non è un dominio proprio (il .pages.dev del progetto è già detto da «progetto»)');
+          else if (Array.isArray(r.host) && r.host.indexOf(cf.dominio) < 0) e.push('pubblicazione.cloudflare.dominio: «' + cf.dominio + '» non è fra gli host del reparto: il sito pubblicato lì si fermerebbe su «Indirizzo non riconosciuto»');
+        }
+        if (cf.squadra !== undefined && !(typeof cf.squadra === 'string' && /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(cf.squadra))) e.push('pubblicazione.cloudflare.squadra: atteso il nome della squadra di Cloudflare Access (minuscole, cifre e trattini: il cancello è https://<squadra>.cloudflareaccess.com)');
+      }
+    }
     if (p.githubPages && !(typeof p.githubPages.repository === 'string' && /^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/.test(p.githubPages.repository) && p.githubPages.cartella === 'docs' && Object.keys(p.githubPages).length === 2)) e.push('pubblicazione.githubPages: attesi «repository» (proprietario/nome) e «cartella» = docs');
     if (p.githubPages && Array.isArray(r.host) && typeof p.githubPages.repository === 'string' && r.host.indexOf(p.githubPages.repository.split('/')[0].toLowerCase() + '.github.io') < 0) e.push('pubblicazione.githubPages: il sito del proprietario del repository non è fra gli host del reparto');
     // il «livello 0»: un repository PUBBLICO che contiene solo il sito già compresso, servito da GitHub Pages
@@ -93,6 +113,26 @@ function difetti(r, nomeFile) {
       }
     }
   }
+  // facoltativo (dalla v199): gli account e i repository di GitHub che gli strumenti di questo PC usano per il
+  // reparto. Senza, valgono quelli del repository da cui il reparto pubblica docs/ (vedi github() qui sotto)
+  if (r.github !== undefined) {
+    const g = r.github;
+    if (!(g && typeof g === 'object' && !Array.isArray(g))) e.push('github: atteso un oggetto');
+    else {
+      Object.keys(g).forEach((k) => { if (['utente', 'sorgente', 'rinvio', 'sitoServizio'].indexOf(k) < 0) e.push('github: voce sconosciuta «' + k + '» (ammesse: utente, sorgente, rinvio, sitoServizio)'); });
+      if (!(typeof g.utente === 'string' && UTENTE_GITHUB.test(g.utente))) e.push('github.utente: atteso il nome di un account di GitHub');
+      ['sorgente', 'rinvio'].forEach((k) => { if (!(typeof g[k] === 'string' && REPOSITORY.test(g[k]))) e.push('github.' + k + ': atteso un repository, nella forma proprietario/nome'); });
+      if (g.sitoServizio !== undefined && !(typeof g.sitoServizio === 'string' && REPOSITORY.test(g.sitoServizio))) e.push('github.sitoServizio: atteso un repository, nella forma proprietario/nome');
+      const minuscolo = (x) => String(x || '').toLowerCase();
+      // il sorgente è privato: nessun repository pubblico del reparto può essere lui
+      const pubblici = [['rinvio', g.rinvio], ['sitoServizio', g.sitoServizio], ['pubblicazione.sitoPubblico', p && p.sitoPubblico && p.sitoPubblico.repository]].filter((x) => x[1]);
+      pubblici.forEach((x) => { if (typeof g.sorgente === 'string' && minuscolo(x[1]) === minuscolo(g.sorgente)) e.push('github.sorgente: è lo stesso repository di ' + x[0] + ', che è pubblico'); });
+      if (g.sitoServizio && p && p.sitoPubblico && minuscolo(g.sitoServizio) === minuscolo(p.sitoPubblico.repository)) e.push('github.sitoServizio: è lo stesso repository del sito pubblico');
+      if (g.sitoServizio && minuscolo(g.sitoServizio) === minuscolo(g.rinvio)) e.push('github.sitoServizio: è lo stesso repository del rinvio');
+      // dove il reparto pubblica docs/ con GitHub Pages, il vecchio indirizzo è quel repository
+      if (p && p.githubPages && typeof p.githubPages.repository === 'string' && typeof g.rinvio === 'string' && minuscolo(g.rinvio) !== minuscolo(p.githubPages.repository)) e.push('github.rinvio: deve essere il repository di pubblicazione.githubPages');
+    }
+  } else if (p && typeof p === 'object' && !p.githubPages) e.push('github: un reparto che non pubblica docs/ con GitHub Pages deve dire account e repository di GitHub (voce «github»)');
   if (!testo('supabaseUrl') || !/^https:\/\/[a-z]{20}\.supabase\.co$/.test(r.supabaseUrl)) e.push('supabaseUrl: atteso https://<progetto>.supabase.co, senza barra finale');
   if (!testo('supabaseAnonKey')) e.push('supabaseAnonKey mancante');
   else if (/^sb_secret_/.test(r.supabaseAnonKey)) e.push('supabaseAnonKey è una chiave SEGRETA: in un file di reparto va solo la chiave pubblica');
@@ -138,10 +178,12 @@ function leggi(codice) {
 }
 
 // Tutti i reparti, convalidati uno per uno e fra loro. Lancia un errore con l'elenco completo dei difetti.
-function tutti() {
-  const elenco = codici().map((c) => leggi(c));
+function tutti() { return convalida(codici().map((c) => leggi(c)), codici()); }
+// La convalida di un elenco di reparti già letto («nomiFile» sono i nomi dei file senza estensione): la usa
+// tutti(), e i controlli di rilascio la provano su copie dei file con un difetto ciascuna.
+function convalida(elenco, nomiFile) {
   const e = [];
-  elenco.forEach((r, i) => difetti(r, codici()[i]).forEach((d) => e.push('reparti/' + codici()[i] + '.json: ' + d)));
+  elenco.forEach((r, i) => difetti(r, nomiFile[i]).forEach((d) => e.push('reparti/' + nomiFile[i] + '.json: ' + d)));
   if (e.length) throw new Error(e.join('\n'));
   // fra reparti: nessun nome in comune, nessun indirizzo in comune, nessun database in comune
   const nomi = {}, basi = {}, progetti = {};
@@ -158,12 +200,30 @@ function tutti() {
   // né un sito pubblico nel repository da cui un reparto pubblica docs/. Un repository col sorgente che nessun file
   // dichiara (quello del collaudo) qui non si conosce: lo ferma sito-pubblico.js, che prima di scrivere guarda che
   // cosa il repository contiene
+  // Dalla v199 contano anche i repository che gli strumenti usano (sorgente, rinvio col suo nome provvisorio,
+  // sito di servizio), così come li ricava github(): anche quelli di un reparto che la voce «github» non ce l'ha,
+  // come la 11N. Il rinvio di un reparto che pubblica docs/ con GitHub Pages è quello stesso repository, e non
+  // vale come doppione. È la barriera che tiene ogni strumento dentro i repository del suo reparto: gh-api.js
+  // lascia lavorare solo lì.
   const depositi = {};
-  elenco.forEach((r) => ['githubPages', 'sitoPubblico'].forEach((voce) => {
-    const dep = r.pubblicazione[voce] && String(r.pubblicazione[voce].repository).toLowerCase();
-    if (!dep) return;
-    if (depositi[dep] && depositi[dep] !== r.codice + ' ' + voce) e.push('il repository ' + dep + ' è dichiarato due volte: ' + depositi[dep] + ' e ' + r.codice + ' ' + voce);
-    depositi[dep] = r.codice + ' ' + voce;
+  elenco.forEach((r) => {
+    const g = github(r);
+    [['githubPages', r.pubblicazione.githubPages && r.pubblicazione.githubPages.repository], ['sitoPubblico', r.pubblicazione.sitoPubblico && r.pubblicazione.sitoPubblico.repository],
+      ['github.sorgente', g.sorgente.repository], ['github.rinvio', g.rinvio.repository], ['github.rinvio provvisorio', g.rinvio.repository + '-rinvio'],
+      ['github.sitoServizio', g.sitoServizio && g.sitoServizio.repository]].forEach(([voce, valore]) => {
+      const dep = valore && String(valore).toLowerCase();
+      if (!dep) return;
+      const gia = depositi[dep];
+      const stessoSito = gia && gia.codice === r.codice && [gia.voce, voce].sort().join() === 'github.rinvio,githubPages';
+      if (gia && !stessoSito && !(gia.codice === r.codice && gia.voce === voce)) e.push('il repository ' + dep + ' è dichiarato due volte: ' + gia.codice + ' ' + gia.voce + ' e ' + r.codice + ' ' + voce);
+      if (!gia) depositi[dep] = { codice: r.codice, voce };
+    });
+  });
+  // l'account con cui lavorano gli strumenti di un reparto di collaudo non è mai quello di un reparto di
+  // produzione: la sua chiave aprirebbe la produzione senza la conferma
+  elenco.forEach((a) => elenco.forEach((b) => {
+    if (a.codice >= b.codice || a.tipo === b.tipo) return;
+    if (github(a).utente.toLowerCase() === github(b).utente.toLowerCase()) e.push('i reparti ' + a.codice + ' (' + a.tipo + ') e ' + b.codice + ' (' + b.tipo + ') usano lo stesso account di GitHub: un collaudo non lavora mai con l\'account della produzione');
   }));
   elenco.forEach((a) => elenco.forEach((b) => {
     if (a.codice >= b.codice) return;
@@ -214,6 +274,45 @@ function delSitoInDocs() {
   return trovati[0];
 }
 
+// Gli account e i repository di GitHub di un reparto, come li usano gli strumenti di questo PC (dalla v199,
+// prima erano costanti scritte in ciascuno strumento):
+//   utente        l'account con cui lavorano: la sua chiave sta nell'archivio credenziali (GCM)
+//   sorgente      il repository col sorgente, privato dopo lo scambio dei repository
+//   rinvio        il repository pubblico del vecchio indirizzo: prima dello scambio è il sorgente stesso,
+//                 dopo porta solo la pagina di rinvio
+//   sitoServizio  (facoltativo) il sito di servizio del collaudo: finto TrakCare e informativa
+//   proprietari   tutti gli account (persone od organizzazioni) che possiedono un repository del reparto:
+//                 sono i soli in cui gh-api.js lascia lavorare
+// Il proprietario di un repository può essere un'organizzazione diversa dall'utente: è il caso di un sorgente
+// trasferito all'organizzazione della società, mentre il vecchio indirizzo resta all'account di prima (i siti
+// di GitHub Pages non seguono un trasferimento). Senza la voce «github» nel file valgono i nomi di sempre,
+// presi dal repository da cui il reparto pubblica docs/: è il caso della 11N, il cui file non cambia.
+function github(reparto) {
+  const p = reparto.pubblicazione || {}, g = reparto.github;
+  const pezzi = (x) => { const [proprietario, nome] = String(x).split('/'); return { proprietario, nome, repository: proprietario + '/' + nome }; };
+  let utente, sorgente, rinvio, sitoServizio = null;
+  if (g) {
+    utente = g.utente; sorgente = pezzi(g.sorgente); rinvio = pezzi(g.rinvio);
+    if (g.sitoServizio) sitoServizio = pezzi(g.sitoServizio);
+  } else if (p.githubPages) {
+    rinvio = pezzi(p.githubPages.repository);
+    utente = rinvio.proprietario;
+    sorgente = pezzi(rinvio.proprietario + '/app-consegne-sorgente');
+  } else throw new Error('il reparto «' + reparto.codice + '» non dice account e repository di GitHub (voce «github» del suo file)');
+  const proprietari = [];
+  [utente, sorgente.proprietario, rinvio.proprietario, sitoServizio && sitoServizio.proprietario,
+    p.sitoPubblico && p.sitoPubblico.repository.split('/')[0], p.githubPages && p.githubPages.repository.split('/')[0]]
+    .filter(Boolean).forEach((x) => { if (proprietari.indexOf(x.toLowerCase()) < 0) proprietari.push(x.toLowerCase()); });
+  return { utente, sorgente, rinvio, sitoServizio, proprietari };
+}
+// L'indirizzo esatto della pagina d'accesso a cui la squadra Access del reparto rimanda chi non è entrato
+// in un suo sito, senza la parte variabile («?kid=…»); null se il file del reparto non nomina la squadra.
+function paginaAccesso(squadra, host) { return 'https://' + squadra + '.cloudflareaccess.com/cdn-cgi/access/login/' + String(host || '').toLowerCase(); }
+function cancelloAccess(reparto, host) {
+  const s = reparto.pubblicazione && reparto.pubblicazione.cloudflare && reparto.pubblicazione.cloudflare.squadra;
+  return s ? paginaAccesso(s, host) : null;
+}
+
 // Il testo di js/ambiente.js per un reparto. Solo ciò che serve all'app, nient'altro del file del reparto.
 function ambienteJs(reparto) {
   const d = difetti(reparto);
@@ -230,6 +329,10 @@ function ambienteJs(reparto) {
     googleClientId: reparto.googleClientId,
   };
   if (reparto.centrale) dati.centrale = { url: reparto.centrale.url };
+  // dalla v199: la squadra di Cloudflare Access del sito, per la riga di rete.html che prova se il cancello
+  // si raggiunge. Solo il nome: l'app non la usa, e un reparto senza cancello non la porta
+  const squadra = reparto.pubblicazione.cloudflare && reparto.pubblicazione.cloudflare.squadra;
+  if (squadra) dati.squadraAccess = squadra;
   // JSON è anche JavaScript, tolti due separatori di riga (codici 2028 e 2029) che in un file .js vanno scritti per esteso
   const json = JSON.stringify(dati, null, 2)
     .split(String.fromCharCode(0x2028)).join(String.fromCharCode(92) + 'u2028')
@@ -256,7 +359,7 @@ function controllaDocs() {
   return trovato === atteso ? { ok: true, reparto: delSitoInDocs().codice } : { ok: false, motivo: 'docs/js/ambiente.js non è quello generato da reparti/' + delSitoInDocs().codice + '.json: rifarlo con «node collaudo/strumenti/reparti.js scrivi»' };
 }
 
-module.exports = { RADICE, CARTELLA, AMBIENTE_JS, CAMPI, difetti, codici, leggi, tutti, risolvi, nomeStorico, perProgettoCloudflare, delSitoInDocs, hostCoperto, hostAmmesso, ambienteJs, controllaDocs, ruoloDellaChiave };
+module.exports = { RADICE, CARTELLA, AMBIENTE_JS, CAMPI, difetti, codici, leggi, tutti, convalida, risolvi, nomeStorico, perProgettoCloudflare, delSitoInDocs, github, cancelloAccess, paginaAccesso, hostCoperto, hostAmmesso, ambienteJs, controllaDocs, ruoloDellaChiave };
 
 if (require.main === module) {
   try {

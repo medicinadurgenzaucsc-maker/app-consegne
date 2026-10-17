@@ -18,9 +18,9 @@
     .si { color: #1b5e20; font-weight: 700; }
     .no { color: #b71c1c; font-weight: 700; }
     .attesa { color: #546e7a; }
-    #riepilogo { padding: 12px 14px; border-radius: 8px; background: #fff; font-weight: 600; }
-    #riepilogo.si { background: #e8f5e9; }
-    #riepilogo.no { background: #ffebee; }
+    #riepilogo, #riepilogoAccesso { padding: 12px 14px; border-radius: 8px; background: #fff; font-weight: 600; }
+    #riepilogo.si, #riepilogoAccesso.si { background: #e8f5e9; }
+    #riepilogo.no, #riepilogoAccesso.no { background: #ffebee; }
     button { padding: 10px 20px; margin: 0 8px 12px 0; border: 0; border-radius: 8px; background: #37474f; color: #fff; font: 600 15px system-ui, Arial, sans-serif; cursor: pointer; }
     textarea { width: 100%; box-sizing: border-box; height: 190px; padding: 10px; border: 1px solid #b0bec5; border-radius: 8px; font: 13px/1.4 Consolas, monospace; background: #fff; color: #263238; }
     .nota { font-size: 14px; color: #455a64; }
@@ -33,6 +33,7 @@
     <table id="dati"></table>
     <table id="esiti"></table>
     <p id="riepilogo" class="attesa">Prova in corso…</p>
+    <p id="riepilogoAccesso" class="attesa" hidden></p>
     <p>
       <button type="button" id="ripeti">Ripeti la prova</button>
       <button type="button" id="copia">Copia l'esito</button>
@@ -142,6 +143,23 @@
         }, function () { return { ok: false, testo: 'non raggiunta: senza la centrale l\'applicazione lavora lo stesso' }; });
       }
 
+      // Il cancello di accesso (Cloudflare Access) della squadra che il file dell'ambiente nomina: è da lì che
+      // passa chi entra in un sito dietro il cancello, e chi rientra quando la sessione scade. Si chiedono le
+      // sue chiavi pubbliche, che qualunque sito può leggere: nessun dato di chi chiede. È un esito a parte:
+      // dice se da questa rete un sito dietro il cancello potrebbe lavorare, non se lavora l'applicazione
+      // di questo indirizzo.
+      var SQUADRA = (A && typeof A.squadraAccess === 'string' && /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(A.squadraAccess)) ? A.squadraAccess : null;
+      function provaAccesso() {
+        return fetch('https://' + SQUADRA + '.cloudflareaccess.com/cdn-cgi/access/certs', { cache: 'no-store', credentials: 'omit', referrerPolicy: 'no-referrer' }).then(function (r) {
+          return r.text().then(function (t) {
+            var chiavi = null;
+            try { chiavi = JSON.parse(t).keys; } catch (e) {}
+            if (r.ok && Array.isArray(chiavi) && chiavi.length) return { ok: true, testo: 'raggiunto' };
+            return { ok: false, testo: 'risposta inattesa (stato ' + r.status + '): al posto del cancello ha risposto qualcos\'altro, forse un filtro della rete' };
+          });
+        }, function () { return { ok: false, testo: 'non raggiunto' }; });
+      }
+
       var ammesso = indirizzoAmmesso();
       var DATI = [
         ['Indirizzo di questa pagina', location.origin + location.pathname],
@@ -160,30 +178,45 @@
       ];
       if (A && A.centrale) PROVE.push(['La centrale dei reparti', provaCentrale]);
 
+      var ACCESSO = SQUADRA ? ['Il cancello di accesso (Cloudflare Access, squadra ' + SQUADRA + ')', provaAccesso] : null;
+
       DATI.forEach(function (d) { riga('dati', d[0], d[1]); righe.push(d[0] + ': ' + d[1]); });
-      var celle = PROVE.map(function (p) { return riga('esiti', p[0], 'in corso…', 'attesa'); });
-      Promise.all(PROVE.map(function (p, i) {
+      function esegui(p, cella) {
         var esito;
         try { esito = entro(p[1]()); } catch (e) { esito = Promise.resolve({ ok: false, testo: 'la prova non è partita' }); }
         // una risposta che si interrompe a metà (fetch riuscita, lettura del corpo no) è un «no», non un silenzio
         return esito.then(null, function () { return { ok: false, testo: 'la risposta si è interrotta prima della fine' }; }).then(function (e) {
-          celle[i].textContent = (e.ok ? 'Sì: ' : 'NO: ') + e.testo;
-          celle[i].className = e.ok ? 'si' : 'no';
+          cella.textContent = (e.ok ? 'Sì: ' : 'NO: ') + e.testo;
+          cella.className = e.ok ? 'si' : 'no';
           return e;
         });
-      })).then(function (esiti) {
+      }
+      var celle = PROVE.map(function (p) { return riga('esiti', p[0], 'in corso…', 'attesa'); });
+      var cellaAccesso = ACCESSO ? riga('esiti', ACCESSO[0], 'in corso…', 'attesa') : null;
+      Promise.all([Promise.all(PROVE.map(function (p, i) { return esegui(p, celle[i]); })), ACCESSO ? esegui(ACCESSO, cellaAccesso) : Promise.resolve(null)]).then(function (tutti) {
+        var esiti = tutti[0], accesso = tutti[1];
         var mancano = [];
         esiti.forEach(function (e, i) {
           righe.push(PROVE[i][0] + ': ' + (e.ok ? 'sì' : 'NO') + ' (' + e.testo + ')');
           if (!e.ok) mancano.push(PROVE[i][0]);
         });
+        if (accesso) righe.push(ACCESSO[0] + ': ' + (accesso.ok ? 'sì' : 'NO') + ' (' + accesso.testo + ')');
         var r = document.getElementById('riepilogo');
         if (!mancano.length && ammesso !== false) { r.textContent = 'Tutto raggiunto: da questo computer l\'applicazione può lavorare da questo indirizzo.'; r.className = 'si'; }
         else if (!mancano.length) { r.textContent = 'La rete passa, ma questo indirizzo non è fra quelli del sito: da qui l\'applicazione non partirebbe.'; r.className = 'no'; }
         else { r.textContent = 'Qualcosa non passa: ' + mancano.join('; ') + '.'; r.className = 'no'; }
         righe.push(r.textContent);
+        // il cancello è un esito a parte: non cambia ciò che si dice dell'applicazione di questo indirizzo
+        if (accesso) {
+          var ra = document.getElementById('riepilogoAccesso');
+          ra.textContent = accesso.ok ? 'Il cancello di accesso si raggiunge: da questo computer anche un sito dietro il cancello potrebbe lavorare.'
+            : 'Il cancello di accesso NON si raggiunge: da questo computer un sito dietro il cancello non si aprirebbe, né lascerebbe rientrare quando la sessione scade.';
+          ra.className = accesso.ok ? 'si' : 'no';
+          ra.hidden = false;
+          righe.push(ra.textContent);
+        }
         document.getElementById('testo').value = righe.join('\n');
-        window.__esitoRete = { finito: true, tutto: !mancano.length, mancano: mancano, ammesso: ammesso };
+        window.__esitoRete = { finito: true, tutto: !mancano.length, mancano: mancano, ammesso: ammesso, accesso: accesso ? accesso.ok : null };
       });
 
       document.getElementById('ripeti').addEventListener('click', function () { location.reload(); });

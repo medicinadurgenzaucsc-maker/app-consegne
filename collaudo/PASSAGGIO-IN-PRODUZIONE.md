@@ -963,5 +963,47 @@ centrale.
 
 Viene dopo la 196, col rito di sempre e l'ok di Stefano; si può rilasciare insieme alle
 precedenti. Il ramo di ritorno si costruisce sopra il commit che va in produzione, col
-numero libero dopo l'ultima versione pubblicata nel collaudo (il ramo `licenza` usa già
-la 198).
+numero libero dopo l'ultima versione pubblicata nel collaudo (la 198 è già stata usata lì).
+
+## Rilascio della 199: il «ponte» del collaudo (preparata nel collaudo il 17/10/2026)
+
+Che cosa cambia per la 11N: nulla di visibile. Il suo file `reparti/gemelli-11n.json` non
+cambia e il suo `js/ambiente.js` resta identico. Nel sito cambiano solo `rete.html` (la riga
+sul cancello di accesso compare solo per un reparto che nomina la sua squadra di Access, e la
+11N non la nomina) e il numero di versione.
+
+Che cosa cambia negli strumenti: account e repository di GitHub vengono dal file del reparto
+(voce `github`), non più da costanti. Per la 11N, che quella voce non ce l'ha, valgono i nomi
+di sempre presi dal repository di `githubPages`: account `medicinadurgenzaucsc-maker`, vecchio
+indirizzo `app-consegne`, sorgente dopo lo scambio `app-consegne-sorgente`, remoto `origin`.
+`gh-api.js` tiene gli stessi dati come riserva, per quando il file non si legge.
+`verifica-chiusura.js produzione`, finché il file della 11N non nomina la squadra, accetta il
+rinvio alla pagina d'accesso di una squadra qualunque, purché per il nome giusto; per il
+controllo esatto basta aggiungere `"squadra": "consegne-reparto"` a `pubblicazione.cloudflare`
+del file della 11N, in un rilascio con l'ok di Stefano.
+
+Viene dopo la 197, col rito di sempre e l'ok di Stefano; si può rilasciare insieme alle
+precedenti. Il ramo di ritorno si costruisce sopra il commit che va in produzione, col numero
+libero dopo l'ultima versione pubblicata nel collaudo.
+
+### Quando il sorgente del collaudo passa all'organizzazione `torsadestech`
+
+Il collaudo ha già gli indirizzi nuovi accanto ai vecchi (`torsadestech.github.io`,
+`consegne-collaudo.torsadestech.com`), e gli strumenti sanno lavorare con un sorgente che
+sta in un'organizzazione mentre il vecchio indirizzo resta a `gistech2026`. Dopo il
+trasferimento, nell'ordine:
+
+1. nel file del collaudo `github.sorgente` diventa `torsadestech/app-consegne-sorgente`, e
+   lo stesso nella riserva di `gh-api.js` (i controlli di rilascio lo pretendono);
+2. il remoto `collaudo` di questa cartella si sposta sul nome nuovo (`git remote set-url`,
+   senza chiavi nell'indirizzo); `scambio-repository.js collaudo stato` deve dire «scambio
+   fatto» e `pubblicazione.js collaudo` deve trovare il repository;
+3. il flusso Keepalive e quello di pubblicazione riconoscono il collaudo dalla variabile
+   `CLOUDFLARE_PROGETTO`, non dal proprietario: dopo il trasferimento si controlla che
+   variabili e segreti ci siano ancora e si lanciano a mano una volta;
+4. `verifica-chiusura.js collaudo` (con `--dominio-non-collegato` finché il dominio non è
+   collegato) deve dare tutto chiuso, anche al nome di prima (`gistech2026/app-consegne-sorgente`);
+5. i repository pubblici nuovi (livello 0 e sito di servizio) si creano nell'organizzazione
+   con `sito-pubblico.js collaudo pubblica --crea` e `pubblica-sito.js`, dopo aver cambiato
+   `pubblicazione.sitoPubblico` e `github.sitoServizio` nel file (e nella riserva); i siti
+   vecchi su `gistech2026.github.io` restano accesi finché i nuovi non sono provati.

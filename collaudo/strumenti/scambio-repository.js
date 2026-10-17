@@ -48,6 +48,14 @@
 // GitHub Pages pubblica al massimo una decina di volte l'ora per sito: dopo
 // troppi scambi e annullamenti di fila (succede solo provando) le pubblicazioni
 // vanno in errore e il vecchio indirizzo resta a 404 finché l'ora non passa.
+//
+// Nomi e proprietari dei repository vengono dal file del reparto (voce «github»,
+// dalla v199; vedi gh-api.js): il sorgente e il vecchio indirizzo possono stare
+// in account diversi, quando il sorgente è stato trasferito all'organizzazione
+// della società e il vecchio indirizzo è rimasto all'account di prima (un sito
+// di GitHub Pages non segue un trasferimento). Allora lo scambio è per forza già
+// fatto: un cambio di nome non cambia il proprietario, quindi «scambia» da capo e
+// «annulla» si rifiutano, e «stato» guarda ciascun repository nel suo account.
 const { execFileSync } = require('child_process');
 const ghApi = require('./gh-api.js');
 const { fileRinvio, destinazione, RADICE } = require('./prepara-rinvio.js');
@@ -61,8 +69,16 @@ try { ARG = ghApi.argomenti(process.argv.slice(2)); AMB = ghApi.per(ARG.ambiente
 catch (e) { console.log('ERRORE: ' + pulito(e.message)); process.exit(1); }
 const gh = AMB.gh, UTENTE = AMB.UTENTE;
 
-const NOMI = { app: 'app-consegne', sorgente: 'app-consegne-sorgente', rinvio: 'app-consegne-rinvio' };
-const SITO = 'https://' + UTENTE.toLowerCase() + '.github.io/';
+// il vecchio indirizzo (dopo lo scambio: la pagina di rinvio) e il sorgente, ciascuno col suo proprietario;
+// il rinvio si prepara accanto al vecchio indirizzo, con un nome provvisorio
+const [PROP_APP, NOME_APP] = AMB.rinvio.split('/');
+const [PROP_SORGENTE, NOME_SORGENTE] = AMB.sorgente.split('/');
+const NOMI = { app: NOME_APP, sorgente: NOME_SORGENTE, rinvio: NOME_APP + '-rinvio' };
+const TRASFERITO = PROP_APP.toLowerCase() !== PROP_SORGENTE.toLowerCase();
+if (NOMI.app === NOMI.sorgente) { console.log('ERRORE: il sorgente e il vecchio indirizzo hanno lo stesso nome (' + NOMI.app + '): lo scambio li distingue per nome'); process.exit(1); }
+// di quale account è un nome: il sorgente sta dal suo proprietario, gli altri due accanto al vecchio indirizzo
+const proprietarioDi = (nome) => (nome === NOMI.sorgente ? PROP_SORGENTE : PROP_APP);
+const SITO = 'https://' + PROP_APP.toLowerCase() + '.github.io/';
 const REMOTO = AMB.remoto;
 const NUOVO = AMB.sitoNuovo;
 // Due regole: una per i rami e una per le etichette. Con la sola regola dei rami
@@ -83,11 +99,14 @@ async function api(metodo, percorso, corpo, ammessi) {
   if (r.stato >= 300 && !(ammessi || []).includes(r.stato)) throw new Error(metodo + ' ' + percorso + ' → HTTP ' + r.stato + ' ' + JSON.stringify(r.dati).slice(0, 300));
   return r;
 }
-const base = (nome) => '/repos/' + UTENTE + '/' + nome;
+const base = (nome) => '/repos/' + proprietarioDi(nome) + '/' + nome;
+const pieno = (nome) => proprietarioDi(nome) + '/' + nome;
 async function repo(nome) {
-  const r = await api('GET', base(nome), null, [404]);
-  // un nome appena cambiato viene ancora «rinviato» da GitHub al repository nuovo: non è lui
-  if (r.stato === 404 || !r.dati || r.dati.name !== nome) return null;
+  const r = await api('GET', base(nome), null, [404, 301, 302, 307, 308]);
+  // un nome appena cambiato, o un repository trasferito, viene ancora «rinviato» da GitHub al repository
+  // nuovo (gh-api.js non segue il rinvio): non è lui. Conta solo il repository con quel nome in quell'account
+  if (r.stato !== 200 || !r.dati || r.dati.name !== nome) return null;
+  if (!r.dati.owner || String(r.dati.owner.login).toLowerCase() !== proprietarioDi(nome).toLowerCase()) return null;
   return r.dati;
 }
 // Che cosa risponde un indirizzo (l'app, la pagina di rinvio, un 404, altro) e,
@@ -136,24 +155,27 @@ async function blocca(nome) {
 
 // Il remoto locale. Il suo indirizzo può contenere una chiave: non finisce mai
 // in un messaggio, nemmeno quando git fallisce (l'errore di git riporterebbe
-// l'intera riga di comando). Deve essere un repository di questo account,
-// nella forma github.com/<proprietario>/<nome>: altrimenti non si tocca nulla.
+// l'intera riga di comando). Deve essere un repository di uno dei due
+// proprietari (vecchio indirizzo e sorgente), nella forma
+// github.com/<proprietario>/<nome>: altrimenti non si tocca nulla.
 const FORMA_REMOTO = /(github\.com[/:])([^/:@\s]+)\/([A-Za-z0-9._-]+?)(?:\.git)?\/?$/;
 function remoto() {
   let u = '';
   try { u = execFileSync('git', ['-C', RADICE, 'remote', 'get-url', REMOTO], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim(); }
   catch (e) { throw new Error('non riesco a leggere il remoto «' + REMOTO + '» di questa cartella'); }
   const m = FORMA_REMOTO.exec(u);
-  if (!m || m[2].toLowerCase() !== UTENTE.toLowerCase()) throw new Error('il remoto «' + REMOTO + '» di questa cartella non punta a un repository di ' + UTENTE + ': va corretto a mano');
-  return { indirizzo: u, nome: m[3] };
+  const ammessi = [PROP_APP, PROP_SORGENTE].map((x) => x.toLowerCase());
+  if (!m || ammessi.indexOf(m[2].toLowerCase()) < 0) throw new Error('il remoto «' + REMOTO + '» di questa cartella non punta a un repository di ' + [...new Set([PROP_APP, PROP_SORGENTE])].join(' o di ') + ': va corretto a mano');
+  return { indirizzo: u, proprietario: m[2], nome: m[3] };
 }
 function nomeDelRemoto() { return remoto().nome; }
+// il remoto punta al repository con quel nome, nell'account in cui il file del reparto dice che sta
 function puntaIlRemoto(nome) {
   const r = remoto();
-  if (r.nome === nome) return false;
-  const nuovo = r.indirizzo.replace(FORMA_REMOTO, (tutto, sito, proprietario) => sito + proprietario + '/' + nome + '.git');
+  if (r.nome === nome && r.proprietario.toLowerCase() === proprietarioDi(nome).toLowerCase()) return false;
+  const nuovo = r.indirizzo.replace(FORMA_REMOTO, (tutto, sito) => sito + proprietarioDi(nome) + '/' + nome + '.git');
   try { execFileSync('git', ['-C', RADICE, 'remote', 'set-url', REMOTO, nuovo], { stdio: ['ignore', 'pipe', 'pipe'] }); }
-  catch (e) { throw new Error('non riesco a spostare il remoto «' + REMOTO + '» su ' + nome + ': va corretto a mano prima di ogni push'); }
+  catch (e) { throw new Error('non riesco a spostare il remoto «' + REMOTO + '» su ' + pieno(nome) + ': va corretto a mano prima di ogni push'); }
   return true;
 }
 
@@ -193,8 +215,19 @@ async function controlliDiPartenza(nome) {
     if (x.stato !== 200 || !Array.isArray(x.dati)) { guai.push('non riesco a leggere ' + cosa + ' (HTTP ' + x.stato + '): con questa chiave il controllo non si può fare'); return []; }
     return x.dati;
   };
-  const altri = (await elenco('/collaborators?affiliation=all&per_page=100', 'i collaboratori')).filter((x) => String(x.login).toLowerCase() !== UTENTE.toLowerCase());
-  if (altri.length) guai.push('collaboratori oltre al proprietario: ' + altri.map((x) => x.login).join(', '));
+  // In un'organizzazione si guardano tutte le strade: chi ha un accesso diretto (membri ed esterni), le
+  // squadre, e il permesso che l'organizzazione dà di base a ogni membro, che deve essere «nessuno»
+  const organizzazione = !!(r.owner && r.owner.type === 'Organization');
+  const mio = (x) => [UTENTE, r.owner && r.owner.login].map((y) => String(y || '').toLowerCase()).indexOf(String(x.login).toLowerCase()) >= 0;
+  const altri = (await elenco('/collaborators?affiliation=' + (organizzazione ? 'direct' : 'all') + '&per_page=100', 'i collaboratori')).filter((x) => !mio(x));
+  if (altri.length) guai.push((organizzazione ? 'accessi diretti oltre all\'utente: ' : 'collaboratori oltre al proprietario: ') + altri.map((x) => x.login).join(', '));
+  if (organizzazione) {
+    const squadre = await elenco('/teams?per_page=100', 'le squadre con accesso');
+    if (squadre.length) guai.push('squadre con accesso: ' + squadre.map((x) => x.slug || x.name).join(', '));
+    const org = await gh('GET', '/orgs/' + r.owner.login);
+    const base0 = org.stato === 200 && org.dati ? org.dati.default_repository_permission : null;
+    if (base0 !== 'none') guai.push('permesso di base dei membri di ' + r.owner.login + ': ' + (base0 ? '«' + base0 + '»' : 'non leggibile (HTTP ' + org.stato + ')') + ', atteso «none»');
+  }
   const chiavi = await elenco('/keys', 'le chiavi di pubblicazione');
   if (chiavi.length) guai.push(chiavi.length + ' chiavi di pubblicazione');
   const agganci = await elenco('/hooks', 'gli agganci esterni');
@@ -235,10 +268,10 @@ async function pubblicazione(nome) {
 async function stato() {
   for (const k of Object.keys(NOMI)) {
     const r = await repo(NOMI[k]);
-    if (!r) { console.log(NOMI[k].padEnd(24) + 'non esiste'); continue; }
+    if (!r) { console.log(pieno(NOMI[k]).padEnd(44) + 'non esiste'); continue; }
     const p = r.has_pages ? (await api('GET', base(NOMI[k]) + '/pages', null, [404])).dati : null;
     const quante = (await regolePresenti(NOMI[k])).length;
-    console.log(NOMI[k].padEnd(24) + r.visibility + ' | sito: ' + (p && p.source ? p.source.branch + ':' + p.source.path + ' (' + p.status + ')' : 'no') + (quante === REGOLE.length ? ' | chiuso alle scritture' : quante ? ' | chiuso solo in parte' : ''));
+    console.log(pieno(NOMI[k]).padEnd(44) + r.visibility + ' | sito: ' + (p && p.source ? p.source.branch + ':' + p.source.path + ' (' + p.status + ')' : 'no') + (quante === REGOLE.length ? ' | chiuso alle scritture' : quante ? ' | chiuso solo in parte' : ''));
   }
   const rinvii = [];
   for (const nome of [NOMI.app, NOMI.rinvio]) {
@@ -246,7 +279,7 @@ async function stato() {
     if (d.cosa === 'rinvio') rinvii.push(d.verso);
     console.log(('indirizzo ' + SITO + nome + '/').padEnd(78) + ' → ' + d.cosa + (d.cosa === 'rinvio' ? ' verso ' + d.verso : ''));
   }
-  try { console.log('remoto «' + REMOTO + '» di questa cartella → ' + UTENTE + '/' + pulito(nomeDelRemoto())); }
+  try { const x = remoto(); console.log('remoto «' + REMOTO + '» di questa cartella → ' + pulito(x.proprietario + '/' + x.nome)); }
   catch (e) { console.log('remoto «' + REMOTO + '» di questa cartella → DA SISTEMARE: ' + pulito(e.message)); }
   const s = await situazione();
   console.log('situazione: ' + FASI[s.fase]);
@@ -272,13 +305,16 @@ async function prepara(nuovo) {
   if (dest !== NUOVO) throw new Error('per ' + ARG.ambiente + ' la pagina di rinvio deve portare a ' + NUOVO + ', non a ' + dest);
   const s = await situazione();
   if (s.fase !== 'prima' && s.fase !== 'senza-rinvio') throw new Error('non si può preparare ora. ' + FASI[s.fase]);
+  if (TRASFERITO) throw new Error('il sorgente (' + pieno(NOMI.sorgente) + ') e il vecchio indirizzo (' + pieno(NOMI.app) + ') sono in account diversi: lo scambio si fa dentro un account solo, perché un cambio di nome non cambia il proprietario');
   // il sito nuovo deve rispondere: 200, oppure il rinvio alla pagina di accesso del cancello
   const prova = await fetch(dest + 'sw.js', { redirect: 'manual', cache: 'no-store' }).then((r) => r.status, () => 0);
   if (prova !== 200 && prova !== 302) throw new Error('il sito nuovo ' + dest + ' non risponde come atteso (HTTP ' + prova + ')');
   let r = await repo(NOMI.rinvio);
   if (!r) {
-    await api('POST', '/user/repos', { name: NOMI.rinvio, description: "Rinvio al nuovo indirizzo dell'applicazione", private: false, auto_init: true, has_issues: false, has_wiki: false, has_projects: false });
-    console.log('repository ' + UTENTE + '/' + NOMI.rinvio + ' creato');
+    // nell'account del vecchio indirizzo: con /user/repos se è l'utente, con /orgs/<nome>/repos se è un'organizzazione
+    const c = await AMB.crea(PROP_APP, { name: NOMI.rinvio, description: "Rinvio al nuovo indirizzo dell'applicazione", private: false, auto_init: true, has_issues: false, has_wiki: false, has_projects: false });
+    if (c.stato >= 300) throw new Error('creazione di ' + pieno(NOMI.rinvio) + ' → HTTP ' + c.stato + ' ' + JSON.stringify(c.dati).slice(0, 300));
+    console.log('repository ' + pieno(NOMI.rinvio) + ' creato');
     await attendi(3000);
     r = await repo(NOMI.rinvio);
   }
@@ -369,6 +405,8 @@ async function scambia() {
     nota('lo scambio è fatto, ma il vecchio indirizzo non serve ancora la pagina di rinvio giusta: la aspetto');
     return codaDelloScambio(nota, t0);
   }
+  // con i due in account diversi resta un solo passo sicuro: un sorgente rimasto pubblico si rende privato
+  if (TRASFERITO && fase !== 'a-meta-2') throw new Error('il sorgente (' + pieno(NOMI.sorgente) + ') e il vecchio indirizzo (' + pieno(NOMI.app) + ') sono in account diversi, e lo scambio non risulta fatto: un cambio di nome non cambia il proprietario, quindi lo scambio si fa dentro un account solo. ' + FASI[fase]);
   if (fase === 'prima') {
     if (nomeDelRemoto() !== NOMI.app) throw new Error('il remoto «' + REMOTO + '» punta a ' + nomeDelRemoto() + ', atteso ' + NOMI.app);
     const rinvio = await doveRimanda(SITO + NOMI.rinvio + '/');
@@ -433,6 +471,8 @@ async function sitoPubblicato() {
 }
 
 async function annulla() {
+  // il sorgente deve tornare al vecchio nome, nello stesso account: da un'organizzazione si torna solo con un trasferimento
+  if (TRASFERITO) throw new Error('il sorgente sta in ' + PROP_SORGENTE + ' e il vecchio indirizzo in ' + PROP_APP + ': per annullare lo scambio il sorgente va prima riportato in ' + PROP_APP + ' (trasferimento da GitHub), e il file del reparto corretto; poi «annulla»');
   const s = await situazione();
   const t0 = Date.now();
   const nota = (t) => console.log(secondi(t0).padStart(8) + '  ' + t);
@@ -481,14 +521,15 @@ if (comando !== 'stato') {
   try { ghApi.pretendiAmbiente(ARG, comando); }
   catch (e) { console.log('ERRORE: ' + pulito(e.message)); process.exit(1); }
 }
-console.log('ambiente: ' + ARG.ambiente + ' | proprietario su GitHub: ' + UTENTE + ' | remoto di questa cartella: ' + REMOTO);
+console.log('ambiente: ' + ARG.ambiente + ' | account su GitHub: ' + UTENTE + ' | vecchio indirizzo: ' + pieno(NOMI.app) + ' | sorgente: ' + pieno(NOMI.sorgente) + ' | remoto di questa cartella: ' + REMOTO
+  + (AMB.daFile ? '' : ' | DATI DI RISERVA: il file del reparto non si legge'));
 // Dalla v190 docs/ è il sito di UN reparto (quello che pubblica da lì, oggi la 11N): il suo js/ambiente.js
 // non ammette altri indirizzi. Dove GitHub Pages servisse docs/ da un altro account, le pagine arrivano ma
 // l'app si ferma su «Indirizzo non riconosciuto». Solo un avviso: non cambia ciò che lo strumento fa.
 try {
   const rep = require('./reparti.js');
-  if (!rep.hostAmmesso(rep.delSitoInDocs(), UTENTE.toLowerCase() + '.github.io')) {
-    console.log('NOTA: docs/ è il sito del reparto «' + rep.delSitoInDocs().codice + '». Da ' + UTENTE.toLowerCase() + '.github.io le sue pagine arrivano, ma l\'app si ferma su «Indirizzo non riconosciuto»: qui sotto «app» vuol dire soltanto che GitHub Pages serve le pagine.');
+  if (!rep.hostAmmesso(rep.delSitoInDocs(), PROP_APP.toLowerCase() + '.github.io')) {
+    console.log('NOTA: docs/ è il sito del reparto «' + rep.delSitoInDocs().codice + '». Da ' + PROP_APP.toLowerCase() + '.github.io le sue pagine arrivano, ma l\'app si ferma su «Indirizzo non riconosciuto»: qui sotto «app» vuol dire soltanto che GitHub Pages serve le pagine.');
   }
 } catch (e) {}
 if (AMB.produzione && comando !== 'stato' && !ARG.confermato) {

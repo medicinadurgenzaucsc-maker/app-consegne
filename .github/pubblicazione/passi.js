@@ -97,9 +97,11 @@ const PASSI = {
     else console.log('Cloudflare è configurato: progetto «' + env.PROGETTO + '»');
   },
 
-  // Il progetto Pages: se non c'è lo crea. Dice a che indirizzo risponde, e si
-  // ferma se l'app non riconosce quell'indirizzo (si aprirebbe solo l'avviso
-  // «Indirizzo non riconosciuto»).
+  // Il progetto Pages: se non c'è lo crea. Dice a che indirizzi risponde (il suo
+  // .pages.dev e i domini collegati), e si ferma se l'app non ne riconosce uno
+  // (lì si aprirebbe solo l'avviso «Indirizzo non riconosciuto»). Il dominio
+  // dichiarato nel file del reparto e non ancora collegato al progetto è solo
+  // un avviso: il nome si collega da Cloudflare, dopo.
   async progetto() {
     let r = await cloudflare('GET', '/' + env.PROGETTO);
     if (r.stato === 404) {
@@ -111,8 +113,13 @@ const PASSI = {
     console.log('progetto: ' + p.name + ' | ramo di produzione: ' + p.production_branch + ' | indirizzo: https://' + p.subdomain);
     if (p.production_branch !== 'master') errore('il ramo di produzione del progetto è «' + p.production_branch + '», atteso «master»');
     const reparto = repartoDelFlusso();
-    if (!reparti.hostAmmesso(reparto, p.subdomain)) errore("l'indirizzo " + p.subdomain + ' non è fra quelli del reparto «' + reparto.codice + '» (campo «host» di reparti/' + reparto.codice + '.json): il sito pubblicato lì si fermerebbe su «Indirizzo non riconosciuto»');
+    const nomi = [p.subdomain].concat(Array.isArray(p.domains) ? p.domains : []).map((x) => String(x || '').toLowerCase()).filter((x, i, a) => x && a.indexOf(x) === i);
+    nomi.forEach((h) => { if (!reparti.hostAmmesso(reparto, h)) errore("l'indirizzo " + h + ' non è fra quelli del reparto «' + reparto.codice + '» (campo «host» di reparti/' + reparto.codice + '.json): il sito pubblicato lì si fermerebbe su «Indirizzo non riconosciuto»'); });
+    if (nomi.length > 1) console.log('domini collegati al progetto: ' + nomi.slice(1).join(', '));
+    const dominio = reparto.pubblicazione.cloudflare && reparto.pubblicazione.cloudflare.dominio;
+    if (dominio && nomi.indexOf(dominio) < 0) console.log('::notice title=Dominio non ancora collegato::Il file del reparto dichiara il dominio ' + dominio + ', ma il progetto Pages non lo ha ancora: il sito risponde solo da ' + p.subdomain + '. Il nome si collega da Cloudflare insieme alla sua applicazione Access, senza minuti in mezzo (finché l\'applicazione non c\'è, da quel nome il sito è aperto a tutti), e subito dopo si prova da estraneo con verifica-chiusura.js.');
     esporta(env.GITHUB_ENV, 'SITO=https://' + p.subdomain);
+    if (dominio && nomi.indexOf(dominio) >= 0) esporta(env.GITHUB_ENV, 'DOMINIO=https://' + dominio);
   },
 
   // L'ultima pubblicazione di produzione del progetto è proprio questo commit, ed è riuscita.
@@ -131,6 +138,7 @@ const PASSI = {
     riga('- reparto: ' + repartoDelFlusso().codice);
     riga('- progetto: ' + env.PROGETTO);
     riga('- sito: ' + env.SITO);
+    if (env.DOMINIO) riga('- dominio: ' + env.DOMINIO);
     riga('- versione: ' + env.VERSIONE + ' (' + String(env.GITHUB_SHA).slice(0, 7) + ')');
     riga('- questa pubblicazione: ' + d.url);
   },

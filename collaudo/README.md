@@ -87,6 +87,21 @@ I token si leggono dalla configurazione locale di Claude Code (voci MCP
 `supabase` e `supabase-collaudo`) e dall'archivio credenziali di Git: nel
 repository non c'è alcun segreto.
 
+Dalla v199 (il «ponte» del collaudo) account e repository di GitHub non sono
+più costanti scritte negli strumenti: li dice il file del reparto, voce
+`github` (`utente`, `sorgente`, `rinvio`, `sitoServizio`; schema in
+`reparti/README.md`). Un repository può essere di un'organizzazione diversa
+dall'utente, come il sorgente del collaudo dopo il trasferimento
+all'organizzazione della società: `gh-api.js` lascia lavorare solo nei
+repository che il file nomina, uno per uno e metodo per metodo, crea solo quei
+nomi (in un'organizzazione con `/orgs/<nome>/repos`), non segue i rinvii di
+GitHub, e da qualunque ambiente rifiuta una scrittura in un repository della
+produzione fuori dall'ambiente `produzione`. `pubblica-sito.js` crea il
+repository solo con `--crea` e scrive solo in uno appena nato o che contiene
+già soltanto i file del sito di servizio. `gh-api.js` tiene una riserva con gli stessi dati, per
+quando il file non si legge: chi cambia un account o un repository nel file
+cambia anche la riserva (il controllo 14 lo pretende).
+
 | Script | A cosa serve |
 |---|---|
 | `sb.js` | Accesso ai due database: `collaudo()` legge e scrive solo sul progetto di collaudo, `produzione()` è in **sola lettura**; `per(nome)` dà quello giusto dal codice di un reparto. |
@@ -101,20 +116,20 @@ repository non c'è alcun segreto.
 | `prepara-sito.js [cartella] [compressa] [--reparto <codice>]` | Elenca (o copia in una cartella) i soli file del sito, **per un reparto**: genera il suo `js/ambiente.js` e controlla che nel sito non ci siano dati di un altro reparto. Senza `--reparto` è il sito di `docs/` così com'è (la 11N). Con `compressa` ne produce la copia compressa, la forma pubblicata su Cloudflare, e la controlla. La cartella viene svuotata: può essere solo `_sito` o una sua sottocartella. |
 | `sito-pubblico.js <reparto> stato\|pubblica [--crea]` | Il «livello 0»: pubblica il sito di un reparto, in copia compressa, in un repository **pubblico che contiene solo quei file** (voce `pubblicazione.sitoPubblico` del suo file), servito da GitHub Pages; il sorgente resta privato. A ogni pubblicazione un commit in più con l'intero sito, mai una spinta forzata, poi aspetta che il sito serva gli stessi file. Pubblica solo ciò che è registrato in git, solo in un repository appena nato o che è già il sito di quel reparto, e lo crea solo con `--crea`. `stato` è di sola lettura e dice se la versione servita è quella della cartella. Da riga di comando solo per un reparto di collaudo. Oggi: `gistech2026/collaudo-sito`, sito `https://gistech2026.github.io/collaudo-sito/`; non si aggiorna da solo, va rilanciato dopo `pubblicazione.js`. |
 | `prepara-rinvio.js <nuovo indirizzo> [cartella]` | Genera i file della pagina di rinvio (ciò che resta al vecchio indirizzo quando il sito si sposta), dai modelli in `rinvio/`. |
-| `scambio-repository.js <ambiente> stato\|prepara\|scambia\|annulla` | Prova generale dello scambio dei repository nel collaudo: sorgente in un repository privato, al vecchio nome solo la pagina di rinvio (vedi «Pubblicazione su Cloudflare»). |
+| `scambio-repository.js <ambiente> stato\|prepara\|scambia\|annulla` | Prova generale dello scambio dei repository nel collaudo: sorgente in un repository privato, al vecchio nome solo la pagina di rinvio (vedi «Pubblicazione su Cloudflare»). Dalla v199 guarda ciascun repository nel suo account: se il sorgente sta in un'altra organizzazione lo scambio è per forza già fatto, e «scambia» da capo e «annulla» si rifiutano (un cambio di nome non cambia il proprietario). |
 | `pubblicazione.js [ambiente] [avvia]` | Segue il flusso «Pubblica su Cloudflare» del repository di collaudo fino alla fine, ne mostra i passi e controlla che l'avviso ai PC sia arrivato in `app_version`; con `avvia` lo fa ripartire a mano sullo stesso commit. Non scrive nel database. |
-| `verifica-chiusura.js collaudo\|produzione [indirizzo] [--archivi]` | Prova **da estraneo**, senza credenziali, che il sorgente non si scarichi più da nessuna strada, che al vecchio indirizzo resti solo la pagina di rinvio e che il sito nuovo chieda l'accesso: 28 prove, più 4 sugli archivi pubblici di terzi. Dove lo scambio non è stato fatto deve fallire: è la sua controprova. |
+| `verifica-chiusura.js collaudo\|produzione [indirizzo] [--archivi]` | Prova **da estraneo**, senza credenziali, che il sorgente non si scarichi più da nessuna strada, che al vecchio indirizzo resti solo la pagina di rinvio e che il sito nuovo chieda l'accesso: 29 prove, più 4 sugli archivi pubblici di terzi. Dove lo scambio non è stato fatto deve fallire: è la sua controprova. Dalla v199: il rinvio deve portare **esattamente** alla pagina d'accesso della squadra che il file del reparto nomina (`pubblicazione.cloudflare.squadra`), per quel nome; se il sorgente sta in un altro account deve mancare a tutti e due i nomi; se il file dichiara un dominio le prove del sito si rifanno lì; un dominio che non risolve vale «NON SO» (lo si chiede anche a un risolutore pubblico), e solo con `--dominio-non-collegato`, se non esiste nemmeno lì, si annota senza contarlo. Finché il dominio del collaudo non è collegato: `verifica-chiusura.js collaudo --dominio-non-collegato`. |
 | `copia-rubrica.js collaudo [confronta\|prima-copia]`, `copia-rubrica.js produzione confronta`, `copia-rubrica.js produzione prima-copia --confermo-produzione` | Copia l'elenco della rubrica telefonica dal suo vecchio database nelle tabelle `rubrica_`, in una sola transazione e con gli stessi identificativi; `confronta` dice solo se le due copie coincidono. Nel collaudo, senza azione, svuota e riempie. **In produzione non svuota mai**: esiste solo `prima-copia`, che si rifiuta se la destinazione ha già righe (fatta il 09/10/2026). Non stampa nomi né numeri: solo conteggi e impronte. La sorgente si legge soltanto; quando il vecchio database della rubrica verrà spento lo strumento non avrà più da dove leggere. |
 | `banco.js [porta] [compressa]` | Banco di prova locale (con `compressa` serve la copia compressa del sito): serve l'app così com'è nella cartella di lavoro, collegata al collaudo e già «dentro» con l'utente fittizio. |
 | `inventario-markup.js [produzione\|collaudo]` | Elenco di tag, attributi, classi e proprietà di stile presenti nei campi delle schede (solo nomi e conteggi, mai il testo): serve a tarare e a ricontrollare il filtro dell'HTML (`docs/js/sanifica.js`). |
-| `pubblica-sito.js` | Pubblica il sito di servizio `gistech2026.github.io/collaudo/` (finto TrakCare e informativa). |
+| `pubblica-sito.js` | Pubblica il sito di servizio (finto TrakCare e informativa) nel repository che il file del collaudo dice in `github.sitoServizio`, oggi `gistech2026/collaudo` (sito `gistech2026.github.io/collaudo/`); se manca lo crea, anche in un'organizzazione. |
 | `controlli-rilascio.js [riferimento]` | Controlli statici prima di ogni pubblicazione: sintassi, segnalibri collassati e loro versione, tag script al completo, impronta della libreria del filtro, service worker, uscita solo locale (`signOut` con `scope: 'local'`), versione nel menu uguale a `CACHE_NAME`. Confronta con `origin/master` (la produzione) se non si indica altro. |
 | `confronta-filtro.js [produzione\|collaudo] [--backup N]` | Prima di pubblicare una versione che introduce o cambia il filtro dell'HTML: controlla che le schede (e gli ultimi N backup) non usino tag, attributi, classi o stili che il filtro toglierebbe. L'analisi gira dentro il database: escono solo nomi e conteggi, mai il testo. `--autoprova` verifica lo strumento stesso su un contenuto costruito apposta. |
 | `prova-uscita.js` | Dimostra con sessioni vere che «Esci» su un dispositivo non scollega gli altri: utente provvisorio, tre sessioni, uscita `local` dalla prima, le altre due restano; controprova con `global`. L'utente viene eliminato alla fine. |
 | `funzioni-collaudo.js pubblica\|configura` | Pubblica `google-token` e `google-finto` nel collaudo (dopo averne controllato la sintassi) e ne imposta variabili e credenziali finte. |
 | `cassaforte-collaudo.js stato\|finta\|vera\|verifica` | Dice in che stato è la cassaforte della mail del collaudo e la passa dalle credenziali vere a quelle finte e ritorno. Lo scambio avviene dentro il database: i token veri non passano dallo script. Per le prove sa anche togliere il client secret (`senzaSegreto`, come al primo avvio) e metterne uno che il finto Google non riconosce (`segretoSbagliato`), sempre e solo su una cassaforte finta. |
 | `prova-funzione-mail.js` | 69 prove della funzione mail contro il finto Google: chi può chiamare (anche il finto Google stesso), mittente scelto, consenso dell'account giusto, verifica dal vivo dei permessi, mittente mostrato diverso da quello in uso, client secret (salvato solo se riconosciuto, mai restituito, ID client respinto, secret custodito non più valido). Mette da parte il consenso vero e lo rimette alla fine. |
-| `supabase-accesso.js`, `github-accesso.js` | Autorizzazione «a codice» dei due account di collaudo, senza far passare chiavi dalla chat. |
+| `supabase-accesso.js`, `github-accesso.js` | Autorizzazione «a codice» dei due account di collaudo, senza far passare chiavi dalla chat. L'account di GitHub è quello di `github.utente` del file del collaudo: un accesso autorizzato da un altro account non viene registrato. |
 
 ## Provare in locale da utente collegato
 
@@ -499,7 +514,9 @@ leggono (Pannello Terapia e Laboratorio) per i 24 pazienti inventati:
 `catalogo.js` descrive terapie ed esami, con una data fissa e alcuni «giorni
 dopo» per simulare ciò che cambia da un giorno all'altro. Sta fuori da `docs/`
 perché ciò che è in `docs/` arriva anche in produzione; `pubblica-sito.js` lo
-pubblica, con l'informativa sull'accesso, su `gistech2026.github.io/collaudo/`.
+pubblica, con l'informativa sull'accesso, nel repository di
+`github.sitoServizio` del file del collaudo (oggi `gistech2026.github.io/collaudo/`;
+il link «privacy» del client Google del collaudo punta lì).
 
 ## Regole
 

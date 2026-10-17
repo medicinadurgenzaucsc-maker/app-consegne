@@ -244,7 +244,9 @@ mancanti.length ? ko('sw.js elenca file che non esistono (l\'installazione del s
     let casi = 0;
     const atteso = (cosa, ottenuto, voluto) => { casi++; if (ottenuto !== voluto) male.push(cosa + ' → ' + ottenuto + ' (atteso ' + voluto + ')'); };
     const detto = (e) => e.esito ? 'PARTE' : 'fermo:' + e.motivo;
-    const SCONOSCIUTI = ['', 'example.org', 'github.io', 'pages.dev', 'supabase.co', 'xgistech2026.github.io', 'localhost.example.org'];
+    // dalla v199 anche i nomi della società che nessun reparto elenca, e il cancello di Access
+    const SCONOSCIUTI = ['', 'example.org', 'github.io', 'pages.dev', 'supabase.co', 'xgistech2026.github.io', 'localhost.example.org',
+      'torsadestech.com', 'www.torsadestech.com', 'admin.torsadestech.com', 'consegne.torsadestech.com', 'xtorsadestech.github.io', 'consegne-collaudo.cloudflareaccess.com'];
     tutti.forEach((r) => {
       const F = file[r.codice];
       r.host.forEach((h) => {
@@ -613,8 +615,17 @@ mancanti.length ? ko('sw.js elenca file che non esistono (l\'installazione del s
     if (p.supabaseUrl !== 'https://' + sb.REF_PRODUZIONE + '.supabase.co') guai.push('sb.js, REF_PRODUZIONE');
     const aj = JSON.parse(leggi('collaudo/strumenti/ambiente.json'));
     if (aj.url !== c.supabaseUrl || aj.anon !== c.supabaseAnonKey || aj.ref !== sb.REF_COLLAUDO) guai.push('collaudo/strumenti/ambiente.json');
-    if (gh.AMBIENTI.collaudo.sitoNuovo !== 'https://' + c.pubblicazione.cloudflare.progetto + '.pages.dev/') guai.push('gh-api.js, sito nuovo del collaudo');
-    if (gh.AMBIENTI.produzione.sitoNuovo !== 'https://' + p.pubblicazione.cloudflare.progetto + '.pages.dev/') guai.push('gh-api.js, sito nuovo della produzione');
+    // dalla v199 gh-api.js prende account e repository dal file del reparto (voce «github», o i nomi di sempre
+    // per chi pubblica docs/), e tiene una riserva per quando il file non si legge: deve dire le stesse cose.
+    // Il sito nuovo è il .pages.dev del progetto, oppure il dominio che il file dichiara accanto
+    ['collaudo', 'produzione'].forEach((k) => {
+      const a = gh.AMBIENTI[k], ris = gh.RISERVA[k], rep = k === 'collaudo' ? c : p, g = reparti.github(rep), cf = rep.pubblicazione.cloudflare;
+      if (!a.daFile) guai.push('gh-api.js non legge il file del reparto ' + rep.codice);
+      if (a.sitoNuovo !== 'https://' + cf.progetto + '.pages.dev/' && !(cf.dominio && a.sitoNuovo === 'https://' + cf.dominio + '/')) guai.push('gh-api.js, sito nuovo di ' + k);
+      if (a.utente !== g.utente || a.sorgente !== g.sorgente.repository || a.rinvio !== g.rinvio.repository || a.sitoServizio !== (g.sitoServizio ? g.sitoServizio.repository : null) || a.proprietari.join() !== g.proprietari.join()) guai.push('gh-api.js, account e repository di ' + k);
+      ['utente', 'remoto', 'sitoNuovo', 'sorgente', 'rinvio', 'sitoServizio'].forEach((x) => { if (ris[x] !== a[x]) guai.push('gh-api.js, riserva di ' + k + ': «' + x + '» non è quello del file del reparto'); });
+      if (ris.proprietari.join() !== a.proprietari.join()) guai.push('gh-api.js, riserva di ' + k + ': i proprietari non sono quelli del file del reparto');
+    });
     if (p.pubblicazione.githubPages.repository.split('/')[0] !== gh.AMBIENTI.produzione.utente) guai.push('gh-api.js, account della produzione');
     if (leggi('collaudo/pagina/prove.js').indexOf("var REF_PRODUZIONE = '" + sb.REF_PRODUZIONE + "';") < 0) guai.push('collaudo/pagina/prove.js, REF_PRODUZIONE');
     guai.length ? ko('i dati dei due ambienti scritti negli strumenti non concordano con i file dei reparti: ' + guai.join('; ')) : ok('strumenti: i dati dei due ambienti in sb.js, ambiente.json, gh-api.js e prove.js concordano con i file dei reparti');
@@ -631,12 +642,77 @@ mancanti.length ? ko('sw.js elenca file che non esistono (l\'installazione del s
     if (!rifiuta(() => gh.per('inesistente'))) storti.push('gh-api.js accetta un reparto sconosciuto');
     storti.length ? ko('nomi dei reparti negli strumenti: ' + storti.join('; ')) : ok('nomi dei reparti: «gemelli-11n» vale «produzione» negli strumenti, con la stessa conferma e la stessa sola lettura; un nome sconosciuto o fuori posto è rifiutato');
 
+    // dalla v199: le voci nuove del file di un reparto (dominio e squadra di Cloudflare, account e repository di
+    // GitHub), provate su copie del file del collaudo con un difetto ciascuna. Un nome d'organizzazione inventato,
+    // così le prove non dipendono da dove stanno oggi i repository
+    const ORG = 'organizzazione-di-prova';
+    const varia = (cambi) => { const x = JSON.parse(JSON.stringify(c)); cambi(x); return reparti.difetti(x, x.codice).length > 0 ? 'rifiutato' : 'accettato'; };
+    const conDominio = (x) => { x.pubblicazione.cloudflare.dominio = 'consegne-prova.example.org'; if (x.host.indexOf('consegne-prova.example.org') < 0) x.host.push('consegne-prova.example.org'); };
+    const casiFile = [
+      ['un dominio fra gli host', conDominio, 'accettato'],
+      ['un dominio che non è fra gli host', (x) => { conDominio(x); x.host = x.host.filter((h) => h !== 'consegne-prova.example.org'); }, 'rifiutato'],
+      ['un dominio che è un .pages.dev', (x) => { x.pubblicazione.cloudflare.dominio = 'altro.pages.dev'; x.host.push('altro.pages.dev'); }, 'rifiutato'],
+      ['un dominio col punto davanti', (x) => { x.pubblicazione.cloudflare.dominio = '.example.org'; x.host.push('.example.org'); }, 'rifiutato'],
+      ['un dominio con https://', (x) => { x.pubblicazione.cloudflare.dominio = 'https://consegne-prova.example.org'; }, 'rifiutato'],
+      ['una squadra di Access scritta come indirizzo', (x) => { x.pubblicazione.cloudflare.squadra = 'squadra.cloudflareaccess.com'; }, 'rifiutato'],
+      ['una voce sconosciuta fra quelle di Cloudflare', (x) => { x.pubblicazione.cloudflare.chiave = 'x'; }, 'rifiutato'],
+      ['senza dominio né squadra', (x) => { delete x.pubblicazione.cloudflare.dominio; delete x.pubblicazione.cloudflare.squadra; }, 'accettato'],
+      ['github senza rinvio', (x) => { x.github = { utente: 'prova', sorgente: 'prova/a' }; }, 'rifiutato'],
+      ['github con una voce sconosciuta', (x) => { x.github = { utente: 'prova', sorgente: 'prova/a', rinvio: 'prova/b', chiave: 'x' }; }, 'rifiutato'],
+      ['un utente di GitHub scritto male', (x) => { x.github = { utente: 'pro va', sorgente: 'prova/a', rinvio: 'prova/b' }; }, 'rifiutato'],
+      ['il sorgente uguale al rinvio', (x) => { x.github = { utente: 'prova', sorgente: 'prova/a', rinvio: 'Prova/A' }; }, 'rifiutato'],
+      ['il sorgente uguale al sito pubblico', (x) => { x.github = { utente: 'prova', sorgente: x.pubblicazione.sitoPubblico.repository, rinvio: 'prova/b' }; }, 'rifiutato'],
+      ['il sorgente uguale al sito di servizio', (x) => { x.github = { utente: 'prova', sorgente: 'prova/a', rinvio: 'prova/b', sitoServizio: 'prova/a' }; }, 'rifiutato'],
+      ['senza github in un reparto che non pubblica docs/', (x) => { delete x.github; }, 'rifiutato'],
+      ['il sorgente in un\'organizzazione', (x) => { x.github = { utente: 'prova', sorgente: ORG + '/app-consegne-sorgente', rinvio: 'prova/app-consegne' }; }, 'accettato'],
+    ];
+    const fileStorti = casiFile.filter((x) => varia(x[1]) !== x[2]).map((x) => x[0] + ' → ' + varia(x[1]));
+    // fra reparti (convalida dell'elenco su copie): il collaudo non può nominare un repository o l'account della
+    // produzione, nemmeno quelli che la 11N non scrive ma ricava (sorgente, rinvio provvisorio)
+    const gp0 = reparti.github(p);
+    const coppia = (cambi) => { const x = JSON.parse(JSON.stringify(c)); cambi(x); try { reparti.convalida([x, p], [x.codice, p.codice]); return 'accettato'; } catch (e) { return 'rifiutato'; } };
+    const nostri = (x, voce, valore) => { x.github = Object.assign({ utente: 'prova', sorgente: 'prova/a', rinvio: 'prova/b' }, { [voce]: valore }); };
+    const casiCoppia = [
+      ['il sorgente del collaudo nel sorgente della produzione', (x) => nostri(x, 'sorgente', gp0.sorgente.repository), 'rifiutato'],
+      ['il sito di servizio nel rinvio provvisorio della produzione', (x) => nostri(x, 'sitoServizio', gp0.rinvio.repository + '-rinvio'), 'rifiutato'],
+      ['il rinvio del collaudo nel vecchio indirizzo della produzione', (x) => nostri(x, 'rinvio', gp0.rinvio.repository), 'rifiutato'],
+      ['l\'account della produzione come utente del collaudo', (x) => nostri(x, 'utente', gp0.utente.toUpperCase()), 'rifiutato'],
+      ['il sorgente del collaudo in un\'organizzazione', (x) => nostri(x, 'sorgente', ORG + '/app-consegne-sorgente'), 'accettato'],
+    ];
+    casiCoppia.forEach((x) => { const v = coppia(x[1]); if (v !== x[2]) fileStorti.push(x[0] + ' → ' + v); });
+    // gh-api.js lavora solo nei repository dell'elenco, metodo per metodo; crea solo i nomi dell'elenco
+    const io = 'utente-di-prova';
+    const regole = { utente: io, repository: [ORG + '/app-consegne-sorgente', io + '/app-consegne', io + '/collaudo'] };
+    [['GET', '/user', null, true], ['PATCH', '/user', null, false], ['POST', '/user/repos', { name: 'collaudo' }, true], ['POST', '/user/repos', { name: 'altro' }, false], ['GET', '/user/repos', null, false],
+      ['GET', '/orgs/' + ORG, null, true], ['PATCH', '/orgs/' + ORG, null, false], ['POST', '/orgs/' + ORG + '/repos', { name: 'app-consegne-sorgente' }, true], ['POST', '/orgs/' + ORG + '/repos', { name: 'altro' }, false],
+      ['GET', '/orgs/' + io, null, false], ['POST', '/orgs/' + io + '/repos', { name: 'collaudo' }, false], ['GET', '/orgs/altri', null, false],
+      ['GET', '/repos/' + ORG + '/app-consegne-sorgente/actions/secrets', null, true], ['PATCH', '/repos/' + io + '/app-consegne', { name: 'app-consegne-sorgente' }, true],
+      ['GET', '/repos/' + ORG + '/altro-repository', null, false], ['GET', '/repos/' + io + '/app-consegnex', null, false], ['GET', '/repos/' + io + '/app-consegne%2fx', null, false],
+      ['GET', '/repos/' + ORG, null, false], ['GET', '/users/' + ORG, null, false]].forEach((x) => {
+      if (gh.percorsoAmmesso(regole, x[0], x[1].toLowerCase(), x[2]) !== x[3]) fileStorti.push('gh-api.js ' + (x[3] ? 'rifiuta' : 'accetta') + ' ' + x[0] + ' ' + x[1] + (x[2] ? ' ' + JSON.stringify(x[2]) : ''));
+    });
+    // da qualunque ambiente, una scrittura in un repository della produzione è riconosciuta come tale
+    const prodRepo = '/repos/' + gp0.rinvio.repository.toLowerCase();
+    if (!gh.toccaLaProduzione('DELETE', prodRepo) || !gh.toccaLaProduzione('POST', prodRepo + '/git/blobs') || gh.toccaLaProduzione('GET', prodRepo) || gh.toccaLaProduzione('POST', '/repos/' + io + '/collaudo/git/blobs')) fileStorti.push('gh-api.js non riconosce le scritture nei repository della produzione');
+    if (gh.repositoryDi(gh.AMBIENTI.collaudo).some((x) => gh.repositoryDi(gh.AMBIENTI.produzione).indexOf(x) >= 0)) fileStorti.push('gh-api.js: collaudo e produzione hanno un repository in comune');
+    // la riserva porta anche il sito pubblico, la squadra e il dominio
+    ['collaudo', 'produzione'].forEach((k) => ['sitoPubblico', 'squadra', 'dominio'].forEach((x) => { if (gh.RISERVA[k][x] !== gh.AMBIENTI[k][x]) fileStorti.push('gh-api.js, riserva di ' + k + ': «' + x + '» non è quello del file del reparto'); }));
+    // la pagina d'accesso esatta della squadra: per quel nome, in minuscolo; senza squadra nel file, nessuna
+    const sq = c.pubblicazione.cloudflare.squadra;
+    if (sq && reparti.cancelloAccess(c, 'Anteprima.Example.org') !== 'https://' + sq + '.cloudflareaccess.com/cdn-cgi/access/login/anteprima.example.org') fileStorti.push('cancelloAccess del collaudo');
+    if (reparti.cancelloAccess(p, 'x.example.org') !== (p.pubblicazione.cloudflare.squadra ? 'https://' + p.pubblicazione.cloudflare.squadra + '.cloudflareaccess.com/cdn-cgi/access/login/x.example.org' : null)) fileStorti.push('cancelloAccess della produzione');
+    // per chi pubblica docs/ senza la voce «github» valgono i nomi di sempre, presi da quel repository
+    const gp = reparti.github(p);
+    if (!p.github && (gp.rinvio.repository !== p.pubblicazione.githubPages.repository || gp.utente !== gp.rinvio.proprietario || gp.sorgente.repository !== gp.rinvio.proprietario + '/app-consegne-sorgente')) fileStorti.push('i nomi di sempre della produzione');
+    fileStorti.length ? ko('voci nuove dei file dei reparti: ' + fileStorti.join('; ')) : ok('file dei reparti: dominio e squadra di Cloudflare, account e repository di GitHub convalidati in ' + (casiFile.length + casiCoppia.length) + ' casi, anche fra reparti (il collaudo non nomina mai un repository o l\'account della produzione); gh-api.js lavora solo nei repository dell\'elenco, metodo per metodo, e da qualunque ambiente riconosce le scritture nella produzione; la riserva concorda; la pagina d\'accesso della squadra è quella esatta');
+
     // la pubblicazione riparte quando cambia un reparto, e chi la segue lo sa
     const flusso = leggi('.github/workflows/pubblica-cloudflare.yml'), passi = leggi('.github/pubblicazione/passi.js');
     const manca = [];
     if (!/- 'reparti\/\*\*'/.test(flusso) || !/- 'collaudo\/strumenti\/reparti[.]js'/.test(flusso)) manca.push('pubblica-cloudflare.yml non riparte se cambia reparti/ o reparti.js');
     ['collaudo/strumenti/pubblicazione.js', 'collaudo/strumenti/scambio-repository.js'].forEach((s) => { if (!/DEL_SITO = \/\^\(docs\\\/\|reparti\\\/\|/.test(leggi(s))) manca.push(s + ': DEL_SITO non conta reparti/'); });
-    if (!/repartoDelFlusso\(\)/.test(passi) || !/reparto: reparto \? reparto[.]codice : undefined/.test(passi) || !/hostAmmesso\(reparto, p[.]subdomain\)/.test(passi)) manca.push('passi.js non prepara il sito per il reparto del progetto, o non controlla il suo indirizzo');
+    // dalla v199 il controllo vale per tutti i nomi da cui il progetto risponde: il .pages.dev e i domini collegati
+    if (!/repartoDelFlusso\(\)/.test(passi) || !/reparto: reparto \? reparto[.]codice : undefined/.test(passi) || !/\[p[.]subdomain\][.]concat\(Array[.]isArray\(p[.]domains\) \? p[.]domains : \[\]\)/.test(passi) || !/nomi[.]forEach\(\(h\) => \{ if \(!reparti[.]hostAmmesso\(reparto, h\)\) errore\(/.test(passi)) manca.push('passi.js non prepara il sito per il reparto del progetto, o non controlla ogni nome da cui il progetto risponde');
     if (!/reparto[.]supabaseUrl\) errore\(/.test(passi)) manca.push('passi.js non confronta il database dell\'avviso con quello del reparto');
     manca.length ? ko('pubblicazione per reparto: ' + manca.join('; ')) : ok('pubblicazione: il flusso riparte se cambia un reparto, prepara il sito del reparto del suo progetto, ne controlla l\'indirizzo e avvisa solo i suoi PC');
 
@@ -804,7 +880,8 @@ mancanti.length ? ko('sw.js elenca file che non esistono (l\'installazione del s
       ka.indexOf('node collaudo/strumenti/keepalive.js segnala') < 0 || ka.indexOf("if: always() && steps.reparto.outputs.centrale != ''") < 0) guai.push('il flusso Keepalive deve trovare il reparto con keepalive.js (dalla variabile CLOUDFLARE_PROGETTO, errori fuori dalle uscite) e mandare sempre l\'esito alla centrale');
     // le funzioni del keepalive si eseguono davvero: i due repository di oggi, una copia, un progetto sconosciuto, gli esiti
     const repartoO = (p, r) => { try { return kj.repartoDi(p, r).codice; } catch (e) { return 'errore'; } };
-    const casiRep = [[['consegne-collaudo', 'gistech2026/app-consegne-sorgente'], 'collaudo'], [['consegne-reparto', 'medicinadurgenzaucsc-maker/app-consegne'], 'gemelli-11n'],
+    // dalla v199 anche il sorgente del collaudo trasferito a un'organizzazione: il keepalive deve continuare a girare
+    const casiRep = [[['consegne-collaudo', 'gistech2026/app-consegne-sorgente'], 'collaudo'], [['consegne-collaudo', 'torsadestech/app-consegne-sorgente'], 'collaudo'], [['consegne-reparto', 'medicinadurgenzaucsc-maker/app-consegne'], 'gemelli-11n'],
       [['', 'medicinadurgenzaucsc-maker/app-consegne'], 'gemelli-11n'], [['', 'gistech2026/app-consegne-sorgente'], 'errore'], [['consegne-reparto', 'qualcuno/una-copia'], 'errore'], [['inesistente', 'x/y'], 'errore']];
     const repSbagliati = casiRep.filter((c) => repartoO(c[0][0], c[0][1]) !== c[1]).map((c) => c[0].join(' '));
     if (repSbagliati.length) guai.push('keepalive.js riconosce male il reparto nei casi: ' + repSbagliati.join(' ; '));

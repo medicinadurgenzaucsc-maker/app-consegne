@@ -85,7 +85,8 @@ if (require.main === module) {
       console.log('uso: rinvio-rubrica.js file [cartella] | stato | pubblica ' + ghApi.CONFERMA);
       process.exitCode = 2; return;
     }
-    const AMB = ghApi.per('produzione');
+    // il repository del rinvio non è fra quelli del file del reparto: lo strumento lo dichiara per sé (dalla v199)
+    const AMB = ghApi.per('produzione', { ancheRepository: [ghApi.AMBIENTI.produzione.utente + '/' + NOME] });
     const gh = AMB.gh, UTENTE = AMB.UTENTE;
     const D = destinazioneVera(UTENTE);
     const base = '/repos/' + UTENTE + '/' + NOME;

@@ -56,6 +56,7 @@ node collaudo/strumenti/reparti.js scrivi           riscrive docs/js/ambiente.js
 | `livello` | dove sta il sito: `0` GitHub Pages, `1` Cloudflare senza cancello, `2` Cloudflare con cancello |
 | `host` | i nomi host da cui il sito può essere aperto, senza `https://` e senza percorso; una voce col punto davanti vale per i sottodomini (solo nel collaudo) |
 | `pubblicazione` | dove si pubblica, vedi sotto |
+| `github` | facoltativo, dalla v199: account e repository di GitHub per gli strumenti di questo PC, vedi sotto. Senza, valgono i nomi di sempre del repository di `githubPages`; un reparto senza `githubPages` deve averlo |
 | `supabaseUrl` | `https://<progetto>.supabase.co`, senza barra finale |
 | `supabaseAnonKey` | la chiave PUBBLICA di quel progetto |
 | `googleClientId` | l'identificativo del client Google dell'accesso |
@@ -63,10 +64,21 @@ node collaudo/strumenti/reparti.js scrivi           riscrive docs/js/ambiente.js
 
 `pubblicazione` ha una o più di queste voci:
 
-- `cloudflare: { progetto }`: il progetto Pages. `<progetto>.pages.dev` deve
-  essere fra gli `host`. Il flusso di pubblicazione riconosce il reparto da
-  qui: pubblica per il reparto che dichiara il progetto scritto nella variabile
-  `CLOUDFLARE_PROGETTO` del repository.
+- `cloudflare: { progetto, dominio, squadra }`: il progetto Pages.
+  `<progetto>.pages.dev` deve essere fra gli `host`. Il flusso di pubblicazione
+  riconosce il reparto da qui: pubblica per il reparto che dichiara il progetto
+  scritto nella variabile `CLOUDFLARE_PROGETTO` del repository. Due voci
+  facoltative, dalla v199:
+  - `dominio`: il nome sul dominio della società collegato allo stesso
+    progetto (oggi `consegne-collaudo.torsadestech.com` per il collaudo). Sta
+    accanto al `.pages.dev`, mai al suo posto, perché il progetto risponde da
+    tutti e due; deve essere fra gli `host`, scritto per esteso. Il flusso si
+    ferma se il progetto risponde da un nome che il reparto non elenca, e
+    avvisa se il dominio dichiarato non è ancora collegato.
+  - `squadra`: la squadra di Cloudflare Access che chiude il sito. Il cancello
+    sta su `https://<squadra>.cloudflareaccess.com`: `verifica-chiusura.js`
+    pretende che un estraneo sia rimandato esattamente lì, e `rete.html` prova
+    se da una rete lo si raggiunge.
 - `githubPages: { repository, cartella: "docs" }`: vuol dire «la cartella
   `docs/` di questo repository, servita così com'è». Può averla un reparto
   solo. Il repository pubblico col solo sito generato è la voce qui sotto:
@@ -81,8 +93,36 @@ node collaudo/strumenti/reparti.js scrivi           riscrive docs/js/ambiente.js
   reparto al livello 0 vuole un account GitHub suo. Oggi lo ha solo il
   collaudo, per prova.
 
+`github` (dalla v199) dice agli strumenti di questo PC con quali account e
+repository lavorare (`gh-api.js`, `github-accesso.js`, `scambio-repository.js`,
+`verifica-chiusura.js`, `pubblica-sito.js`, `sito-pubblico.js`,
+`pubblicazione.js`; funzione `github()` di `reparti.js`):
+
+- `utente`: l'account di cui si usa la chiave, custodita dal gestore delle
+  credenziali di Git;
+- `sorgente`: il repository col sorgente, privato;
+- `rinvio`: il repository pubblico del vecchio indirizzo, con la sola pagina di
+  rinvio (prima dello scambio dei repository era il sorgente stesso); dove c'è
+  `githubPages` è quel repository;
+- `sitoServizio`: facoltativo, il sito di servizio del collaudo (finto TrakCare
+  e informativa).
+
+Il proprietario di un repository può essere un'organizzazione diversa
+dall'utente: è il caso del sorgente trasferito all'organizzazione della
+società, mentre il vecchio indirizzo resta all'account di prima (un sito di
+GitHub Pages non segue un trasferimento). Gli strumenti lavorano solo nei
+repository che il file nomina, uno per uno (più il nome provvisorio del
+rinvio, `<rinvio>-rinvio`), e in un'organizzazione creano un repository con
+`/orgs/<nome>/repos`. Per questo la convalida rifiuta due reparti che abbiano
+un repository in comune, compresi quelli che un reparto senza la voce
+`github` ricava (la 11N), e un collaudo che lavori con l'account di un reparto
+di produzione. Quando cambia un account o un
+repository del collaudo o della produzione va cambiata anche la riserva di
+`gh-api.js`: lo pretendono i controlli di rilascio.
+
 Nel file servito finiscono solo `codice`, `nome`, `ambiente`, `lingua`,
-`versioneLocale`, `host`, `supabaseUrl`, `supabaseAnonKey`, `googleClientId` e, se c'è, `centrale`.
+`versioneLocale`, `host`, `supabaseUrl`, `supabaseAnonKey`, `googleClientId` e, se ci sono, `centrale`
+e `squadraAccess` (il nome della squadra di Access, per `rete.html`: l'app non lo usa).
 
 ## Aggiungere un reparto
 

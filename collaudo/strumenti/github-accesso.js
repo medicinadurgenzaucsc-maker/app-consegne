@@ -9,11 +9,15 @@
 //
 // Il token non viene MAI stampato: va nell'archivio credenziali di Windows
 // tramite GCM, accanto agli altri account già presenti.
+//
+// L'account è quello che il file del reparto di collaudo dice in «github.utente»
+// (dalla v199; vedi gh-api.js, che in mancanza del file usa la sua riserva): un
+// accesso autorizzato da un altro account non viene registrato.
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
-const UTENTE = 'gistech2026';
+const UTENTE = require('./gh-api.js').AMBIENTI.collaudo.utente;
 const CLIENT_ID = '0120e057bd645470c1ed';
 const STATO = path.join(__dirname, '.accesso-github.json');
 const maschera = (s) => String(s || '').replace(/gh[pousr]_[A-Za-z0-9_]+/g, 'gh*_***');

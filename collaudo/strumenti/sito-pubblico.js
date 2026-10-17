@@ -95,6 +95,8 @@ async function pubblica(gh, dest, file, messaggio, nota) {
   const dove = dest.proprietario + '/' + dest.nome;
   const r = await api('GET', base, null, [404]);
   if (r.stato === 404 || !r.dati || String(r.dati.name).toLowerCase() !== dest.nome.toLowerCase()) throw new Error('il repository ' + dove + ' non esiste: va creato prima, con un primo file (un repository del tutto vuoto non basta)');
+  // GitHub rimanda un repository trasferito al suo nuovo proprietario: scrivere lì vorrebbe dire scrivere altrove
+  if (!r.dati.owner || String(r.dati.owner.login).toLowerCase() !== dest.proprietario.toLowerCase()) throw new Error('a ' + dove + ' risponde un repository di un altro account (' + String(r.dati.full_name || '?') + '): il file del reparto va corretto. Nulla è stato scritto');
   if (r.dati.private) throw new Error('il repository ' + dove + ' è privato: con un account gratuito il suo sito non verrebbe servito');
   const ramo = r.dati.default_branch;
   const rif = await api('GET', base + '/git/ref/heads/' + ramo, null, [404, 409]);
@@ -200,7 +202,10 @@ if (require.main === module) {
     if (!dest) throw new Error('il reparto «' + reparto.codice + '» non ha un sito pubblico (campo pubblicazione.sitoPubblico del suo file)');
     if (reparto.tipo !== 'collaudo') throw new Error('da riga di comando questo strumento lavora solo per un reparto di collaudo: per un reparto di produzione il livello 0 è un rilascio a sé');
     const AMB = ghApi.per('collaudo');
-    if (AMB.UTENTE.toLowerCase() !== dest.proprietario.toLowerCase()) throw new Error('il repository ' + dest.proprietario + '/' + dest.nome + ' non è dell\'account di collaudo');
+    // il repository può essere dell'utente o di un'organizzazione (dalla v199), ma deve essere quello che il file
+    // del reparto dice: gh-api.js lascia lavorare solo nei repository dell'elenco
+    if (AMB.repository.indexOf((dest.proprietario + '/' + dest.nome).toLowerCase()) < 0) throw new Error('il repository ' + dest.proprietario + '/' + dest.nome + ' non è fra quelli del collaudo (' + AMB.repository.join(', ') + ')');
+    const mio = AMB.UTENTE.toLowerCase() === dest.proprietario.toLowerCase();
     const gh = AMB.gh, base = '/repos/' + dest.proprietario + '/' + dest.nome;
 
     if (comando === 'stato') {
@@ -217,9 +222,11 @@ if (require.main === module) {
     }
 
     // ── pubblica ──
-    // la chiave è proprio quella dell'account che possiede il repository?
+    // la chiave è proprio quella dell'account del collaudo? Se il repository è di un'organizzazione, che lo sia
+    // davvero, e che quell'account vi possa amministrare il repository (serve per accendere GitHub Pages)
     const io = await gh('GET', '/user');
-    if (io.stato !== 200 || String(io.dati && io.dati.login).toLowerCase() !== dest.proprietario.toLowerCase()) throw new Error('la chiave in uso non è quella dell\'account ' + dest.proprietario + ' (HTTP ' + io.stato + '): nulla è stato scritto');
+    if (io.stato !== 200 || String(io.dati && io.dati.login).toLowerCase() !== AMB.UTENTE.toLowerCase()) throw new Error('la chiave in uso non è quella dell\'account ' + AMB.UTENTE + ' (HTTP ' + io.stato + '): nulla è stato scritto');
+    if (!mio && (await AMB.eOrganizzazione(dest.proprietario)) !== true) throw new Error(dest.proprietario + ' non risulta un\'organizzazione, e la chiave in uso è di ' + AMB.UTENTE + ': nulla è stato scritto');
     // nella storia pubblica finisce solo ciò che nel sorgente è registrato
     const sospese = inSospeso();
     if (sospese.length) throw new Error('ci sono modifiche non registrate ai file da cui nasce il sito (' + sospese.slice(0, 4).map((x) => x.trim()).join('; ') + (sospese.length > 4 ? '; …' : '') + '): si pubblica solo ciò che è registrato in git, perché ciò che arriva nel repository pubblico non si ritira');
@@ -234,11 +241,13 @@ if (require.main === module) {
     const esiste = await gh('GET', base);
     if (esiste.stato === 404) {
       if (!crea) throw new Error('il repository ' + dest.proprietario + '/' + dest.nome + ' non esiste. Per crearlo, pubblico: «pubblica --crea»');
-      const c = await gh('POST', '/user/repos', { name: dest.nome, description: 'Sito pubblicato: solo i file serviti, in copia compressa', private: false, auto_init: true, has_issues: false, has_wiki: false, has_projects: false });
-      if (c.stato >= 300) throw new Error('creazione del repository non riuscita: HTTP ' + c.stato);
+      // nell'account dell'utente con /user/repos, in un'organizzazione con /orgs/<nome>/repos
+      const c = await AMB.crea(dest.proprietario, { name: dest.nome, description: 'Sito pubblicato: solo i file serviti, in copia compressa', private: false, auto_init: true, has_issues: false, has_wiki: false, has_projects: false });
+      if (c.stato >= 300) throw new Error('creazione del repository non riuscita: HTTP ' + c.stato + (mio ? '' : ' (in un\'organizzazione un repository pubblico lo crea chi ne ha il permesso)'));
       console.log('repository ' + dest.proprietario + '/' + dest.nome + ' creato');
       await attendi(3000);
     } else if (esiste.stato !== 200) throw new Error('lo stato del repository non si legge (HTTP ' + esiste.stato + '): nulla è stato scritto');
+    else if (!mio && !(esiste.dati && esiste.dati.permissions && esiste.dati.permissions.admin)) throw new Error('l\'account ' + AMB.UTENTE + ' non amministra ' + dest.proprietario + '/' + dest.nome + ': non potrebbe accenderne il sito. Nulla è stato scritto');
     const esitoPub = await pubblica(gh, dest, file, 'Sito del reparto ' + reparto.codice + ', versione ' + versione + ' (sorgente ' + sorgente + ')', (t) => console.log(t));
     const esito = await attendiServito(gh, dest, file, (t) => console.log(t), { commit: esitoPub.commit });
     console.log(esito.servito ? 'pronto dopo ' + esito.secondi + ' s: ' + dest.sito + ' serve i ' + (file.length - 1) + ' file pubblicati, identici alla copia compressa' : 'NON ancora servito dopo ' + esito.secondi + ' s; file diversi: ' + esito.diversi.slice(0, 6).join(', '));

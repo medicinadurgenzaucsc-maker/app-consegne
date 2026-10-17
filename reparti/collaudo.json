@@ -12,18 +12,28 @@
   "livello": 2,
   "host": [
     "gistech2026.github.io",
+    "torsadestech.github.io",
     "localhost",
     "127.0.0.1",
     "consegne-collaudo.pages.dev",
-    ".consegne-collaudo.pages.dev"
+    ".consegne-collaudo.pages.dev",
+    "consegne-collaudo.torsadestech.com"
   ],
   "pubblicazione": {
     "cloudflare": {
-      "progetto": "consegne-collaudo"
+      "progetto": "consegne-collaudo",
+      "dominio": "consegne-collaudo.torsadestech.com",
+      "squadra": "consegne-collaudo"
     },
     "sitoPubblico": {
       "repository": "gistech2026/collaudo-sito"
     }
+  },
+  "github": {
+    "utente": "gistech2026",
+    "sorgente": "gistech2026/app-consegne-sorgente",
+    "rinvio": "gistech2026/app-consegne",
+    "sitoServizio": "gistech2026/collaudo"
   },
   "supabaseUrl": "https://rqvohwpthhumydpbwktq.supabase.co",
   "supabaseAnonKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJxdm9od3B0aGh1bXlkcGJ3a3RxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTExMjUyNjAsImV4cCI6MjEwNjcwMTI2MH0.tA5uy7aJM9x8UmHjYBM9wvRmR5eqR5fH2mVctp4l0xo",
