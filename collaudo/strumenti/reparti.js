@@ -225,6 +225,14 @@ function convalida(elenco, nomiFile) {
     if (a.codice >= b.codice || a.tipo === b.tipo) return;
     if (github(a).utente.toLowerCase() === github(b).utente.toLowerCase()) e.push('i reparti ' + a.codice + ' (' + a.tipo + ') e ' + b.codice + ' (' + b.tipo + ') usano lo stesso account di GitHub: un collaudo non lavora mai con l\'account della produzione');
   }));
+  // e nessun repository di un collaudo sta nell'account con cui lavora un reparto di produzione: lì ogni
+  // repository è della produzione, anche uno che il suo file non nomina
+  elenco.filter((r) => r.tipo !== 'produzione').forEach((r) => elenco.filter((x) => x.tipo === 'produzione').forEach((x) => {
+    const suo = github(x).utente.toLowerCase(), g = github(r);
+    [g.sorgente, g.rinvio, g.sitoServizio, r.pubblicazione.sitoPubblico && { repository: r.pubblicazione.sitoPubblico.repository }].filter(Boolean).forEach((d) => {
+      if (String(d.repository).split('/')[0].toLowerCase() === suo) e.push('il reparto ' + r.codice + ' (' + r.tipo + ') nomina ' + d.repository + ', che sta nell\'account della produzione ' + x.codice + ': un collaudo non lavora mai lì');
+    });
+  }));
   elenco.forEach((a) => elenco.forEach((b) => {
     if (a.codice >= b.codice) return;
     a.host.forEach((ha) => b.host.forEach((hb) => {

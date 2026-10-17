@@ -677,23 +677,28 @@ mancanti.length ? ko('sw.js elenca file che non esistono (l\'installazione del s
       ['il sito di servizio nel rinvio provvisorio della produzione', (x) => nostri(x, 'sitoServizio', gp0.rinvio.repository + '-rinvio'), 'rifiutato'],
       ['il rinvio del collaudo nel vecchio indirizzo della produzione', (x) => nostri(x, 'rinvio', gp0.rinvio.repository), 'rifiutato'],
       ['l\'account della produzione come utente del collaudo', (x) => nostri(x, 'utente', gp0.utente.toUpperCase()), 'rifiutato'],
+      ['il sito di servizio in un altro repository dell\'account della produzione', (x) => nostri(x, 'sitoServizio', gp0.utente + '/un-altro-repository'), 'rifiutato'],
       ['il sorgente del collaudo in un\'organizzazione', (x) => nostri(x, 'sorgente', ORG + '/app-consegne-sorgente'), 'accettato'],
     ];
     casiCoppia.forEach((x) => { const v = coppia(x[1]); if (v !== x[2]) fileStorti.push(x[0] + ' → ' + v); });
     // gh-api.js lavora solo nei repository dell'elenco, metodo per metodo; crea solo i nomi dell'elenco
     const io = 'utente-di-prova';
-    const regole = { utente: io, repository: [ORG + '/app-consegne-sorgente', io + '/app-consegne', io + '/collaudo'] };
+    const regole = { utente: io, repository: [ORG + '/app-consegne-sorgente', io + '/app-consegne', io + '/app-consegne-rinvio', io + '/collaudo'] };
     [['GET', '/user', null, true], ['PATCH', '/user', null, false], ['POST', '/user/repos', { name: 'collaudo' }, true], ['POST', '/user/repos', { name: 'altro' }, false], ['GET', '/user/repos', null, false],
       ['GET', '/orgs/' + ORG, null, true], ['PATCH', '/orgs/' + ORG, null, false], ['POST', '/orgs/' + ORG + '/repos', { name: 'app-consegne-sorgente' }, true], ['POST', '/orgs/' + ORG + '/repos', { name: 'altro' }, false],
       ['GET', '/orgs/' + io, null, false], ['POST', '/orgs/' + io + '/repos', { name: 'collaudo' }, false], ['GET', '/orgs/altri', null, false],
-      ['GET', '/repos/' + ORG + '/app-consegne-sorgente/actions/secrets', null, true], ['PATCH', '/repos/' + io + '/app-consegne', { name: 'app-consegne-sorgente' }, true],
+      ['GET', '/repos/' + ORG + '/app-consegne-sorgente/actions/secrets', null, true], ['PATCH', '/repos/' + io + '/app-consegne', { name: 'app-consegne-sorgente' }, false], ['PATCH', '/repos/' + io + '/app-consegne-rinvio', { name: 'app-consegne' }, true],
       ['GET', '/repos/' + ORG + '/altro-repository', null, false], ['GET', '/repos/' + io + '/app-consegnex', null, false], ['GET', '/repos/' + io + '/app-consegne%2fx', null, false],
-      ['GET', '/repos/' + ORG, null, false], ['GET', '/users/' + ORG, null, false]].forEach((x) => {
+      ['GET', '/repos/' + ORG, null, false], ['GET', '/users/' + ORG, null, false],
+      ['DELETE', '/repos/' + io + '/collaudo', null, false], ['PATCH', '/repos/' + io + '/app-consegne', { name: 'fuori-elenco' }, false], ['PATCH', '/repos/' + io + '/app-consegne', { private: true }, true],
+      ['POST', '/repos/' + io + '/collaudo/forks', { organization: ORG, name: 'copia' }, false], ['POST', '/repos/' + io + '/collaudo/transfer', { new_owner: 'altri' }, false], ['POST', '/repos/' + io + '/collaudo/generate', { name: 'x' }, false],
+      ['GET', '/repos/' + io + '/collaudo/forks', null, true], ['POST', '/repos/' + io + '/collaudo/git/blobs', { content: '' }, true]].forEach((x) => {
       if (gh.percorsoAmmesso(regole, x[0], x[1].toLowerCase(), x[2]) !== x[3]) fileStorti.push('gh-api.js ' + (x[3] ? 'rifiuta' : 'accetta') + ' ' + x[0] + ' ' + x[1] + (x[2] ? ' ' + JSON.stringify(x[2]) : ''));
     });
     // da qualunque ambiente, una scrittura in un repository della produzione è riconosciuta come tale
     const prodRepo = '/repos/' + gp0.rinvio.repository.toLowerCase();
-    if (!gh.toccaLaProduzione('DELETE', prodRepo) || !gh.toccaLaProduzione('POST', prodRepo + '/git/blobs') || gh.toccaLaProduzione('GET', prodRepo) || gh.toccaLaProduzione('POST', '/repos/' + io + '/collaudo/git/blobs')) fileStorti.push('gh-api.js non riconosce le scritture nei repository della produzione');
+    if (!gh.toccaLaProduzione('DELETE', prodRepo) || !gh.toccaLaProduzione('POST', prodRepo + '/git/blobs') || gh.toccaLaProduzione('GET', prodRepo) || gh.toccaLaProduzione('POST', '/repos/' + io + '/collaudo/git/blobs')
+      || !gh.toccaLaProduzione('PATCH', '/repos/' + gp0.utente.toLowerCase() + '/un-altro-repository')) fileStorti.push('gh-api.js non riconosce le scritture nei repository della produzione');
     if (gh.repositoryDi(gh.AMBIENTI.collaudo).some((x) => gh.repositoryDi(gh.AMBIENTI.produzione).indexOf(x) >= 0)) fileStorti.push('gh-api.js: collaudo e produzione hanno un repository in comune');
     // la riserva porta anche il sito pubblico, la squadra e il dominio
     ['collaudo', 'produzione'].forEach((k) => ['sitoPubblico', 'squadra', 'dominio'].forEach((x) => { if (gh.RISERVA[k][x] !== gh.AMBIENTI[k][x]) fileStorti.push('gh-api.js, riserva di ' + k + ': «' + x + '» non è quello del file del reparto'); }));

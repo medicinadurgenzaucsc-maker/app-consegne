@@ -83,15 +83,26 @@ function percorsoAmmesso(regole, metodo, p, corpo) {
     return o[2] ? (m === 'POST' && !!nome && ammessi.indexOf(o[1] + '/' + nome) >= 0) : m === 'GET';
   }
   const r = /^\/repos\/([^/]+)\/([^/]+)(\/.*)?$/.exec(p);
-  return !!r && ammessi.indexOf(r[1] + '/' + r[2]) >= 0;
+  if (!r || ammessi.indexOf(r[1] + '/' + r[2]) < 0) return false;
+  const resto = r[3] || '';
+  if (!resto) {
+    // un repository non si cancella da qui, e cambia nome solo verso un altro nome dell'elenco (lo scambio)
+    if (m === 'DELETE') return false;
+    if (m === 'PATCH' && corpo && corpo.name !== undefined) return typeof corpo.name === 'string' && ammessi.indexOf(r[1] + '/' + corpo.name.toLowerCase()) >= 0;
+    return true;
+  }
+  // né copie, né repository generati, né trasferimenti: porterebbero il contenuto fuori dall'elenco
+  return m === 'GET' || !/^\/(forks|generate|transfer)\/?$/.test(resto);
 }
 // La chiamata cambia un repository della produzione? Vale da qualunque ambiente: i repository della
-// produzione sono quelli del suo file e quelli della riserva, così un file scritto male non li toglie.
+// produzione sono quelli del suo file e quelli della riserva, così un file scritto male non li toglie,
+// e con loro ogni repository dell'account della produzione (la sua chiave apre la 11N).
 function toccaLaProduzione(metodo, p, corpo) {
   if (String(metodo || 'GET').toUpperCase() === 'GET') return false;
   const loro = repositoryDi(AMBIENTI.produzione).concat(repositoryDi(RISERVA.produzione));
+  const account = [AMBIENTI.produzione.utente, RISERVA.produzione.utente].map((x) => String(x).toLowerCase());
   const r = /^\/repos\/([^/]+)\/([^/]+)/.exec(p);
-  if (r && loro.indexOf(r[1] + '/' + r[2]) >= 0) return true;
+  if (r && (loro.indexOf(r[1] + '/' + r[2]) >= 0 || account.indexOf(r[1]) >= 0)) return true;
   const nome = corpo && typeof corpo.name === 'string' ? corpo.name.toLowerCase() : null;
   const o = /^\/orgs\/([^/]+)\/repos$/.exec(p);
   return !!(nome && o && loro.indexOf(o[1] + '/' + nome) >= 0);
