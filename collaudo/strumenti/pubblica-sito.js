@@ -80,8 +80,11 @@ const api = async (metodo, percorso, corpo, ammessi) => {
     await api('PATCH', base + '/git/refs/heads/' + ramo, { sha: commit.dati.sha });
     console.log('pubblicato il commit ' + commit.dati.sha.slice(0, 7) + ' (' + contenuti.length + ' file)');
   }
-  const pagine = await api('POST', base + '/pages', { source: { branch: ramo, path: '/' } }, [409, 422]);
-  console.log(pagine.stato < 300 ? 'GitHub Pages attivato' : 'GitHub Pages già attivo');
+  // in un'organizzazione che non lascia pubblicare siti ai membri, GitHub Pages lo accende un proprietario
+  const pagine = await api('POST', base + '/pages', { source: { branch: ramo, path: '/' } }, [403, 404, 409, 422]);
+  if (pagine.stato < 300) console.log('GitHub Pages attivato');
+  else if ((await api('GET', base + '/pages', null, [403, 404])).stato !== 200) throw new Error('i file sono nel repository, ma GitHub Pages non è acceso e questa chiave non può accenderlo (HTTP ' + pagine.stato + '): lo accende un proprietario dell\'organizzazione (Settings del repository, Pages, ramo ' + ramo + ', cartella /), poi si rilancia lo strumento');
+  else console.log('GitHub Pages già attivo');
 
   let servita = '';
   for (let i = 0; i < 45; i++) {
