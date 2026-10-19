@@ -687,6 +687,7 @@ mancanti.length ? ko('sw.js elenca file che non esistono (l\'installazione del s
     [['GET', '/user', null, true], ['PATCH', '/user', null, false], ['POST', '/user/repos', { name: 'collaudo' }, true], ['POST', '/user/repos', { name: 'altro' }, false], ['GET', '/user/repos', null, false],
       ['GET', '/orgs/' + ORG, null, true], ['PATCH', '/orgs/' + ORG, null, false], ['POST', '/orgs/' + ORG + '/repos', { name: 'app-consegne-sorgente' }, true], ['POST', '/orgs/' + ORG + '/repos', { name: 'altro' }, false],
       ['GET', '/orgs/' + io, null, false], ['POST', '/orgs/' + io + '/repos', { name: 'collaudo' }, false], ['GET', '/orgs/altri', null, false],
+      ['GET', '/orgs/' + ORG + '/members', null, true], ['PUT', '/orgs/' + ORG + '/members', null, false], ['DELETE', '/orgs/' + ORG + '/members', null, false], ['GET', '/orgs/altri/members', null, false],
       ['GET', '/repos/' + ORG + '/app-consegne-sorgente/actions/secrets', null, true], ['PATCH', '/repos/' + io + '/app-consegne', { name: 'app-consegne-sorgente' }, false], ['PATCH', '/repos/' + io + '/app-consegne-rinvio', { name: 'app-consegne' }, true],
       ['GET', '/repos/' + ORG + '/altro-repository', null, false], ['GET', '/repos/' + io + '/app-consegnex', null, false], ['GET', '/repos/' + io + '/app-consegne%2fx', null, false],
       ['GET', '/repos/' + ORG, null, false], ['GET', '/users/' + ORG, null, false],

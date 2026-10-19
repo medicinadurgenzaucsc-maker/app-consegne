@@ -77,9 +77,11 @@ function percorsoAmmesso(regole, metodo, p, corpo) {
   const nome = corpo && typeof corpo.name === 'string' ? corpo.name.toLowerCase() : null;
   if (p === '/user') return m === 'GET';
   if (p === '/user/repos') return m === 'POST' && !!nome && ammessi.indexOf(io + '/' + nome) >= 0;
-  const o = /^\/orgs\/([^/]+)(\/repos)?$/.exec(p);
+  const o = /^\/orgs\/([^/]+)(\/repos|\/members)?$/.exec(p);
   if (o) {
     if (o[1] === io || proprietari.indexOf(o[1]) < 0) return false;
+    // l'elenco dei membri si legge soltanto (scambio-repository.js, per riconoscere i proprietari)
+    if (o[2] === '/members') return m === 'GET';
     return o[2] ? (m === 'POST' && !!nome && ammessi.indexOf(o[1] + '/' + nome) >= 0) : m === 'GET';
   }
   const r = /^\/repos\/([^/]+)\/([^/]+)(\/.*)?$/.exec(p);

@@ -210,8 +210,8 @@ async function controlliDiPartenza(nome) {
   const guai = [];
   const r = (await api('GET', base(nome))).dati;
   if (r.forks_count > 0) guai.push(r.forks_count + ' fork (un fork pubblico resta pubblico anche dopo lo scambio)');
-  const elenco = async (percorso, cosa) => {
-    const x = await gh('GET', base(nome) + percorso);
+  const elenco = async (percorso, cosa, radice) => {
+    const x = await gh('GET', (radice || base(nome)) + percorso);
     if (x.stato !== 200 || !Array.isArray(x.dati)) { guai.push('non riesco a leggere ' + cosa + ' (HTTP ' + x.stato + '): con questa chiave il controllo non si può fare'); return []; }
     return x.dati;
   };
@@ -226,7 +226,16 @@ async function controlliDiPartenza(nome) {
     if (squadre.length) guai.push('squadre con accesso: ' + squadre.map((x) => x.slug || x.name).join(', '));
     const org = await gh('GET', '/orgs/' + r.owner.login);
     const base0 = org.stato === 200 && org.dati ? org.dati.default_repository_permission : null;
-    if (base0 !== 'none') guai.push('permesso di base dei membri di ' + r.owner.login + ': ' + (base0 ? '«' + base0 + '»' : 'non leggibile (HTTP ' + org.stato + ')') + ', atteso «none»');
+    if (base0) { if (base0 !== 'none') guai.push('permesso di base dei membri di ' + r.owner.login + ': «' + base0 + '», atteso «none»'); }
+    else {
+      // GitHub mostra il permesso di base solo ai proprietari dell'organizzazione: per un membro lo si deduce
+      // da chi ha accesso. Con «none» restano l'utente e i proprietari; chiunque altro entra per il permesso
+      // di base o per una squadra
+      const proprietari = (await elenco('/members?role=admin&per_page=100', 'i proprietari dell\'organizzazione', '/orgs/' + r.owner.login)).map((x) => String(x.login).toLowerCase());
+      const tutti = await elenco('/collaborators?affiliation=all&per_page=100', 'tutti gli accessi');
+      const altri0 = tutti.filter((x) => !mio(x) && proprietari.indexOf(String(x.login).toLowerCase()) < 0);
+      if (altri0.length) guai.push('membri di ' + r.owner.login + ' con accesso al sorgente: ' + altri0.map((x) => x.login + ' (' + x.role_name + ')').join(', '));
+    }
   }
   const chiavi = await elenco('/keys', 'le chiavi di pubblicazione');
   if (chiavi.length) guai.push(chiavi.length + ' chiavi di pubblicazione');
