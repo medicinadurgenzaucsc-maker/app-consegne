@@ -38,8 +38,8 @@ const REMOTI = { collaudo: 'collaudo', produzione: 'origin' };
 // «squadra» e «dominio» sono le voci di pubblicazione.cloudflare (verifica-chiusura.js).
 const RISERVA = {
   collaudo: { utente: 'gistech2026', remoto: 'collaudo', sitoNuovo: 'https://consegne-collaudo.pages.dev/',
-    sorgente: 'gistech2026/app-consegne-sorgente', rinvio: 'gistech2026/app-consegne', sitoServizio: 'gistech2026/collaudo', sitoPubblico: 'gistech2026/collaudo-sito',
-    squadra: 'consegne-collaudo', dominio: 'consegne-collaudo.torsadestech.com', proprietari: ['gistech2026'] },
+    sorgente: 'torsadestech/app-consegne-sorgente', rinvio: 'gistech2026/app-consegne', sitoServizio: 'gistech2026/collaudo', sitoPubblico: 'gistech2026/collaudo-sito',
+    squadra: 'consegne-collaudo', dominio: 'consegne-collaudo.torsadestech.com', proprietari: ['gistech2026', 'torsadestech'] },
   produzione: { utente: 'medicinadurgenzaucsc-maker', remoto: 'origin', sitoNuovo: 'https://consegne-reparto.pages.dev/',
     sorgente: 'medicinadurgenzaucsc-maker/app-consegne-sorgente', rinvio: 'medicinadurgenzaucsc-maker/app-consegne', sitoServizio: null, sitoPubblico: null,
     squadra: null, dominio: null, proprietari: ['medicinadurgenzaucsc-maker'] },

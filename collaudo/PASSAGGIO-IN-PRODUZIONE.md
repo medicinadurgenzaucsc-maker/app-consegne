@@ -990,8 +990,9 @@ libero dopo l'ultima versione pubblicata nel collaudo.
 
 Il collaudo ha già gli indirizzi nuovi accanto ai vecchi (`torsadestech.github.io`,
 `consegne-collaudo.torsadestech.com`), e gli strumenti sanno lavorare con un sorgente che
-sta in un'organizzazione mentre il vecchio indirizzo resta a `gistech2026`. Dopo il
-trasferimento, nell'ordine:
+sta in un'organizzazione mentre il vecchio indirizzo resta a `gistech2026`. **Trasferimento
+fatto il 19/10/2026**, con l'ok di Stefano: segreti e variabili sono rimasti, gistech2026 vi ha la
+scrittura ma non l'amministrazione. Dopo il trasferimento, nell'ordine:
 
 1. nel file del collaudo `github.sorgente` diventa `torsadestech/app-consegne-sorgente`, e
    lo stesso nella riserva di `gh-api.js` (i controlli di rilascio lo pretendono);

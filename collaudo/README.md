@@ -7,7 +7,7 @@ solo il database a cui il sito si collega.
 |                    | Produzione                                              | Collaudo                                     |
 |--------------------|---------------------------------------------------------|----------------------------------------------|
 | Sito               | `medicinadurgenzaucsc-maker.github.io/app-consegne/`    | `consegne-collaudo.pages.dev`, dietro l'accesso con Google |
-| Repository         | `medicinadurgenzaucsc-maker/app-consegne` (`origin`)    | `gistech2026/app-consegne-sorgente`, privato (`collaudo`) |
+| Repository         | `medicinadurgenzaucsc-maker/app-consegne` (`origin`)    | `torsadestech/app-consegne-sorgente`, privato (`collaudo`); fino al 19/10/2026 `gistech2026/app-consegne-sorgente` |
 | Progetto Supabase  | `ifmmcvxzhwdkmzhsxcvb`                                  | `rqvohwpthhumydpbwktq`                       |
 | Mail dimissioni    | parte davvero (dal mittente scelto in «Impostazioni email») | parte davvero solo fra indirizzi di prova; simulata nelle prove automatiche |
 
